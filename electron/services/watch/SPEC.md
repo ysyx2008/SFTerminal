@@ -1,8 +1,20 @@
 # Watch Service SPEC
 
-> Last verified: 2026-07-30（心跳秘书身份）
+> Last verified: 2026-07-30（心跳 Markdown 章节）
 
 ## 设计目标
+
+### 心跳 prompt 用 Markdown 章节分区；联络摘要不得压过通道指令（2026-07-30）
+
+- **问题**：通道约束只是散文一句，夹在大段情境与上万字联络 transcript 之间；模型把心跳当成「继续聊天」，用最终文本回话、不调 `talk_to_user`，用户在联络/IM 收不到。
+- **取舍**：用 **Markdown 章节**（`# 通道` / `# 情境` / `# 身份与判断`，联络由代码追加 `# 联络摘要`）把层次拆开；**不写细提醒表**。联络用 **L4 一句话概要**（复用 `generateSummary`），总预算超限时丢最旧整行——不对单条正文中段硬截断。
+- **成功标准**：
+  - 默认 `HEARTBEAT.md` 以 `# 通道` 开头，明确：最终文本用户看不到，要对用户说必须 `talk_to_user`。
+  - `# 情境` 承载 `{{TIME}}` / `{{EVENTS}}` / `{{TODO}}` / `{{ACTIVITY}}`。
+  - `# 身份与判断` 点明私人秘书 + 轻量决策（含「没新事件 ≠ 没事」）。
+  - 联络注入为 `# 联络摘要`：最近 **12** 次互动的 L4 行；总预算约 **2500** 字符（超限丢最旧行）；steps 只取 user_task / final_result / proactive_notice；**不注入** `message.images` / 多模态附件 / `message` 内心独白。
+  - 已有 `HEARTBEAT.md` 若无 `# 通道` 且仍是系统默认系模板（含模板变量且含旧文案），启动时升级为新章节模板。
+- **明确不做**：不改宿主「漏调 talk_to_user 不自动转发最终文本」；不把面板视觉规则搬进心跳；不为自定义 HEARTBEAT 强行整份覆盖（仅识别默认系再升级）；不做单条 500 字中段硬截断。
 
 ### 心跳点明秘书身份；待办不被「无新事件」沉默吃掉（2026-07-30）
 
@@ -222,9 +234,9 @@ interface WatchTemplate {
 
 **并发模型**：不同 `watchId` 可并行；同一 `watchId` 互斥；wakeup 可与普通关切并行；全局软上限默认 5，超额排队不丢弃。
 
-**心跳机制**：`HEARTBEAT_FILENAME` 为 Agent 可读的心跳上下文文件（非全局执行锁）；`ensureWakeup` / `removeWakeup` 控制"唤醒态"。默认模板点明私人秘书身份；`migrateHeartbeatFileIfNeeded` 在仍含旧「无新事件 6 小时直接结束」时精确替换该句并补身份段（不整份覆盖）。
+**心跳机制**：`HEARTBEAT_FILENAME` 为 Agent 可读的心跳上下文文件（非全局执行锁）；`ensureWakeup` / `removeWakeup` 控制"唤醒态"。默认模板为 Markdown 章节（`# 通道` / `# 情境` / `# 身份与判断`）；`migrateHeartbeatFileIfNeeded` 升级默认系旧模板，并对残留旧沉默句做精确替换。
 
-**联络上下文注入**：`buildEnhancedPrompt` 在**所有** Watch（含内置 `__wakeup__` 心跳）执行前，经 `Companion.formatRecentTurnsForWatchPrompt()` 从 `__companion__` 合并视图取最近 **50 条** user↔AI 纯文本（完整原文，不截断；合并最多 50 条 companion record），注入 prompt（10s TTL 缓存；`talk_to_user` 落盘后调用 `invalidateCompanionContextCache()` 失效）。**优先读 merged steps**（含 `__proactive__` 的 `proactive_notice`）；`mergedMessages` 排除 proactive record，不可作为唯一数据源。无 steps 时回退 messages（老记录）。联络 tab 展示仍用 `RECENT_RECORDS_LIMIT = 10`，与心跳注入范围分离。普通关切在任务指令前注入「通道说明」（面板可见 ≠ 联络/IM 送达；必须 `talk_to_user`），与唤醒 HEARTBEAT 模板同级。
+**联络上下文注入**：`buildEnhancedPrompt` 在**所有** Watch（含内置 `__wakeup__` 心跳）执行前，经 `Companion.formatRecentTurnsForWatchPrompt()` 注入 **`# 联络摘要`（L4）**：最近 **12** 次互动压成一句话概要（`generateSummary`）；总预算约 2500 字符，超限丢最旧整行。只读文本 content，**不带** `images`/base64 附件。steps 仅 user_task / final_result / proactive_notice。合并最多 50 条 companion record。10s TTL；`talk_to_user` 落盘后失效缓存。联络 tab 展示仍用 `RECENT_RECORDS_LIMIT = 10`。普通关切另注「通道说明」，与唤醒 `# 通道` 同级。
 
 ## 关键约束
 

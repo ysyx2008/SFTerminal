@@ -51,7 +51,7 @@ describe('Companion.formatRecentTurnsForWatchPrompt', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('合并多条 companion record 的 messages，心跳能看到联络 tab 近期对话', () => {
+  it('合并多条 companion record，输出 L4 一句话概要', () => {
     const hs = new HistoryService()
     const t0 = Date.now() - 60_000
     const t1 = Date.now()
@@ -73,13 +73,16 @@ describe('Companion.formatRecentTurnsForWatchPrompt', () => {
     }))
 
     const text = new Companion(hs).formatRecentTurnsForWatchPrompt()
-    expect(text).toContain('最近与用户的联络记录')
-    expect(text).toContain('用户：你提醒了我几次')
-    expect(text).toContain('你：我提醒了你 3 次')
-    expect(text).toContain('用户：我怀疑你在心跳的时候看不到这些历史记录')
+    expect(text).toContain('# 联络摘要')
+    expect(text).toContain('L4')
+    expect(text).toContain('你提醒了我几次')
+    expect(text).toContain('我提醒了你 3 次')
+    expect(text).toContain('我怀疑你在心跳的时候看不到这些历史记录')
+    // L4 行形态：状态图标 + 请求 → 回复
+    expect(text).toMatch(/✓.*→/)
   })
 
-  it('有历史 messages record 时仍能看到 __proactive__ 主动通知（回归：唤醒拆分后重复问候）', () => {
+  it('有历史 messages record 时仍能看到 __proactive__ 主动通知', () => {
     const hs = new HistoryService()
     const t0 = Date.now() - 120_000
     const t1 = Date.now() - 60_000
@@ -117,11 +120,11 @@ describe('Companion.formatRecentTurnsForWatchPrompt', () => {
     }))
 
     const text = new Companion(hs).formatRecentTurnsForWatchPrompt()
-    expect(text).toContain('你：恭喜我们第 5000 次对话！')
-    expect(text).toContain('用户：今天继续测工具')
+    expect(text).toContain('恭喜我们第 5000 次对话')
+    expect(text).toContain('今天继续测工具')
   })
 
-  it('proactive_notice step 作为 assistant 轮次展示', () => {
+  it('proactive_notice 作为主动消息进入 L4', () => {
     const hs = new HistoryService()
     hs.saveAgentRecord(companionRec('sess_pro', {
       userTask: '__proactive__',
@@ -134,39 +137,86 @@ describe('Companion.formatRecentTurnsForWatchPrompt', () => {
     }))
 
     const text = new Companion(hs).formatRecentTurnsForWatchPrompt()
-    expect(text).toContain('你：胡宇明天 10:30 报到')
-    expect(text).toContain('用户：知道了别重复说')
+    expect(text).toContain('胡宇明天 10:30 报到')
+    expect(text).toContain('知道了别重复说')
   })
 
-  it('不截断单条消息正文', () => {
+  it('不灌 message 内心独白，只保留 final_result', () => {
     const hs = new HistoryService()
-    const long = '很长'.repeat(150)
-    hs.saveAgentRecord(companionRec('sess_long', {
-      messages: [
-        { role: 'user', content: long },
-        { role: 'assistant', content: '收到' }
+    const t = Date.now()
+    hs.saveAgentRecord(companionRec('sess_msg', {
+      messages: [],
+      steps: [
+        { id: 'ut1', type: 'user_task', content: '提醒我开会', timestamp: t },
+        {
+          id: 'msg1',
+          type: 'message',
+          content: '<details><summary>思考</summary>很长的内心独白</details>中间稿',
+          timestamp: t + 1
+        },
+        { id: 'fr1', type: 'final_result', content: '好的，到点提醒你', timestamp: t + 2 }
       ]
     }))
 
     const text = new Companion(hs).formatRecentTurnsForWatchPrompt()
-    expect(text).toContain(long)
-    expect(text).not.toContain('…')
+    expect(text).toContain('提醒我开会')
+    expect(text).toContain('好的，到点提醒你')
+    expect(text).not.toContain('内心独白')
+    expect(text).not.toContain('中间稿')
   })
 
-  it('默认取最近 50 条，超出部分截断', () => {
+  it('长文压成 L4 一行概要，不保留全文；剥离 details', () => {
+    const hs = new HistoryService()
+    const longUser = '请帮我分析这份很长的材料' + '细节'.repeat(200)
+    const longAsst = '分析结论是一切正常。' + '补充'.repeat(200)
+    hs.saveAgentRecord(companionRec('sess_long', {
+      messages: [
+        { role: 'user', content: `<details><summary>x</summary>hide</details>${longUser}` },
+        { role: 'assistant', content: longAsst }
+      ]
+    }))
+
+    const text = new Companion(hs).formatRecentTurnsForWatchPrompt()
+    expect(text).not.toContain('hide')
+    expect(text).not.toContain('细节'.repeat(50))
+    expect(text).toContain('请帮我分析这份很长的材料')
+    expect(text).toContain('分析结论是一切正常')
+    // 整段摘要远小于原文
+    expect(text.length).toBeLessThan(longUser.length)
+  })
+
+  it('不把 message.images 带进摘要文本', () => {
+    const hs = new HistoryService()
+    hs.saveAgentRecord(companionRec('sess_img', {
+      messages: [
+        {
+          role: 'user',
+          content: '看看这张图',
+          images: ['data:image/png;base64,AAAA_VERY_LONG_BASE64_SHOULD_NOT_APPEAR']
+        } as AgentRecord['messages'] extends (infer M)[] | undefined ? M : never,
+        { role: 'assistant', content: '图里是一只猫' }
+      ]
+    }))
+
+    const text = new Companion(hs).formatRecentTurnsForWatchPrompt()
+    expect(text).toContain('看看这张图')
+    expect(text).not.toContain('base64')
+    expect(text).not.toContain('AAAA_VERY_LONG')
+  })
+
+  it('默认取最近 12 次互动，更早的丢掉', () => {
     const hs = new HistoryService()
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = []
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 20; i++) {
       messages.push({ role: 'user', content: `用户消息 ${i}` })
       messages.push({ role: 'assistant', content: `回复 ${i}` })
     }
     hs.saveAgentRecord(companionRec('sess_many', { messages }))
 
     const text = new Companion(hs).formatRecentTurnsForWatchPrompt()
-    // 120 条消息（60 对），保留最近 50 条 → 从 user 35 起
-    expect(text).toContain('用户：用户消息 59')
-    expect(text).not.toContain('用户：用户消息 0')
-    expect(text).not.toContain('用户：用户消息 34')
-    expect(text).toContain('用户：用户消息 35')
+    expect(text).toContain('用户消息 19')
+    expect(text).not.toContain('用户消息 0')
+    expect(text).not.toContain('用户消息 7')
+    expect(text).toContain('用户消息 8')
   })
 })

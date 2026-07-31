@@ -1492,7 +1492,7 @@ export class WatchService {
         } else if (trigger.type === 'calendar') {
           sensor.calendar.addTarget(watch.id, {
             icsPath: trigger.icsPath,
-            beforeMinutes: trigger.beforeMinutes
+            beforeMinutes: trigger.beforeMinutes ?? 15
           })
           if (!sensor.calendar.running && sensor.running) {
             sensor.calendar.start().catch(err =>
@@ -1605,8 +1605,11 @@ export class WatchService {
           }
           break
         case 'calendar':
-          if (typeof trigger.beforeMinutes !== 'number' || trigger.beforeMinutes < 1) {
-            throw new Error('Calendar trigger requires beforeMinutes >= 1')
+          if (
+            trigger.beforeMinutes !== undefined
+            && (typeof trigger.beforeMinutes !== 'number' || trigger.beforeMinutes < 1)
+          ) {
+            throw new Error('Calendar trigger beforeMinutes must be >= 1 when set')
           }
           break
         case 'email':
@@ -1680,42 +1683,33 @@ export class WatchService {
   private static readonly HEARTBEAT_FILENAME = 'HEARTBEAT.md'
 
   /**
-   * 默认心跳模板，包含 4 个模板变量：{{TIME}} / {{EVENTS}} / {{TODO}} / {{ACTIVITY}}。
-   * 运行时由 resolveHeartbeatVariables() 替换为实际数据；删除变量则不注入对应信息。
-   * 点明私人秘书身份；不写细提醒表——「没新事件」不得盖过该跟进的待办（见 SPEC）。
+   * 默认心跳模板（Markdown 章节）：# 通道 → # 情境 → # 身份与判断。
+   * 变量：{{TIME}} / {{EVENTS}} / {{TODO}} / {{ACTIVITY}}；联络由 buildEnhancedPrompt 追加 # 联络摘要。
    */
-  static readonly DEFAULT_HEARTBEAT_TEMPLATE = `{{TIME}}
+  static readonly DEFAULT_HEARTBEAT_TEMPLATE = `# 通道
+
+你刚被唤醒——这是后台内心独白。关切面板里的过程/最终文本用户看不到。
+要对用户说话时，必须调用 \`talk_to_user\`；把话写在最终回复里等于没通知。
+无需打扰则直接结束（最终回复只写内部日志，如「沉默」）。
+
+# 情境
+
+{{TIME}}
 {{EVENTS}}
 {{TODO}}
 {{ACTIVITY}}
 
----
-
-你刚被唤醒。用户看不到你的常规输出——只有通过 talk_to_user 发送的消息才能送达。
+# 身份与判断
 
 你是用户的私人秘书：除了感知事件，也要帮他盯待办、作息与近况。有值得跟进的事就自然开口；没有就安静离开。
-
-# 决策原则
 
 沉默优先，但「没新事件」不等于「没事」——待办临近/逾期、长期搁置的重要事项，同样值得说一声。
 
 - 没新事件、也没什么该跟进的待办，且距上次开口不久——直接结束。偶尔可以简短打招呼，但不要每次都说。
 - 23:00–07:00 是睡眠时段，除非紧急或今天必交，不要打扰。你了解用户具体作息的，以实际习惯为准。
 - 「一切正常」没有通知价值——沉默本身就代表正常。
-- 对话历史中能看到你之前说过的话——没有新信息时，沉默比换角度重复更好。提醒过且状态没变，不要反复催。
-
-# 事件响应
-
-- **IM 上线**：根据时间、间隔、最近话题，自然地打招呼——问近况、分享发现、接着上次聊，每次换个角度。
-- **应用启动**：根据时间和陪伴天数决定是否问好。
-- **里程碑**：值得庆祝的时刻，真诚而有个性地表达。
-- **待办**：像秘书一样判断该不该提——临近/逾期提一两件最要紧的，别念清单；可顺手整理明显已完成的条目。
-- **用户近况**：活动摘要是你了解用户动态的窗口，怎么利用由你决定。
-- **其他事件**：有通知价值就说，没有就结束。
-
-# 风格
-
-结合你的个性设定，像真人朋友一样自然交流。短句优先，一两句话即可。`
+- 提醒过且状态没变，不要反复催；临近/逾期提一两件最要紧的，别念清单。
+- IM 上线 / 应用启动 / 里程碑：按情境自然回应。短句优先，结合个性设定。`
 
   private static readonly WAKEUP_TRIGGERS: WatchTrigger[] = [
     { type: 'heartbeat' },
@@ -1751,9 +1745,12 @@ export class WatchService {
             this.store.updateState(WatchService.WAKEUP_ID, rest)
           }
           needsUpdate = true
-        } else if (!existing.prompt?.includes('# 决策原则')) {
+        } else if (!existing.prompt?.includes('# 通道') && !existing.prompt?.includes('# 决策原则')) {
           needsUpdate = true
         } else if (existing.prompt?.includes(WatchService.LEGACY_SILENCE_RULE)) {
+          needsUpdate = true
+        } else if (existing.prompt && !existing.prompt.includes('# 通道')) {
+          // 默认系旧模板（有决策原则/变量但无章节）：升级到 Markdown 章节结构
           needsUpdate = true
         }
 
@@ -1827,13 +1824,29 @@ export class WatchService {
   }
 
   /**
-   * 若 HEARTBEAT.md 仍含旧「无新事件直接结束」规则：只改冲突句 + 补秘书身份，不整份覆盖，以免抹掉用户自定义。
+   * HEARTBEAT.md 迁移：
+   * 1) 仍含旧「无新事件直接结束」→ 精确改句 + 补身份（不整份覆盖）
+   * 2) 默认系旧模板且无 `# 通道` → 升级为章节化默认模板
    */
   private migrateHeartbeatFileIfNeeded(): void {
     try {
       const filePath = path.join(getWorkspacePath(), WatchService.HEARTBEAT_FILENAME)
       if (!fs.existsSync(filePath)) return
       let raw = fs.readFileSync(filePath, 'utf-8')
+
+      // 默认系指纹：须有模板变量，且有旧章节/身份文案——避免仅因注释提到 {{TODO}} 误覆盖
+      const hasTemplateVars = raw.includes('{{TODO}}') || raw.includes('{{TIME}}')
+      const hasDefaultCopy =
+        raw.includes('# 决策原则') ||
+        raw.includes('你是用户的私人秘书') ||
+        raw.includes('你刚被唤醒')
+      const isDefaultLineage = hasTemplateVars && hasDefaultCopy
+      if (!raw.includes('# 通道') && isDefaultLineage) {
+        fs.writeFileSync(filePath, WatchService.DEFAULT_HEARTBEAT_TEMPLATE, 'utf-8')
+        log.info('HEARTBEAT.md 已升级为 Markdown 章节结构')
+        return
+      }
+
       if (!raw.includes(WatchService.LEGACY_SILENCE_RULE)) return
 
       raw = raw.replace(
@@ -1852,7 +1865,6 @@ export class WatchService {
         }
       }
 
-      // 旧决策原则首句把「沉默」写死，与待办冲突时弱化意图
       raw = raw.replace(
         '沉默优先。有值得说的就调用 talk_to_user，没有就直接结束。',
         '沉默优先，但「没新事件」不等于「没事」——待办临近/逾期、长期搁置的重要事项，同样值得说一声。'

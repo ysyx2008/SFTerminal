@@ -19,6 +19,7 @@
  */
 import type { AgentRecord } from '@shared/types'
 import type { HistoryService } from '../history.service'
+import { generateSummary } from '../agent/task-memory'
 import { Conversation } from './conversation'
 
 /** companion 抽取新任务的选项 */
@@ -41,9 +42,17 @@ export interface CompanionExtractTaskOptions {
 export class Companion {
   /** 拉取最近多少条 record 做合并视图（联络 tab 展示 / fork）。10 与旧 forkAgent 实现一致。 */
   static readonly RECENT_RECORDS_LIMIT = 10
-  /** 心跳 / Watch prompt 注入：最近多少条 user↔assistant 轮次。 */
-  static readonly WATCH_PROMPT_MAX_TURNS = 50
-  /** 为凑够足够轮次，合并视图最多拉取多少条 companion record（上限与 WATCH_PROMPT_MAX_TURNS 同量级）。 */
+  /**
+   * 心跳 / Watch prompt：最多取多少条「互动」做 L4 概要
+   *（user_task↔final_result 一对，或单条 proactive_notice）。
+   */
+  static readonly WATCH_PROMPT_MAX_TURNS = 12
+  /**
+   * `# 联络摘要` 总字符预算；超出时从最旧整行丢弃（不对单条正文中段硬截断）。
+   * L4 一行通常几十字符，此上限作兜底。
+   */
+  static readonly WATCH_PROMPT_MAX_TOTAL_CHARS = 2500
+  /** 为凑够足够轮次，合并视图最多拉取多少条 companion record。 */
   static readonly WATCH_PROMPT_RECORDS_LIMIT = 50
 
   constructor(
@@ -148,64 +157,140 @@ export class Companion {
   }
 
   /**
-   * 为 Watch / 心跳 prompt 格式化最近联络轮次。
-   * 合并最近最多 {@link WATCH_PROMPT_RECORDS_LIMIT} 条 companion record，取最近
-   * {@link WATCH_PROMPT_MAX_TURNS} 轮 user↔assistant 纯文本，让唤醒决策感知联络线全貌。
+   * 为 Watch / 心跳 prompt 格式化最近联络（Markdown `# 联络摘要`，L4 一句话概要）。
+   * - 粒度对齐 TaskMemory L4（`generateSummary`）：请求短摘 + 回复首句
+   * - 不灌图片/多模态附件（只读 step/message 文本）；不灌 `message` 内心独白
+   * - 总预算 {@link WATCH_PROMPT_MAX_TOTAL_CHARS}：超限丢最旧整行，不中段硬截断
    */
   formatRecentTurnsForWatchPrompt(maxTurns = Companion.WATCH_PROMPT_MAX_TURNS): string {
     const record = this.getMergedViewRecord(Companion.WATCH_PROMPT_RECORDS_LIMIT)
     if (!record) return ''
 
-    // 优先 merged steps：含 __proactive__ record 的 proactive_notice。
-    // getMergedViewRecord 的 mergedMessages 刻意排除 __proactive__（L104-105）；
-    // 若存在 messages 就走 messages 分支，会丢掉近期 talk_to_user——唤醒重复通知的根因。
+    // 优先 merged steps：含 __proactive__ 的 proactive_notice。
+    // getMergedViewRecord 的 mergedMessages 刻意排除 __proactive__；
     // 无 steps 时回退 messages（仅 messages 的老记录）。
-    const turns: Array<{ role: 'user' | 'assistant'; content: string }> =
+    const exchanges =
       record.steps && record.steps.length > 0
-        ? Companion.turnsFromSteps(record.steps)
-        : Companion.turnsFromMessages(record.messages ?? [])
+        ? Companion.exchangesFromSteps(record.steps)
+        : Companion.exchangesFromMessages(record.messages ?? [])
 
-    const recent = turns.slice(-maxTurns)
+    const recent = exchanges.slice(-maxTurns)
     if (recent.length === 0) return ''
-    const lines = recent.map(m => {
-      const who = m.role === 'user' ? '用户' : '你'
-      return `${who}：${m.content}`
-    })
-    return `[最近与用户的联络记录（避免重复通知、保持连贯）：\n${lines.join('\n')}]`
+
+    const lines: string[] = []
+    for (const ex of recent) {
+      const userReq = Companion.cleanWatchText(ex.user || '(主动消息)')
+      const final = Companion.cleanWatchText(ex.assistant || '')
+      if (!userReq && !final) continue
+      const line = generateSummary(
+        userReq || '(主动消息)',
+        'success',
+        final || undefined,
+        undefined,
+        ex.timestamp
+      )
+      if (line.trim()) lines.push(`- ${line}`)
+    }
+    if (lines.length === 0) return ''
+
+    const kept = Companion.fitLinesToBudget(lines, Companion.WATCH_PROMPT_MAX_TOTAL_CHARS)
+    return [
+      '# 联络摘要',
+      '',
+      '（L4 一句话概要，避免重复通知、保持连贯；不含附件/图片）',
+      '',
+      ...kept,
+    ].join('\n')
   }
 
-  private static turnsFromSteps(
+  /** 超预算时从最旧整行丢弃，保留最近若干行。 */
+  private static fitLinesToBudget(lines: string[], maxChars: number): string[] {
+    if (maxChars <= 0 || lines.length === 0) return lines
+    let total = lines.reduce((n, l) => n + l.length + 1, 0)
+    let start = 0
+    while (total > maxChars && start < lines.length - 1) {
+      total -= lines[start].length + 1
+      start++
+    }
+    return lines.slice(start)
+  }
+
+  /** 去掉思考 HTML、系统附图表述、包装标签；不做中段硬截断。 */
+  private static cleanWatchText(content: string): string {
+    return content
+      .replace(/<details[\s\S]*?<\/details>/gi, '')
+      .replace(/<details[^>]*>[\s\S]*/gi, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\[系统：用户在本消息中附带了[^\]]*\]/g, '')
+      .replace(/\[系统：用户附带了[^\]]*\]/g, '')
+      .replace(/<\/?sf_[^>]+>/g, '')
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+
+  private static exchangesFromSteps(
     steps: NonNullable<AgentRecord['steps']>
-  ): Array<{ role: 'user' | 'assistant'; content: string }> {
-    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = []
-    for (const s of steps) {
-      if (s.type === 'user_task' && s.content && s.content !== '__proactive__') {
-        turns.push({ role: 'user', content: s.content })
-      } else if (
-        (s.type === 'final_result' || s.type === 'message' || s.type === 'proactive_notice')
-        && s.content
-      ) {
-        turns.push({ role: 'assistant', content: s.content })
+  ): Array<{ user?: string; assistant?: string; timestamp?: number }> {
+    const out: Array<{ user?: string; assistant?: string; timestamp?: number }> = []
+    let pending: { user?: string; assistant?: string; timestamp?: number } | null = null
+
+    const flushPending = () => {
+      if (pending) {
+        out.push(pending)
+        pending = null
       }
     }
-    return turns
+
+    for (const s of steps) {
+      if (s.type === 'user_task' && s.content && s.content !== '__proactive__') {
+        flushPending()
+        pending = { user: s.content, timestamp: s.timestamp }
+      } else if (s.type === 'proactive_notice' && s.content) {
+        flushPending()
+        out.push({ assistant: s.content, timestamp: s.timestamp })
+      } else if (s.type === 'final_result' && s.content) {
+        // 不灌 message（内心独白）；只配对 final_result
+        if (pending) {
+          pending.assistant = s.content
+          flushPending()
+        } else {
+          out.push({ assistant: s.content, timestamp: s.timestamp })
+        }
+      }
+    }
+    flushPending()
+    return out
   }
 
-  private static turnsFromMessages(
+  private static exchangesFromMessages(
     messages: NonNullable<AgentRecord['messages']>
-  ): Array<{ role: 'user' | 'assistant'; content: string }> {
-    const turns: Array<{ role: 'user' | 'assistant'; content: string }> = []
+  ): Array<{ user?: string; assistant?: string; timestamp?: number }> {
+    const out: Array<{ user?: string; assistant?: string; timestamp?: number }> = []
+    let pending: { user?: string; assistant?: string; timestamp?: number } | null = null
+
     for (const m of messages) {
       const isPlainUser = m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0
       const isPlainAssistant = m.role === 'assistant'
         && typeof m.content === 'string' && m.content.trim().length > 0
         && !(Array.isArray(m.tool_calls) && m.tool_calls.length > 0)
+
       if (isPlainUser) {
-        turns.push({ role: 'user', content: m.content as string })
+        if (pending) out.push(pending)
+        // 不读 m.images —— 多模态附件不进心跳文本
+        pending = { user: m.content as string }
       } else if (isPlainAssistant) {
-        turns.push({ role: 'assistant', content: m.content as string })
+        if (pending) {
+          pending.assistant = m.content as string
+          out.push(pending)
+          pending = null
+        } else {
+          out.push({ assistant: m.content as string })
+        }
       }
     }
-    return turns
+    if (pending) out.push(pending)
+    return out
   }
 }
