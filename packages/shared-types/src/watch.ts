@@ -43,7 +43,8 @@ export interface FileChangeTrigger {
 export interface CalendarTrigger {
   type: 'calendar'
   icsPath?: string
-  beforeMinutes: number
+  /** 提前提醒窗口（分钟）；缺省时运行时按 15 处理（唤醒等订阅型触发可省略） */
+  beforeMinutes?: number
 }
 
 export interface EmailTrigger {
