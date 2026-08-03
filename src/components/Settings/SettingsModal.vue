@@ -15,7 +15,7 @@ import TerminalSettings from './TerminalSettings.vue'
 import DataSettings from './DataSettings.vue'
 import McpSettings from './McpSettings.vue'
 import KnowledgeSettings from './KnowledgeSettings.vue'
-import LanguageSettings from './LanguageSettings.vue'
+import GeneralSettings from './GeneralSettings.vue'
 import EmailSettings from './EmailSettings.vue'
 import CalendarSettings from './CalendarSettings.vue'
 import SkillSettings from './SkillSettings.vue'
@@ -44,7 +44,7 @@ const emit = defineEmits<{
 
 const configStore = useConfigStore()
 
-type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'browserBridge' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'securityPermissions' | 'language' | 'about'
+type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'browserBridge' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'securityPermissions' | 'general' | 'about'
 // Steam 版不展示 AI 配置标签，默认选中「主题」；非 Steam 版默认「AI 模型配置」（__STEAM_BUILD__ 由 vite define 注入）
 const isSteamBuild = __STEAM_BUILD__
 const activeTab = ref<SettingsTab>(isSteamBuild ? 'theme' : 'ai')
@@ -53,9 +53,6 @@ const showConfirmDialog = ref(false)
 
 // 更新相关状态
 const updateStatus = ref<UpdateStatusInfo>({ status: 'idle' })
-const autoCheckUpdate = ref(true)
-const autoDownloadUpdate = ref(true)
-const installUpdateOnQuit = ref(true)
 const showUnlockAnimation = ref(false)
 const showBadgeWithAnimation = ref(false)
 const aboutContentRef = ref<HTMLElement | null>(null)
@@ -326,40 +323,6 @@ const installUpdate = async () => {
   await window.electronAPI.updater.quitAndInstall()
 }
 
-// 切换自动检查更新
-const toggleAutoCheckUpdate = async (event: Event) => {
-  const checked = (event.target as HTMLInputElement).checked
-  autoCheckUpdate.value = checked
-  await window.electronAPI.config.set('autoCheckUpdate', checked)
-  if (!checked) {
-    autoDownloadUpdate.value = false
-    installUpdateOnQuit.value = false
-    await window.electronAPI.config.set('autoDownloadUpdate', false)
-    await window.electronAPI.config.set('installUpdateOnQuit', false)
-  }
-}
-
-// 切换自动下载更新
-const toggleAutoDownloadUpdate = async (event: Event) => {
-  const checked = (event.target as HTMLInputElement).checked
-  autoDownloadUpdate.value = checked
-  await window.electronAPI.config.set('autoDownloadUpdate', checked)
-  if (!checked) {
-    installUpdateOnQuit.value = false
-    await window.electronAPI.config.set('installUpdateOnQuit', false)
-  } else if (installUpdateOnQuit.value === false) {
-    installUpdateOnQuit.value = true
-    await window.electronAPI.config.set('installUpdateOnQuit', true)
-  }
-}
-
-// 退出应用时安装已下载的更新
-const toggleInstallUpdateOnQuit = async (event: Event) => {
-  const checked = (event.target as HTMLInputElement).checked
-  installUpdateOnQuit.value = checked
-  await window.electronAPI.config.set('installUpdateOnQuit', checked)
-}
-
 // 格式化文件大小
 const formatBytes = (bytes: number): string => {
   if (bytes === 0) return '0 B'
@@ -388,9 +351,9 @@ const modalRef = ref<HTMLElement | null>(null)
 // 更新状态变化监听器清理函数
 let unsubscribeUpdater: (() => void) | null = null
 
-// Steam 版仅保留 theme/terminal/data/language/about，其它 initialTab 均 fallback 到 theme
-const STEAM_TABS: SettingsTab[] = ['theme', 'terminal', 'shortcuts', 'data', 'language', 'about']
-const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'browserBridge', 'bastion', 'theme', 'terminal', 'shortcuts', 'data', 'securityPermissions', 'language', 'about']
+// Steam 版仅保留 general/theme/terminal/data/about，其它 initialTab 均 fallback 到 theme
+const STEAM_TABS: SettingsTab[] = ['general', 'theme', 'terminal', 'shortcuts', 'data', 'about']
+const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'browserBridge', 'bastion', 'theme', 'terminal', 'shortcuts', 'data', 'securityPermissions', 'general', 'about']
 
 const applyInitialTab = (tabName?: string) => {
   if (tabName && ALL_TABS.includes(tabName as SettingsTab)) {
@@ -433,16 +396,6 @@ onMounted(async () => {
   // 获取当前更新状态
   updateStatus.value = await window.electronAPI.updater.getStatus()
 
-  // 获取自动检查更新配置
-  const savedAutoCheck = await window.electronAPI.config.get('autoCheckUpdate') as boolean | undefined
-  autoCheckUpdate.value = savedAutoCheck ?? true
-  
-  const savedAutoDownload = await window.electronAPI.config.get('autoDownloadUpdate') as boolean | undefined
-  autoDownloadUpdate.value = savedAutoDownload ?? true
-
-  const savedInstallOnQuit = await window.electronAPI.config.get('installUpdateOnQuit') as boolean | undefined
-  installUpdateOnQuit.value = savedInstallOnQuit ?? true
-  
   // 聚焦到模态框容器使其可接收键盘事件
   await nextTick()
   modalRef.value?.focus()
@@ -457,18 +410,18 @@ onUnmounted(() => {
   }
 })
 
-// Steam 版只保留「系统」分组（主题、终端、数据、语言、关于），隐藏 AI 与集成相关
+// Steam 版只保留「系统」分组（通用、主题、终端、数据、关于），隐藏 AI 与集成相关
 const tabGroups = computed(() => {
   if (isSteamBuild) {
     return [
       {
         label: t('settings.groups.system'),
         tabs: [
+          { id: 'general' as const, label: t('settings.tabs.general'), icon: '🧭' },
           { id: 'theme' as const, label: t('settings.tabs.theme'), icon: '🎨' },
           { id: 'terminal' as const, label: t('settings.tabs.terminal'), icon: '⚙️' },
           { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' },
           { id: 'data' as const, label: t('settings.tabs.data'), icon: '💾' },
-          { id: 'language' as const, label: t('settings.tabs.language'), icon: '🌐' },
           { id: 'about' as const, label: t('settings.tabs.about'), icon: 'ℹ️' }
         ]
       }
@@ -500,12 +453,12 @@ const tabGroups = computed(() => {
     {
       label: t('settings.groups.system'),
       tabs: [
+        { id: 'general' as const, label: t('settings.tabs.general'), icon: '🧭' },
         { id: 'theme' as const, label: t('settings.tabs.theme'), icon: '🎨' },
         { id: 'terminal' as const, label: t('settings.tabs.terminal'), icon: '⚙️' },
         { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' },
         { id: 'data' as const, label: t('settings.tabs.data'), icon: '💾' },
         { id: 'securityPermissions' as const, label: t('settings.tabs.securityPermissions'), icon: '🔐' },
-        { id: 'language' as const, label: t('settings.tabs.language'), icon: '🌐' },
         { id: 'about' as const, label: t('settings.tabs.about'), icon: 'ℹ️' }
       ]
     }
@@ -640,7 +593,7 @@ const onQrImageError = (event: Event) => {
           <TerminalSettings v-else-if="activeTab === 'terminal'" />
           <ShortcutSettings v-else-if="activeTab === 'shortcuts'" />
           <DataSettings v-else-if="activeTab === 'data'" />
-          <LanguageSettings v-else-if="activeTab === 'language'" />
+          <GeneralSettings v-else-if="activeTab === 'general'" />
           <div v-else-if="activeTab === 'about'" ref="aboutContentRef" class="about-content">
             <div class="about-logo">
               <img :src="sailfishLogo" alt="Sailfish" class="about-sailfish-logo" />
@@ -747,24 +700,6 @@ const onQrImageError = (event: Event) => {
               <div v-if="updateStatus.status === 'error'" class="update-hint error">
                 ⚠️ {{ updateStatus.error || t('about.updateError') }}
               </div>
-
-              <div class="about-update-toggles">
-                <label class="auto-check-toggle">
-                  <input type="checkbox" :checked="autoCheckUpdate" @change="toggleAutoCheckUpdate" />
-                  <span>{{ t('about.autoCheckUpdate') }}</span>
-                </label>
-                <label v-if="autoCheckUpdate && !isMac" class="auto-check-toggle">
-                  <input type="checkbox" :checked="autoDownloadUpdate" @change="toggleAutoDownloadUpdate" />
-                  <span>{{ t('about.autoDownloadUpdate') }}</span>
-                </label>
-                <label v-if="autoCheckUpdate && autoDownloadUpdate && !isMac" class="auto-check-toggle update-nested-toggle">
-                  <input type="checkbox" :checked="installUpdateOnQuit" @change="toggleInstallUpdateOnQuit" />
-                  <span>{{ t('about.installUpdateOnQuit') }}</span>
-                </label>
-              </div>
-              <p v-if="autoCheckUpdate && autoDownloadUpdate && !isMac && installUpdateOnQuit" class="update-option-hint">
-                {{ t('about.installUpdateOnQuitHint') }}
-              </p>
             </div>
             
             <p v-if="!isSteamBuild" class="description">
@@ -1050,44 +985,6 @@ const onQrImageError = (event: Event) => {
   gap: 10px;
   width: 100%;
   max-width: 440px;
-}
-
-.about-update-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px 20px;
-  margin-top: 4px;
-  width: 100%;
-}
-
-.update-nested-toggle {
-  padding-left: 18px;
-}
-
-.update-option-hint {
-  margin: 0;
-  max-width: 360px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.auto-check-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  cursor: pointer;
-  user-select: none;
-}
-
-.auto-check-toggle input[type="checkbox"] {
-  cursor: pointer;
 }
 
 .update-btn {

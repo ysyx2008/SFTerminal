@@ -318,6 +318,20 @@ export default {
   },
 
 
+  // 通用设置页
+  general: {
+    startup: '启动',
+    launchAtLogin: '开机启动',
+    launchAtLoginHint: '登录系统后自动启动旗鱼',
+    update: '更新',
+    autoCheckUpdate: '自动检查更新',
+    autoCheckUpdateHint: '启动时自动检查是否有新版本',
+    autoDownloadUpdate: '自动下载更新',
+    installUpdateOnQuit: '退出应用时安装更新',
+    installUpdateOnQuitHint: '下载完成后可选「退出时安装」，关闭应用时自动完成更新'
+  },
+
+
   // 关于页面
   about: {
     title: '旗鱼',
@@ -338,9 +352,6 @@ export default {
     installAndRestart: '安装并重启',
     upToDate: '当前已是最新版本',
     updateError: '检查更新失败',
-    autoCheckUpdate: '自动检查更新',
-    autoCheckUpdateHint: '启动时自动检查是否有新版本',
-    autoDownloadUpdate: '自动下载更新',
     updateAvailableMessageManual: '版本 {version} 已发布。您已关闭自动下载，是否现在开始下载？下载完成后将提示安装。',
     updateReadyTitle: '更新已就绪',
     updateReadyMessage: '版本 {version} 已下载完成。可立即安装并重启，或选择「退出时安装」——关闭应用后自动完成更新。',
@@ -350,8 +361,6 @@ export default {
     updateLater: '稍后提醒',
     updateDeferredToast: '版本 {version} 将在您退出应用时安装',
     updateSnoozedToast: '已跳过本次提醒，可在「设置 → 关于」中手动安装',
-    installUpdateOnQuit: '退出应用时安装更新',
-    installUpdateOnQuitHint: '下载完成后可选「退出时安装」，关闭应用时自动完成更新',
     goToDownload: '前往下载',
     viewChangelog: '查看更新日志',
     updateNotifyAvailableHint: '版本 {version} 已发布。可先下载，不会打断当前操作。',

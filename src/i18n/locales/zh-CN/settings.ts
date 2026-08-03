@@ -30,7 +30,7 @@ export default {
       shortcuts: '快捷键',
       data: '数据管理',
       securityPermissions: '安全与权限',
-      language: '语言',
+      general: '通用',
       about: '关于'
     },
     restartSetup: '重新运行引导',

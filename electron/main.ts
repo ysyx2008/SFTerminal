@@ -1991,6 +1991,9 @@ app.whenReady().then(async () => {
   // 启动自动检查更新
   scheduleAutoUpdateCheck()
 
+  // 按配置应用「开机启动」登录项（仅打包态）
+  applyLoginItemSettings()
+
   // 处理缓存的深链 URL 队列（窗口就绪前收到的）
   mainWindow?.webContents.once('dom-ready', () => {
     if (pendingDeepLinkUrls.length > 0) {
@@ -2657,6 +2660,21 @@ function syncAutoInstallOnAppQuit(): void {
   autoUpdater.autoInstallOnAppQuit = false
 }
 
+// 「开机启动」：配置只存用户意图，这里把意图应用到 OS 登录项。
+// 仅打包态生效（开发态不污染系统登录项）；每次启动重放，Windows 更新后 exe 路径漂移可自愈。
+function applyLoginItemSettings(): void {
+  if (!app.isPackaged) return
+  const openAtLogin = configService?.get('launchAtLogin') ?? false
+  try {
+    if (app.getLoginItemSettings().openAtLogin !== openAtLogin) {
+      app.setLoginItemSettings({ openAtLogin })
+      log.info(`LoginItem: 开机启动已${openAtLogin ? '开启' : '关闭'}`)
+    }
+  } catch (e) {
+    log.warn('LoginItem: 应用开机启动设置失败:', e)
+  }
+}
+
 function resetPendingInstallOnQuit(): void {
   pendingInstallOnQuit = false
   syncAutoInstallOnAppQuit()
@@ -3002,6 +3020,9 @@ ipcMain.handle('config:set', async (_event, key: string, value: unknown) => {
   configService.set(key as any, value as any)
   if (key === 'installUpdateOnQuit' && value === false) {
     syncAutoInstallOnAppQuit()
+  }
+  if (key === 'launchAtLogin') {
+    applyLoginItemSettings()
   }
 })
 

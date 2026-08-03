@@ -30,7 +30,7 @@ export default {
       shortcuts: 'Shortcuts',
       data: 'Data',
       securityPermissions: 'Security & Permissions',
-      language: 'Language',
+      general: 'General',
       about: 'About'
     },
     restartSetup: 'Restart Setup Wizard',

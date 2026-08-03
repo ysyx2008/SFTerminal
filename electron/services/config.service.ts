@@ -168,6 +168,7 @@ interface StoreSchema {
   autoCheckUpdate: boolean   // 启动时自动检查更新
   autoDownloadUpdate: boolean // 发现新版本后自动下载（Win/Linux）
   installUpdateOnQuit: boolean // 已下载更新在退出应用时安装（「退出时安装」）
+  launchAtLogin: boolean     // 开机启动（登录系统后自动启动应用，仅打包态生效）
   dismissedUpdateVersion?: string // 关闭「退出时安装」时，用户选择「稍后提醒」跳过的版本号
   gatewayAutoStart: boolean  // Gateway 远程访问自动启动
   gatewayPort: number        // Gateway 端口
@@ -284,6 +285,7 @@ const defaultConfig: StoreSchema = {
   autoCheckUpdate: true,
   autoDownloadUpdate: true,
   installUpdateOnQuit: true,
+  launchAtLogin: false,
   gatewayAutoStart: false,
   gatewayPort: 3721,
   gatewayHost: '0.0.0.0',

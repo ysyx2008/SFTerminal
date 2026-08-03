@@ -318,6 +318,20 @@ export default {
   },
 
 
+  // General settings page
+  general: {
+    startup: 'Startup',
+    launchAtLogin: 'Launch at Login',
+    launchAtLoginHint: 'Automatically start SailFish when you log in',
+    update: 'Updates',
+    autoCheckUpdate: 'Auto Check for Updates',
+    autoCheckUpdateHint: 'Automatically check for new versions on startup',
+    autoDownloadUpdate: 'Auto-download updates',
+    installUpdateOnQuit: 'Install updates when quitting',
+    installUpdateOnQuitHint: 'After download, "Install on quit" applies the update when you close the app'
+  },
+
+
   // About page
   about: {
     title: 'SailFish',
@@ -338,9 +352,6 @@ export default {
     installAndRestart: 'Install and Restart',
     upToDate: 'You are up to date',
     updateError: 'Failed to check for updates',
-    autoCheckUpdate: 'Auto Check for Updates',
-    autoCheckUpdateHint: 'Automatically check for new versions on startup',
-    autoDownloadUpdate: 'Auto-download updates',
     updateAvailableMessageManual: 'Version {version} is available. Auto-download is off. Start download now? You will be prompted to install when ready.',
     updateReadyTitle: 'Update Ready',
     updateReadyMessage: 'Version {version} is ready. Install and restart now, or choose "Install on quit" to update when you close the app.',
@@ -350,8 +361,6 @@ export default {
     updateLater: 'Remind me later',
     updateDeferredToast: 'Version {version} will install when you quit the app',
     updateSnoozedToast: 'Reminder skipped. Install from Settings → About when ready.',
-    installUpdateOnQuit: 'Install updates when quitting',
-    installUpdateOnQuitHint: 'After download, "Install on quit" applies the update when you close the app',
     goToDownload: 'Go to Download',
     viewChangelog: 'View Changelog',
     updateNotifyAvailableHint: 'Version {version} is available. Download when ready — this won’t interrupt your work.',
