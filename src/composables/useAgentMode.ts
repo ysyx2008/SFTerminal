@@ -939,11 +939,12 @@ export function useAgentMode(
   // 监听模型配置变化，实时同步到运行中的 Agent
   watch(activeProfileId, async (newValue) => {
     const key = getAgentKey()
-    if (key && isAgentRunning.value && newValue) {
+    if (key && newValue) {
+      // 切模型即刻同步后端绑定：不再要求 Agent 正在运行——否则空闲时 IM 联络进来
+      // 会沿用上一次的 profileId（表现为「联络一直粘滞 DeepSeek」）。详见 agent/SPEC.md。
       await window.electronAPI.agent.updateConfig(key, { profileId: newValue })
     }
   })
-
   // 按任务分组的步骤（每个任务包含：用户任务 + 步骤块 + 最终结果）
   const agentTaskGroups = computed((): AgentTaskGroup[] => {
     const allSteps = agentState.value?.steps || []

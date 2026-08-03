@@ -360,6 +360,15 @@ export abstract class Agent {
     // 如果传入了 profileId，更新 Agent 实例的配置
     if (options?.profileId) {
       this.profileId = options.profileId
+    } else if (
+      (this._agentId === '__companion__' || this._agentId === '__wakeup__') &&
+      this.services.configService
+    ) {
+      // 联络/唤醒是多渠道汇流的常驻单例：未显式指定 profile 时跟随全局 active，
+      // 不长期粘滞某一次的 profileId（否则微信联络切了模型仍显示 DeepSeek）。
+      // 详见 agent/SPEC.md「联络跟随全局 active 模型」。
+      const active = this.services.configService.getActiveAiProfile()
+      if (active) this.profileId = active
     }
 
     const run = this.initializeRun(message, context, options)
@@ -455,6 +464,15 @@ export abstract class Agent {
     }
     if (config.profileId !== undefined) {
       this.profileId = config.profileId
+      // 切模型即刻刷新上下文条：保留 token 快照，把 model/limit 换成新选 profile，
+      // 清掉旧 Cache%（避免张冠李戴）。否则联络空闲时切了模型，状态栏仍显示上一次的模型。
+      const bar: AgentContextBar = {
+        ...this._contextBar,
+        profileId: config.profileId,
+        cacheHitRate: undefined,
+      }
+      this.applyProfileFieldsToContextBar(bar, config.profileId)
+      this.setContextBar(bar)
     }
     // 如果正在运行，也更新运行时配置
     if (this.currentRun) {

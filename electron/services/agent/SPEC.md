@@ -283,6 +283,12 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 **不变量**：仅「跨模型路由到 vision（`effectiveId` 与主模型不同）且请求带图」时禁 cache path；同 profile / 主模型本身是 vision / 无图 时维持原 cache 行为。后续轮次把视觉模型的 run 快照继续作为 `_previousRunMessages`（不再切模型即可复用）。
 
+#### 联络（companion）跟随全局 active 模型（2026-08-03 设计）
+
+**目标**：联络是多渠道汇流（IM/桌面/主动消息）的常驻单例，**不应长期粘滞某一次的 `profileId`**；默认跟随全局「当前激活 AI 配置」。在联络 tab 切换模型时，同时更新前端选中与后端 companion 绑定，并即时刷新上下文条；`agentKey = __companion__` 的 IM/桌面 `run`/`runAssistant` 在未显式指定 profile 时按当前全局 active 绑定。
+
+**为什么**：联络 UI 的模型切换只写前端 per-tab `activeProfileId`，仅当 Agent 正在运行时才 `updateConfig` 到后端；空闲时 IM 微信消息会沿用上一次的 `this.profileId`（如 DeepSeek），表现为「切了模型但联络/上下文条仍显示 DeepSeek」。让联络默认跟随全局 active 消除粘滞，与「一条连续关系线」的定位一致。
+
 #### 上下文组成占比（Context Composition）
 
 迷你进度条 hover 展示上下文用量，设计目标：
