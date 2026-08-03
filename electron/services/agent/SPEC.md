@@ -275,6 +275,14 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 - onDone / reportUsage 更新 contextBar；step 上仍写 token 字段供历史落盘
 - 本轮 usage 以 API 为唯一真相源：有 cache 明细才写，否则清空
 
+#### 跨模型带图：不复用主模型 cache 前缀（2026-08-03 设计）
+
+**目标**：主模型（如 DeepSeek 1M）切到关联视觉模型（如豆包 256K）且本轮带图时，**不走** `_previousRunMessages` 整段复用的 cache path，改走冷启动重建（L1 压缩 + 新图）。
+
+**为什么**：联络 cache 热路径会把数百条 DeepSeek 思考前缀原样发给豆包多模态；豆包返回 `The request failed because the image format is not supported by the API`（`UnsupportedImageFormat`），`ai.service` 的降级逻辑误当「模型不支持图」剥掉所有图片重试 → Agent 只能说「画面没传过来」。短上下文（任务/冷启动/豆包直跑）同样路由可正常看图。冷启动让视觉模型只面对短且兼容的上下文，绕开该误伤；任务/纯文本仍保留 prompt cache 收益。
+
+**不变量**：仅「跨模型路由到 vision（`effectiveId` 与主模型不同）且请求带图」时禁 cache path；同 profile / 主模型本身是 vision / 无图 时维持原 cache 行为。后续轮次把视觉模型的 run 快照继续作为 `_previousRunMessages`（不再切模型即可复用）。
+
 #### 上下文组成占比（Context Composition）
 
 迷你进度条 hover 展示上下文用量，设计目标：

@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { AiProfile } from '@shared/types'
-import { resolveBudgetProfileId } from '../vision-routing'
+import { resolveBudgetProfileId, shouldSkipCachePathForVision } from '../vision-routing'
 
 function profile(partial: Partial<AiProfile> & Pick<AiProfile, 'id' | 'name'>): AiProfile {
   return {
@@ -95,5 +95,73 @@ describe('resolveBudgetProfileId', () => {
       autoVisionModel: true,
       hasImages: true,
     })).toBe('ds')
+  })
+})
+
+describe('shouldSkipCachePathForVision', () => {
+  it('跨模型切到视觉模型且带图 + cache path → 跳过 cache', () => {
+    expect(shouldSkipCachePathForVision({
+      mainProfileId: 'ds',
+      activeProfileId: 'ds',
+      profiles: [deepseekWithVision, doubao],
+      autoVisionModel: true,
+      hasImages: true,
+      usingCachePath: true,
+    })).toBe(true)
+  })
+
+  it('无图 → 不切模型，保持 cache', () => {
+    expect(shouldSkipCachePathForVision({
+      mainProfileId: 'ds',
+      activeProfileId: 'ds',
+      profiles: [deepseekWithVision, doubao],
+      autoVisionModel: true,
+      hasImages: false,
+      usingCachePath: true,
+    })).toBe(false)
+  })
+
+  it('主模型本身是 vision（同 profile）→ 保持 cache', () => {
+    expect(shouldSkipCachePathForVision({
+      mainProfileId: 'db',
+      activeProfileId: 'db',
+      profiles: [doubao],
+      autoVisionModel: true,
+      hasImages: true,
+      usingCachePath: true,
+    })).toBe(false)
+  })
+
+  it('未配置 visionProfileId（留在主模型）→ 保持 cache', () => {
+    expect(shouldSkipCachePathForVision({
+      mainProfileId: 'ds',
+      activeProfileId: 'ds',
+      profiles: [deepseek, doubao],
+      autoVisionModel: true,
+      hasImages: true,
+      usingCachePath: true,
+    })).toBe(false)
+  })
+
+  it('非 cache path（usingCachePath=false）→ 不跳过', () => {
+    expect(shouldSkipCachePathForVision({
+      mainProfileId: 'ds',
+      activeProfileId: 'ds',
+      profiles: [deepseekWithVision, doubao],
+      autoVisionModel: true,
+      hasImages: true,
+      usingCachePath: false,
+    })).toBe(false)
+  })
+
+  it('autoVisionModel 关闭 + 有图 + cache path → 保持 cache', () => {
+    expect(shouldSkipCachePathForVision({
+      mainProfileId: 'ds',
+      activeProfileId: 'ds',
+      profiles: [deepseekWithVision, doubao],
+      autoVisionModel: false,
+      hasImages: true,
+      usingCachePath: true,
+    })).toBe(false)
   })
 })

@@ -37,7 +37,7 @@ import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
 import { Conversation, conversationPolicy } from '../conversation'
 import { ContextWindowManager } from './context-window'
-import { resolveBudgetProfileId } from './vision-routing'
+import { resolveBudgetProfileId, shouldSkipCachePathForVision } from './vision-routing'
 import {
   splitMessagesIntoTasks as splitMessagesIntoTasksShared,
   splitStepsIntoTasks as splitStepsIntoTasksShared
@@ -1402,12 +1402,26 @@ export abstract class Agent {
     // ── Cache-optimized path ──
     // 同一 session 内，直接沿用上一个任务的完整 messages 作为前缀，只追加新 user 消息。
     // LLM 的前缀缓存（Anthropic explicit / DeepSeek·OpenAI automatic）可命中整段前缀。
-    // 跳过条件：首次任务、唤醒 run（Watch 等，上下文差异大）、上下文预算不足。
+    // 跳过条件：首次任务、唤醒 run（Watch 等，上下文差异大）、上下文预算不足，
+    // 以及跨模型切到关联视觉模型且带图（避免把主模型长前缀塞给视觉模型多模态请求）。
     if (this._previousRunMessages && this._previousRunMessages.length > 0 && !run.context.wakeup) {
       const contextLength = this._contextWindow.getContextLength()
       const prevTokens = this._lastPromptTokens || this._contextWindow.estimateTotalTokens(this._previousRunMessages)
+      const configService = this.services.configService
+      const skipVisionCache = configService
+        ? shouldSkipCachePathForVision({
+            mainProfileId: this.profileId,
+            activeProfileId: configService.getActiveAiProfile(),
+            profiles: configService.getAiProfiles(),
+            autoVisionModel: !!configService.get('autoVisionModel'),
+            hasImages: this.requestWillContainImages(),
+            usingCachePath: true,
+          })
+        : false
 
-      if (prevTokens < contextLength * 0.7) {
+      if (skipVisionCache) {
+        log.info('[Cache] Skip reuse: cross-model vision routing with images, cold start for compatibility')
+      } else if (prevTokens < contextLength * 0.7) {
         // 复用前序消息，清除旧的缓存断点标记
         run.messages = this._previousRunMessages.map(m => {
           const copy = { ...m }
