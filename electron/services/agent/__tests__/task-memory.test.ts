@@ -9,6 +9,7 @@ import {
   calculateKeywordOverlap,
   detectPendingConfirmation,
   generateSummary,
+  cleanSummarySource,
   extractDigest
 } from '../task-memory'
 import type { AgentStep } from '../types'
@@ -260,9 +261,68 @@ describe('generateSummary', () => {
   })
 
   it('should truncate long requests', () => {
-    const longRequest = 'a'.repeat(50)
+    const longRequest = 'a'.repeat(200)
     const summary = generateSummary(longRequest, 'success')
     expect(summary.length).toBeLessThan(longRequest.length + 20)
+  })
+
+  it('should NOT truncate requests within budget (no beheading at 30 chars)', () => {
+    // 设计意图是「一句话概要」，50 字以内的完整短句应原样保留
+    const request = '帮我把 agent/SPEC.md 里的 wakeup 历史装载策略章节改写得更简洁一点'
+    const summary = generateSummary(request, 'success')
+    expect(summary).toContain(request)
+    expect(summary).not.toContain('…')
+  })
+
+  it('should truncate at sentence boundary when over budget', () => {
+    // 超预算时按句边界降级，保住完整短句
+    const firstSentence = '先检查 nginx 配置。'
+    const longTail = '再把所有日志文件打包上传到远程服务器，'.repeat(10)
+    const summary = generateSummary(firstSentence + longTail, 'success')
+    expect(summary).toContain('先检查 nginx 配置。')
+    expect(summary).not.toContain('上传')
+  })
+
+  it('should fall back to char truncation with ellipsis for one huge sentence', () => {
+    // 单句就超预算 → 兜底按字截 + 省略号（防注入长文本撑爆 L4）
+    const huge = '需要处理的清单：' + '细节'.repeat(100)
+    const summary = generateSummary(huge, 'success')
+    expect(summary).toContain('需要处理的清单：')
+    expect(summary).toContain('…')
+    expect(summary).not.toContain('细节'.repeat(100))
+  })
+
+  it('should strip injected wrappers (uploaded docs, knowledge refs, image notes)', () => {
+    // 注入包裹是系统材料，不应进概要；用户自己的话（首行）应完整保留
+    const userMessage = [
+      '<sf_knowledge_refs>\n召回的知识条目 1\n召回的知识条目 2\n</sf_knowledge_refs>',
+      '<sf_user_message>\n帮我总结这份文档的要点\n</sf_user_message>',
+      '<sf_uploaded_docs>\n很长的文档全文，'.repeat(50) + '\n</sf_uploaded_docs>',
+      '[系统：用户在本消息中附带了 2 张图片（见 images 字段）]'
+    ].join('\n\n')
+    const summary = generateSummary(userMessage, 'success')
+    expect(summary).toContain('帮我总结这份文档的要点')
+    expect(summary).not.toContain('知识条目')
+    expect(summary).not.toContain('文档全文')
+    expect(summary).not.toContain('sf_')
+  })
+
+  it('should keep attachment placeholder when message has no user text of its own', () => {
+    // 用户只发文档/图片没说话：概要应留下轻量占位，而非空串或文档全文
+    const docsOnly = '<sf_uploaded_docs>\n' + '很长的文档全文，'.repeat(50) + '\n</sf_uploaded_docs>'
+    const summary = generateSummary(docsOnly, 'success')
+    expect(summary).toContain('（附文档）')
+    expect(summary).not.toContain('文档全文')
+    const imageOnly = '[系统：用户在本消息中附带了 2 张图片（见 images 字段）]'
+    expect(generateSummary(imageOnly, 'success')).toContain('（附图片）')
+  })
+
+  it('should strip thinking details blocks from result summary', () => {
+    const result = '<details><summary>思考</summary>内部推理过程</details>分析结论是一切正常。'
+    const summary = generateSummary('查询', 'success', result)
+    expect(summary).toContain('分析结论是一切正常。')
+    expect(summary).not.toContain('思考')
+    expect(summary).not.toContain('details')
   })
 
   it('should include result summary', () => {
@@ -286,6 +346,40 @@ describe('generateSummary', () => {
     const summary = generateSummary('检查 nginx', 'success', '服务正常')
     expect(summary).not.toMatch(/^\[/) // 不以 [ 开头
     expect(summary).toContain('✓')
+  })
+})
+
+// ==================== cleanSummarySource ====================
+
+describe('cleanSummarySource', () => {
+  it('strips sf_system_context block', () => {
+    const text = '<sf_system_context>\n当前目录是 /tmp\n</sf_system_context>\n用户的话'
+    expect(cleanSummarySource(text)).toBe('用户的话')
+  })
+
+  it('strips closed details block anywhere', () => {
+    expect(cleanSummarySource('<details><summary>思</summary>推理</details>最终答案')).toBe('最终答案')
+  })
+
+  it('strips unclosed details only at message start (truncated thinking)', () => {
+    // 思考块恒在开头；流式截断的未闭合思考块剥到空是可接受的
+    expect(cleanSummarySource('<details><summary>思</summary>未闭合的推理被截断')).toBe('')
+  })
+
+  it('keeps mid-text unclosed details as user text', () => {
+    // 正文中段的 <details 视为用户文本（不误吞正文），只剥标签本身
+    expect(cleanSummarySource('先说说需求\n<details>这里还没写完')).toBe('先说说需求\n这里还没写完')
+  })
+
+  it('does NOT eat comparison/math text as HTML tag', () => {
+    // `3 < 5 and 7 > 2` 中没有合法标签（< 后必须紧跟字母），文本应保留
+    expect(cleanSummarySource('判断 3 < 5 and 7 > 2 是否成立')).toContain('3 < 5 and 7 > 2')
+  })
+
+  it('is stable on already-cleaned text', () => {
+    const dirty = '<sf_knowledge_refs>\n召回\n</sf_knowledge_refs>\n帮我查日志'
+    const once = cleanSummarySource(dirty)
+    expect(cleanSummarySource(once)).toBe(once)
   })
 })
 

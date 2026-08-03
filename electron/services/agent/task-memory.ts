@@ -262,6 +262,65 @@ function extractDigest(
 }
 
 /**
+ * 概要文本中各侧的字符预算（请求 / 结果）。
+ * 设计意图是「一句话概要（整条约 50–80 token）」——80 字符 ≈ 40–80 token，
+ * 既保留语义，又防注入知识库召回/联络摘录等超长文本撑爆 L4。
+ */
+export const SUMMARY_REQUEST_MAX_CHARS = 80
+export const SUMMARY_RESULT_MAX_CHARS = 80
+
+/**
+ * 从消息文本中剥离注入包裹，只留「用户/AI 自己的话」。
+ * 注入包裹（知识库召回、系统上下文、上传文档全文、图片附注、思考块）是系统材料，
+ * 不应进入任务概要；上传文档/图片只留轻量占位，避免全文进概要。
+ * 图片本体（AiMessage.images，base64）是独立字段，天然不经此路径。
+ *
+ * 边界取舍：
+ * - 未闭合的 `<details>` 只锚定消息开头剥离（思考块恒在开头，截断的思考块剥到空是
+ *   可接受的）；正文中段出现的 `<details` 视为用户文本原样保留，不误吞。
+ * - 通用 HTML 标签剥离要求 `<` 后紧跟字母且标签不跨行——`3 < 5 and 7 > 2` 这类
+ *   比较/数学文本不会被误当中间有标签而剥掉。
+ * 对已无注入包裹的干净文本重复调用，结果不变。
+ */
+export function cleanSummarySource(text: string): string {
+  return text
+    .replace(/<sf_uploaded_docs>[\s\S]*?<\/sf_uploaded_docs>/g, '（附文档）')
+    .replace(/<sf_knowledge_refs>[\s\S]*?<\/sf_knowledge_refs>/g, '')
+    .replace(/<sf_system_context>[\s\S]*?<\/sf_system_context>/g, '')
+    .replace(/<details[\s\S]*?<\/details>/gi, '')
+    .replace(/^\s*<details[^>\n]*>[\s\S]*/i, '')
+    .replace(/\[系统：用户在本消息中附带了[^\]]*\]/g, '（附图片）')
+    .replace(/\[系统：用户附带了[^\]]*\]/g, '（附图片）')
+    .replace(/<\/?sf_[^>\n]*>/g, '')
+    .replace(/<\/[a-zA-Z][^>\n]*>/g, '')
+    .replace(/<[a-zA-Z][^>\n]*>/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+/**
+ * 按自然边界取概要：首行优先 → 句边界降级 → 字符兜底（+省略号）。
+ * 用户多在首行说清意图，后续长段多为粘贴材料；句边界截断保住语义完整。
+ */
+function summarizeSegment(text: string, maxChars: number): string {
+  const cleaned = cleanSummarySource(text)
+  if (!cleaned) return ''
+  const firstLine = cleaned.split('\n').map(l => l.trim()).find(Boolean) ?? cleaned
+  if (firstLine.length <= maxChars) return firstLine
+  const sentences = firstLine.split(/(?<=[。！？；.!?;])/).filter(s => s.trim())
+  let acc = ''
+  for (const s of sentences) {
+    if (acc && acc.length + s.length > maxChars) break
+    acc += s
+  }
+  const picked = acc.trim()
+  if (picked && picked.length <= maxChars) return picked
+  return firstLine.slice(0, maxChars).trimEnd() + '…'
+}
+
+/**
  * 生成 L1 总结
  */
 function generateSummary(
@@ -279,21 +338,11 @@ function generateSummary(
     : status === 'pending_confirmation' ? '⏳'
     : '⊘'
 
-  // 截断用户请求
-  const shortRequest = userRequest.length > 30
-    ? userRequest.substring(0, 30) + '...'
-    : userRequest
+  // 概要用户请求（剥离注入包裹，句边界截断）
+  const shortRequest = summarizeSegment(userRequest, SUMMARY_REQUEST_MAX_CHARS)
 
   // 从最终结果中提取关键信息
-  let resultSummary = ''
-  if (finalResult) {
-    // 尝试提取关键结果（第一句或包含关键词的句子）
-    const lines = finalResult.split('\n').filter(l => l.trim())
-    if (lines.length > 0) {
-      const firstLine = lines[0].trim()
-      resultSummary = firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine
-    }
-  }
+  const resultSummary = finalResult ? summarizeSegment(finalResult, SUMMARY_RESULT_MAX_CHARS) : ''
 
   if (status === 'aborted') {
     return `${timePrefix}${statusIcon} ${shortRequest} → 已中止`

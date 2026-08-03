@@ -19,7 +19,7 @@
  */
 import type { AgentRecord } from '@shared/types'
 import type { HistoryService } from '../history.service'
-import { generateSummary } from '../agent/task-memory'
+import { generateSummary, cleanSummarySource } from '../agent/task-memory'
 import { Conversation } from './conversation'
 
 /** companion 抽取新任务的选项 */
@@ -158,7 +158,8 @@ export class Companion {
 
   /**
    * 为 Watch / 心跳 prompt 格式化最近联络（Markdown `# 联络摘要`，L4 一句话概要）。
-   * - 粒度对齐 TaskMemory L4（`generateSummary`）：请求短摘 + 回复首句
+   * - 粒度对齐 TaskMemory L4（`generateSummary`）：句边界提取的请求概要 + 结果概要
+   * - 注入包裹（sf_uploaded_docs / 知识库召回 / 思考块）经 `cleanSummarySource` 剥离
    * - 不灌图片/多模态附件（只读 step/message 文本）；不灌 `message` 内心独白
    * - 总预算 {@link WATCH_PROMPT_MAX_TOTAL_CHARS}：超限丢最旧整行，不中段硬截断
    */
@@ -179,8 +180,10 @@ export class Companion {
 
     const lines: string[] = []
     for (const ex of recent) {
-      const userReq = Companion.cleanWatchText(ex.user || '(主动消息)')
-      const final = Companion.cleanWatchText(ex.assistant || '')
+      // 注入包裹（sf_uploaded_docs / 知识库召回 / 思考块等）在 generateSummary 内部也会剥离；
+      // 这里先清洗一次用于判空（如整段只有思考块时应跳过，而不是产出空概要行）
+      const userReq = cleanSummarySource(ex.user || '(主动消息)')
+      const final = cleanSummarySource(ex.assistant || '')
       if (!userReq && !final) continue
       const line = generateSummary(
         userReq || '(主动消息)',
@@ -213,21 +216,6 @@ export class Companion {
       start++
     }
     return lines.slice(start)
-  }
-
-  /** 去掉思考 HTML、系统附图表述、包装标签；不做中段硬截断。 */
-  private static cleanWatchText(content: string): string {
-    return content
-      .replace(/<details[\s\S]*?<\/details>/gi, '')
-      .replace(/<details[^>]*>[\s\S]*/gi, '')
-      .replace(/<[^>]+>/g, '')
-      .replace(/\[系统：用户在本消息中附带了[^\]]*\]/g, '')
-      .replace(/\[系统：用户附带了[^\]]*\]/g, '')
-      .replace(/<\/?sf_[^>]+>/g, '')
-      .replace(/\r\n/g, '\n')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
   }
 
   private static exchangesFromSteps(
