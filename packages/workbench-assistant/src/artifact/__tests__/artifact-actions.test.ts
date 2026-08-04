@@ -34,22 +34,33 @@ describe('artifact-actions', () => {
     expect(artifactBasename('C:\\docs\\a.md')).toBe('a.md')
   })
 
-  it('defaultSaveFileName 优先 filePath', () => {
+  it('defaultSaveFileName 标题优先，扩展名取自物理文件', () => {
     expect(
       defaultSaveFileName({
-        title: 'ignored',
-        filePath: '/tmp/data.xlsx',
+        title: '数据榜单',
+        filePath: '/tmp/data_2026-08-04_9a5d7c3e.xlsx',
         renderer: 'spreadsheet'
       })
+    ).toBe('数据榜单.xlsx')
+    // 无标题时退化为物理文件名
+    expect(
+      defaultSaveFileName({ title: '', filePath: '/tmp/data.xlsx', renderer: 'spreadsheet' })
+    ).toBe('data.xlsx')
+    // 标题已带扩展名时不重复追加
+    expect(
+      defaultSaveFileName({ title: 'data.xlsx', filePath: '/tmp/data.xlsx', renderer: 'spreadsheet' })
     ).toBe('data.xlsx')
   })
 
-  it('artifactDisplayLabel 有 filePath 时显示文件名含扩展名', () => {
+  it('artifactDisplayLabel 标题优先，无标题时退化为文件名', () => {
     expect(
       artifactDisplayLabel({
         title: '华云信息介绍',
-        filePath: '/Users/yushen/Desktop/华云信息介绍.md'
+        filePath: '/Users/yushen/Desktop/华云信息介绍_2026-08-04_9a5d7c3e.md'
       })
+    ).toBe('华云信息介绍')
+    expect(
+      artifactDisplayLabel({ title: '', filePath: '/Users/yushen/Desktop/华云信息介绍.md' })
     ).toBe('华云信息介绍.md')
     expect(artifactDisplayLabel({ title: '仅标题', filePath: null })).toBe('仅标题')
   })

@@ -16,23 +16,34 @@ export function artifactBasename(filePath: string): string {
 
 export { saveExtensionForRenderer }
 
+function fileExtensionOf(filePath: string): string {
+  const base = artifactBasename(filePath)
+  const dot = base.lastIndexOf('.')
+  return dot > 0 ? base.slice(dot) : ''
+}
+
+/** 用户可见的文件名（另存为默认名、外发文件名）：标题优先，扩展名取自物理文件 */
 export function defaultSaveFileName(
   artifact: Pick<CanvasArtifact, 'title' | 'filePath' | 'renderer'>
 ): string {
-  if (artifact.filePath) return artifactBasename(artifact.filePath)
-  const ext = saveExtensionForRenderer(artifact.renderer)
-  const base = (artifact.title || 'untitled').trim() || 'untitled'
-  if (ext && !base.toLowerCase().endsWith(ext)) return `${base}${ext}`
+  const ext = artifact.filePath
+    ? fileExtensionOf(artifact.filePath)
+    : saveExtensionForRenderer(artifact.renderer)
+  const base = (
+    artifact.title?.trim() ||
+    (artifact.filePath ? artifactBasename(artifact.filePath) : '') ||
+    'untitled'
+  )
+  if (ext && !base.toLowerCase().endsWith(ext.toLowerCase())) return `${base}${ext}`
   return base
 }
 
-/** tab / 下拉显示名：有磁盘路径时用文件名（含扩展名），否则用 title */
+/** tab / 下拉显示名：标题（语义名）优先，无标题时退化为物理文件名 */
 export function artifactDisplayLabel(
   artifact: Pick<CanvasArtifact, 'title' | 'filePath'>,
   untitled = 'Untitled'
 ): string {
-  if (artifact.filePath) return artifactBasename(artifact.filePath)
-  return artifact.title?.trim() || untitled
+  return artifact.title?.trim() || (artifact.filePath ? artifactBasename(artifact.filePath) : untitled)
 }
 
 /** 覆盖原路径（可编辑且已有 filePath） */
