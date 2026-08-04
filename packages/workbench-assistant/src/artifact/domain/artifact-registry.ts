@@ -66,6 +66,10 @@ export function findArtifactForData(
     const id = `file:${data.filePath}`
     return state.artifacts.find(a => a.id === id) ?? null
   }
+  if (data.url) {
+    const id = `url:${data.url}`
+    return state.artifacts.find(a => a.id === id) ?? null
+  }
   const active = getActiveArtifact(state)
   if (active && data.renderer && active.renderer === data.renderer) return active
   if (!data.renderer) return active
@@ -119,6 +123,7 @@ function upsertArtifact(state: TabArtifactState, data: CanvasData): TabArtifactS
       title: data.title ?? prev.title,
       content: data.content ?? prev.content,
       filePath: data.filePath !== undefined ? data.filePath : prev.filePath,
+      url: data.url !== undefined ? data.url : prev.url,
       ...artifactMetaFromData(data, prev),
       updatedAt: now
     }
@@ -131,6 +136,7 @@ function upsertArtifact(state: TabArtifactState, data: CanvasData): TabArtifactS
         title: data.title ?? '',
         content: data.content ?? '',
         filePath: data.filePath ?? null,
+        url: data.url,
         ...artifactMetaFromData(data),
         createdAt: now,
         updatedAt: now
@@ -142,9 +148,9 @@ function upsertArtifact(state: TabArtifactState, data: CanvasData): TabArtifactS
   return activateArtifact(next, id, data.activate !== false)
 }
 
-function updateArtifactContent(
+function updateArtifactFields(
   state: TabArtifactState,
-  content: string,
+  fields: { content?: string; url?: string },
   target?: CanvasArtifactTarget
 ): TabArtifactState {
   const artifact = target ? findArtifactForData(state, target) : getActiveArtifact(state)
@@ -152,7 +158,12 @@ function updateArtifactContent(
   const idx = state.artifacts.findIndex(a => a.id === artifact.id)
   if (idx < 0) return state
   const artifacts = [...state.artifacts]
-  artifacts[idx] = { ...artifacts[idx], content, updatedAt: Date.now() }
+  artifacts[idx] = {
+    ...artifacts[idx],
+    ...(fields.content !== undefined ? { content: fields.content } : {}),
+    ...(fields.url !== undefined ? { url: fields.url } : {}),
+    updatedAt: Date.now()
+  }
   return { ...state, artifacts }
 }
 
@@ -206,8 +217,8 @@ export function applyCanvasData(state: TabArtifactState, data: CanvasData): TabA
       if (!data.renderer) return state
       return upsertArtifact(state, data)
     case 'update':
-      if (data.content === undefined) return state
-      return updateArtifactContent(state, data.content, data)
+      if (data.content === undefined && data.url === undefined) return state
+      return updateArtifactFields(state, { content: data.content, url: data.url }, data)
     case 'close': {
       const target = findArtifactForData(state, data)
       if (target) return removeArtifact(state, target.id)
@@ -227,7 +238,7 @@ export function updateArtifactContentById(
   artifactId: string,
   content: string
 ): TabArtifactState {
-  return updateArtifactContent(state, content, { artifactId })
+  return updateArtifactFields(state, { content }, { artifactId })
 }
 
 /** 按 steps 顺序重放 canvasData，用于从历史对话恢复 Artifact 面板 */

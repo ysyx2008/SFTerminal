@@ -20,13 +20,14 @@ const DocumentRenderer = defineAsyncComponent(() => import('../components/Docume
 const SpreadsheetRenderer = defineAsyncComponent(() => import('../components/SpreadsheetRenderer.vue'))
 const MarkdownRenderer = defineAsyncComponent(() => import('../components/MarkdownRenderer.vue'))
 const HtmlRenderer = defineAsyncComponent(() => import('../components/HtmlRenderer.vue'))
+const BrowserRenderer = defineAsyncComponent(() => import('../components/BrowserRenderer.vue'))
 
 const UI_REGISTRY: Record<CanvasRendererType, Omit<RendererUiDescriptor, keyof RendererCapabilities>> = {
   document: { component: DocumentRenderer, icon: FileText },
   spreadsheet: { component: SpreadsheetRenderer, icon: Table2 },
   markdown: { component: MarkdownRenderer, icon: FileCode },
   html: { component: HtmlRenderer, icon: FileCode2 },
-  browser: { component: null, icon: Globe },
+  browser: { component: BrowserRenderer, icon: Globe },
   image: { component: null, icon: Image },
   pdf: { component: null, icon: FileType }
 }

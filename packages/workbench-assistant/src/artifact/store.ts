@@ -284,6 +284,8 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     cancelPendingClose(tabId)
     tabStates.value.delete(tabId)
     tabStates.value = new Map(tabStates.value)
+    // 清主进程 webview 预览内容缓存（sailfish-artifact:// 协议数据源）
+    window.electronAPI?.artifactPreview?.clear(tabId)
   }
 
   function closeOthers(tabId: string, keepArtifactId: string) {

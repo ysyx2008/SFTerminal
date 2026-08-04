@@ -31,12 +31,14 @@ export const ASSISTANT_WORKBENCH_AGENT_TOOLS = [
     type: 'function',
     function: {
       name: MANAGE_WORKBENCH_ARTIFACTS,
-      description: `维护右侧产出物面板：把已有本地文件打开进面板预览，或关闭面板里的某个产出物。
+      description: `维护右侧产出物面板：把已有本地文件或某个 URL 打开进面板预览，或关闭面板里的某个产出物。
 
-用途：用户想"重新打开/重新推送某个文件到面板"、把之前生成的结果再次展示、或清理面板时。
+用途：用户想"重新打开/重新推送某个文件到面板"、把之前生成的结果再次展示、实时预览你启动的本地开发服务（dev server），或清理面板时。
 
-action='open'：打开 path 指向的文件到面板。仅支持可直接预览的文本文件（.md / .markdown / .html / .htm）；Word(.docx) 请用 word_open、Excel(.xlsx) 用 excel_open、PPT 用 ppt 工具。
-action='close'：按 path 从面板移除对应产出物。
+action='open'（二选一）：
+- path：打开本地文件到面板。仅支持可直接预览的文本文件（.md / .markdown / .html / .htm）；Word(.docx) 请用 word_open、Excel(.xlsx) 用 excel_open、PPT 用 ppt 工具。
+- url：在面板的内置浏览器中实时预览该地址（仅 http/https）。典型场景：你启动 dev server 后让用户实时看到效果；用户可在地址栏继续导航。
+action='close'：按 path 或 url 从面板移除对应产出物。
 
 path 建议传绝对路径（相对路径按当前工作目录解析）。`,
       parameters: {
@@ -45,18 +47,22 @@ path 建议传绝对路径（相对路径按当前工作目录解析）。`,
           action: {
             type: 'string',
             enum: ['open', 'close'],
-            description: '打开文件到面板 或 从面板关闭'
+            description: '打开到面板 或 从面板关闭'
           },
           path: {
             type: 'string',
-            description: '本地文件绝对路径（相对路径按 cwd 解析）'
+            description: '本地文件绝对路径（相对路径按 cwd 解析）；与 url 二选一'
+          },
+          url: {
+            type: 'string',
+            description: 'http/https 地址，在内置浏览器中实时预览；与 path 二选一'
           },
           title: {
             type: 'string',
-            description: '可选，面板 tab 显示标题，默认用文件名'
+            description: '可选，面板 tab 显示标题，默认用文件名或 URL'
           }
         },
-        required: ['action', 'path']
+        required: ['action']
       }
     },
     _meta: {

@@ -70,7 +70,7 @@ export async function listWorkbenchArtifactsTool(executor: ToolExecutorConfig): 
 }
 
 /**
- * 维护产出物面板：打开本地文件 / 关闭已有产出物。
+ * 维护产出物面板：打开本地文件 / URL 实时预览 / 关闭已有产出物。
  * 通过 canvasData step 推送（与文件写入工具同链路），随历史持久化，重开会话可恢复。
  */
 export async function manageWorkbenchArtifactsTool(
@@ -80,9 +80,32 @@ export async function manageWorkbenchArtifactsTool(
 ): Promise<ToolResult> {
   const action = String(args.action || '').trim()
   const rawPath = typeof args.path === 'string' ? args.path : ''
-  if (!rawPath) return fail('缺少参数 path')
+  const rawUrl = typeof args.url === 'string' ? args.url.trim() : ''
   if (action !== 'open' && action !== 'close') {
     return fail(`不支持的 action：${action}（仅 open / close）`)
+  }
+  if (!rawPath && !rawUrl) return fail('缺少参数 path 或 url')
+
+  // URL 型产出物（browser renderer）：live 预览本地 dev server 等
+  if (rawUrl) {
+    if (!/^https?:\/\//i.test(rawUrl)) {
+      return fail(`url 仅支持 http/https：${rawUrl}`)
+    }
+    const canvasData: CanvasData = {
+      action: action as 'open' | 'close',
+      renderer: 'browser',
+      url: rawUrl,
+      title: typeof args.title === 'string' && args.title.trim() ? args.title.trim() : rawUrl
+    }
+    executor.addStep({
+      type: 'tool_result',
+      content: action === 'open'
+        ? `已在产出物面板打开预览：${rawUrl}`
+        : `已从产出物面板移除预览：${rawUrl}`,
+      toolName: 'manage_workbench_artifacts',
+      canvasData
+    })
+    return ok(action === 'open' ? `已在产出物面板打开 ${rawUrl}` : `已从产出物面板关闭 ${rawUrl}`)
   }
 
   const filePath = resolveLocalPath(rawPath, ptyId)

@@ -1,36 +1,49 @@
 <script setup lang="ts">
 /**
- * Canvas HtmlRenderer — 交互式 HTML 产出物预览
+ * Canvas HtmlRenderer — 交互式 HTML 产出物预览（应用内嵌浏览器）
  *
- * 用 iframe srcdoc 渲染产出物 HTML，开启脚本以支持图表/动画/Tab 等交互。
- * 不用 blob: URL —— 宿主 CSP（default-src 'self'）会拦截 iframe 导航到 blob:。
- * 出于安全考虑不加 allow-same-origin：iframe 以不透明源运行，脚本无法访问父页面。
+ * 用 <webview>（独立渲染进程）渲染产出物 HTML：sanitize/背景注入后的最终 HTML
+ * 推送到主进程缓存，webview 经 sailfish-artifact:// 协议加载。
+ * 不用 iframe srcdoc：跨域无法视觉截图、不支持 live URL；不用 blob:/file:// 见 SPEC。
  * 注：复用 html 渲染器的 PPT 预览也走此组件（content 为内联 HTML，filePath 指向 .pptx）。
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RotateCw, ExternalLink } from 'lucide-vue-next'
+import { RotateCw, ExternalLink, Camera } from 'lucide-vue-next'
+import type { DidFailLoadEvent, WebviewTag, WillNavigateEvent } from 'electron'
+import { buildArtifactPreviewUrl } from '@shared/types'
 import { useAssistantArtifactStore } from '../store'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 import { normalizeHtmlPreviewContent } from '../domain/html-preview'
+import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../ui/useHoverTip'
+import HoverTipOverlay from '../ui/HoverTipOverlay.vue'
 
 const props = defineProps<{
   tabId: string
   artifactId: string
 }>()
 
+/** 截图反馈：emit 给 ArtifactPanel（截图落盘 + 注入 Composer 图片与草稿） */
+const emit = defineEmits<{
+  captureFeedback: [payload: { webContentsId: number; suggestedName: string }]
+}>()
+
 const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()
 const { error: toastError } = useToast()
+const { hoverTip, showTip, hideTip } = useHoverTip({
+  placement: 'bottom',
+  delayMs: BUTTON_HOVER_TIP_DELAY_MS
+})
 
 const artifact = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId))
 const content = computed(() => artifact.value?.content ?? '')
 const filePath = computed(() => artifact.value?.filePath ?? null)
 const canOpenExternal = computed(() => Boolean(filePath.value))
-/** PPT 预览：iframe 内容是可滚动的幻灯片卡片列表，需要视觉留白；普通 HTML 产出物填满即可 */
+/** PPT 预览：预览内容是可滚动的幻灯片卡片列表，需要视觉留白；普通 HTML 产出物填满即可 */
 const isPptPreview = computed(() => filePath.value?.toLowerCase().endsWith('.pptx') ?? false)
 
-/** 历史 PPT 预览若仍引用 jsDelivr echarts，sandbox CSP 会拦截；主进程内联修复 */
+/** 历史 PPT 预览若仍引用 jsDelivr echarts，外链可能失效；主进程内联修复 */
 function previewNeedsSanitize(html: string): boolean {
   if (/src\s*=\s*["'](?:https?:)?\/\/[^"']*echarts/i.test(html)) return true
   if (/echarts\.(init|registerMap)/i.test(html)) {
@@ -106,10 +119,10 @@ watch(
 )
 
 /**
- * PPT 预览时，把宿主页面的 --bg-primary 注入 iframe <head>，
- * 让 iframe body 背景与外层容器完全一致，消除色差。
+ * PPT 预览时，把宿主页面的 --bg-primary 注入预览 <head>，
+ * 让预览 body 背景与外层容器完全一致，消除色差。
  */
-const iframeContent = computed(() => {
+const previewHtml = computed(() => {
   const base = sanitizedBase.value
   if (!isPptPreview.value || !base) return base
   const bgPrimary = getComputedStyle(document.documentElement)
@@ -120,19 +133,70 @@ const iframeContent = computed(() => {
     : override + base
 })
 
-const iframeRef = ref<HTMLIFrameElement | null>(null)
-/** 改变 key 强制重建 iframe → 重新加载页面（重跑动画/脚本） */
-const reloadKey = ref(0)
+const previewUrl = computed(() => buildArtifactPreviewUrl(props.tabId, props.artifactId))
 
-watch(iframeContent, () => {
-  reloadKey.value += 1
-  nextTick(() => {
-    iframeRef.value?.contentWindow?.scrollTo(0, 0)
+const webviewRef = ref<WebviewTag | null>(null)
+/** webview 是否已完成首次 src 设置（之后内容更新走 reload） */
+const webviewAttached = ref(false)
+const loadFailed = ref(false)
+
+/** 推送内容到主进程缓存，确认就绪后加载/刷新 webview（await 消除与协议请求的竞态） */
+async function syncAndRender(html: string) {
+  const api = window.electronAPI?.artifactPreview
+  if (!api || !html) return
+  await api.sync({
+    tabId: props.tabId,
+    artifactId: props.artifactId,
+    content: html
   })
-})
+  const wv = webviewRef.value
+  if (!wv) return
+  if (!webviewAttached.value) {
+    webviewAttached.value = true
+    wv.setAttribute('src', previewUrl.value)
+  } else {
+    wv.reload()
+  }
+}
+
+watch(previewHtml, (html) => {
+  loadFailed.value = false
+  if (!html) return
+  // webview 元素由 v-if="previewHtml" 控制，此处等下一拍确保元素已挂载
+  void nextTick(() => syncAndRender(html))
+}, { immediate: true })
+
+/**
+ * 内容型预览：外链导航转系统浏览器，预览停留在产出物本身。
+ * （window.open / target=_blank 由主进程 web-contents-created 统一拦截，见 artifact-preview.service）
+ * 模板 @will-navigate 绑定在元素上只注册一次，无监听器累积问题。
+ */
+function onWillNavigate(e: WillNavigateEvent) {
+  let same: boolean
+  try {
+    const target = new URL(e.url)
+    const self = new URL(previewUrl.value)
+    same = target.protocol === self.protocol && target.host === self.host && target.pathname === self.pathname
+  } catch {
+    same = false
+  }
+  if (!same) {
+    e.preventDefault()
+    void window.electronAPI?.localFs?.openExternal?.(e.url)
+  }
+}
+
+function onWebviewFailLoad(e: DidFailLoadEvent) {
+  // -3 = ERR_ABORTED（连续 reload 打断上一次加载），非真实失败
+  if (e.errorCode === -3) return
+  loadFailed.value = true
+}
 
 function refresh() {
-  reloadKey.value += 1
+  const wv = webviewRef.value
+  if (!wv || !webviewAttached.value) return
+  loadFailed.value = false
+  wv.reload()
 }
 
 async function openExternal() {
@@ -149,6 +213,25 @@ async function openExternal() {
     toastError(err instanceof Error ? err.message : t('canvas.openFailed'))
   }
 }
+
+function captureFeedback() {
+  const wv = webviewRef.value
+  if (!wv) return
+  try {
+    const webContentsId = wv.getWebContentsId()
+    emit('captureFeedback', {
+      webContentsId,
+      suggestedName: artifact.value?.title || 'artifact'
+    })
+  } catch {
+    /* webview 尚未 attach（无内容）时 getWebContentsId 抛错，按钮此时不可见 */
+  }
+}
+
+onBeforeUnmount(() => {
+  // 切换产出物/关闭面板时清掉自己的缓存条目（tab 关闭时由 store.cleanup 整 tab 清理）
+  window.electronAPI?.artifactPreview?.clear(props.tabId, props.artifactId)
+})
 </script>
 
 <template>
@@ -157,7 +240,8 @@ async function openExternal() {
       <button
         type="button"
         class="html-tool-btn"
-        :title="t('canvas.htmlRefresh')"
+        @mouseenter="showTip($event, t('canvas.htmlRefresh'))"
+        @mouseleave="hideTip"
         @click="refresh"
       >
         <RotateCw :size="14" />
@@ -166,26 +250,38 @@ async function openExternal() {
         v-if="canOpenExternal && !isPptPreview"
         type="button"
         class="html-tool-btn"
-        :title="t('canvas.htmlOpenExternal')"
+        @mouseenter="showTip($event, t('canvas.htmlOpenExternal'))"
+        @mouseleave="hideTip"
         @click="openExternal"
       >
         <ExternalLink :size="14" />
       </button>
+      <button
+        v-if="previewHtml"
+        type="button"
+        class="html-tool-btn html-toolbar-feedback"
+        @mouseenter="showTip($event, t('canvas.htmlCaptureFeedback'), 'left')"
+        @mouseleave="hideTip"
+        @click="captureFeedback"
+      >
+        <Camera :size="14" />
+      </button>
     </div>
     <div class="html-body" :class="{ 'html-body--ppt': isPptPreview }">
-      <iframe
-        v-if="iframeContent"
-        :key="reloadKey"
-        ref="iframeRef"
+      <webview
+        v-if="previewHtml"
+        ref="webviewRef"
         class="html-frame"
-        :srcdoc="iframeContent"
         :title="t('canvas.htmlPreview')"
-        sandbox="allow-scripts allow-popups allow-forms allow-modals"
-        referrerpolicy="no-referrer"
+        allowpopups
+        @will-navigate="onWillNavigate"
+        @did-fail-load="onWebviewFailLoad"
       />
       <div v-else-if="loadingFromDisk" class="html-empty">{{ t('canvas.htmlPreviewLoading') }}</div>
       <div v-else class="html-empty">{{ t('canvas.htmlPreviewEmpty') }}</div>
+      <div v-if="loadFailed" class="html-empty html-empty--overlay">{{ t('canvas.htmlPreviewFailed') }}</div>
     </div>
+    <HoverTipOverlay :tip="hoverTip" />
   </div>
 </template>
 
@@ -234,6 +330,11 @@ async function openExternal() {
   color: var(--text-primary, #ddd);
 }
 
+/* 反馈动作与预览操作分区：推到工具栏右侧 */
+.html-toolbar-feedback {
+  margin-left: auto;
+}
+
 .html-body {
   flex: 1;
   min-height: 0;
@@ -241,9 +342,10 @@ async function openExternal() {
   flex-direction: column;
   background: var(--bg-primary, #1a1a1e);
   overflow: hidden;
+  position: relative;
 }
 
-/* PPT 预览：iframe 周围加留白，让幻灯片卡片不贴边；滚动依然在 iframe 内部进行 */
+/* PPT 预览：预览周围加留白，让幻灯片卡片不贴边；滚动依然在 webview 内部进行 */
 .html-body--ppt {
   padding: 20px;
 }
@@ -266,5 +368,11 @@ async function openExternal() {
   justify-content: center;
   color: var(--text-secondary, #888);
   font-size: 13px;
+}
+
+.html-empty--overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-primary, #1a1a1e);
 }
 </style>
