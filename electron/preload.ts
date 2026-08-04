@@ -2851,7 +2851,33 @@ const electronAPI = {
 
     // 用系统默认程序打开
     openFile: (filePath: string) =>
-      ipcRenderer.invoke('localFs:openFile', filePath)
+      ipcRenderer.invoke('localFs:openFile', filePath),
+
+    // 在系统浏览器打开外部 URL（仅 http/https）
+    openExternal: (url: string) =>
+      ipcRenderer.invoke('localFs:openExternal', url) as Promise<{
+        success: boolean
+        error?: string
+      }>
+  },
+
+  // 产出物 webview 预览（sailfish-artifact:// 协议内容供给 + 截图反馈）
+  artifactPreview: {
+    // 推送预览内容到主进程缓存（sanitize 后的最终 HTML）；await 返回后缓存即就绪
+    sync: (payload: { tabId: string; artifactId: string; content: string }) =>
+      ipcRenderer.invoke('artifact-preview:sync', payload) as Promise<{ success: boolean }>,
+
+    // 清理预览缓存（不传 artifactId 时清该 tab 全部）
+    clear: (tabId: string, artifactId?: string) =>
+      ipcRenderer.send('artifact-preview:clear', { tabId, artifactId }),
+
+    // 截取 webview 渲染结果，PNG 落盘 scratch/feedback/ 并返回路径 + dataUrl
+    capture: (payload: { webContentsId: number; suggestedName?: string }) =>
+      ipcRenderer.invoke('artifact-preview:capture', payload) as Promise<{
+        success: boolean
+        data?: { filePath: string; dataUrl: string; width: number; height: number }
+        error?: string
+      }>
   },
 
   // 菜单命令监听

@@ -1718,7 +1718,18 @@ interface Window {
       }>>
       showInExplorer: (path: string) => Promise<void>
       openFile: (path: string) => Promise<void>
+      openExternal: (url: string) => Promise<{ success: boolean; error?: string }>
       exists: (filePath: string) => Promise<{ success: boolean; data?: boolean; error?: string }>
+    }
+    // 产出物 webview 预览（sailfish-artifact:// 协议内容供给 + 截图反馈）
+    artifactPreview: {
+      sync: (payload: { tabId: string; artifactId: string; content: string }) => Promise<{ success: boolean }>
+      clear: (tabId: string, artifactId?: string) => void
+      capture: (payload: { webContentsId: number; suggestedName?: string }) => Promise<{
+        success: boolean
+        data?: { filePath: string; dataUrl: string; width: number; height: number }
+        error?: string
+      }>
     }
     // 文件管理器窗口操作
     fileManager: {

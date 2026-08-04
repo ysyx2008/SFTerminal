@@ -22,6 +22,17 @@ export interface CanvasOpenPayload {
   title: string
 }
 
+/** 产出物 webview 预览协议 scheme（主进程 artifact-preview.service 注册） */
+export const ARTIFACT_PREVIEW_SCHEME = 'sailfish-artifact'
+
+/**
+ * 构造内容型产出物的主文档预览 URL。
+ * tabId/artifactId 各为一段 encodeURIComponent（artifactId 可能含斜杠如 file:/...）。
+ */
+export function buildArtifactPreviewUrl(tabId: string, artifactId: string): string {
+  return `${ARTIFACT_PREVIEW_SCHEME}://preview/${encodeURIComponent(tabId)}/${encodeURIComponent(artifactId)}/`
+}
+
 /** Canvas 内容更新事件 */
 export interface CanvasUpdatePayload {
   tabId: string
@@ -64,13 +75,15 @@ export interface CanvasArtifact {
   editable: boolean
   /** 产生该产出物的 AgentStep.id（仅 UI 溯源，不复制 step 内容） */
   sourceStepId?: string
+  /** URL 型产出物的目标地址（browser renderer；与 content/filePath 互斥） */
+  url?: string
   createdAt: number
   updatedAt: number
   pinned?: boolean
 }
 
 /** 定位已有 artifact 的键（open 之外的 action 使用） */
-export type CanvasArtifactTarget = Partial<Pick<CanvasData, 'artifactId' | 'filePath' | 'renderer'>>
+export type CanvasArtifactTarget = Partial<Pick<CanvasData, 'artifactId' | 'filePath' | 'renderer' | 'url'>>
 
 /**
  * AgentStep 中附带的 Canvas 数据
@@ -90,14 +103,17 @@ export interface CanvasData {
   origin?: CanvasArtifactOrigin
   /** 产生该产出物的 AgentStep.id（open 时由宿主注入） */
   sourceStepId?: string
+  /** URL 型产出物目标地址（browser renderer；显式声明，不做内容嗅探） */
+  url?: string
 }
 
 /** 由 CanvasData 推导稳定 Artifact ID（open / upsert 用） */
 export function resolveCanvasArtifactId(
-  data: Pick<CanvasData, 'artifactId' | 'filePath' | 'renderer' | 'title'>
+  data: Pick<CanvasData, 'artifactId' | 'filePath' | 'renderer' | 'title' | 'url'>
 ): string {
   if (data.artifactId) return data.artifactId
   if (data.filePath) return `file:${data.filePath}`
+  if (data.url) return `url:${data.url}`
   const title = (data.title || 'untitled').trim()
   return `ephemeral:${data.renderer}:${title}`
 }

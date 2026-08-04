@@ -238,7 +238,14 @@ export default defineConfig({
   },
   plugins: [
     optionalOemConfig(),
-    vue(),
+    vue({
+      template: {
+        compilerOptions: {
+          // Electron <webview>：产出物面板 HTML/URL 预览用，按原生自定义元素渲染
+          isCustomElement: (tag) => tag === 'webview'
+        }
+      }
+    }),
     copyChartMaps(),
     electron([
       {

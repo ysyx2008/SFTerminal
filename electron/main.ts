@@ -55,6 +55,10 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'sft-local', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }
 ])
 
+// 注册 sailfish-artifact:// 为特权 scheme，供产出物面板 <webview> 预览加载内容
+// 必须在 app.whenReady() 之前调用
+registerArtifactPreviewScheme()
+
 // 注册自定义协议，让系统将 sailfish:// 链接路由到本应用
 // 开发模式需要传入 Electron 可执行文件路径
 if (!app.isPackaged) {
@@ -365,6 +369,7 @@ import { HostProfileService, HostProfile } from './services/host-profile.service
 import type { UploadedFile, ParseOptions, ParsedDocument } from './services/document-parser.service'
 import type { SftpConfig } from './services/sftp.service'
 import { LocalFsService } from './services/local-fs.service'
+import { registerArtifactPreviewScheme, initArtifactPreviewService } from './services/artifact-preview.service'
 import { McpService } from './services/mcp.service'
 import { getUserSkillService, UserSkill } from './services/user-skill.service'
 import { getBuiltinSkillsForSettings } from './services/agent/skills/registry'
@@ -1173,6 +1178,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // 产出物面板 HTML 预览使用 <webview>（独立渲染进程，支持截图反馈与 live URL）
+      webviewTag: true,
       // Windows：托盘恢复白屏修复需要关闭节流（81296d0b）。
       // macOS/Linux：保持默认 true，保留遮挡/后台帧率节流，避免渲染进程空闲空转。
       ...(process.platform === 'win32' ? { backgroundThrottling: false } : {})
@@ -1515,6 +1522,9 @@ app.whenReady().then(async () => {
       return new Response('Bad request', { status: 400 })
     }
   })
+
+  // sailfish-artifact:// 协议处理器 + 预览内容缓存/截图 IPC（产出物面板 webview 预览）
+  initArtifactPreviewService()
 
   // 设置媒体设备权限处理器（用于语音识别等功能）
   // Windows 上必须显式授权麦克风访问，否则会报 "Requested device not found"
@@ -5209,6 +5219,19 @@ ipcMain.handle('localFs:previewArtifact', async (_event, filePath: string, rende
     return { success: true, data }
   } catch (error) {
     return { success: false, error: errMsg(error, 'error.readFileFailed') }
+  }
+})
+
+// 在系统浏览器打开外部 URL（仅 http/https，防协议滥用）
+ipcMain.handle('localFs:openExternal', async (_event, url: string) => {
+  try {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+      return { success: false, error: 'Only http/https URLs are allowed' }
+    }
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'openExternal failed' }
   }
 })
 
