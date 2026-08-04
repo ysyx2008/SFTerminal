@@ -193,4 +193,48 @@ describe('artifact-registry', () => {
     expect(art?.renderer).toBe('document')
     expect(art?.contentFromFile).toBeUndefined()
   })
+
+  it('url 型产出物：open 生成 url: 前缀 id，同 url upsert', () => {
+    let state = applyCanvasData(createTabArtifactState(), {
+      action: 'open',
+      renderer: 'browser',
+      title: 'dev server',
+      url: 'http://localhost:3000'
+    })
+    state = applyCanvasData(state, {
+      action: 'open',
+      renderer: 'browser',
+      title: ' renamed ',
+      url: 'http://localhost:3000'
+    })
+    expect(getArtifacts(state)).toHaveLength(1)
+    const art = getArtifactById(state, 'url:http://localhost:3000')
+    expect(art?.title).toBe(' renamed ')
+    expect(art?.url).toBe('http://localhost:3000')
+    expect(art?.filePath).toBeNull()
+  })
+
+  it('url 型产出物：update 可替换 url，close 按 url 匹配移除', () => {
+    let state = applyCanvasData(createTabArtifactState(), {
+      action: 'open',
+      renderer: 'browser',
+      title: 'dev server',
+      url: 'http://localhost:3000'
+    })
+    state = applyCanvasData(state, {
+      action: 'update',
+      renderer: 'browser',
+      url: 'http://localhost:3000'
+    })
+    // update 仅替换字段，url 不变时 id 不变
+    expect(getArtifactById(state, 'url:http://localhost:3000')).not.toBeNull()
+
+    state = applyCanvasData(state, {
+      action: 'close',
+      renderer: 'browser',
+      url: 'http://localhost:3000'
+    })
+    expect(getArtifacts(state)).toHaveLength(0)
+    expect(isPanelVisible(state)).toBe(false)
+  })
 })

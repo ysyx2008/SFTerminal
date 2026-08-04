@@ -15,12 +15,13 @@ describe('ASSISTANT_WORKBENCH_AGENT_TOOLS', () => {
     expect(tool._meta?.parallelizable).toBe(true)
   })
 
-  it('定义 manage_workbench_artifacts（open/close，必填 action+path）', () => {
+  it('定义 manage_workbench_artifacts（open/close，path 与 url 二选一）', () => {
     const tool = ASSISTANT_WORKBENCH_AGENT_TOOLS.find(t => t.function.name === MANAGE_WORKBENCH_ARTIFACTS)!
     expect(tool).toBeDefined()
     const params = tool.function.parameters as { properties: Record<string, unknown>; required: string[] }
     expect(params.properties.action).toBeDefined()
     expect(params.properties.path).toBeDefined()
-    expect(params.required).toEqual(['action', 'path'])
+    expect(params.properties.url).toBeDefined()
+    expect(params.required).toEqual(['action'])
   })
 })

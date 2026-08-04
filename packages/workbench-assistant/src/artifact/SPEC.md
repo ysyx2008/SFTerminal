@@ -8,6 +8,8 @@
 
 **定位**：本次助手会话产出的、可 revisit 的文件类成果索引 + 内嵌预览/轻编辑。不是文件管理器，不替代 Finder。
 
+**HTML 产出物的浏览器形态**（2026-08-04 确认）：HTML 类产出物的预览不是静态图片式的「看结果」，而是应用内浏览器——可刷新、可访问助手启动的本地开发服务（live URL）、可把渲染结果截图连同用户意见回传给助手修改，形成「看效果 → 提意见 → 助手改 → 再看」的闭环。明确不做：页面内圈选/区域级评论（一期为整页截图 + 文字意见）；面板预览与用户真实浏览器无关，不接入 browser-bridge；一个产出物一个预览实例，不做多标签浏览器。
+
 **命名说明**：Agent 协议层仍称 `CanvasData`（`shared/types/canvas.ts`）；前端 UI 域统一称 **artifact**，模块位于 `packages/workbench-assistant/src/artifact/`（`@sailfish/workbench-assistant/artifact`）。
 
 ## 目录
@@ -63,6 +65,7 @@ packages/workbench-assistant/src/artifact/
 - `origin`: `'agent' | 'user'` — upsert 时填充，默认 agent
 - `editable`: 派生自 renderer 注册表，消除 UI 层 `renderer === 'markdown'` 硬判断
 - `sourceStepId`: 产生该产出物的 `AgentStep.id`，仅 UI 溯源，不复制 step 内容
+- `url`（可选）: URL 型产出物的目标地址（`browser` renderer）；与 `content`/`filePath` 互斥
 - `hadArtifacts`（Tab 级）：本会话是否曾出现过产出物（内部状态）；面板可见性仅取决于 `artifacts.length > 0`
 
 ## 渲染器注册表
@@ -74,7 +77,9 @@ packages/workbench-assistant/src/artifact/
 
 `ArtifactPanel` 通过 `<component :is="getRendererComponent(type)">` 动态渲染。
 
-**HTML 渲染器**：`html` 类型用 `HtmlRenderer.vue`，以 iframe `srcdoc` 渲染 `content`（**不用** `blob:` URL——宿主 `index.html` CSP 的 `default-src 'self'` 会拦截 iframe 导航到 `blob:`），`sandbox="allow-scripts allow-popups allow-forms allow-modals"`（不开 `allow-same-origin`，脚本以不透明源运行、无法访问父页面）。预览前会去掉 sandbox 下常失效的外部 CSS `@import`；`content` 为空时组件与 store 均会按 `filePath` 读盘回填。Agent 写入/编辑 `.html`/`.htm` 时由 `tools/file.ts` 自动产出（同 `.md`）；PPT 技能也复用该渲染器（`content` 为内联 HTML，`filePath` 指向 `.pptx`）。不用 `file://` 直载：dev 模式 `webSecurity` 会拦截，且无法覆盖 PPT 场景。
+**HTML 渲染器**：`html` 类型用 `HtmlRenderer.vue`，以应用内嵌浏览器（`<webview>` 独立渲染进程）渲染，而非 iframe——iframe 的 `srcdoc`/sandbox 形态无法支持视觉截图（跨域画不出）与 live URL 导航。内容经自定义协议 `sailfish-artifact://` 供给（主进程按产出物实时供内容，内容更新即刷新；相对路径资源受限映射到产出物文件所在目录，防目录穿越）。**不用** `blob:`/`file://` 直载的理由同前（宿主 CSP、dev 模式 `webSecurity` 拦截）。预览前会去掉失效的外部 CSS `@import`；`content` 为空时组件与 store 均会按 `filePath` 读盘回填。Agent 写入/编辑 `.html`/`.htm` 时由 `tools/file.ts` 自动产出（同 `.md`）；PPT 技能也复用该渲染器（`content` 为内联 HTML，`filePath` 指向 `.pptx`）。
+
+**URL 型产出物**：`browser` 渲染器承载「指向某个 URL 的实时预览」（典型：助手启动的本地 dev server），由 `CanvasData.url` 显式声明（不做内容嗅探）。工具栏带可编辑地址栏；无 `filePath`，保存/发送等文件类入口对其隐藏。
 
 ## 头部与交互
 
@@ -89,13 +94,14 @@ packages/workbench-assistant/src/artifact/
 
 ## CanvasData.action
 
-- `open`：upsert artifact（宿主注入 `sourceStepId`）
-- `update`：替换 content
+- `open`：upsert artifact（宿主注入 `sourceStepId`）；URL 型产出物经 `url` 字段声明
+- `update`：替换 content（URL 型可替换 url）
 - `close`：移除 artifact
 
 ## Artifact ID
 
 - 有 `filePath` → `file:${absolutePath}`
+- 有 `url` → `url:${url}`
 - 否则 → `ephemeral:${renderer}:${title}`
 
 ## 兼容导出
