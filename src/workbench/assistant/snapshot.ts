@@ -8,7 +8,8 @@ import {
 
 export function buildAssistantArtifactSnapshot(
   tabId: string,
-  state: TabArtifactState
+  state: TabArtifactState,
+  dirtyOf: (artifactId: string) => boolean = () => false
 ): WorkbenchArtifactSnapshot {
   const artifacts = getArtifacts(state)
   const active = getActiveArtifact(state)
@@ -22,7 +23,8 @@ export function buildAssistantArtifactSnapshot(
       title: a.title,
       renderer: a.renderer,
       filePath: a.filePath ?? null,
-      updatedAt: a.updatedAt
+      updatedAt: a.updatedAt,
+      dirty: dirtyOf(a.id)
     }))
   }
 }

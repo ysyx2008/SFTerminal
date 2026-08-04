@@ -123,6 +123,30 @@ function previewCanvasDataForPath(filePath: string): CanvasData | undefined {
   }
 }
 
+/**
+ * 人机双写：写入 .md/.html 成功后，若该文件在产出物面板有用户未保存修改，
+ * 在工具输出追加提醒（不阻断）。非助手场景（CLI / 终端 tab）桥接查询快速失败，静默跳过。
+ */
+async function appendPanelDirtyNotice(
+  output: string,
+  filePath: string,
+  previewCanvas: CanvasData | undefined,
+  executor: ToolExecutorConfig
+): Promise<string> {
+  if (!previewCanvas || !executor.agentId) return output
+  try {
+    const { workbenchBridge } = await import('../../workbench-bridge.service')
+    const result = await workbenchBridge.exec({ type: 'list_artifacts' }, executor.agentId)
+    if (!result.ok) return output
+    const snapshot = result.data as { artifacts?: Array<{ filePath: string | null; dirty?: boolean }> } | undefined
+    const hit = snapshot?.artifacts?.find(a => a.filePath === filePath)
+    if (!hit?.dirty) return output
+    return `${output}\n\n${t('file.panel_dirty_notice')}`
+  } catch {
+    return output
+  }
+}
+
 function expandTilde(filePath: string): string {
   if (filePath === '~') return os.homedir()
   if (filePath.startsWith('~/') || filePath.startsWith('~\\')) {
@@ -1708,7 +1732,7 @@ export async function editFile(
     const outputForAi = isMultiReplace
       ? t('file.edit_success_all', { path: filePath, count: match.count })
       : t('file.edit_success', { path: filePath })
-    return { success: true, output: outputForAi }
+    return { success: true, output: await appendPanelDirtyNotice(outputForAi, filePath, previewCanvas, executor) }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : t('file.edit_failed')
     const errorCategory = categorizeError(errorMsg)
@@ -2020,7 +2044,7 @@ export async function writeTextFile(
         ...(previewCanvas && { canvasData: previewCanvas })
       })
     }
-    return { success: true, output: resultMsg }
+    return { success: true, output: await appendPanelDirtyNotice(resultMsg, filePath, previewCanvas, executor) }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : t('file.write_failed')
     const errorCategory = categorizeError(errorMsg)

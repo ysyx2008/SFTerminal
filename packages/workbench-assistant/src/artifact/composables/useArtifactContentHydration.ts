@@ -38,7 +38,8 @@ export function useArtifactContentHydration(
         readFile: readApi
       })
       if (data) {
-        artifactStore.updateContent(tabId, data, art.id)
+        // 磁盘回填走冲突分流（用户草稿 dirty 时挂起，由渲染器提示）
+        artifactStore.ingestExternalContent(tabId, data, art.id)
       }
     } finally {
       loadingFromDisk.value = false

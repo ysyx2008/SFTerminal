@@ -15,3 +15,8 @@ export type AddComposerQuoteFn = (snippet: ArtifactComposerQuote) => void
 
 /** ArtifactPanel provide → MarkdownRenderer inject */
 export const ADD_COMPOSER_QUOTE_KEY: InjectionKey<AddComposerQuoteFn> = Symbol('addComposerQuote')
+
+export type SetComposerDraftFn = (text: string) => void
+
+/** 选区快捷指令：面板 provide → MarkdownRenderer inject（设置 Composer 草稿文本） */
+export const SET_COMPOSER_DRAFT_KEY: InjectionKey<SetComposerDraftFn> = Symbol('setComposerDraft')

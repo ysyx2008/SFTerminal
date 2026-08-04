@@ -4,12 +4,12 @@
  */
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Eye, MessageSquareQuote, SquarePen } from 'lucide-vue-next'
+import { Eye, MessageSquareQuote, SquarePen, Wand2 } from 'lucide-vue-next'
 import { useAssistantArtifactStore } from '../store'
 import { useArtifactSaveBridge } from '../domain/artifact-save-bridge'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
 import { requireArtifactDesktopHost } from '../host'
-import { ADD_COMPOSER_QUOTE_KEY } from '../composer-quote'
+import { ADD_COMPOSER_QUOTE_KEY, SET_COMPOSER_DRAFT_KEY } from '../composer-quote'
 import { useMarkdown } from '@sailfish/workbench-sdk/markdown'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 
@@ -23,6 +23,7 @@ const artifactStore = useAssistantArtifactStore()
 const saveBridge = useArtifactSaveBridge()
 const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
 const addComposerQuote = inject(ADD_COMPOSER_QUOTE_KEY, undefined)
+const setComposerDraft = inject(SET_COMPOSER_DRAFT_KEY, undefined)
 const desktopHost = requireArtifactDesktopHost()
 const { renderMarkdown, handleCodeBlockClick, handleFilePathContextMenu } = useMarkdown()
 const previewWrapRef = ref<HTMLElement | null>(null)
@@ -55,17 +56,45 @@ const lastPreviewQuoteMeta = ref<{
 const artifact = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId))
 const filePath = computed(() => artifact.value?.filePath ?? null)
 const canSave = computed(() => typeof filePath.value === 'string' && filePath.value.length > 0)
-const isDirty = computed(() => saveBridge?.isDirty(props.artifactId) ?? false)
+
+// ── 人机双写：磁盘基线 / dirty / 外部版本冲突 ──
+/** 磁盘基线（store 协同状态）；未建立时回退为当前内容（视为干净） */
+const diskBaseline = computed(
+  () => artifactStore.getDiskBaseline(props.tabId, props.artifactId) ?? artifact.value?.content ?? ''
+)
+/** dirty = 草稿 ≠ 磁盘基线（而非 ≠ store.content，flush 不再洗掉 dirty） */
+const isDirty = computed(() => draft.value !== diskBaseline.value)
+/** 本组件最近一次展示/接受的内容（accept-vs-defer 判定；store 基线在挂起时会前进，不能替代它） */
+const lastSynced = ref('')
+/** 冲突时被挂起的外部版本（store 响应式，驱动横幅） */
+const deferredContent = computed(() => artifactStore.getDeferredContent(props.tabId, props.artifactId))
 
 const previewHtml = computed(() => renderMarkdown(draft.value))
 
 watch(
   () => artifact.value?.content,
   (c) => {
-    draft.value = c ?? ''
+    const next = c ?? ''
+    if (next === draft.value) return
+    if (draft.value === lastSynced.value) {
+      // 本地未偏离 → 直接接受外部版本
+      draft.value = next
+      lastSynced.value = next
+    } else {
+      // 本地草稿 dirty → 挂起外部版本，保护用户输入（横幅由 deferredContent 驱动）
+      artifactStore.deferExternalContent(props.tabId, props.artifactId, next)
+    }
   },
   { immediate: true }
 )
+
+// 基线变化后：保存成功（基线 = 草稿）时重对齐 lastSynced；并重算 dirty 推送
+watch(diskBaseline, (b) => {
+  if (b === draft.value) lastSynced.value = b
+  if (!artifact.value) return
+  saveBridge?.setDirty(props.artifactId, isDirty.value)
+  artifactStore.setArtifactDirty(props.tabId, props.artifactId, isDirty.value)
+})
 
 function flushDraftToStore() {
   if (!artifact.value) return
@@ -83,8 +112,9 @@ watch(
 
 watch(draft, () => {
   if (!artifact.value) return
-  const dirty = draft.value !== (artifact.value.content ?? '')
-  saveBridge?.setDirty(props.artifactId, dirty)
+  // dirty 推送两处：saveBridge（面板保存按钮）与 store 协同状态（Agent 快照/冲突分流）
+  saveBridge?.setDirty(props.artifactId, isDirty.value)
+  artifactStore.setArtifactDirty(props.tabId, props.artifactId, isDirty.value)
 }, { immediate: true })
 
 function focusEditorIfNeeded() {
@@ -213,6 +243,34 @@ function applyCtxQuoteFromMenu() {
   closeCtxMenu()
 }
 
+/** 选区快捷指令（人机双写）：引用选区 + 指令模板填入输入框，用户可再编辑后发送 */
+const QUOTE_ACTION_KEYS = ['rewrite', 'polish', 'proofread', 'translate', 'expand'] as const
+
+function applyCtxQuoteAction(actionKey: string) {
+  const meta = ctxQuotePayload.value
+  if (!meta?.excerpt.trim()) {
+    closeCtxMenu()
+    return
+  }
+  pushQuoteSnippet(meta)
+  setComposerDraft?.(t(`canvas.quoteDraft.${actionKey}`))
+  closeCtxMenu()
+}
+
+/** 冲突横幅：载入 AI（磁盘）版本，丢弃本地未保存草稿 */
+function acceptExternal() {
+  const c = deferredContent.value
+  if (c === undefined) return
+  draft.value = c
+  lastSynced.value = c
+  artifactStore.acceptDeferredContent(props.tabId, props.artifactId)
+}
+
+/** 冲突横幅：保留我的修改（随后保存即覆盖磁盘上的 AI 版本） */
+function dismissExternal() {
+  artifactStore.dismissDeferredContent(props.tabId, props.artifactId)
+}
+
 function openCtxMenu(e: MouseEvent) {
   const meta = resolveQuoteMeta()
   if (!meta || !meta.excerpt.trim()) return
@@ -259,6 +317,8 @@ async function saveToDisk() {
     const res = await api.writeFile(path, draft.value)
     if (res.success) {
       artifactStore.updateContent(props.tabId, draft.value, props.artifactId)
+      artifactStore.markSavedToDisk(props.tabId, props.artifactId, draft.value)
+      lastSynced.value = draft.value
       saveBridge?.clearDirty(props.artifactId)
       toastSuccess(t('canvas.savedToDisk'))
     } else {
@@ -340,7 +400,7 @@ onMounted(() => {
   saveBridge?.register(props.artifactId, {
     getContent: () => draft.value,
     flushToStore: flushDraftToStore,
-    isDirty: () => draft.value !== (artifact.value?.content ?? '')
+    isDirty: () => isDirty.value
   })
   window.addEventListener('keydown', onWindowKeydown, true)
   window.addEventListener('keydown', onGlobalKeydown)
@@ -404,6 +464,17 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <div v-if="deferredContent !== undefined" class="md-coedit-banner" role="alert">
+      <Wand2 :size="13" aria-hidden="true" class="md-coedit-icon" />
+      <span class="md-coedit-text">{{ t('canvas.coeditExternalHint') }}</span>
+      <button type="button" class="md-coedit-btn primary" @click="acceptExternal">
+        {{ t('canvas.coeditLoadExternal') }}
+      </button>
+      <button type="button" class="md-coedit-btn" @click="dismissExternal">
+        {{ t('canvas.coeditKeepMine') }}
+      </button>
+    </div>
+
     <div class="md-body">
       <div v-if="loadingFromDisk && !draft.trim()" class="md-loading">{{ t('canvas.htmlPreviewLoading') }}</div>
       <textarea
@@ -442,6 +513,21 @@ onUnmounted(() => {
           <MessageSquareQuote :size="14" aria-hidden="true" />
           <span>{{ t('canvas.quoteToComposer') }}</span>
         </button>
+        <template v-if="setComposerDraft">
+          <div class="md-ctx-sep" role="separator" />
+          <div class="md-ctx-group">{{ t('canvas.quoteActionGroup') }}</div>
+          <button
+            v-for="key in QUOTE_ACTION_KEYS"
+            :key="key"
+            type="button"
+            role="menuitem"
+            class="md-ctx-item"
+            @click="applyCtxQuoteAction(key)"
+          >
+            <Wand2 :size="14" aria-hidden="true" />
+            <span>{{ t(`canvas.quoteActions.${key}`) }}</span>
+          </button>
+        </template>
       </div>
     </Teleport>
   </div>
@@ -636,5 +722,66 @@ onUnmounted(() => {
 
 .md-ctx-item:hover {
   background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+}
+
+.md-ctx-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-color, rgba(255, 255, 255, 0.12));
+}
+
+.md-ctx-group {
+  padding: 4px 10px 2px;
+  font-size: 10px;
+  color: var(--text-tertiary, #888);
+  user-select: none;
+}
+
+/* 人机双写：外部版本冲突横幅 */
+.md-coedit-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--accent-primary, #89b4fa) 12%, transparent);
+  font-size: 11px;
+}
+
+.md-coedit-icon {
+  color: var(--accent-primary, #89b4fa);
+  flex-shrink: 0;
+}
+
+.md-coedit-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary, #eee);
+}
+
+.md-coedit-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.md-coedit-btn:hover {
+  color: var(--text-primary, #fff);
+  background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+}
+
+.md-coedit-btn.primary {
+  border-color: var(--accent-primary, #89b4fa);
+  color: var(--accent-primary, #89b4fa);
+}
+
+.md-coedit-btn.primary:hover {
+  background: color-mix(in srgb, var(--accent-primary, #89b4fa) 15%, transparent);
 }
 </style>

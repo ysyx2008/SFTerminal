@@ -47,7 +47,7 @@ export function initWorkbenchHandler(): void {
             const state = artifactStore.getTabState(tabId)
             result = {
               ok: true,
-              data: buildAssistantArtifactSnapshot(tabId, state)
+              data: buildAssistantArtifactSnapshot(tabId, state, (id) => artifactStore.isArtifactDirty(tabId, id))
             }
           }
         }

@@ -40,6 +40,7 @@ import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../ui/useHoverTip'
 import HoverTipOverlay from '../ui/HoverTipOverlay.vue'
 import {
   ADD_COMPOSER_QUOTE_KEY,
+  SET_COMPOSER_DRAFT_KEY,
   type AddComposerQuoteFn
 } from '../composer-quote'
 
@@ -57,6 +58,9 @@ const props = defineProps<{
 
 provide(ADD_COMPOSER_QUOTE_KEY, (snippet) => {
   props.addComposerQuote?.(snippet)
+})
+provide(SET_COMPOSER_DRAFT_KEY, (text) => {
+  props.setComposerDraft?.(text)
 })
 
 const { t } = useI18n()
@@ -505,6 +509,7 @@ async function runSave(artifact: CanvasArtifact) {
     const res = await saveArtifact(artifact, deps)
     if (res.ok) {
       artifactStore.updateContent(props.tabId, getArtifactContent(artifact), artifact.id)
+      artifactStore.markSavedToDisk(props.tabId, artifact.id, getArtifactContent(artifact))
       saveBridge.clearDirty(artifact.id)
       if (artifact.filePath) {
         fileExistsMap.value = new Map(fileExistsMap.value).set(artifact.filePath, true)
@@ -577,6 +582,7 @@ async function runSaveAll() {
       const res = await saveArtifact(a, deps)
       if (res.ok) {
         artifactStore.updateContent(props.tabId, getArtifactContent(a), a.id)
+        artifactStore.markSavedToDisk(props.tabId, a.id, getArtifactContent(a))
         saveBridge.clearDirty(a.id)
         saved += 1
       } else {

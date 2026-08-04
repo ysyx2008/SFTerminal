@@ -39,6 +39,16 @@ import {
   loadArtifactContentFromDisk,
   sleep
 } from './domain/artifact-content-loader'
+import {
+  createCoeditEntry,
+  decideExternalContent,
+  entryAfterAcceptDeferred,
+  entryAfterApply,
+  entryAfterDefer,
+  entryAfterDismissDeferred,
+  entryAfterSave,
+  type CoeditEntry
+} from './domain/coedit-conflict'
 
 export interface ArtifactDiskSyncEvent {
   tabId: string
@@ -46,11 +56,46 @@ export interface ArtifactDiskSyncEvent {
   at: number
 }
 
+function coeditKey(tabId: string, artifactId: string): string {
+  return `${tabId} ${artifactId}`
+}
+
 export const useAssistantArtifactStore = defineStore('assistantArtifact', () => {
   const tabStates = ref<Map<string, TabArtifactState>>(new Map())
   const splitRatio = ref(0.5)
   const closeTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const lastDiskSync = ref<ArtifactDiskSyncEvent | null>(null)
+  /** 人机双写协同状态（session 级，不持久化）：key = coeditKey(tabId, artifactId) */
+  const coeditStates = ref<Map<string, CoeditEntry>>(new Map())
+
+  function getCoeditEntry(tabId: string, artifactId: string): CoeditEntry | undefined {
+    return coeditStates.value.get(coeditKey(tabId, artifactId))
+  }
+
+  function patchCoeditEntry(tabId: string, artifactId: string, next: CoeditEntry) {
+    const key = coeditKey(tabId, artifactId)
+    const map = new Map(coeditStates.value)
+    map.set(key, next)
+    coeditStates.value = map
+  }
+
+  function dropCoeditEntry(tabId: string, artifactId: string) {
+    const key = coeditKey(tabId, artifactId)
+    if (!coeditStates.value.has(key)) return
+    const map = new Map(coeditStates.value)
+    map.delete(key)
+    coeditStates.value = map
+  }
+
+  function dropCoeditEntriesForTab(tabId: string) {
+    const prefix = `${tabId} `
+    if (![...coeditStates.value.keys()].some(k => k.startsWith(prefix))) return
+    const map = new Map(coeditStates.value)
+    for (const k of map.keys()) {
+      if (k.startsWith(prefix)) map.delete(k)
+    }
+    coeditStates.value = map
+  }
 
   function getTabState(tabId: string): TabArtifactState {
     if (!tabStates.value.has(tabId)) {
@@ -106,12 +151,30 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   }
 
   function removeArtifactFromTab(tabId: string, artifactId: string) {
+    dropCoeditEntry(tabId, artifactId)
     mutateTab(tabId, state => removeArtifact(state, artifactId))
   }
 
   function applyCanvasDataForTab(tabId: string, data: CanvasData) {
     cancelPendingClose(tabId)
-    mutateTab(tabId, state => applyCanvasData(state, data))
+    let nextData = data
+    // 人机双写：文件类产出物的内容更新经冲突分流；挂起时保留用户草稿（content 剥离，其余元数据照常 upsert）
+    if (
+      (data.action === 'open' || data.action === 'update') &&
+      typeof data.content === 'string'
+    ) {
+      const id = resolveCanvasArtifactId(data)
+      const target = getArtifactByIdForTab(tabId, id)
+      if (target?.editable && target.filePath) {
+        if (ingestExternalContent(tabId, id, data.content) === 'deferred') {
+          nextData = { ...data, content: undefined }
+        }
+      } else if (!target && data.action === 'open' && data.filePath) {
+        // 新产出物：以首个外部内容建立磁盘基线
+        patchCoeditEntry(tabId, id, entryAfterApply(getCoeditEntry(tabId, id), data.content))
+      }
+    }
+    mutateTab(tabId, state => applyCanvasData(state, nextData))
   }
 
   function open(
@@ -167,8 +230,73 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     mutateTab(tabId, state => updateArtifactContentById(state, artifactId, content))
   }
 
+  // ── 人机双写：协同状态与外部内容分流 ──
+
+  /** 渲染器推送 dirty（草稿 ≠ 磁盘基线） */
+  function setArtifactDirty(tabId: string, artifactId: string, dirty: boolean) {
+    const entry = getCoeditEntry(tabId, artifactId) ?? createCoeditEntry()
+    if (entry.dirty === dirty) return
+    patchCoeditEntry(tabId, artifactId, { ...entry, dirty })
+  }
+
+  function isArtifactDirty(tabId: string, artifactId: string): boolean {
+    return getCoeditEntry(tabId, artifactId)?.dirty ?? false
+  }
+
+  function getDiskBaseline(tabId: string, artifactId: string): string | undefined {
+    return getCoeditEntry(tabId, artifactId)?.baseline
+  }
+
+  function getDeferredContent(tabId: string, artifactId: string): string | undefined {
+    return getCoeditEntry(tabId, artifactId)?.deferred
+  }
+
+  /**
+   * 外部（Agent 推送 / 磁盘回填）内容进入的唯一入口。
+   * 用户草稿已偏离基线时挂起外部版本（返回 'deferred'），否则直接应用（返回 'applied'）。
+   */
+  function ingestExternalContent(tabId: string, artifactId: string, content: string): 'applied' | 'deferred' {
+    const entry = getCoeditEntry(tabId, artifactId)
+    const current = getArtifactByIdForTab(tabId, artifactId)?.content ?? ''
+    if (decideExternalContent(entry, current) === 'deferred') {
+      patchCoeditEntry(tabId, artifactId, entryAfterDefer(entry, content))
+      return 'deferred'
+    }
+    updateContent(tabId, content, artifactId)
+    patchCoeditEntry(tabId, artifactId, entryAfterApply(entry, content))
+    return 'applied'
+  }
+
+  /** 渲染器侧检测到 store 已应用但本地草稿 dirty（推送时序差）时，补挂起 */
+  function deferExternalContent(tabId: string, artifactId: string, content: string) {
+    const entry = getCoeditEntry(tabId, artifactId)
+    if (entry?.deferred === content) return
+    patchCoeditEntry(tabId, artifactId, entryAfterDefer(entry, content))
+  }
+
+  /** 用户选择「载入外部版本」：deferred 成为正文 */
+  function acceptDeferredContent(tabId: string, artifactId: string) {
+    const entry = getCoeditEntry(tabId, artifactId)
+    if (entry?.deferred === undefined) return
+    updateContent(tabId, entry.deferred, artifactId)
+    patchCoeditEntry(tabId, artifactId, entryAfterAcceptDeferred(entry))
+  }
+
+  /** 用户选择「保留我的修改」：关闭提示，dirty 保持 */
+  function dismissDeferredContent(tabId: string, artifactId: string) {
+    const entry = getCoeditEntry(tabId, artifactId)
+    if (entry?.deferred === undefined) return
+    patchCoeditEntry(tabId, artifactId, entryAfterDismissDeferred(entry))
+  }
+
+  /** 用户保存成功：基线 = 草稿，冲突解除 */
+  function markSavedToDisk(tabId: string, artifactId: string, content: string) {
+    patchCoeditEntry(tabId, artifactId, entryAfterSave(getCoeditEntry(tabId, artifactId), content))
+  }
+
   function hydrateFromSteps(tabId: string, steps: ReadonlyArray<AgentStep>) {
     cancelPendingClose(tabId)
+    dropCoeditEntriesForTab(tabId)
     commitTabState(tabId, hydrateArtifactsFromSteps(steps))
     void reloadArtifactContent(tabId)
   }
@@ -179,6 +307,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
    */
   function restoreFromArtifacts(tabId: string, artifacts: CanvasArtifact[]) {
     cancelPendingClose(tabId)
+    dropCoeditEntriesForTab(tabId)
     if (artifacts.length === 0) {
       commitTabState(tabId, createTabArtifactState())
       return
@@ -223,7 +352,8 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
             readFile: readApi
           })
           if (data) {
-            updateContent(tabId, data, a.id)
+            // 读盘回填同样走冲突分流：用户草稿 dirty 时挂起而非覆盖
+            ingestExternalContent(tabId, a.id, data)
             return
           }
         } catch {
@@ -282,6 +412,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
 
   function cleanup(tabId: string) {
     cancelPendingClose(tabId)
+    dropCoeditEntriesForTab(tabId)
     tabStates.value.delete(tabId)
     tabStates.value = new Map(tabStates.value)
     // 清主进程 webview 预览内容缓存（sailfish-artifact:// 协议数据源）
@@ -355,6 +486,15 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     close,
     closeDelayed,
     updateContent,
+    setArtifactDirty,
+    isArtifactDirty,
+    getDiskBaseline,
+    getDeferredContent,
+    ingestExternalContent,
+    deferExternalContent,
+    acceptDeferredContent,
+    dismissDeferredContent,
+    markSavedToDisk,
     applyCanvasData: applyCanvasDataForTab,
     hydrateFromSteps,
     restoreFromArtifacts,

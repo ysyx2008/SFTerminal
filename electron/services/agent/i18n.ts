@@ -306,6 +306,7 @@ const translations = {
     'file.edit': '编辑文件',
     'file.edit_success': '文件编辑成功: {path}',
     'file.edit_success_all': '文件编辑成功（替换 {count} 处）: {path}',
+    'file.panel_dirty_notice': '注意：该文件在产出物面板中有用户未保存的修改。你的改动已写入磁盘，但不会出现在用户当前的编辑视图中（面板会提示版本冲突，由用户选择保留哪边）。请在回复中提醒用户这一情况。',
     // _short 版本不含路径，由调用方拼接「{head} ({range}): {path}」让路径落末尾、保持可点击
     'file.edit_success_short': '文件编辑成功',
     'file.edit_success_all_short': '文件编辑成功（替换 {count} 处）',
@@ -1818,6 +1819,7 @@ Please output the summary in the following format:
     'file.edit': 'Edit file',
     'file.edit_success': 'File edited successfully: {path}',
     'file.edit_success_all': 'File edited successfully ({count} replacements): {path}',
+    'file.panel_dirty_notice': 'Note: this file has unsaved user edits in the artifact panel. Your change was written to disk, but it will not appear in the user\'s current editing view (the panel will show a version-conflict banner and let the user choose which side to keep). Mention this in your reply.',
     // _short variants without path; callers compose "{head} ({range}): {path}" so the path stays at the tail and remains clickable
     'file.edit_success_short': 'File edited successfully',
     'file.edit_success_all_short': 'File edited successfully ({count} replacements)',
