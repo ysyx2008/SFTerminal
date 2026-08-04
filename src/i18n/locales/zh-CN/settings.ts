@@ -11,14 +11,13 @@ export default {
       system: '系统'
     },
     tabs: {
-      ai: 'AI 配置',
+      ai: '模型',
       aiRules: 'AI 规则',
       mcp: 'MCP 服务器',
       plugins: '插件',
       skills: '技能',
       knowledge: '记忆',
-      tts: '语音合成',
-      webSearch: 'Web 搜索',
+      voice: '语音与搜索',
       email: '邮箱账户',
       calendar: '日历账户',
       im: '即时通讯',
@@ -31,6 +30,7 @@ export default {
       data: '数据管理',
       securityPermissions: '安全与权限',
       general: '通用',
+      diagnostics: '诊断',
       about: '关于'
     },
     restartSetup: '重新运行引导',

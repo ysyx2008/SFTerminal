@@ -16,6 +16,8 @@ import DataSettings from './DataSettings.vue'
 import McpSettings from './McpSettings.vue'
 import KnowledgeSettings from './KnowledgeSettings.vue'
 import GeneralSettings from './GeneralSettings.vue'
+import VoiceSettings from './VoiceSettings.vue'
+import DiagnosticsSettings from './DiagnosticsSettings.vue'
 import EmailSettings from './EmailSettings.vue'
 import CalendarSettings from './CalendarSettings.vue'
 import SkillSettings from './SkillSettings.vue'
@@ -44,7 +46,7 @@ const emit = defineEmits<{
 
 const configStore = useConfigStore()
 
-type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'browserBridge' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'securityPermissions' | 'general' | 'about'
+type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'browserBridge' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'securityPermissions' | 'general' | 'voice' | 'diagnostics' | 'about'
 // Steam 版不展示 AI 配置标签，默认选中「主题」；非 Steam 版默认「AI 模型配置」（__STEAM_BUILD__ 由 vite define 注入）
 const isSteamBuild = __STEAM_BUILD__
 const activeTab = ref<SettingsTab>(isSteamBuild ? 'theme' : 'ai')
@@ -353,7 +355,7 @@ let unsubscribeUpdater: (() => void) | null = null
 
 // Steam 版仅保留 general/theme/terminal/data/about，其它 initialTab 均 fallback 到 theme
 const STEAM_TABS: SettingsTab[] = ['general', 'theme', 'terminal', 'shortcuts', 'data', 'about']
-const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'browserBridge', 'bastion', 'theme', 'terminal', 'shortcuts', 'data', 'securityPermissions', 'general', 'about']
+const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'browserBridge', 'bastion', 'theme', 'terminal', 'shortcuts', 'data', 'securityPermissions', 'general', 'voice', 'diagnostics', 'about']
 
 const applyInitialTab = (tabName?: string) => {
   if (tabName && ALL_TABS.includes(tabName as SettingsTab)) {
@@ -433,9 +435,10 @@ const tabGroups = computed(() => {
       tabs: [
         { id: 'ai' as const, label: t('settings.tabs.ai'), icon: '🤖' },
         { id: 'aiRules' as const, label: t('settings.tabs.aiRules'), icon: '📋' },
-        { id: 'mcp' as const, label: t('settings.tabs.mcp'), icon: '🔌' },
+        { id: 'knowledge' as const, label: t('settings.tabs.knowledge'), icon: '💡' },
         { id: 'skills' as const, label: t('settings.tabs.skills'), icon: '✨' },
-        { id: 'knowledge' as const, label: t('settings.tabs.knowledge'), icon: '💡' }
+        { id: 'mcp' as const, label: t('settings.tabs.mcp'), icon: '🔌' },
+        { id: 'voice' as const, label: t('settings.tabs.voice'), icon: '🎙️' }
       ]
     },
     {
@@ -459,6 +462,7 @@ const tabGroups = computed(() => {
         { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' },
         { id: 'data' as const, label: t('settings.tabs.data'), icon: '💾' },
         { id: 'securityPermissions' as const, label: t('settings.tabs.securityPermissions'), icon: '🔐' },
+        { id: 'diagnostics' as const, label: t('settings.tabs.diagnostics'), icon: '🩺' },
         { id: 'about' as const, label: t('settings.tabs.about'), icon: 'ℹ️' }
       ]
     }
@@ -576,8 +580,9 @@ const onQrImageError = (event: Event) => {
           </div>
         </nav>
         <div class="settings-content">
-          <AiSettings v-if="activeTab === 'ai'" :initial-section="props.initialSection" />
+          <AiSettings v-if="activeTab === 'ai'" />
           <AiRulesSettings v-else-if="activeTab === 'aiRules'" />
+          <VoiceSettings v-else-if="activeTab === 'voice'" :initial-section="props.initialSection" />
           <McpSettings v-else-if="activeTab === 'mcp'" />
           <PluginSettings v-else-if="activeTab === 'plugins'" />
           <SkillSettings v-else-if="activeTab === 'skills'" :pending-install-skill-id="props.pendingInstallSkillId" />
@@ -593,6 +598,7 @@ const onQrImageError = (event: Event) => {
           <TerminalSettings v-else-if="activeTab === 'terminal'" />
           <ShortcutSettings v-else-if="activeTab === 'shortcuts'" />
           <DataSettings v-else-if="activeTab === 'data'" />
+          <DiagnosticsSettings v-else-if="activeTab === 'diagnostics'" />
           <GeneralSettings v-else-if="activeTab === 'general'" />
           <div v-else-if="activeTab === 'about'" ref="aboutContentRef" class="about-content">
             <div class="about-logo">

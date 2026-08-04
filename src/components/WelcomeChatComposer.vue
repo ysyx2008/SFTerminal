@@ -111,7 +111,7 @@ watch(speechError, (error) => {
   if (error === SPEECH_PACK_NOT_INSTALLED) {
     toast.show(t('ai.speechPackNotInstalled'), 'warning', 6000, true, {
       action: t('ai.speechPackOpenSettings'),
-      onClick: () => openAppSettings?.('ai', 'speechPack'),
+      onClick: () => openAppSettings?.('voice', 'speechPack'),
     })
     return
   }

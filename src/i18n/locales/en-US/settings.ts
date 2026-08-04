@@ -11,14 +11,13 @@ export default {
       system: 'System'
     },
     tabs: {
-      ai: 'AI Config',
+      ai: 'Models',
       aiRules: 'AI Rules',
       mcp: 'MCP Servers',
       plugins: 'Plugins',
       skills: 'Skills',
       knowledge: 'Memory',
-      tts: 'Text-to-Speech',
-      webSearch: 'Web Search',
+      voice: 'Voice & Search',
       email: 'Email',
       calendar: 'Calendar',
       im: 'Messaging',
@@ -31,6 +30,7 @@ export default {
       data: 'Data',
       securityPermissions: 'Security & Permissions',
       general: 'General',
+      diagnostics: 'Diagnostics',
       about: 'About'
     },
     restartSetup: 'Restart Setup Wizard',
