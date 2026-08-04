@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import LanguageSettings from './LanguageSettings.vue'
+import { useConfigStore } from '../../stores/config'
+import { SUPPORTED_LOCALES, type LocaleType } from '../../i18n'
 
 const { t } = useI18n()
+const configStore = useConfigStore()
+
+const currentLanguage = computed(() => configStore.language)
+const changeLanguage = (lang: LocaleType) => configStore.setLanguage(lang)
 
 // 平台检测：macOS 仅支持检查更新 + 手动下载（无公证签名，不支持自动更新）
 const isMac = computed(() => navigator.platform.toLowerCase().includes('mac'))
@@ -114,7 +119,20 @@ const onInstallOnQuitChange = async () => {
     </div>
 
     <!-- 语言 -->
-    <LanguageSettings />
+    <div class="settings-section">
+      <h3 class="section-title">{{ t('general.language') }}</h3>
+      <div class="segmented-control">
+        <button
+          v-for="locale in SUPPORTED_LOCALES"
+          :key="locale.value"
+          class="segment-option"
+          :class="{ active: currentLanguage === locale.value }"
+          @click="changeLanguage(locale.value)"
+        >
+          {{ locale.label }}
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -213,5 +231,36 @@ const onInstallOnQuitChange = async () => {
 .toggle-switch input:checked + .toggle-slider:before {
   transform: translateX(20px);
   background-color: white;
+}
+
+/* 分段选择器（语言） */
+.segmented-control {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.segment-option {
+  flex: 1;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.segment-option:hover {
+  color: var(--text-primary);
+}
+
+.segment-option.active {
+  background: var(--accent-primary);
+  color: var(--accent-contrast);
 }
 </style>

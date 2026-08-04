@@ -321,9 +321,10 @@ export default {
   // General settings page
   general: {
     startup: 'Startup',
+    update: 'Updates',
+    language: 'Language',
     launchAtLogin: 'Launch at Login',
     launchAtLoginHint: 'Automatically start SailFish when you log in',
-    update: 'Updates',
     autoCheckUpdate: 'Auto Check for Updates',
     autoCheckUpdateHint: 'Automatically check for new versions on startup',
     autoDownloadUpdate: 'Auto-download updates',
@@ -394,17 +395,6 @@ export default {
     resetConfirm: 'Are you sure you want to reset sponsor status? This will remove sponsor perks and can be used to test the sponsor flow again.'
   },
 
-
-  // Language Settings
-  languageSettings: {
-    title: 'Language Settings',
-    selectLanguage: 'Select Language',
-    languages: {
-      'zh-CN': '简体中文',
-      'en-US': 'English'
-    },
-    restartHint: 'Some changes may require restarting the app to take effect'
-  },
 
 
   quitToastHint: 'Press again to quit',

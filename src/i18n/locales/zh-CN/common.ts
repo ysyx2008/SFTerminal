@@ -321,9 +321,10 @@ export default {
   // 通用设置页
   general: {
     startup: '启动',
+    update: '更新',
+    language: '语言',
     launchAtLogin: '开机启动',
     launchAtLoginHint: '登录系统后自动启动旗鱼',
-    update: '更新',
     autoCheckUpdate: '自动检查更新',
     autoCheckUpdateHint: '启动时自动检查是否有新版本',
     autoDownloadUpdate: '自动下载更新',
@@ -392,18 +393,6 @@ export default {
     thanksUnlock: '感谢支持！专属特权已解锁 🎉',
     resetButton: '重置赞助状态（测试用）',
     resetConfirm: '确定要重置赞助状态吗？这将移除赞助者特权，可用于重新测试赞助流程。'
-  },
-
-
-  // 语言设置
-  languageSettings: {
-    title: '语言设置',
-    selectLanguage: '选择语言',
-    languages: {
-      'zh-CN': '简体中文',
-      'en-US': 'English'
-    },
-    restartHint: '部分更改可能需要重启应用才能生效'
   },
 
 
