@@ -536,7 +536,8 @@ const {
   clearImages,
   getImageDataUrls,
   hasImages,
-  loadPendingImages
+  loadPendingImages,
+  addImageDataUrl
 } = useImageUpload()
 
 const hasImagesComputed = computed(() => hasImages())
@@ -1276,6 +1277,32 @@ function analyzeText(text: string) {
   addQuotedTerminalSelection(text, tab?.title ?? '')
 }
 
+/**
+ * 产出物「截图反馈」：把预览截图加入 Composer 待发送图片区。
+ * 由岗壳（AssistantWorkbench）从 ArtifactPanel 事件转发。
+ */
+function addComposerImage(image: { dataUrl: string; name: string; width?: number; height?: number }) {
+  const added = addImageDataUrl(image.dataUrl, image.name, image.width ?? 0, image.height ?? 0)
+  if (!added) {
+    toast.error(t('ai.composerImageLimit'))
+    return
+  }
+  nextTick(() => composerRef.value?.focusInput())
+}
+
+/**
+ * 设置 Composer 草稿文本，供「截图反馈」等面板动作注入意图。
+ * 输入框已有内容时不覆盖（用户可能正在编辑），仅聚焦；不自动发送，用户确认后回车。
+ */
+function setComposerDraft(text: string) {
+  const composer = composerRef.value
+  if (!composer) return
+  if (!composer.getText()?.trim()) {
+    composer.setText(text)
+  }
+  nextTick(() => composer.focusInput())
+}
+
 // ==================== 定时任务 / 远程任务监听 ====================
 // 监听定时任务 / 远程任务：当有 pendingSchedulerTask 时自动执行
 // 触发时机：tab 切换到当前实例、或新的 pending task 被写入当前 tab
@@ -1899,7 +1926,7 @@ async function scrollToAgentStep(stepId: string) {
   }, 2500)
 }
 
-defineExpose({ analyzeText, addQuotedTerminalSelection, addComposerQuote, scrollToAgentStep })
+defineExpose({ analyzeText, addQuotedTerminalSelection, addComposerQuote, addComposerImage, setComposerDraft, scrollToAgentStep })
 
 /** 首次展示从历史恢复的对话（尚无已存滚动位置）→ 应滚到底部 */
 const shouldScrollHistoryOnShow = () =>

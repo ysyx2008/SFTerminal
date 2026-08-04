@@ -25,6 +25,8 @@ useArtifactAgentBridge(() => props.tab.id)
 const aiPanelRef = ref<{
   scrollToAgentStep: (stepId: string) => void | Promise<void>
   addComposerQuote: (snippet: ArtifactComposerQuote) => void
+  addComposerImage: (image: { dataUrl: string; name: string; width?: number; height?: number }) => void
+  setComposerDraft: (text: string) => void
 } | null>(null)
 
 function scrollToAgentStep(stepId: string) {
@@ -33,6 +35,14 @@ function scrollToAgentStep(stepId: string) {
 
 function addComposerQuote(snippet: ArtifactComposerQuote) {
   aiPanelRef.value?.addComposerQuote(snippet)
+}
+
+function addComposerImage(image: { dataUrl: string; name: string; width?: number; height?: number }) {
+  aiPanelRef.value?.addComposerImage(image)
+}
+
+function setComposerDraft(text: string) {
+  aiPanelRef.value?.setComposerDraft(text)
 }
 
 const docExpanded = computed(() => artifactStore.isVisible(props.tab.id))
@@ -71,6 +81,8 @@ function expandPanel(artifactId?: string) {
         :tab-id="tab.id"
         :scroll-to-agent-step="scrollToAgentStep"
         :add-composer-quote="addComposerQuote"
+        :add-composer-image="addComposerImage"
+        :set-composer-draft="setComposerDraft"
       />
       <ArtifactPanelRail
         v-else-if="panelMinimized"

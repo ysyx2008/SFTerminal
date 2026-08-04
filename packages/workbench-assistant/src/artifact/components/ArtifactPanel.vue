@@ -48,6 +48,10 @@ const props = defineProps<{
   scrollToAgentStep?: (stepId: string) => void | Promise<void>
   /** 岗壳注入：引用摘录到 Composer（AiPanel.addComposerQuote） */
   addComposerQuote?: AddComposerQuoteFn
+  /** 岗壳注入：图片加入 Composer 待发送区（AiPanel.addComposerImage） */
+  addComposerImage?: (image: { dataUrl: string; name: string; width?: number; height?: number }) => void
+  /** 岗壳注入：设置 Composer 草稿文本（AiPanel.setComposerDraft） */
+  setComposerDraft?: (text: string) => void
 }>()
 
 provide(ADD_COMPOSER_QUOTE_KEY, (snippet) => {
@@ -320,6 +324,33 @@ function jumpToSource(stepId?: string) {
   const allSteps = desktopHost.getAgentSteps(props.tabId)
   const visibleStepId = resolveSourceStepIdById(rawId, allSteps)
   void props.scrollToAgentStep(visibleStepId)
+}
+
+/**
+ * 截图反馈闭环：截取 webview 渲染结果 → 图片进 Composer 待发送区 + 草稿意图文本。
+ * 用户补充意见后回车，Agent 读到截图与意见后修改，面板刷新即见新版。
+ */
+async function onCaptureFeedback(payload: { webContentsId: number; suggestedName: string }) {
+  const api = window.electronAPI?.artifactPreview
+  if (!api?.capture) {
+    toastError(t('canvas.captureFeedbackFailed'))
+    return
+  }
+  const res = await api.capture(payload)
+  if (!res.success || !res.data) {
+    toastError(res.error || t('canvas.captureFeedbackFailed'))
+    return
+  }
+  const active = activeArtifact.value
+  const name = payload.suggestedName || active?.title || 'artifact'
+  props.addComposerImage?.({
+    dataUrl: res.data.dataUrl,
+    name: `${name}.png`,
+    width: res.data.width,
+    height: res.data.height
+  })
+  props.setComposerDraft?.(t('canvas.captureFeedbackDraft', { title: active?.title || name }))
+  toastSuccess(t('canvas.captureFeedbackReady'))
 }
 
 async function openFileFor(artifact: CanvasArtifact) {
@@ -958,6 +989,7 @@ onUnmounted(() => {
           :key="activeArtifactId"
           :tab-id="tabId"
           :artifact-id="activeArtifactId"
+          @capture-feedback="onCaptureFeedback"
         />
         <div v-else class="canvas-unsupported">
           {{ t('canvas.unsupportedRenderer') }}

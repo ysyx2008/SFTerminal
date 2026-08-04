@@ -101,6 +101,31 @@ export function useImageUpload() {
   }
   
   /**
+   * 直接添加 data URL 图片（产出物截图反馈等场景，无 File 对象）
+   */
+  const addImageDataUrl = (dataUrl: string, name: string, width = 0, height = 0): boolean => {
+    if (pendingImages.value.length >= IMAGE_LIMITS.MAX_COUNT) {
+      console.warn(`图片数量已达上限 (${IMAGE_LIMITS.MAX_COUNT})`)
+      return false
+    }
+    // dataUrl 形态：data:image/png;base64,xxxx —— 体积约为原始二进制的 4/3
+    const approxSize = Math.floor(dataUrl.length * 0.75)
+    if (approxSize > IMAGE_LIMITS.MAX_SIZE_MB * 1024 * 1024) {
+      console.warn(`图片过大: 约 ${(approxSize / 1024 / 1024).toFixed(1)}MB，上限 ${IMAGE_LIMITS.MAX_SIZE_MB}MB`)
+      return false
+    }
+    pendingImages.value.push({
+      id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      dataUrl,
+      name,
+      size: approxSize,
+      width,
+      height
+    })
+    return true
+  }
+
+  /**
    * 处理拖拽的文件中的图片
    * 返回处理的图片数量
    */
@@ -180,6 +205,7 @@ export function useImageUpload() {
     pendingImages,
     isProcessingImage,
     addImageFile,
+    addImageDataUrl,
     handleDroppedImages,
     removeImage,
     clearImages,

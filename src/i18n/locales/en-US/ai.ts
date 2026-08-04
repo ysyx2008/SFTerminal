@@ -143,6 +143,7 @@ export default {
     quoteOnlyPrompt: '(User attached quoted excerpts only — see below; answer using them.)',
     quoteSnippetRemove: 'Remove quote',
     quoteSnippetAdded: 'Quote added to composer',
+    composerImageLimit: 'Image count or size limit reached — remove some images first',
     context: 'Context',
     contextUsed: 'used',
     contextUsageShowDetail: 'Show breakdown',

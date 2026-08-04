@@ -143,6 +143,7 @@ export default {
     quoteOnlyPrompt: '（用户在本消息仅附上引用摘录，见下文；请结合摘录作答。）',
     quoteSnippetRemove: '移除该引用',
     quoteSnippetAdded: '已加入引用摘录',
+    composerImageLimit: '图片数量或大小已达上限，请先移除部分图片',
     context: '上下文',
     contextUsed: '已使用',
     contextUsageShowDetail: '查看组成',
