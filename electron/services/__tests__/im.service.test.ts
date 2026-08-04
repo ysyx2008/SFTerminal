@@ -38,6 +38,7 @@ type MockAdapter = {
   isConnected: ReturnType<typeof vi.fn>
   sendText: ReturnType<typeof vi.fn>
   sendMarkdown: ReturnType<typeof vi.fn>
+  sendFile: ReturnType<typeof vi.fn>
 }
 
 function createContact(platform: IMPlatform, updatedAt: number): IMLastContact {
@@ -56,7 +57,8 @@ function createAdapter(connected: boolean): MockAdapter {
   return {
     isConnected: vi.fn().mockReturnValue(connected),
     sendText: vi.fn().mockResolvedValue(undefined),
-    sendMarkdown: vi.fn().mockResolvedValue(undefined)
+    sendMarkdown: vi.fn().mockResolvedValue(undefined),
+    sendFile: vi.fn().mockResolvedValue(undefined)
   }
 }
 
@@ -245,5 +247,158 @@ describe('IMService proactive notification routing', () => {
     expect(result.platform).toBe('dingtalk')
     expect(dingtalkAdapter.sendText).toHaveBeenCalledTimes(1)
     expect(feishuAdapter.sendText).not.toHaveBeenCalled()
+  })
+})
+
+describe('IMService sendFileToChannel / getChannelSendTargets', () => {
+  const tmpDirs: string[] = []
+
+  beforeEach(() => {
+    persistedState.imLastContacts = {}
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    for (const dir of tmpDirs.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  function writeTempFile(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'im-send-'))
+    tmpDirs.push(dir)
+    const filePath = path.join(dir, 'report.md')
+    fs.writeFileSync(filePath, '# report')
+    return filePath
+  }
+
+  it('文件不存在时直接报错，不触碰适配器', async () => {
+    const service = new IMService() as any
+    const adapter = createAdapter(true)
+    service.dingtalkAdapter = adapter
+    service.contactsByPlatform = { dingtalk: createContact('dingtalk', Date.now()) }
+
+    const result = await service.sendFileToChannel('dingtalk', '/nonexistent/file.md')
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('File not found')
+    expect(adapter.sendFile).not.toHaveBeenCalled()
+  })
+
+  it('渠道未连接时报错', async () => {
+    const service = new IMService() as any
+    service.dingtalkAdapter = createAdapter(false)
+    service.contactsByPlatform = { dingtalk: createContact('dingtalk', Date.now()) }
+
+    const result = await service.sendFileToChannel('dingtalk', writeTempFile())
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('Channel not connected')
+  })
+
+  it('渠道无会话上下文时报错', async () => {
+    const service = new IMService() as any
+    service.dingtalkAdapter = createAdapter(true)
+    service.contactsByPlatform = {}
+
+    const result = await service.sendFileToChannel('dingtalk', writeTempFile())
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('No conversation on this channel yet')
+  })
+
+  it('成功时发到该渠道联系人的 replyContext，并刷新 lastContact', async () => {
+    const service = new IMService() as any
+    const adapter = createAdapter(true)
+    service.dingtalkAdapter = adapter
+    const contact = createContact('dingtalk', Date.now())
+    service.contactsByPlatform = { dingtalk: contact }
+    const filePath = writeTempFile()
+
+    const result = await service.sendFileToChannel('dingtalk', filePath)
+
+    expect(result.success).toBe(true)
+    expect(adapter.sendFile).toHaveBeenCalledWith(contact.replyContext, filePath, undefined)
+    expect(service.lastContact).toBe(contact)
+  })
+
+  it('投递失败时保留联系人（瞬时故障不清会话）', async () => {
+    const service = new IMService() as any
+    const adapter = createAdapter(true)
+    adapter.sendFile.mockRejectedValue(new Error('network timeout'))
+    service.dingtalkAdapter = adapter
+    const contact = createContact('dingtalk', Date.now())
+    service.contactsByPlatform = { dingtalk: contact }
+    service.lastContact = contact
+
+    const result = await service.sendFileToChannel('dingtalk', writeTempFile())
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('network timeout')
+    // 联系人保留：无法区分会话失效与瞬时错误，误删会让用户平白回到「无会话」
+    expect(service.contactsByPlatform.dingtalk).toBe(contact)
+    expect(service.lastContact).toBe(contact)
+  })
+
+  it('getChannelSendTargets 返回六渠道三态', () => {
+    const service = new IMService() as any
+    service.dingtalkAdapter = createAdapter(true)
+    service.feishuAdapter = createAdapter(true)
+    service.slackAdapter = createAdapter(false)
+    service.contactsByPlatform = { dingtalk: createContact('dingtalk', Date.now()) }
+
+    const targets = service.getChannelSendTargets() as Array<{
+      platform: string
+      connected: boolean
+      hasContact: boolean
+      contactName?: string
+    }>
+
+    expect(targets.map(t => t.platform)).toEqual(['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat'])
+    const byPlatform = Object.fromEntries(targets.map(t => [t.platform, t]))
+    expect(byPlatform.dingtalk).toMatchObject({ connected: true, hasContact: true, contactName: 'single-user' })
+    expect(byPlatform.feishu).toMatchObject({ connected: true, hasContact: false })
+    expect(byPlatform.slack).toMatchObject({ connected: false, hasContact: false })
+    expect(byPlatform.wechat).toMatchObject({ connected: false, hasContact: false })
+  })
+
+  it('getChannelSendTargets 把可发/已连接渠道排在未连接之前', () => {
+    const service = new IMService() as any
+    // wecom 可直发（连接+会话）、telegram 已连接无会话，其余未连接
+    service.wecomAdapter = createAdapter(true)
+    service.telegramAdapter = createAdapter(true)
+    service.contactsByPlatform = { wecom: createContact('wecom', Date.now()) }
+
+    const targets = service.getChannelSendTargets() as Array<{ platform: string }>
+    expect(targets.map(t => t.platform)).toEqual(['wecom', 'telegram', 'dingtalk', 'feishu', 'slack', 'wechat'])
+  })
+
+  it('userName 回退为 userId 时 contactName 不展示内部 ID', () => {
+    const service = new IMService() as any
+    service.wechatAdapter = createAdapter(true)
+    // 微信协议无昵称字段，适配器把 userName 回退成 userId
+    service.contactsByPlatform = {
+      wechat: { ...createContact('wechat', Date.now()), userId: 'o9cq8xyz', userName: 'o9cq8xyz' }
+    }
+
+    const targets = service.getChannelSendTargets() as Array<{ platform: string; contactName?: string }>
+    const wechat = targets.find(t => t.platform === 'wechat')
+    expect(wechat?.contactName).toBeUndefined()
+  })
+
+  it('联系人过期后 hasContact 为 false 且发送被拒绝', async () => {
+    const service = new IMService() as any
+    const adapter = createAdapter(true)
+    service.dingtalkAdapter = adapter
+    // CONTACT_TTL_MS 为 30 天，构造 31 天前的联系人
+    service.contactsByPlatform = { dingtalk: createContact('dingtalk', Date.now() - 31 * 24 * 3600_000) }
+
+    const targets = service.getChannelSendTargets() as Array<{ platform: string; hasContact: boolean }>
+    expect(targets.find(t => t.platform === 'dingtalk')?.hasContact).toBe(false)
+
+    const result = await service.sendFileToChannel('dingtalk', writeTempFile())
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('No conversation on this channel yet')
+    expect(adapter.sendFile).not.toHaveBeenCalled()
   })
 })

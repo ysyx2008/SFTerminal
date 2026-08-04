@@ -29,6 +29,7 @@ import type {
   WeComConfig,
   WeChatConfig,
   SendFileResult,
+  IMChannelSendTarget,
   IMProcessMode
 } from './types'
 import { CONFIRM_KEYWORDS, REJECT_KEYWORDS, IM_TEXT_MAX_LENGTH } from './types'
@@ -51,6 +52,9 @@ const log = createLogger('IMService')
 
 /** 与 read_file 图片上限一致：超过则走附件文本路径，不内联为多模态 */
 const IM_VISION_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+
+/** 内置渠道（不含插件渠道） */
+const BUILTIN_PLATFORMS: readonly IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat']
 
 /** 桌面上传可解析的文档扩展名（与 DocumentParserService.detectFileType 对齐） */
 const PARSEABLE_DOC_EXTENSIONS = new Set([
@@ -2042,6 +2046,61 @@ export class IMService {
     return { success: false, error: 'No available IM channel' }
   }
 
+  /**
+   * 按指定渠道主动发送文件（产出物面板「发送到手机」直发路径）
+   *
+   * 与 sendFileProactive 的区别：渠道由调用方指定、不做跨渠道 fallback；
+   * 目标固定为该渠道最近联系人的会话（bot 私聊或 bot 所在群）。
+   */
+  async sendFileToChannel(platform: IMPlatform, filePath: string, fileName?: string): Promise<SendFileResult> {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' }
+    }
+    const adapter = this.getAdapter(platform)
+    if (!adapter || !adapter.isConnected()) {
+      return { success: false, error: 'Channel not connected' }
+    }
+    const contact = this.contactsByPlatform[platform]
+    if (!contact || this.isContactExpired(contact)) {
+      return { success: false, error: 'No conversation on this channel yet' }
+    }
+    try {
+      await adapter.sendFile(contact.replyContext, filePath, fileName)
+      this.lastContact = contact
+      log.info(`File sent to channel ${platform} (${contact.userName}): ${fileName ?? filePath}`)
+      return { success: true }
+    } catch (err: any) {
+      // 投递失败不清除联系人：无法区分「会话失效」与「弱网/文件过大」等瞬时错误，
+      // 误删会让用户平白回到「无会话」；真正失效的会话由 30 天 TTL 兜底清理
+      log.error(`Failed to send file to channel ${platform}:`, err)
+      return { success: false, error: err?.message || 'Failed to send file' }
+    }
+  }
+
+  /**
+   * 各内置渠道的可发文件状态（产出物「发送到手机」渠道弹窗用）
+   * 排序：可直发（已连接+有会话）> 已连接无会话 > 未连接；同级保持内置渠道顺序
+   */
+  getChannelSendTargets(): IMChannelSendTarget[] {
+    const targets = BUILTIN_PLATFORMS.map((platform) => {
+      const adapter = this.getAdapter(platform)
+      const contact = this.contactsByPlatform[platform]
+      const hasContact = !!contact && !this.isContactExpired(contact)
+      // userName 解析不到可读名字时适配器会回退成 userId（微信/飞书/企微），内部 ID 不展示给用户
+      const displayName = contact && contact.userName && contact.userName !== contact.userId
+        ? contact.userName
+        : undefined
+      return {
+        platform,
+        connected: !!adapter && adapter.isConnected(),
+        hasContact,
+        contactName: hasContact ? displayName : undefined
+      }
+    })
+    const tier = (t: IMChannelSendTarget) => (t.connected && t.hasContact) ? 0 : t.connected ? 1 : 2
+    return targets.sort((a, b) => tier(a) - tier(b))
+  }
+
   // ==================== 工具方法 ====================
 
   /**
@@ -2230,7 +2289,7 @@ export class IMService {
   }
 
   private getNotificationTargets(): IMLastContact[] {
-    const connectedPlatforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat']
+    const connectedPlatforms: IMPlatform[] = BUILTIN_PLATFORMS
       .filter((platform) => {
         const adapter = this.getAdapter(platform)
         return !!adapter && adapter.isConnected()

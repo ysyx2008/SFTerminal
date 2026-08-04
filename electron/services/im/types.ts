@@ -196,6 +196,19 @@ export interface SendFileResult {
   error?: string
 }
 
+/**
+ * 渠道可发文件状态（产出物「发送到手机」渠道弹窗用）
+ */
+export interface IMChannelSendTarget {
+  platform: IMPlatform
+  /** 适配器已连接 */
+  connected: boolean
+  /** 持有可投递的会话上下文（用户须先在该渠道与 bot 对话过且未过期） */
+  hasContact: boolean
+  /** 有会话上下文时为最近联系人名 */
+  contactName?: string
+}
+
 /** 文件上传大小限制（字节） */
 export const IM_FILE_MAX_SIZE_DINGTALK = 20 * 1024 * 1024  // 钉钉: 20MB
 export const IM_FILE_MAX_SIZE_FEISHU = 30 * 1024 * 1024    // 飞书: 30MB

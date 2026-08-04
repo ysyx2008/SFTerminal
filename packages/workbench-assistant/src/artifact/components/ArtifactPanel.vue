@@ -18,6 +18,7 @@ import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
 import {
   artifactDisplayLabel,
   canSaveAsArtifact,
+  defaultSaveFileName,
   filterArtifactsByQuery,
   isArtifactEditable,
   saveArtifact,
@@ -210,11 +211,110 @@ function toggleFileMenu() {
   if (next) {
     closeArtifactPicker()
     closeCtxMenu()
+    closeSendMenu()
   }
 }
 
 function closeFileMenu() {
   showFileMenuDropdown.value = false
+}
+
+// ---- 发送到手机（IM 渠道直发，三态：可发 / 未连接 / 无会话） ----
+interface ChannelSendTarget {
+  platform: string
+  connected: boolean
+  hasContact: boolean
+  contactName?: string
+}
+const sendMenuRef = ref<HTMLElement | null>(null)
+const sendMenuDropdownRef = ref<HTMLElement | null>(null)
+const showSendMenu = ref(false)
+const sendMenuPos = ref({ top: 0, left: 0, width: 200 })
+const sendTargets = ref<ChannelSendTarget[]>([])
+const sendTargetsLoading = ref(false)
+const sendingPlatform = ref<string | null>(null)
+let offImConnectionChange: (() => void) | null = null
+
+const canSendActive = computed(() => Boolean(filePath.value) && pathExistsOnDisk(filePath.value))
+
+function channelName(platform: string): string {
+  return t(`settings.im.${platform}`)
+}
+
+function syncSendMenuPosition() {
+  if (!showSendMenu.value) return
+  const anchor = sendMenuRef.value
+  if (!anchor) return
+  const rect = anchor.getBoundingClientRect()
+  const width = sendMenuPos.value.width
+  // 与按钮右对齐，防出屏
+  const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))
+  sendMenuPos.value = { top: rect.bottom + 4, left, width }
+}
+
+async function refreshSendTargets() {
+  sendTargetsLoading.value = sendTargets.value.length === 0
+  try {
+    sendTargets.value = (await window.electronAPI?.im?.getChannelSendTargets?.()) ?? []
+  } catch {
+    sendTargets.value = []
+  } finally {
+    sendTargetsLoading.value = false
+  }
+}
+
+async function toggleSendMenu() {
+  if (showSendMenu.value) {
+    closeSendMenu()
+    return
+  }
+  showSendMenu.value = true
+  closeFileMenu()
+  closeArtifactPicker()
+  closeCtxMenu()
+  void nextTick(syncSendMenuPosition)
+  void refreshSendTargets()
+  // 菜单打开期间跟随连接状态变化自刷新（启动后渠道可能稍后才连上）
+  offImConnectionChange = window.electronAPI?.im?.onConnectionChange?.(() => {
+    void refreshSendTargets()
+  }) ?? null
+}
+
+function closeSendMenu() {
+  showSendMenu.value = false
+  offImConnectionChange?.()
+  offImConnectionChange = null
+}
+
+function sendTargetTip(target: ChannelSendTarget): string | undefined {
+  if (!target.connected) return t('canvas.sendChannelOfflineTip')
+  if (!target.hasContact) return t('canvas.sendChannelNoSessionTip', { platform: channelName(target.platform) })
+  return undefined
+}
+
+async function sendToChannel(target: ChannelSendTarget) {
+  if (!target.connected || !target.hasContact || sendingPlatform.value) return
+  const artifact = activeArtifact.value
+  const path = filePath.value
+  if (!artifact || !path) return
+  sendingPlatform.value = target.platform
+  try {
+    const result = await window.electronAPI?.im?.sendFileToChannel?.(
+      target.platform,
+      path,
+      defaultSaveFileName(artifact)
+    )
+    if (result?.success) {
+      toastSuccess(t('canvas.sendToChannelSuccess', { platform: channelName(target.platform) }))
+      closeSendMenu()
+    } else {
+      toastError(t('canvas.sendToChannelFailed', { platform: channelName(target.platform), error: result?.error || '' }))
+    }
+  } catch (err: any) {
+    toastError(t('canvas.sendToChannelFailed', { platform: channelName(target.platform), error: err?.message || '' }))
+  } finally {
+    sendingPlatform.value = null
+  }
 }
 
 function artifactTabLabel(artifact: Pick<CanvasArtifact, 'title' | 'filePath'>) {
@@ -499,6 +599,7 @@ async function runSaveAll() {
 
 function closeOverlayMenus(options?: { keepArtifactPicker?: boolean }) {
   closeFileMenu()
+  closeSendMenu()
   closeCtxMenu()
   if (!options?.keepArtifactPicker) {
     closeArtifactPicker()
@@ -511,7 +612,7 @@ function closeAllMenus() {
 
 /** 任意浮层菜单打开时屏蔽 canvas-body 的指针事件，防止 iframe 合成层吞掉点击，导致菜单无法关闭 */
 const anyMenuOpen = computed(() =>
-  ctxMenu.value.show || showArtifactPicker.value || showFileMenuDropdown.value
+  ctxMenu.value.show || showArtifactPicker.value || showFileMenuDropdown.value || showSendMenu.value
 )
 
 function openCtxMenu(
@@ -551,6 +652,16 @@ function onDocumentMouseDown(e: MouseEvent) {
     const el = fileMenuRef.value
     if (el && !el.contains(target)) closeFileMenu()
   }
+  if (showSendMenu.value) {
+    const anchor = sendMenuRef.value
+    const dropdown = sendMenuDropdownRef.value
+    if (
+      anchor && !anchor.contains(target) &&
+      dropdown && !dropdown.contains(target)
+    ) {
+      closeSendMenu()
+    }
+  }
   if (showArtifactPicker.value) {
     const anchor = artifactPickerRef.value
     const dropdown = artifactPickerDropdownRef.value
@@ -579,6 +690,10 @@ function onDocumentKeyDown(e: KeyboardEvent) {
     closeArtifactPicker()
     return
   }
+  if (showSendMenu.value) {
+    closeSendMenu()
+    return
+  }
   if (showFileMenuDropdown.value) {
     closeFileMenu()
   }
@@ -592,6 +707,17 @@ watch(showArtifactPicker, (open) => {
   } else {
     window.removeEventListener('resize', syncArtifactPickerPosition)
     window.removeEventListener('scroll', syncArtifactPickerPosition, true)
+  }
+})
+
+watch(showSendMenu, (open) => {
+  if (open) {
+    void nextTick(syncSendMenuPosition)
+    window.addEventListener('resize', syncSendMenuPosition)
+    window.addEventListener('scroll', syncSendMenuPosition, true)
+  } else {
+    window.removeEventListener('resize', syncSendMenuPosition)
+    window.removeEventListener('scroll', syncSendMenuPosition, true)
   }
 })
 
@@ -639,6 +765,9 @@ onUnmounted(() => {
   window.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('resize', syncArtifactPickerPosition)
   window.removeEventListener('scroll', syncArtifactPickerPosition, true)
+  window.removeEventListener('resize', syncSendMenuPosition)
+  window.removeEventListener('scroll', syncSendMenuPosition, true)
+  offImConnectionChange?.()
 })
 </script>
 
@@ -737,6 +866,17 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+        <div v-if="canSendActive" ref="sendMenuRef" class="canvas-file-menu-wrap">
+          <button
+            type="button"
+            class="canvas-text-btn"
+            :aria-expanded="showSendMenu"
+            :title="t('canvas.sendToPhone')"
+            @click="toggleSendMenu"
+          >
+            {{ t('canvas.sendToPhone') }}
+          </button>
+        </div>
         <button
           type="button"
           class="canvas-icon-btn"
@@ -749,6 +889,48 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="showSendMenu"
+        ref="sendMenuDropdownRef"
+        class="canvas-dropdown-menu canvas-send-menu canvas-send-menu--floating"
+        :style="{
+          top: `${sendMenuPos.top}px`,
+          left: `${sendMenuPos.left}px`,
+          width: `${sendMenuPos.width}px`
+        }"
+        @click.stop
+      >
+        <div v-if="sendTargetsLoading" class="canvas-send-loading">{{ t('common.loading') }}</div>
+        <template v-else>
+          <button
+            v-for="target in sendTargets"
+            :key="target.platform"
+            type="button"
+            class="canvas-dropdown-item canvas-send-item"
+            :class="{ 'canvas-send-item--disabled': !target.connected || !target.hasContact }"
+            :aria-disabled="!target.connected || !target.hasContact"
+            :title="sendTargetTip(target)"
+            @click="sendToChannel(target)"
+          >
+            <span class="canvas-send-platform">{{ channelName(target.platform) }}</span>
+            <span v-if="sendingPlatform === target.platform" class="canvas-send-meta">
+              {{ t('canvas.sending') }}
+            </span>
+            <span v-else-if="target.connected && target.hasContact && target.contactName" class="canvas-send-meta">
+              {{ target.contactName }}
+            </span>
+            <span v-else-if="!target.connected" class="canvas-send-meta">
+              {{ t('canvas.sendChannelOffline') }}
+            </span>
+            <span v-else-if="!target.hasContact" class="canvas-send-meta">
+              {{ t('canvas.sendChannelNoSession') }}
+            </span>
+          </button>
+        </template>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -1392,6 +1574,49 @@ onUnmounted(() => {
   height: 1px;
   margin: 4px 0;
   background: var(--border-color, rgba(255, 255, 255, 0.1));
+}
+
+.canvas-send-menu--floating {
+  position: fixed;
+  top: auto;
+  right: auto;
+  z-index: 10000;
+  box-sizing: border-box;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.canvas-send-loading {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+
+.canvas-send-item {
+  justify-content: space-between;
+}
+
+.canvas-send-item--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.canvas-send-item--disabled:hover {
+  background: transparent;
+}
+
+.canvas-send-platform {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.canvas-send-meta {
+  margin-left: 12px;
+  font-size: 11px;
+  color: var(--text-secondary, #999);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-body {

@@ -417,7 +417,7 @@ import type { GatewayConfig } from './services/gateway.service'
 import type { GatewayService } from './services/gateway.service'
 import { BastionService } from './services/bastion.service'
 import type { IMService } from './services/im/im.service'
-import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig } from './services/im/types'
+import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig, IMPlatform } from './services/im/types'
 import { getWorkspacePath, ensureAgentWorkspaceDirs, cleanupScratch } from './services/agent/tools/file'
 import { initUserDataGuard } from './services/agent/command-audit/userdata-guard'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
@@ -4456,6 +4456,15 @@ ipcMain.handle('web-chat:setExecutionMode', async (_event, mode: ExecutionMode) 
 
 ipcMain.handle('im:sendNotification', async (_event, text: string, options?: { markdown?: boolean; title?: string }) => {
   return await (await imSvc()).sendNotification(text, options)
+})
+
+// 产出物「发送到手机」：按指定渠道直发文件 / 查询各渠道可发状态
+ipcMain.handle('im:sendFileToChannel', async (_event, platform: IMPlatform, filePath: string, fileName?: string) => {
+  return await (await imSvc()).sendFileToChannel(platform, filePath, fileName)
+})
+
+ipcMain.handle('im:getChannelSendTargets', async () => {
+  return (await imSvc()).getChannelSendTargets()
 })
 
 // ==================== 堡垒机（JumpServer）集成 ====================

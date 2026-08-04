@@ -3618,6 +3618,17 @@ const electronAPI = {
     sendNotification: (text: string, options?: { markdown?: boolean; title?: string }) =>
       ipcRenderer.invoke('im:sendNotification', text, options) as Promise<{ success: boolean; platform?: string; error?: string }>,
 
+    // 产出物「发送到手机」：按指定渠道直发文件 / 查询各渠道可发状态
+    sendFileToChannel: (platform: string, filePath: string, fileName?: string) =>
+      ipcRenderer.invoke('im:sendFileToChannel', platform, filePath, fileName) as Promise<{ success: boolean; error?: string }>,
+    getChannelSendTargets: () =>
+      ipcRenderer.invoke('im:getChannelSendTargets') as Promise<Array<{
+        platform: string
+        connected: boolean
+        hasContact: boolean
+        contactName?: string
+      }>>,
+
     // 监听 IM 连接状态变化
     onConnectionChange: (callback: (data: { platform: string; connected: boolean }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data)

@@ -2506,6 +2506,13 @@ interface Window {
       setProcessMode: (mode: IMProcessMode) => Promise<void>
       setSendThinkingProcess: (enabled: boolean) => Promise<void>
       sendNotification: (text: string, options?: { markdown?: boolean; title?: string }) => Promise<{ success: boolean; platform?: string; error?: string }>
+      sendFileToChannel: (platform: string, filePath: string, fileName?: string) => Promise<{ success: boolean; error?: string }>
+      getChannelSendTargets: () => Promise<Array<{
+        platform: string
+        connected: boolean
+        hasContact: boolean
+        contactName?: string
+      }>>
       onConnectionChange: (callback: (data: { platform: string; connected: boolean }) => void) => () => void
       onWeChatLoginStatus: (callback: (status: WeChatLoginStatus) => void) => () => void
     }
