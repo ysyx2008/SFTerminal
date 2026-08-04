@@ -1,6 +1,6 @@
 # MCP Service SPEC
 
-> Last verified: 2026-07-23
+> Last verified: 2026-08-04
 
 ## 职责
 
@@ -9,7 +9,7 @@ MCP（Model Context Protocol）客户端。连接和管理外部 MCP 服务器�
 ## 设计目标
 
 1. **`whenToUse`**：给模型看的短触发说明，进入 L1 目录；**新保存 / 新启用**必须非空且经用户确认（可改后确认，不可跳过留空）；取消 = 配置失败。内容由短 AI 出草稿，用户确认后才落盘；禁止静默写入未确认文案。
-2. **老配置**：缺 `whenToUse` 仍可连接、可 `skill load`；升级时联络 **one-shot** 通知「这块升级了，可让我补或自己去设置」；**无**专用 `migrations/mcp-*.json` marker；防刷屏靠「仅本启跨过 schema v10 时通知一次」，「通知过了」靠联络历史。
+2. **老配置**：缺 `whenToUse` 仍可连接、可 `skill load`；升级时联络 **one-shot** 通知「这块升级了，可让我补或自己去设置」；**无**专用 `migrations/mcp-*.json` marker；防刷屏靠「仅本启跨过 schema v10 时通知一次」，「通知过了」靠联络历史。**通知时机避开启动窗口期**：等窗口首次获得用户焦点后再发出（用户一直不聚焦则超时兜底发出）——应用刚启动就弹系统通知，在 Windows 上会把窗口焦点态打坏，表现为所有输入框点不出光标、只能重启。
 3. **skill 化**：已连接 MCP 进入 `skill` 工具目录（id = `mcp:<serverId>`）；用 `skill load/unload` 整包加载/卸载工具 schema；**废弃 `mcp_load`**；有已连接 MCP 时 **始终** defer（取消「≤10 工具全量直灌」）。
 4. **目录文案**：有 `whenToUse` 用它作主句；否则回退 name + 工具名清单（兼容旧数据）。
 5. **不做**：关键词搜索式 preload；把 MCP 身份硬合并进 Skill 注册表 / `load_user_skill`；未确认静默写 `whenToUse`。

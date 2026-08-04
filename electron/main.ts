@@ -1670,6 +1670,30 @@ app.whenReady().then(async () => {
     } catch { /* ignore */ }
   }
 
+  /**
+   * 在窗口首次获得焦点后执行回调（一次性）；用户一直不聚焦则超时兜底执行。
+   * 用于把「启动期会弹系统通知 / 打断用户」的任务移出启动窗口期——
+   * Windows 上启动窗口期的通知交互会把窗口激活态打坏（输入框点不出光标）。
+   */
+  function runAfterFirstWindowFocus(fn: () => void, timeoutMs = 10 * 60_000): void {
+    const win = mainWindow
+    if (!win || win.isDestroyed() || win.isFocused()) {
+      fn()
+      return
+    }
+    let done = false
+    const run = (reason: string) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      log.info(`[startup] deferred task runs after window focus (${reason}, +${Date.now() - APP_START_TIME}ms)`)
+      fn()
+    }
+    const timer = setTimeout(() => run('timeout'), timeoutMs)
+    win.once('focus', () => run('focus'))
+    win.once('closed', () => clearTimeout(timer))
+  }
+
   async function runBackendInit() {
     log.info(`开始初始化后端服务 (+${Date.now() - APP_START_TIME}ms)`)
 
@@ -1810,8 +1834,12 @@ app.whenReady().then(async () => {
       })
 
       // v10 one-shot：缺 whenToUse 的 MCP → 联络通知（无 marker；仅本启跨过 v10 时）
-      runMcpWhenToUseNoticeIfNeeded(agentService, crossedV10ThisBoot).catch(e => {
-        log.error('Deferred MCP whenToUse notice failed:', e)
+      // 延迟到窗口首次聚焦后触发：启动窗口期弹系统通知会在 Windows 上打坏窗口
+      // 激活态（所有输入框点不出光标），且联络 Agent 也会加剧启动 CPU 争抢
+      runAfterFirstWindowFocus(() => {
+        runMcpWhenToUseNoticeIfNeeded(agentService, crossedV10ThisBoot).catch(e => {
+          log.error('Deferred MCP whenToUse notice failed:', e)
+        })
       })
 
       const awakenFeatureEnabled = isOemFeatureEnabled('awaken')
@@ -2530,9 +2558,16 @@ ipcMain.handle('window:forceQuit', async () => {
 
 // Windows 焦点恢复：渲染进程检测到输入元素无法接收键盘事件时，主动请求 webContents 获得焦点
 ipcMain.on('window:focusWebContents', () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.focus()
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const windowFocused = mainWindow.isFocused()
+  // 诊断日志：下次再收到"输入框点不出光标"反馈时，日志可直接区分
+  // 窗口级焦点丢失（激活态损坏）与渲染端 DOM 焦点丢失
+  log.info(`[focus] focusWebContents requested (windowFocused=${windowFocused})`)
+  if (!windowFocused) {
+    // 窗口级焦点都丢了时仅 webContents.focus() 不够，先恢复窗口焦点
+    mainWindow.focus()
   }
+  mainWindow.webContents.focus()
 })
 
 // ==================== Windows 自绘标题栏控制 ====================

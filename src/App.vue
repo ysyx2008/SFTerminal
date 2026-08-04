@@ -524,8 +524,11 @@ onMounted(async () => {
 
   // Windows 焦点恢复：用户点击输入元素时确保 webContents 拥有键盘焦点
   // 修复 Windows 上因 setAlwaysOnTop/通知交互导致的"输入框看似有焦点但无法键入"问题
+  // 仅在渲染端确实无焦点时才请求：焦点正常时每次点击都调主进程 focus，
+  // 会在激活态异常的窗口上反复扰动焦点，反而把"点不出光标"固化
   if (navigator.platform === 'Win32') {
     document.addEventListener('mousedown', (e) => {
+      if (document.hasFocus()) return
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') {
         window.electronAPI.window.focusWebContents()
