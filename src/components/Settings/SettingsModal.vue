@@ -47,9 +47,9 @@ const emit = defineEmits<{
 const configStore = useConfigStore()
 
 type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'browserBridge' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'securityPermissions' | 'general' | 'voice' | 'diagnostics' | 'about'
-// Steam 版不展示 AI 配置标签，默认选中「主题」；非 Steam 版默认「AI 模型配置」（__STEAM_BUILD__ 由 vite define 注入）
+// 默认选中「通用」（__STEAM_BUILD__ 由 vite define 注入）
 const isSteamBuild = __STEAM_BUILD__
-const activeTab = ref<SettingsTab>(isSteamBuild ? 'theme' : 'ai')
+const activeTab = ref<SettingsTab>('general')
 const appVersion = ref<string>('')
 const showConfirmDialog = ref(false)
 
@@ -360,7 +360,7 @@ const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'k
 const applyInitialTab = (tabName?: string) => {
   if (tabName && ALL_TABS.includes(tabName as SettingsTab)) {
     const tab = tabName as SettingsTab
-    activeTab.value = isSteamBuild && !STEAM_TABS.includes(tab) ? 'theme' : tab
+    activeTab.value = isSteamBuild && !STEAM_TABS.includes(tab) ? 'general' : tab
   }
 }
 
@@ -431,6 +431,19 @@ const tabGroups = computed(() => {
   }
   return [
     {
+      label: t('settings.groups.system'),
+      tabs: [
+        { id: 'general' as const, label: t('settings.tabs.general'), icon: '🧭' },
+        { id: 'theme' as const, label: t('settings.tabs.theme'), icon: '🎨' },
+        { id: 'terminal' as const, label: t('settings.tabs.terminal'), icon: '⚙️' },
+        { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' },
+        { id: 'data' as const, label: t('settings.tabs.data'), icon: '💾' },
+        { id: 'securityPermissions' as const, label: t('settings.tabs.securityPermissions'), icon: '🔐' },
+        { id: 'diagnostics' as const, label: t('settings.tabs.diagnostics'), icon: '🩺' },
+        { id: 'about' as const, label: t('settings.tabs.about'), icon: 'ℹ️' }
+      ]
+    },
+    {
       label: t('settings.groups.ai'),
       tabs: [
         { id: 'ai' as const, label: t('settings.tabs.ai'), icon: '🤖' },
@@ -451,19 +464,6 @@ const tabGroups = computed(() => {
         { id: 'calendar' as const, label: t('settings.tabs.calendar'), icon: '📅' },
         { id: 'bastion' as const, label: t('settings.tabs.bastion'), icon: '🛡️' },
         { id: 'plugins' as const, label: t('settings.tabs.plugins'), icon: '🧩' }
-      ]
-    },
-    {
-      label: t('settings.groups.system'),
-      tabs: [
-        { id: 'general' as const, label: t('settings.tabs.general'), icon: '🧭' },
-        { id: 'theme' as const, label: t('settings.tabs.theme'), icon: '🎨' },
-        { id: 'terminal' as const, label: t('settings.tabs.terminal'), icon: '⚙️' },
-        { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' },
-        { id: 'data' as const, label: t('settings.tabs.data'), icon: '💾' },
-        { id: 'securityPermissions' as const, label: t('settings.tabs.securityPermissions'), icon: '🔐' },
-        { id: 'diagnostics' as const, label: t('settings.tabs.diagnostics'), icon: '🩺' },
-        { id: 'about' as const, label: t('settings.tabs.about'), icon: 'ℹ️' }
       ]
     }
   ]
