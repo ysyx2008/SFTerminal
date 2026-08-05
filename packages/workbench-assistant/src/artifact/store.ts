@@ -42,7 +42,7 @@ import {
 import {
   createCoeditEntry,
   decideExternalContent,
-  entryAfterAcceptDeferred,
+  entryAfterCanonicalize,
   entryAfterApply,
   entryAfterDefer,
   entryAfterDismissDeferred,
@@ -274,14 +274,6 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     patchCoeditEntry(tabId, artifactId, entryAfterDefer(entry, content))
   }
 
-  /** 用户选择「载入外部版本」：deferred 成为正文 */
-  function acceptDeferredContent(tabId: string, artifactId: string) {
-    const entry = getCoeditEntry(tabId, artifactId)
-    if (entry?.deferred === undefined) return
-    updateContent(tabId, entry.deferred, artifactId)
-    patchCoeditEntry(tabId, artifactId, entryAfterAcceptDeferred(entry))
-  }
-
   /** 用户选择「保留我的修改」：关闭提示，dirty 保持 */
   function dismissDeferredContent(tabId: string, artifactId: string) {
     const entry = getCoeditEntry(tabId, artifactId)
@@ -292,6 +284,14 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   /** 用户保存成功：基线 = 草稿，冲突解除 */
   function markSavedToDisk(tabId: string, artifactId: string, content: string) {
     patchCoeditEntry(tabId, artifactId, entryAfterSave(getCoeditEntry(tabId, artifactId), content))
+  }
+
+  /**
+   * WYSIWYG 编辑器规范化回写后同步基线（基线恒为编辑器规范化内容）。
+   * 「载入外部版本」也走这里：deferred 经编辑器规范化后回写，基线随之前进。
+   */
+  function syncCoeditBaseline(tabId: string, artifactId: string, content: string) {
+    patchCoeditEntry(tabId, artifactId, entryAfterCanonicalize(getCoeditEntry(tabId, artifactId), content))
   }
 
   function hydrateFromSteps(tabId: string, steps: ReadonlyArray<AgentStep>) {
@@ -492,9 +492,9 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     getDeferredContent,
     ingestExternalContent,
     deferExternalContent,
-    acceptDeferredContent,
     dismissDeferredContent,
     markSavedToDisk,
+    syncCoeditBaseline,
     applyCanvasData: applyCanvasDataForTab,
     hydrateFromSteps,
     restoreFromArtifacts,

@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   createCoeditEntry,
   decideExternalContent,
-  entryAfterAcceptDeferred,
   entryAfterApply,
+  entryAfterCanonicalize,
   entryAfterDefer,
   entryAfterDismissDeferred,
   entryAfterSave
@@ -72,10 +72,10 @@ describe('coedit-conflict', () => {
       expect(next).toEqual({ baseline: 'my draft', dirty: false, deferred: undefined })
     })
 
-    it('载入外部版本：dirty 解除、挂起清空（基线在挂起时已前进）', () => {
+    it('规范化回写（WYSIWYG）：基线前进到规范化内容，dirty 与挂起解除', () => {
       const deferred = entryAfterDefer({ baseline: 'v1', dirty: true }, 'v2')
-      const next = entryAfterAcceptDeferred(deferred)
-      expect(next).toEqual({ baseline: 'v2', dirty: false, deferred: undefined })
+      const next = entryAfterCanonicalize(deferred, 'v2-canonical')
+      expect(next).toEqual({ baseline: 'v2-canonical', dirty: false, deferred: undefined })
     })
 
     it('保留我的修改：仅关闭提示，dirty 保持', () => {
@@ -107,11 +107,11 @@ describe('coedit-conflict', () => {
       expect(entry).toEqual({ baseline: 'user version', dirty: false, deferred: undefined })
     })
 
-    it('用户 dirty → AI 改盘挂起 → 用户载入 AI 版本', () => {
+    it('用户 dirty → AI 改盘挂起 → 用户载入 AI 版本（经规范化回写）', () => {
       let entry = { ...entryAfterApply(undefined, 'v1'), dirty: true }
       expect(decideExternalContent(entry, 'v1')).toBe('deferred')
       entry = entryAfterDefer(entry, 'v2')
-      entry = entryAfterAcceptDeferred(entry)
+      entry = entryAfterCanonicalize(entry, 'v2')
       // 载入后：基线 = v2 = 正文，干净
       expect(entry).toEqual({ baseline: 'v2', dirty: false, deferred: undefined })
       expect(decideExternalContent(entry, 'v2')).toBe('applied')

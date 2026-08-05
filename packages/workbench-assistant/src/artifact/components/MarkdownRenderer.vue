@@ -1,39 +1,47 @@
 <script setup lang="ts">
 /**
- * Canvas Markdown：默认预览渲染，可切换编辑；选中内容可引用到同 Tab 的 AI 输入框。
+ * Canvas Markdown：Milkdown Crepe 真 WYSIWYG 单编辑面（表格/代码块/数学公式可视化编辑）。
+ *
+ * WYSIWYG 的结构性代价是「保存即规范化」（序列化输出 ≠ 原文件字节），
+ * 本组件以「基线恒为编辑器规范化内容」契约消化：每次程序化替换编辑器内容后，
+ * 立即序列化回写 store 并前进磁盘基线，dirty/冲突比较全在规范化空间进行。
+ * 选区引用无文件行号（内容锚定），见 SPEC「设计目标：编辑器形态」。
  */
-import { computed, inject, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Eye, MessageSquareQuote, SquarePen, Wand2 } from 'lucide-vue-next'
+import { MessageSquareQuote, Wand2 } from 'lucide-vue-next'
+import { buildArtifactPreviewUrl } from '@shared/types'
 import { useAssistantArtifactStore } from '../store'
 import { useArtifactSaveBridge } from '../domain/artifact-save-bridge'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
 import { requireArtifactDesktopHost } from '../host'
 import { ADD_COMPOSER_QUOTE_KEY, SET_COMPOSER_DRAFT_KEY } from '../composer-quote'
-import { useMarkdown } from '@sailfish/workbench-sdk/markdown'
 import { useToast } from '@sailfish/workbench-sdk/toast'
+import type { MarkdownWysiwygHandle } from '../editor/markdown-wysiwyg-editor'
 
 const props = defineProps<{
   tabId: string
   artifactId: string
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const artifactStore = useAssistantArtifactStore()
 const saveBridge = useArtifactSaveBridge()
 const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
 const addComposerQuote = inject(ADD_COMPOSER_QUOTE_KEY, undefined)
 const setComposerDraft = inject(SET_COMPOSER_DRAFT_KEY, undefined)
 const desktopHost = requireArtifactDesktopHost()
-const { renderMarkdown, handleCodeBlockClick, handleFilePathContextMenu } = useMarkdown()
-const previewWrapRef = ref<HTMLElement | null>(null)
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 
 const draft = ref('')
 const saving = ref(false)
-const viewMode = ref<'edit' | 'preview'>('preview')
-const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const rootRef = ref<HTMLElement | null>(null)
+const editorWrapRef = ref<HTMLElement | null>(null)
+let editorHandle: MarkdownWysiwygHandle | null = null
+/** 程序化 setContent 期间屏蔽 onDocChanged 回环 */
+let applyingExternal = false
+/** 编辑器异步挂载完成前到达的外部内容 */
+let pendingExternalDoc: string | null = null
 
 const ctxVisible = ref(false)
 const ctxX = ref(0)
@@ -45,20 +53,13 @@ const ctxQuotePayload = ref<{
   startLine: number | null
   endLine: number | null
 } | null>(null)
-/** 预览区选区快照（右键/快捷键时 DOM 选区可能已丢失） */
-const lastPreviewQuoteMeta = ref<{
-  excerpt: string
-  accurate: boolean
-  startLine: number | null
-  endLine: number | null
-} | null>(null)
 
 const artifact = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId))
 const filePath = computed(() => artifact.value?.filePath ?? null)
 const canSave = computed(() => typeof filePath.value === 'string' && filePath.value.length > 0)
 
 // ── 人机双写：磁盘基线 / dirty / 外部版本冲突 ──
-/** 磁盘基线（store 协同状态）；未建立时回退为当前内容（视为干净） */
+/** 磁盘基线（store 协同状态，恒为编辑器规范化内容）；未建立时回退为当前内容（视为干净） */
 const diskBaseline = computed(
   () => artifactStore.getDiskBaseline(props.tabId, props.artifactId) ?? artifact.value?.content ?? ''
 )
@@ -69,7 +70,35 @@ const lastSynced = ref('')
 /** 冲突时被挂起的外部版本（store 响应式，驱动横幅） */
 const deferredContent = computed(() => artifactStore.getDeferredContent(props.tabId, props.artifactId))
 
-const previewHtml = computed(() => renderMarkdown(draft.value))
+/**
+ * 外部内容进入编辑器：程序化替换 → 规范化序列化 → 回写 store + 基线前进。
+ * 编辑器未就绪时暂存，挂载后补上。
+ * 守卫：拒绝把非空内容规范化成空串后写回（Crepe 瞬时空文档 / 销毁副作用）。
+ */
+function applyExternalContent(raw: string) {
+  if (!editorHandle) {
+    pendingExternalDoc = raw
+    return
+  }
+  applyingExternal = true
+  try {
+    editorHandle.setContent(raw)
+    const canonical = editorHandle.getContent()
+    if (!canonical.trim() && raw.trim()) {
+      // 序列化异常：保留原 raw，不推进空基线
+      draft.value = raw
+      lastSynced.value = raw
+      artifactStore.updateContent(props.tabId, raw, props.artifactId)
+      return
+    }
+    draft.value = canonical
+    lastSynced.value = canonical
+    artifactStore.updateContent(props.tabId, canonical, props.artifactId)
+    artifactStore.syncCoeditBaseline(props.tabId, props.artifactId, canonical)
+  } finally {
+    applyingExternal = false
+  }
+}
 
 watch(
   () => artifact.value?.content,
@@ -77,9 +106,14 @@ watch(
     const next = c ?? ''
     if (next === draft.value) return
     if (draft.value === lastSynced.value) {
-      // 本地未偏离 → 直接接受外部版本
-      draft.value = next
-      lastSynced.value = next
+      if (!editorHandle && artifactStore.isArtifactDirty(props.tabId, props.artifactId)) {
+        // 重挂载恢复 dirty 草稿：store 里是用户未保存内容，不视为外部版本、不动基线
+        draft.value = next
+        lastSynced.value = artifactStore.getDiskBaseline(props.tabId, props.artifactId) ?? next
+        return
+      }
+      // 本地未偏离 → 接受外部版本（含规范化回写）
+      applyExternalContent(next)
     } else {
       // 本地草稿 dirty → 挂起外部版本，保护用户输入（横幅由 deferredContent 驱动）
       artifactStore.deferExternalContent(props.tabId, props.artifactId, next)
@@ -117,19 +151,52 @@ watch(draft, () => {
   artifactStore.setArtifactDirty(props.tabId, props.artifactId, isDirty.value)
 }, { immediate: true })
 
-function focusEditorIfNeeded() {
-  if (viewMode.value !== 'edit') return
-  nextTick(() => textareaRef.value?.focus())
+/** 相对路径图片 → sailfish-artifact:// 协议 URL（主进程受限映射到产出物所在目录） */
+function resolveImageSrc(src: string): string {
+  if (/^(https?:|data:|blob:|sailfish-artifact:|file:)/i.test(src)) return src
+  return buildArtifactPreviewUrl(props.tabId, props.artifactId) + src.replace(/^\.\//, '')
 }
 
-function toggleViewMode() {
-  viewMode.value = viewMode.value === 'edit' ? 'preview' : 'edit'
-  focusEditorIfNeeded()
-}
-
-function setViewMode(m: 'edit' | 'preview') {
-  viewMode.value = m
-  focusEditorIfNeeded()
+async function mountEditor() {
+  const el = editorWrapRef.value
+  if (!el) return
+  // 动态引入：Crepe + ProseMirror + KaTeX 不进主包
+  const { createMarkdownWysiwygEditor } = await import('../editor/markdown-wysiwyg-editor')
+  if (!editorWrapRef.value) return
+  const initialDoc = pendingExternalDoc ?? draft.value
+  pendingExternalDoc = null
+  editorHandle = await createMarkdownWysiwygEditor({
+    parent: el,
+    doc: initialDoc,
+    onDocChanged: (md) => {
+      if (applyingExternal) return
+      // 拒绝用空串覆盖非空草稿（Crepe destroy / 瞬时清空的常见副作用）
+      if (!md.trim() && draft.value.trim()) return
+      if (md !== draft.value) draft.value = md
+    },
+    resolveImageSrc,
+    locale: locale.value === 'en-US' ? 'en-US' : 'zh-CN'
+  })
+  editorHandle.dom.addEventListener('contextmenu', openCtxMenu)
+  // 图片相对资源走 sailfish-artifact:// 协议，需主进程缓存条目存在（content 不用于资源映射）
+  void window.electronAPI?.artifactPreview?.sync({ tabId: props.tabId, artifactId: props.artifactId, content: '' })
+  // 干净态挂载：初始内容规范化回写基线（dirty 态挂载 = 恢复用户草稿，不动基线）。
+  // 以 store 的 dirty 标记为准——draft===lastSynced 在「dirty 但基线未建立」的边界下会误判
+  if (!artifactStore.isArtifactDirty(props.tabId, props.artifactId)) {
+    const canonical = editorHandle.getContent()
+    if (!canonical.trim() && initialDoc.trim()) {
+      // 序列化异常：不推进空基线，保留 initialDoc
+      draft.value = initialDoc
+      lastSynced.value = initialDoc
+      return
+    }
+    if (canonical !== draft.value) {
+      draft.value = canonical
+      artifactStore.updateContent(props.tabId, canonical, props.artifactId)
+    }
+    artifactStore.syncCoeditBaseline(props.tabId, props.artifactId, canonical)
+    lastSynced.value = canonical
+  }
 }
 
 type QuoteMeta = {
@@ -139,65 +206,18 @@ type QuoteMeta = {
   endLine: number | null
 }
 
-/** 预览区多为非可聚焦节点，焦点常在 AI 输入框，需 window 级快捷键 */
+/** 面板激活即可引用（WYSIWYG 选区在焦点移走后仍保留） */
 function isMarkdownPanelActive(): boolean {
   const root = rootRef.value
   if (!root?.isConnected) return false
   if (!artifactStore.isVisible(props.tabId)) return false
   if (artifactStore.getActiveArtifact(props.tabId)?.id !== props.artifactId) return false
   if (artifactStore.getActiveArtifact(props.tabId)?.renderer !== 'markdown') return false
-  if (!desktopHost.isTabActive(props.tabId)) return false
-  const active = document.activeElement
-  if (active && root.contains(active)) return true
-  return viewMode.value === 'preview'
+  return desktopHost.isTabActive(props.tabId)
 }
 
-function refreshPreviewQuoteSnapshot() {
-  if (viewMode.value !== 'preview') return
-  const meta = captureQuoteMeta()
-  if (meta?.excerpt.trim()) {
-    lastPreviewQuoteMeta.value = meta
-  }
-}
-
-function resolveQuoteMeta(): QuoteMeta | null {
-  const meta = captureQuoteMeta()
-  if (meta?.excerpt.trim()) return meta
-  if (viewMode.value === 'preview' && lastPreviewQuoteMeta.value?.excerpt.trim()) {
-    return lastPreviewQuoteMeta.value
-  }
-  return null
-}
-
-/** 预览：窗口选区；编辑：textarea 选区及文件内行号 */
-function captureQuoteMeta(): {
-  excerpt: string
-  accurate: boolean
-  startLine: number | null
-  endLine: number | null
-} | null {
-  const root = rootRef.value
-  if (viewMode.value === 'edit') {
-    const el = textareaRef.value
-    if (!el) return null
-    const a = el.selectionStart
-    const b = el.selectionEnd
-    if (a === b) return null
-    const full = draft.value
-    const excerpt = full.slice(a, b)
-    const startLine = full.slice(0, a).split('\n').length
-    const endLine = full.slice(0, b).split('\n').length
-    return { excerpt, accurate: true, startLine, endLine }
-  }
-  const sel = window.getSelection()
-  if (!sel?.rangeCount || sel.isCollapsed) return null
-  if (!root || !sel.anchorNode || !root.contains(sel.anchorNode)) return null
-  return {
-    excerpt: sel.toString(),
-    accurate: false,
-    startLine: null,
-    endLine: null
-  }
+function captureQuoteMeta(): QuoteMeta | null {
+  return editorHandle?.getQuoteMeta() ?? null
 }
 
 function basenamePath(p: string): string {
@@ -257,13 +277,11 @@ function applyCtxQuoteAction(actionKey: string) {
   closeCtxMenu()
 }
 
-/** 冲突横幅：载入 AI（磁盘）版本，丢弃本地未保存草稿 */
+/** 冲突横幅：载入 AI（磁盘）版本，丢弃本地未保存草稿（含规范化回写与基线前进） */
 function acceptExternal() {
   const c = deferredContent.value
   if (c === undefined) return
-  draft.value = c
-  lastSynced.value = c
-  artifactStore.acceptDeferredContent(props.tabId, props.artifactId)
+  applyExternalContent(c)
 }
 
 /** 冲突横幅：保留我的修改（随后保存即覆盖磁盘上的 AI 版本） */
@@ -272,21 +290,13 @@ function dismissExternal() {
 }
 
 function openCtxMenu(e: MouseEvent) {
-  const meta = resolveQuoteMeta()
+  const meta = captureQuoteMeta()
   if (!meta || !meta.excerpt.trim()) return
   e.preventDefault()
   ctxQuotePayload.value = meta
   ctxX.value = e.clientX
   ctxY.value = e.clientY
   ctxVisible.value = true
-}
-
-/** 预览区 capture 阶段处理右键，避免选区在冒泡前丢失；文件路径链路由 useMarkdown 处理 */
-function onPreviewContextMenuCapture(e: MouseEvent) {
-  if (viewMode.value !== 'preview') return
-  const target = e.target as HTMLElement
-  if (target.closest('[data-file-path]')) return
-  openCtxMenu(e)
 }
 
 function closeCtxMenu() {
@@ -309,6 +319,12 @@ async function saveToDisk() {
   if (!path || saving.value) return
   const api = window.electronAPI?.localFs
   if (!api?.writeFile) {
+    toastError(t('canvas.saveFailed'))
+    return
+  }
+  // 拒绝对非空基线静默写空（防止 destroy/规范化异常把磁盘清空）
+  const baseline = diskBaseline.value
+  if (!draft.value.trim() && baseline.trim()) {
     toastError(t('canvas.saveFailed'))
     return
   }
@@ -337,9 +353,9 @@ function onWindowKeydown(e: KeyboardEvent) {
 
   const k = e.key.toLowerCase()
 
-  // Ctrl/Cmd+L：引用到 AI（预览无焦点时也需 window 级响应）
+  // Ctrl/Cmd+L：引用到 AI（焦点不在编辑器时也需 window 级响应）
   if (!e.shiftKey && !e.altKey && k === 'l' && isMarkdownPanelActive()) {
-    const quoteMeta = resolveQuoteMeta()
+    const quoteMeta = captureQuoteMeta()
     if (quoteMeta?.excerpt.trim()) {
       e.preventDefault()
       e.stopPropagation()
@@ -347,13 +363,6 @@ function onWindowKeydown(e: KeyboardEvent) {
       closeCtxMenu()
       return
     }
-  }
-
-  if (e.shiftKey && k === 'm' && isMarkdownPanelActive()) {
-    e.preventDefault()
-    e.stopPropagation()
-    toggleViewMode()
-    return
   }
 
   if (!canSave.value) return
@@ -367,94 +376,39 @@ function onWindowKeydown(e: KeyboardEvent) {
   }
 }
 
-function bindPreviewMarkdownInteractions() {
-  const el = previewWrapRef.value
-  if (!el) return
-  el.addEventListener('click', handleCodeBlockClick)
-  el.addEventListener('contextmenu', handleFilePathContextMenu)
-  el.addEventListener('contextmenu', onPreviewContextMenuCapture, true)
-}
-
-function unbindPreviewMarkdownInteractions() {
-  const el = previewWrapRef.value
-  if (!el) return
-  el.removeEventListener('click', handleCodeBlockClick)
-  el.removeEventListener('contextmenu', handleFilePathContextMenu)
-  el.removeEventListener('contextmenu', onPreviewContextMenuCapture, true)
-}
-
-function onDocumentSelectionChange() {
-  refreshPreviewQuoteSnapshot()
-}
-
-watch(viewMode, (mode) => {
-  if (mode === 'preview') {
-    nextTick(bindPreviewMarkdownInteractions)
-  } else {
-    lastPreviewQuoteMeta.value = null
-    unbindPreviewMarkdownInteractions()
-  }
-})
-
 onMounted(() => {
   saveBridge?.register(props.artifactId, {
-    getContent: () => draft.value,
+    getContent: () => {
+      // 异常空草稿不得经面板保存写空盘：回退基线（用户真要清空可删文件）
+      if (!draft.value.trim() && diskBaseline.value.trim()) return diskBaseline.value
+      return draft.value
+    },
     flushToStore: flushDraftToStore,
     isDirty: () => isDirty.value
   })
+  void mountEditor()
   window.addEventListener('keydown', onWindowKeydown, true)
   window.addEventListener('keydown', onGlobalKeydown)
   document.addEventListener('mousedown', onGlobalMouseDown, true)
-  document.addEventListener('selectionchange', onDocumentSelectionChange)
-  if (viewMode.value === 'preview') {
-    nextTick(bindPreviewMarkdownInteractions)
-  }
 })
 onUnmounted(() => {
+  // 先 flush 再 destroy：destroy 会触发文档清空，disposed 标志挡住回灌
   flushDraftToStore()
   saveBridge?.unregister(props.artifactId)
-  unbindPreviewMarkdownInteractions()
+  editorHandle?.dom.removeEventListener('contextmenu', openCtxMenu)
+  editorHandle?.destroy()
+  editorHandle = null
   window.removeEventListener('keydown', onWindowKeydown, true)
   window.removeEventListener('keydown', onGlobalKeydown)
   document.removeEventListener('mousedown', onGlobalMouseDown, true)
-  document.removeEventListener('selectionchange', onDocumentSelectionChange)
 })
 </script>
 
 <template>
   <div ref="rootRef" class="markdown-renderer">
     <div class="md-toolbar">
-      <div class="md-toolbar-left">
-        <div class="md-mode-switch" role="tablist" :aria-label="t('canvas.viewMode')">
-          <button
-            type="button"
-            role="tab"
-            class="md-mode-btn"
-            :class="{ active: viewMode === 'edit' }"
-            :aria-selected="viewMode === 'edit'"
-            :title="t('canvas.modeEditHint')"
-            @click="setViewMode('edit')"
-          >
-            <SquarePen :size="14" aria-hidden="true" />
-            <span>{{ t('canvas.modeEdit') }}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="md-mode-btn"
-            :class="{ active: viewMode === 'preview' }"
-            :aria-selected="viewMode === 'preview'"
-            :title="t('canvas.modePreviewHint')"
-            @click="setViewMode('preview')"
-          >
-            <Eye :size="14" aria-hidden="true" />
-            <span>{{ t('canvas.modePreview') }}</span>
-          </button>
-        </div>
-      </div>
       <div class="md-toolbar-mid">
-        <span class="md-shortcut-hint">{{ t('canvas.toggleModeHint') }}</span>
-        <span class="md-shortcut-hint quote">{{ t('canvas.quoteHint') }}</span>
+        <span class="md-shortcut-hint">{{ t('canvas.quoteHint') }}</span>
       </div>
       <div class="md-toolbar-right">
         <span v-if="canSave && isDirty" class="md-dirty-hint">
@@ -477,28 +431,12 @@ onUnmounted(() => {
 
     <div class="md-body">
       <div v-if="loadingFromDisk && !draft.trim()" class="md-loading">{{ t('canvas.htmlPreviewLoading') }}</div>
-      <textarea
-        v-show="viewMode === 'edit' && !(loadingFromDisk && !draft.trim())"
-        id="canvas-md-editor"
-        ref="textareaRef"
-        v-model="draft"
-        class="md-editor"
-        spellcheck="false"
-        autocomplete="off"
-        :aria-label="t('canvas.modeEdit')"
-        @contextmenu="openCtxMenu"
-      />
       <div
-        v-show="viewMode === 'preview' && !(loadingFromDisk && !draft.trim())"
-        ref="previewWrapRef"
-        class="md-preview-wrap md-preview-full"
-        :aria-label="t('canvas.modePreview')"
-      >
-        <div
-          class="md-preview-inner markdown-content"
-          v-html="previewHtml"
-        />
-      </div>
+        v-show="!(loadingFromDisk && !draft.trim())"
+        ref="editorWrapRef"
+        class="md-editor-wrap"
+        :aria-label="t('canvas.markdownSource')"
+      />
     </div>
 
     <Teleport to="body">
@@ -554,13 +492,6 @@ onUnmounted(() => {
   font-size: 11px;
 }
 
-.md-toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
 .md-toolbar-mid {
   display: flex;
   flex-wrap: wrap;
@@ -575,41 +506,6 @@ onUnmounted(() => {
   color: var(--text-tertiary, #6a6a6a);
   font-size: 10px;
   white-space: nowrap;
-}
-
-.md-shortcut-hint.quote {
-  opacity: 0.9;
-}
-
-.md-mode-switch {
-  display: inline-flex;
-  border-radius: 6px;
-  padding: 2px;
-  background: var(--bg-secondary, #252525);
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-}
-
-.md-mode-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border: none;
-  border-radius: 4px;
-  font-size: 11px;
-  cursor: pointer;
-  background: transparent;
-  color: var(--text-secondary, #aaa);
-  transition: background 0.12s, color 0.12s;
-}
-
-.md-mode-btn:hover {
-  color: var(--text-primary, #eee);
-}
-
-.md-mode-btn.active {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.12));
-  color: var(--text-primary, #fff);
 }
 
 .md-toolbar-right {
@@ -650,46 +546,97 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.md-editor {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  margin: 0;
-  padding: 12px 14px;
-  border: none;
-  resize: none;
-  font-family: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-primary);
-  background: var(--bg-secondary);
-  outline: none;
-  tab-size: 2;
-}
-
-/* 覆盖全局 textarea:focus 光晕（main.css），全屏编辑区不需要焦点环 */
-.md-editor:focus {
-  outline: none;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-.md-preview-wrap {
-  overflow: auto;
-  background: var(--bg-primary, #1e1e1e);
-}
-
-.md-preview-full {
+.md-editor-wrap {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
 }
 
-.md-preview-inner {
-  padding: 14px 16px 24px;
+/* Crepe 主题变量对齐应用主题（frame-dark 为底，关键色跟随 CSS 变量） */
+.md-editor-wrap :deep(.milkdown) {
+  --crepe-color-background: var(--bg-secondary, #1a1a1a);
+  --crepe-color-on-background: var(--text-primary, #e6e6e6);
+  --crepe-color-surface: var(--bg-primary, #121212);
+  --crepe-color-surface-low: var(--bg-secondary, #1c1c1c);
+  --crepe-color-on-surface: var(--text-primary, #d1d1d1);
+  --crepe-color-on-surface-variant: var(--text-secondary, #a9a9a9);
+  --crepe-color-outline: var(--border-color, #757575);
+  --crepe-color-primary: var(--accent-primary, #b5b5b5);
+  --crepe-color-hover: var(--hover-bg, #232323);
+  /* 选区/光标用主题强调色，避免 frame-dark 灰底在浅/深主题下都看不清 */
+  --crepe-color-selected: color-mix(in srgb, var(--accent-primary, #4d9eff) 32%, transparent);
+  --crepe-base-font-size: 13px;
+}
+
+/* 文本选区高亮 */
+.md-editor-wrap :deep(.milkdown .ProseMirror ::selection),
+.md-editor-wrap :deep(.milkdown .ProseMirror *::selection) {
+  background: color-mix(in srgb, var(--accent-primary, #4d9eff) 35%, transparent);
+}
+
+/* 节点选区（表格/图片/代码块等） */
+.md-editor-wrap :deep(.milkdown .ProseMirror .ProseMirror-selectednode) {
+  background: color-mix(in srgb, var(--accent-primary, #4d9eff) 22%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent-primary, #4d9eff) 55%, transparent);
+}
+
+/* 光标颜色：普通文本用强调色；代码块/图片等 Crepe 覆盖区域也统一 */
+.md-editor-wrap :deep(.milkdown .ProseMirror),
+.md-editor-wrap :deep(.milkdown .ProseMirror .cm-content),
+.md-editor-wrap :deep(.milkdown .ProseMirror .image-block),
+.md-editor-wrap :deep(.milkdown .ProseMirror [contenteditable]) {
+  caret-color: var(--accent-primary, #4d9eff);
+}
+
+.md-editor-wrap :deep(.milkdown .ProseMirror) {
+  padding: 12px 16px 24px;
   min-height: 100%;
+  box-sizing: border-box;
 }
 
-/* 右键菜单（Teleport 到 body，需全局类名） */
+/* TopBar 紧凑化：面板宽度有限，缩小图标与间距 */
+.md-editor-wrap :deep(.milkdown .milkdown-top-bar) {
+  min-height: 36px;
+  padding: 0 8px;
+}
+
+.md-editor-wrap :deep(.milkdown .milkdown-top-bar .top-bar-item) {
+  width: 26px;
+  height: 26px;
+  margin: 2px;
+  padding: 2px;
+}
+
+.md-editor-wrap :deep(.milkdown .milkdown-top-bar .top-bar-item svg) {
+  width: 16px;
+  height: 16px;
+}
+
+.md-editor-wrap :deep(.milkdown .milkdown-top-bar .top-bar-divider) {
+  height: 18px;
+  margin: 6px;
+}
+
+.md-editor-wrap :deep(.milkdown .milkdown-top-bar .top-bar-heading-button) {
+  height: 26px;
+  padding: 2px 2px 2px 8px;
+}
+
+.md-editor-wrap :deep(.milkdown .milkdown-top-bar .top-bar-heading-button .top-bar-heading-label) {
+  min-width: 56px;
+  font-size: 12px;
+}
+
+.md-editor-wrap :deep(.milkdown .milkdown-top-bar .top-bar-heading-button .top-bar-chevron) {
+  width: 18px;
+  height: 18px;
+}
+
+.md-editor-wrap :deep(.milkdown .milkdown-top-bar .top-bar-heading-button .top-bar-chevron svg) {
+  width: 12px;
+  height: 12px;
+}
 </style>
 
 <style>

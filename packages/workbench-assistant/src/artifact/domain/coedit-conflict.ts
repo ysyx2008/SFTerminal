@@ -54,9 +54,13 @@ export function entryAfterSave(_entry: CoeditEntry | undefined, content: string)
   return { baseline: content, dirty: false, deferred: undefined }
 }
 
-/** 用户选择「载入外部版本」：deferred 已成为正文（baseline 在挂起时已前进），dirty 解除 */
-export function entryAfterAcceptDeferred(entry: CoeditEntry | undefined): CoeditEntry {
-  return { ...entry, dirty: false, deferred: undefined }
+/**
+ * WYSIWYG 编辑器规范化回写：基线前进到规范化内容，冲突与 dirty 解除。
+ * 与 entryAfterSave 迁移形状相同但语义独立——此处不携带任何「磁盘保存」副作用，
+ * 未来为保存增加副作用（如保存时间戳）时不得并入本函数。
+ */
+export function entryAfterCanonicalize(_entry: CoeditEntry | undefined, content: string): CoeditEntry {
+  return { baseline: content, dirty: false, deferred: undefined }
 }
 
 /** 用户选择「保留我的修改」：仅关闭提示，dirty 保持（草稿仍偏离基线） */
