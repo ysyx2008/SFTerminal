@@ -5,12 +5,13 @@
  * 结构性代价是「保存即规范化」——getMarkdown() 序列化输出 ≠ 原文件字节，
  * 调用方（MarkdownRenderer）以「基线恒为规范化内容」契约消化这一点。
  *
- * @see docs/plans/markdown-live-editor-design.md
  * @see packages/workbench-assistant/src/artifact/SPEC.md「设计目标：编辑器形态」
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { getMarkdown, replaceAll } from '@milkdown/kit/utils'
+import { $prose, getMarkdown, replaceAll } from '@milkdown/kit/utils'
+import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@milkdown/prose/state'
+import { Decoration, DecorationSet } from '@milkdown/prose/view'
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame-dark.css'
 
@@ -27,12 +28,66 @@ export interface MarkdownWysiwygHandle {
   setContent: (markdown: string) => void
   /** 当前文档的规范化序列化 */
   getContent: () => string
-  /** 当前选区摘录（序列化为 markdown 切片）；无选区返回 null */
+  /**
+   * 当前选区摘录（序列化为 markdown 切片）。
+   * 焦点移出编辑器后仍可读：优先活选区，否则回退到失焦前缓存的非空选区。
+   */
   getQuoteMeta: () => MarkdownWysiwygQuote | null
   focus: () => void
+  /** 清除 sticky 选区（发送作用域后调用，避免下一条误带） */
+  clearStickySelection: () => void
   destroy: () => void
   /** 编辑器根容器（右键菜单等事件挂在它上面） */
   dom: HTMLElement
+  /** @internal 测试用：按文档中首次出现的原文设置选区 */
+  selectTextForTest?: (substring: string) => boolean
+}
+
+const stickySelectionKey = new PluginKey<{ from: number; to: number } | null>('sf-sticky-selection')
+
+/**
+ * 失焦后浏览器会清掉原生 ::selection 高亮，但 ProseMirror 选区通常仍在。
+ * 用 decoration 在未聚焦时画出同等高亮；并缓存最近非空选区，供 getQuoteMeta 在偶发清空后回退。
+ */
+function createStickySelectionPlugin(): Plugin {
+  return new Plugin({
+    key: stickySelectionKey,
+    state: {
+      init() {
+        return null
+      },
+      apply(tr: Transaction, value: { from: number; to: number } | null, _old: EditorState, state: EditorState) {
+        if (tr.getMeta(stickySelectionKey) === 'clear') return null
+        const sel = state.selection
+        if (!sel.empty) {
+          return { from: sel.from, to: sel.to }
+        }
+        // 用户在编辑器内点空白折叠选区 → 清缓存；文档被整篇替换也清
+        if (tr.selectionSet || tr.docChanged) {
+          return null
+        }
+        return value
+      }
+    },
+    props: {
+      decorations(state) {
+        const sel = state.selection
+        const range = !sel.empty ? { from: sel.from, to: sel.to } : stickySelectionKey.getState(state)
+        if (!range || range.from === range.to) return null
+        // 聚焦时由原生 ::selection 负责，避免双重叠色（CSS 在 .ProseMirror-focused 下隐藏本 class）
+        return DecorationSet.create(state.doc, [
+          Decoration.inline(range.from, range.to, { class: 'sf-sticky-selection' })
+        ])
+      }
+    }
+  })
+}
+
+function quoteFromRange(ctx: any, from: number, to: number): MarkdownWysiwygQuote | null {
+  if (from === to) return null
+  const excerpt = getMarkdown({ from, to })(ctx).trim()
+  if (!excerpt) return null
+  return { excerpt, accurate: false, startLine: null, endLine: null }
 }
 
 export async function createMarkdownWysiwygEditor(options: {
@@ -83,6 +138,8 @@ export async function createMarkdownWysiwygEditor(options: {
     }
   })
 
+  crepe.editor.use($prose(() => createStickySelectionPlugin()))
+
   await crepe.create()
 
   /** destroy 后忽略 listener，防止 Crepe 清空文档时把空串回灌给调用方 */
@@ -109,10 +166,13 @@ export async function createMarkdownWysiwygEditor(options: {
       crepe.editor.action((ctx) => {
         const view = ctx.get(editorViewCtx)
         const { from, to, empty } = view.state.selection
-        if (empty) return
-        const excerpt = getMarkdown({ from, to })(ctx).trim()
-        if (excerpt) {
-          quote = { excerpt, accurate: false, startLine: null, endLine: null }
+        if (!empty) {
+          quote = quoteFromRange(ctx, from, to)
+          return
+        }
+        const cached = stickySelectionKey.getState(view.state)
+        if (cached) {
+          quote = quoteFromRange(ctx, cached.from, cached.to)
         }
       })
       return quote
@@ -123,10 +183,44 @@ export async function createMarkdownWysiwygEditor(options: {
         ctx.get(editorViewCtx).focus()
       })
     },
+    clearStickySelection() {
+      if (disposed) return
+      crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        const head = view.state.selection.head
+        const tr = view.state.tr
+          .setSelection(TextSelection.near(view.state.doc.resolve(head)))
+          .setMeta(stickySelectionKey, 'clear')
+        view.dispatch(tr)
+      })
+    },
     destroy() {
       disposed = true
       void crepe.destroy()
     },
-    dom: options.parent
+    dom: options.parent,
+    selectTextForTest(substring: string) {
+      if (disposed || !substring) return false
+      let ok = false
+      crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        const { doc } = view.state
+        let from = -1
+        let to = -1
+        doc.descendants((node, pos) => {
+          if (from >= 0) return false
+          if (!node.isText || !node.text) return
+          const idx = node.text.indexOf(substring)
+          if (idx < 0) return
+          from = pos + idx
+          to = from + substring.length
+          return false
+        })
+        if (from < 0 || to < 0) return
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(doc, from, to)))
+        ok = true
+      })
+      return ok
+    }
   }
 }

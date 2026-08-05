@@ -9,13 +9,14 @@
  */
 import { computed, inject, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { MessageSquareQuote, Wand2 } from 'lucide-vue-next'
+import { Wand2 } from 'lucide-vue-next'
 import { buildArtifactPreviewUrl } from '@shared/types'
 import { useAssistantArtifactStore } from '../store'
 import { useArtifactSaveBridge } from '../domain/artifact-save-bridge'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
 import { requireArtifactDesktopHost } from '../host'
-import { ADD_COMPOSER_QUOTE_KEY, SET_COMPOSER_DRAFT_KEY } from '../composer-quote'
+import { SET_COMPOSER_DRAFT_KEY, type ArtifactComposerQuote } from '../composer-quote'
+import { registerSelectionScopeProvider } from '../selection-scope'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 import type { MarkdownWysiwygHandle } from '../editor/markdown-wysiwyg-editor'
 
@@ -28,7 +29,6 @@ const { t, locale } = useI18n()
 const artifactStore = useAssistantArtifactStore()
 const saveBridge = useArtifactSaveBridge()
 const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
-const addComposerQuote = inject(ADD_COMPOSER_QUOTE_KEY, undefined)
 const setComposerDraft = inject(SET_COMPOSER_DRAFT_KEY, undefined)
 const desktopHost = requireArtifactDesktopHost()
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
@@ -206,7 +206,7 @@ type QuoteMeta = {
   endLine: number | null
 }
 
-/** 面板激活即可引用（WYSIWYG 选区在焦点移走后仍保留） */
+/** 面板激活即可引用（失焦后选区由 sticky decoration + 缓存保留） */
 function isMarkdownPanelActive(): boolean {
   const root = rootRef.value
   if (!root?.isConnected) return false
@@ -226,23 +226,15 @@ function basenamePath(p: string): string {
   return i >= 0 ? norm.slice(i + 1) : norm
 }
 
-function pushQuoteSnippet(meta: {
-  excerpt: string
-  accurate: boolean
-  startLine: number | null
-  endLine: number | null
-}) {
-  const trimmed = meta.excerpt.trim()
-  if (!trimmed) {
-    toastInfo(t('canvas.quoteToAiNeedSelection'))
-    return
-  }
-  if (!addComposerQuote) return
+/** 组装发送时静默附带的选区作用域（不进 Composer 胶囊） */
+function buildSelectionScope(): ArtifactComposerQuote | null {
+  const meta = captureQuoteMeta()
+  const trimmed = meta?.excerpt.trim()
+  if (!trimmed || !meta) return null
   const fp = filePath.value
   const title = artifact.value?.title ?? ''
   const label = fp ? basenamePath(fp) : (title || 'Markdown')
-
-  addComposerQuote({
+  return {
     label,
     sourcePath: fp || null,
     sourceLinesAccurate: meta.accurate,
@@ -250,20 +242,10 @@ function pushQuoteSnippet(meta: {
     startLine: meta.startLine,
     endLine: meta.endLine,
     excerpt: trimmed
-  })
-}
-
-function applyCtxQuoteFromMenu() {
-  const meta = ctxQuotePayload.value
-  if (!meta?.excerpt.trim()) {
-    closeCtxMenu()
-    return
   }
-  pushQuoteSnippet(meta)
-  closeCtxMenu()
 }
 
-/** 选区快捷指令（人机双写）：引用选区 + 指令模板填入输入框，用户可再编辑后发送 */
+/** 选区快捷指令：只预填输入框；选区由发送时静默附带 */
 const QUOTE_ACTION_KEYS = ['rewrite', 'polish', 'proofread', 'translate', 'expand'] as const
 
 function applyCtxQuoteAction(actionKey: string) {
@@ -272,7 +254,6 @@ function applyCtxQuoteAction(actionKey: string) {
     closeCtxMenu()
     return
   }
-  pushQuoteSnippet(meta)
   setComposerDraft?.(t(`canvas.quoteDraft.${actionKey}`))
   closeCtxMenu()
 }
@@ -353,13 +334,13 @@ function onWindowKeydown(e: KeyboardEvent) {
 
   const k = e.key.toLowerCase()
 
-  // Ctrl/Cmd+L：引用到 AI（焦点不在编辑器时也需 window 级响应）
+  // Ctrl/Cmd+L：聚焦输入框（选区作隐式作用域，发送时静默附带，不弹胶囊）
   if (!e.shiftKey && !e.altKey && k === 'l' && isMarkdownPanelActive()) {
     const quoteMeta = captureQuoteMeta()
     if (quoteMeta?.excerpt.trim()) {
       e.preventDefault()
       e.stopPropagation()
-      pushQuoteSnippet(quoteMeta)
+      setComposerDraft?.('')
       closeCtxMenu()
       return
     }
@@ -376,6 +357,8 @@ function onWindowKeydown(e: KeyboardEvent) {
   }
 }
 
+let unregisterSelectionScope: (() => void) | null = null
+
 onMounted(() => {
   saveBridge?.register(props.artifactId, {
     getContent: () => {
@@ -386,12 +369,18 @@ onMounted(() => {
     flushToStore: flushDraftToStore,
     isDirty: () => isDirty.value
   })
+  unregisterSelectionScope = registerSelectionScopeProvider(props.tabId, {
+    getScope: () => buildSelectionScope(),
+    clearScope: () => editorHandle?.clearStickySelection()
+  })
   void mountEditor()
   window.addEventListener('keydown', onWindowKeydown, true)
   window.addEventListener('keydown', onGlobalKeydown)
   document.addEventListener('mousedown', onGlobalMouseDown, true)
 })
 onUnmounted(() => {
+  unregisterSelectionScope?.()
+  unregisterSelectionScope = null
   // 先 flush 再 destroy：destroy 会触发文档清空，disposed 标志挡住回灌
   flushDraftToStore()
   saveBridge?.unregister(props.artifactId)
@@ -447,12 +436,7 @@ onUnmounted(() => {
         role="menu"
         @mousedown.prevent
       >
-        <button type="button" role="menuitem" class="md-ctx-item" @click="applyCtxQuoteFromMenu">
-          <MessageSquareQuote :size="14" aria-hidden="true" />
-          <span>{{ t('canvas.quoteToComposer') }}</span>
-        </button>
         <template v-if="setComposerDraft">
-          <div class="md-ctx-sep" role="separator" />
           <div class="md-ctx-group">{{ t('canvas.quoteActionGroup') }}</div>
           <button
             v-for="key in QUOTE_ACTION_KEYS"
@@ -569,10 +553,18 @@ onUnmounted(() => {
   --crepe-base-font-size: 13px;
 }
 
-/* 文本选区高亮 */
+/* 文本选区高亮（编辑器聚焦时） */
 .md-editor-wrap :deep(.milkdown .ProseMirror ::selection),
 .md-editor-wrap :deep(.milkdown .ProseMirror *::selection) {
   background: color-mix(in srgb, var(--accent-primary, #4d9eff) 35%, transparent);
+}
+
+/* 失焦后 sticky 选区（原生 ::selection 会消失，用 decoration 保留「正在改这段」的视觉） */
+.md-editor-wrap :deep(.milkdown .ProseMirror .sf-sticky-selection) {
+  background: color-mix(in srgb, var(--accent-primary, #4d9eff) 28%, transparent);
+}
+.md-editor-wrap :deep(.milkdown .ProseMirror-focused .sf-sticky-selection) {
+  background: transparent;
 }
 
 /* 节点选区（表格/图片/代码块等） */

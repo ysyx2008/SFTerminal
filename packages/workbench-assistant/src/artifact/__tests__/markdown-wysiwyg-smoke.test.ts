@@ -55,4 +55,23 @@ describe('markdown-wysiwyg-editor smoke', () => {
     handle.destroy()
     parent.remove()
   })
+
+  it('选区后失焦仍能 getQuoteMeta（sticky 缓存）', async () => {
+    const parent = document.createElement('div')
+    document.body.appendChild(parent)
+    const handle = await createMarkdownWysiwygEditor({
+      parent,
+      doc: DOC,
+      onDocChanged: () => {}
+    })
+    const ok = handle.selectTextForTest?.('正文第一段')
+    expect(ok).toBe(true)
+    // 失焦不应丢掉可引用摘录
+    parent.querySelector('.ProseMirror')?.dispatchEvent(new FocusEvent('blur', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 0))
+    const quote = handle.getQuoteMeta()
+    expect(quote?.excerpt).toContain('正文第一段')
+    handle.destroy()
+    parent.remove()
+  })
 })

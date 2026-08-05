@@ -258,7 +258,7 @@ export default {
     captureFeedbackReady: '截图已放入输入框，补充意见后发送',
     captureFeedbackDraft: '这是「{title}」当前的渲染效果截图，请根据我的意见修改：',
     markdownSource: 'Markdown',
-    quoteHint: 'Ctrl/Cmd+L 将选中内容引用到下方 AI 对话',
+    quoteHint: '选中后直接输入修改要求即可，助手按选区修改',
     quoteToComposer: '引用到 AI 对话',
     quoteToAiNeedSelection: '请先选中要引用的文字',
     quoteActionGroup: '让 AI 处理这段',
