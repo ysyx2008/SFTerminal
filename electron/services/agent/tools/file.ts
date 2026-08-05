@@ -147,7 +147,7 @@ async function appendPanelDirtyNotice(
   }
 }
 
-function expandTilde(filePath: string): string {
+export function expandTilde(filePath: string): string {
   if (filePath === '~') return os.homedir()
   if (filePath.startsWith('~/') || filePath.startsWith('~\\')) {
     return path.join(os.homedir(), filePath.slice(2))
@@ -1760,7 +1760,7 @@ export async function writeTextFile(
 ): Promise<ToolResult> {
   let filePath = expandTilde(args.path as string)
   const content = args.content as string | undefined
-  const mode = (args.mode as string) || 'create'
+  const mode = args.mode as string | undefined
   const insertAtLine = args.insert_at_line as number | undefined
   const startLine = args.start_line as number | undefined
   const endLine = args.end_line as number | undefined
@@ -1773,6 +1773,9 @@ export async function writeTextFile(
   }
 
   const validModes = ['overwrite', 'create', 'append', 'insert', 'replace_lines', 'regex_replace']
+  if (!mode) {
+    return { success: false, output: '', error: t('error.write_mode_required', { modes: validModes.join(', ') }) }
+  }
   if (!validModes.includes(mode)) {
     return { success: false, output: '', error: t('error.invalid_write_mode', { mode, modes: validModes.join(', ') }) }
   }
@@ -2082,19 +2085,22 @@ export async function writeRemoteTextFile(
 ): Promise<ToolResult> {
   const filePath = args.path as string
   const content = args.content as string
-  const mode = (args.mode as string) || 'create'
+  const mode = args.mode as string | undefined
 
   if (!filePath) {
     return { success: false, output: '', error: t('error.file_path_required') }
   }
 
-  if (content === undefined) {
-    return { success: false, output: '', error: t('error.content_required_for_mode', { mode }) }
-  }
-
   const validModes = ['create', 'overwrite', 'append']
+  if (!mode) {
+    return { success: false, output: '', error: t('error.write_mode_required', { modes: validModes.join(', ') }) }
+  }
   if (!validModes.includes(mode)) {
     return { success: false, output: '', error: t('error.invalid_write_mode', { mode, modes: validModes.join(', ') }) }
+  }
+
+  if (content === undefined) {
+    return { success: false, output: '', error: t('error.content_required_for_mode', { mode }) }
   }
 
   {

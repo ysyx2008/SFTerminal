@@ -49,7 +49,7 @@ import type { ToolExecutorConfig, ToolResult } from './tools/types'
 import { executeTool } from './tools/index'
 import { stripToolMeta } from './tools'
 import { measureContextComposition } from './context-composition'
-import { getMetaByName, buildPreToolCallDisplay } from './tool-metadata'
+import { getMetaByName, buildPreToolCallDisplay, tryParsePartialJson } from './tool-metadata'
 import {
   buildAllowlistKeyCandidates,
 } from './allowlist'
@@ -1913,6 +1913,57 @@ export abstract class Agent {
     // 调用 AI（传入流式执行器，使其在流式输出中提前执行工具）
     const response = await this.callAiWithStreaming(run, streamingExecutor)
 
+    // 流式参数早失败：streamValidate 在生成阶段命中并中止了请求。此时 response 通常
+    // 不含完整 tool_calls，需要合成「带 tool_calls 的 assistant 消息 + 失败 tool 结果」，
+    // 让循环继续、模型根据错误改用正确方式（如 overwrite）重试。
+    if (run.streamEarlyFailures && run.streamEarlyFailures.size > 0) {
+      // 先收集流式执行器已投入并完成的工具结果：abort 只停掉未开始的，已完成的可能已有
+      // 副作用（如 read_file 已读、写文件已落盘），不能丢弃——否则同批多个 tool_call 里
+      // 已完成的那个会静默丢失，消息历史也少一条 tool 结果。
+      const preExecuted = await streamingExecutor.waitForAll()
+      streamingExecutor.abort()
+      try {
+        // 合成一条带全部 tool_calls 的 assistant 消息（已完成的 + 早失败的），
+        // 后接所有 tool 结果。协议要求：一条 assistant.tool_calls 对应紧随其后的
+        // 若干 role=tool 消息，且每个 tool_call_id 都有匹配——不能把每个 tool_call
+        // 拆成独立 assistant 消息，也不能让已完成工具的 tool 结果悬空。
+        const allToolCalls: ToolCall[] = [
+          ...preExecuted.map(r => r.toolCall),
+          ...[...run.streamEarlyFailures.entries()].map(([toolCallId, failure]) => ({
+            id: toolCallId,
+            type: 'function' as const,
+            function: { name: failure.toolName, arguments: JSON.stringify(failure.args) }
+          }))
+        ]
+        const assistantMsg: AiMessage = {
+          role: 'assistant',
+          content: response.content ?? '',
+          tool_calls: allToolCalls
+        }
+        if (response.reasoning_content !== undefined) {
+          assistantMsg.reasoning_content = response.reasoning_content
+        }
+        run.messages.push(assistantMsg)
+        run.taskMessageLog.push({ ...assistantMsg })
+
+        for (const completed of preExecuted) {
+          this.processToolResult(run, completed.toolCall, completed.result, completed.toolArgs)
+        }
+        for (const [toolCallId, failure] of run.streamEarlyFailures) {
+          const toolCall: ToolCall = {
+            id: toolCallId,
+            type: 'function',
+            function: { name: failure.toolName, arguments: JSON.stringify(failure.args) }
+          }
+          this.processToolResult(run, toolCall, { success: false, output: '', error: failure.error }, failure.args)
+          this.finalizeToolCallStep(run, toolCallId, false)
+        }
+      } finally {
+        run.streamEarlyFailures.clear()
+      }
+      return { response, hasToolCalls: true }
+    }
+
     // 缓存最近一次 assistant 响应的 reasoning_content
     // finalizeRun 的最终纯文本 assistant 消息会从这里取（思考模式必须回传）
     if (response.reasoning_content !== undefined) {
@@ -2549,6 +2600,47 @@ export abstract class Agent {
           if (now - lastAt < TOOL_PROGRESS_THROTTLE_MS) return
 
           const meta = getMetaByName(this.getAvailableTools(), toolName)
+
+          // 流式参数早失败：工具声明了 streamValidate 时，用已到达的 partial args 检测
+          // 「注定失败」的情形（如以 create 写已存在文件），命中即记录错误并中止当前生成，
+          // 避免等整段长参数（content）流完才在执行阶段报错。抽象层只读元数据，不感知工具名。
+          if (meta?.streamValidate && !run.streamEarlyFailures?.has(toolCallId)) {
+            const parsed = tryParsePartialJson(partialArgs)
+            if (parsed) {
+              const earlyError = meta.streamValidate(parsed)
+              if (earlyError) {
+                if (!run.streamEarlyFailures) run.streamEarlyFailures = new Map()
+                run.streamEarlyFailures.set(toolCallId, { toolName, error: earlyError, args: parsed })
+                log.info(`[streamValidate] early-fail tool=${toolName} id=${toolCallId}: ${earlyError}`)
+                // 中止当前 AI 生成：onDone 会以 aborted=true 返回，executeStep 据此合成
+                // 「带 tool_calls 的 assistant 消息 + 失败 tool 结果」，让循环继续、模型改用正确方式。
+                if (run.requestId) this.services.aiService.abort(run.requestId)
+                // 把预卡片就地定稿为失败态（错误信息并进 tool_call 卡，不单独发 tool_result 卡，
+                // 避免同一条消息里「写入文件卡 + 错误卡」两张重复）。toolResult 随卡持久化，
+                // 历史详情也能看到失败原因。
+                const preStepId = run.pendingPreToolCallStepIds?.get(toolCallId)
+                if (preStepId) {
+                  this.updateStep(preStepId, {
+                    isStreaming: false,
+                    success: false,
+                    toolResult: earlyError
+                  })
+                } else {
+                  // 预卡片还没创建（path/mode 比卡片先到的极端情况）：补一张失败 tool_call 卡
+                  this.addStep({
+                    type: 'tool_call',
+                    content: `❌ ${earlyError}`,
+                    toolName,
+                    toolCallId,
+                    toolResult: earlyError,
+                    success: false
+                  })
+                }
+                return
+              }
+            }
+          }
+
           const built = buildPreToolCallDisplay(toolName, partialArgs, meta)
           // 解析失败时不回退显示（保留上一次已解析内容），让用户观感上是"连续增长"
           if (!run.pendingPreToolCallText) run.pendingPreToolCallText = new Map()
@@ -3004,6 +3096,7 @@ export abstract class Agent {
     }
     run.pendingPreToolCallStepIds.clear()
     run.pendingPreToolCallText?.clear()
+    run.streamEarlyFailures?.clear()
   }
 
   /**

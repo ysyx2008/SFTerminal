@@ -14,6 +14,8 @@ import { jinaAvailable as isJinaReaderAvailable } from '../web-fetch.service'
 import type { AgentExecutionPhase } from './types'
 import { t } from './i18n'
 import { getStreamPlaceholder } from './tool-metadata'
+import { expandTilde } from './tools/file'
+import fs from 'fs'
 
 // 重新导出 ToolDefinition 类型供技能模块使用
 export type { ToolDefinition }
@@ -84,6 +86,16 @@ export interface ToolMeta {
 
   /** 流式预卡片展示配置（不指定则用通用兜底「调用: {toolName}」） */
   streamDisplay?: ToolStreamDisplay
+
+  /**
+   * 流式参数早校验（可选）：在 tool_call 参数还在流式生成时，用已到达的 partial args
+   * 检测「注定失败」的情形，返回非空错误串即中止当前生成并把该工具定稿为失败，
+   * 避免等整段长参数（如 content）流完才在执行阶段报错。
+   *
+   * 返回 null 表示暂无法判定或校验通过；返回 string 为给模型的错误信息。
+   * 抽象层只读此元数据，不感知具体工具名（OOP 边界）。
+   */
+  streamValidate?: (args: Record<string, unknown>) => string | null
 
   /** 是否可与其他工具并行执行（默认 false：串行执行；副作用工具默认安全） */
   parallelizable?: boolean
@@ -687,7 +699,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       type: 'function',
       function: {
         name: 'write_text_file',
-        description: `写入或创建本地纯文本文件。部分修改请优先用 edit_file。大文件分段写入（先 create 再 append）。重要文件请先备份。`,
+        description: `写入或创建本地纯文本文件。部分修改请优先用 edit_file。大文件分段写入（先 create 再 append）。重要文件请先备份。目标文件已存在且要整文件重写时必须用 mode="overwrite"（mode="create" 会失败）。`,
         parameters: {
           type: 'object',
           properties: {
@@ -695,14 +707,14 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
               type: 'string',
               description: '本地文件路径（绝对路径或相对于当前目录）'
             },
-            content: {
-              type: 'string',
-              description: '文件内容（覆盖/追加/插入/行替换模式必填）'
-            },
             mode: {
               type: 'string',
               enum: ['create', 'overwrite', 'append', 'insert', 'replace_lines', 'regex_replace'],
-              description: '写入模式（默认 create）'
+              description: '写入方式（必填，无默认）：create=新建（目标已存在会失败）；overwrite=整文件覆盖重写；append=末尾追加；insert=指定行插入；replace_lines=按行号范围替换；regex_replace=正则替换'
+            },
+            content: {
+              type: 'string',
+              description: '文件内容（覆盖/追加/插入/行替换模式必填）'
             },
             insert_at_line: { type: 'number', description: 'insert: 插入行号（从1开始）' },
             start_line: { type: 'number', description: 'replace_lines: 起始行号' },
@@ -711,7 +723,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
             replacement: { type: 'string', description: 'regex_replace: 替换内容（支持 $1 $2）' },
             replace_all: { type: 'boolean', description: 'regex_replace: 替换全部（默认 true）' }
           },
-          required: ['path']
+          required: ['path', 'mode']
         }
       },
       _meta: {
@@ -724,6 +736,16 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         streamDisplay: {
           customRender: writeTextFilePrefix,
           progressFields: ['content']
+        },
+        // 流式早失败：path+mode 一到就检测「以 create 写已存在文件」，命中即中止生成，
+        // 不等整段 content 流完。抽象层只读此元数据，不感知工具名。
+        streamValidate: (args) => {
+          const p = typeof args.path === 'string' ? args.path : undefined
+          const mode = typeof args.mode === 'string' ? args.mode : undefined
+          if (!p || mode !== 'create') return null
+          const full = expandTilde(p)
+          if (!fs.existsSync(full)) return null
+          return t('error.file_exists_cannot_create', { path: full })
         }
       }
     } as ToolDefinitionWithMeta,
@@ -735,7 +757,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       type: 'function',
       function: {
         name: 'write_remote_text_file',
-        description: `通过 SFTP 写入远程纯文本文件。大文件分段写入（先 create 再 append）。路径不支持 ~。局部修改请用命令行 sed/awk。`,
+        description: `通过 SFTP 写入远程纯文本文件。大文件分段写入（先 create 再 append）。路径不支持 ~。局部修改请用命令行 sed/awk。目标已存在且要整文件重写时必须用 mode="overwrite"（mode="create" 会失败）。`,
         parameters: {
           type: 'object',
           properties: {
@@ -743,17 +765,17 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
               type: 'string',
               description: '远程文件路径'
             },
-            content: {
-              type: 'string',
-              description: '文件内容'
-            },
             mode: {
               type: 'string',
               enum: ['create', 'overwrite', 'append'],
-              description: '写入模式：create（新建，默认）、overwrite（覆盖）、append（追加）'
+              description: '写入方式（必填，无默认）：create=新建（目标已存在会失败）；overwrite=整文件覆盖重写；append=末尾追加'
+            },
+            content: {
+              type: 'string',
+              description: '文件内容'
             }
           },
-          required: ['path', 'content']
+          required: ['path', 'mode', 'content']
         }
       },
       _meta: {

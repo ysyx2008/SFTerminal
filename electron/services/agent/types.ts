@@ -221,6 +221,13 @@ export interface AgentRun {
    */
   pendingPreToolCallText?: Map<string, string>
   /**
+   * 流式参数早失败：toolCallId → 失败信息。
+   * 在 onToolCallProgress 中由工具的 streamValidate 元数据命中（如「以 create 写已存在文件」）
+   * 时记录，并立即中止当前 AI 生成；executeStep 随后据此合成「带 tool_calls 的 assistant
+   * 消息 + 失败 tool 结果」，让循环继续、模型改用正确方式重试，而不必等整段参数流完。
+   */
+  streamEarlyFailures?: Map<string, { toolName: string; error: string; args: Record<string, unknown> }>
+  /**
    * 工具执行期间记录 toolCallId → tool_call 步骤 ID 的映射。
    * 工具结束后，Agent 使用它反向把 ToolResult.success 回填到 tool_call 步骤上，
    * 让 UI 可以把左侧竖条颜色从"风险色"切换为"执行结果色"（失败=红 / 成功=淡色），
