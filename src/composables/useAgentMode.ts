@@ -1138,10 +1138,13 @@ export function useAgentMode(
   }
 
   // 运行 Agent 或发送补充消息
-  const runAgent = async (overrideMessage?: string) => {
+  const runAgent = async (
+    overrideMessage?: string,
+    options?: { workbenchContext?: import('@shared/types').WorkbenchContext }
+  ) => {
     const hasImageData = (imageCallbacks?.getImages()?.length ?? 0) > 0
     const message = overrideMessage ?? inputText.value
-    if ((!message.trim() && !hasImageData) || !currentTabId.value) return
+    if ((!message.trim() && !hasImageData && !options?.workbenchContext?.selectionScope?.excerpt?.trim()) || !currentTabId.value) return
 
     const tabId = currentTabId.value
 
@@ -1172,7 +1175,8 @@ export function useAgentMode(
         message,
         supplementAttachments.length > 0 ? supplementAttachments : undefined,
         documentContext || undefined,
-        images.length > 0 ? images : undefined
+        images.length > 0 ? images : undefined,
+        options?.workbenchContext
       )
       
       if (success) {
@@ -1307,7 +1311,8 @@ export function useAgentMode(
             remoteChannel: currentTab.value.remoteChannel,
             sessionId: agentState.value?.sessionId,
             sessionStartTime: agentState.value?.sessionStartTime,
-            ...(workbenchPrompt ? { workbenchPrompt } : {})
+            ...(workbenchPrompt ? { workbenchPrompt } : {}),
+            ...(options?.workbenchContext ? { workbenchContext: options.workbenchContext } : {})
           },
           { executionMode: executionMode.value, commandTimeout: commandTimeout.value * 1000 },
           activeProfileId.value || undefined
@@ -1328,7 +1333,8 @@ export function useAgentMode(
             attachments: attachments.length > 0 ? attachments : undefined,
             sessionId: agentState.value?.sessionId,
             sessionStartTime: agentState.value?.sessionStartTime,
-            ...(workbenchPrompt ? { workbenchPrompt } : {})
+            ...(workbenchPrompt ? { workbenchPrompt } : {}),
+            ...(options?.workbenchContext ? { workbenchContext: options.workbenchContext } : {})
           },
           { executionMode: executionMode.value, commandTimeout: commandTimeout.value * 1000 },
           activeProfileId.value || undefined

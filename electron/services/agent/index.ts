@@ -724,10 +724,10 @@ export class AgentService {
   /**
    * 添加用户消息
    */
-  addUserMessage(ptyId: string, message: string, attachments?: import('@shared/types').AttachmentInfo[], documentContext?: string, images?: string[]): boolean {
+  addUserMessage(ptyId: string, message: string, attachments?: import('@shared/types').AttachmentInfo[], documentContext?: string, images?: string[], workbenchContext?: import('@shared/types').WorkbenchContext): boolean {
     // 准备阶段 run() 尚未 initializeRun 时也要能接收补充（getAgent 会返回 undefined）
     const agent = this.getOrCreateAgent(ptyId)
-    return agent.addUserMessage(message, attachments, documentContext, images)
+    return agent.addUserMessage(message, attachments, documentContext, images, workbenchContext)
   }
   
   /**

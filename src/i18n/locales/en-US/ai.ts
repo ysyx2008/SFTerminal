@@ -141,6 +141,11 @@ export default {
       'Note: Content from terminal selection; line numbers are sequential within this excerpt and may not match buffer row indices.',
     quoteSnippetTerminalTabFallback: 'Terminal',
     quoteOnlyPrompt: '(User attached quoted excerpts only — see below; answer using them.)',
+    selectionScopeOnlyPrompt: 'Edit the selection',
+    selectionScopeAppendixIntro:
+      '[Selection scope] The user is instructing about the following excerpt. Edit only this range (anchor by content) unless they explicitly ask to expand the scope.',
+    selectionScopeAppendixDisclaimer:
+      'Note: selected in the visual editor; no exact file line numbers — anchor edits by the excerpt text.',
     quoteSnippetRemove: 'Remove quote',
     quoteSnippetAdded: 'Quote added to composer',
     composerImageLimit: 'Image count or size limit reached — remove some images first',

@@ -287,6 +287,7 @@ export function cleanSummarySource(text: string): string {
     .replace(/<sf_uploaded_docs>[\s\S]*?<\/sf_uploaded_docs>/g, '（附文档）')
     .replace(/<sf_knowledge_refs>[\s\S]*?<\/sf_knowledge_refs>/g, '')
     .replace(/<sf_system_context>[\s\S]*?<\/sf_system_context>/g, '')
+    .replace(/<sf_selection_scope>[\s\S]*?<\/sf_selection_scope>/g, '')
     .replace(/<details[\s\S]*?<\/details>/gi, '')
     .replace(/^\s*<details[^>\n]*>[\s\S]*/i, '')
     .replace(/\[系统：用户在本消息中附带了[^\]]*\]/g, '（附图片）')

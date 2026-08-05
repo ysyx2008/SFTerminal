@@ -65,7 +65,7 @@ import { createSkillSession, SkillSession } from './skills'
 import { McpToolSession } from './mcp-tool-session'
 import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
-import { assembleUserMessageContent, wrapSystemContext } from './message-envelope'
+import { assembleUserMessageContent, formatSelectionScopeBody, wrapSystemContext } from './message-envelope'
 import { notifyFrontendConfigChanged } from './skills/config/executor'
 import { getBrowserBridgeService } from '../browser-bridge/browser-bridge.service'
 import { patchBrowserBridgeSectionInSystemPrompt } from '../browser-bridge/prompt-section'
@@ -483,12 +483,19 @@ export abstract class Agent {
   /**
    * 添加用户补充消息
    */
-  addUserMessage(message: string, attachments?: import('@shared/types').AttachmentInfo[], documentContext?: string, images?: string[]): boolean {
+  addUserMessage(
+    message: string,
+    attachments?: import('@shared/types').AttachmentInfo[],
+    documentContext?: string,
+    images?: string[],
+    workbenchContext?: import('@shared/types').WorkbenchContext
+  ): boolean {
     const pending: PendingUserMessage = {
       message,
       attachments: attachments?.length ? attachments : undefined,
       documentContext: documentContext || undefined,
-      images: images?.length ? images : undefined
+      images: images?.length ? images : undefined,
+      workbenchContext: workbenchContext || undefined
     }
 
     if (!this.currentRun?.isRunning) {
@@ -1625,9 +1632,14 @@ export abstract class Agent {
       }
     }
 
+    const selectionScopeBody = run.context.workbenchContext?.selectionScope
+      ? formatSelectionScopeBody(run.context.workbenchContext.selectionScope)
+      : ''
+
     const enhancedMessage = assembleUserMessageContent({
       knowledgeRefs,
       systemContext: systemContextParts.length > 0 ? wrapSystemContext(systemContextParts.join('\n\n')) : undefined,
+      selectionScope: selectionScopeBody || undefined,
       userMessage: userBody,
       uploadedDocs: run.context.documentContext,
       imageNote: imageNote || undefined,
@@ -3471,8 +3483,12 @@ export abstract class Agent {
           imageNote = t('agent.user_image_no_vision', { count: imageCount })
         }
       }
+      const selectionScopeBody = pending.workbenchContext?.selectionScope
+        ? formatSelectionScopeBody(pending.workbenchContext.selectionScope)
+        : ''
       const msgPart = assembleUserMessageContent({
         userMessage: userBody,
+        selectionScope: selectionScopeBody || undefined,
         uploadedDocs: pending.documentContext,
         imageNote: imageNote || undefined,
       })

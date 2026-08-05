@@ -5,12 +5,15 @@
  * 锚点区 = 聊天（AiPanel，常驻）；可隐区 = 产出物面板（ArtifactPanel，按需显隐）。
  * step→产出物接线在本岗挂载（useArtifactAgentBridge）。
  * 「跳到生成处」/「引用到 Composer」经 AiPanel defineExpose，由本壳持 ref 转发。
+ * Markdown 选区作用域：发送前经 consumeSelectionScope 静默附带，不进引用胶囊。
  */
 import { computed, ref } from 'vue'
 import type { WorkbenchRendererProps } from '@sailfish/workbench-sdk'
 import { AiPanel } from '@sailfish/workbench-sdk/ai-panel'
 import { WorkbenchShell } from '@sailfish/workbench-sdk/workbench-shell'
 import type { ArtifactComposerQuote } from './artifact/composer-quote'
+import { consumeSelectionScope } from './artifact/selection-scope'
+import type { WorkbenchContext } from '@shared/types'
 import { useAssistantArtifactStore } from './artifact/store'
 import { useArtifactAgentBridge } from './artifact/composables/useArtifactAgentBridge'
 import ArtifactPanel from './artifact/components/ArtifactPanel.vue'
@@ -45,6 +48,22 @@ function setComposerDraft(text: string) {
   aiPanelRef.value?.setComposerDraft(text)
 }
 
+/** 发送时静默取出 Markdown 选区作用域（取出即清除 sticky；不上聊天气泡） */
+function consumeWorkbenchContext(): WorkbenchContext | undefined {
+  const scope = consumeSelectionScope(props.tab.id)
+  if (!scope?.excerpt.trim()) return undefined
+  return {
+    selectionScope: {
+      label: scope.label,
+      sourcePath: scope.sourcePath,
+      sourceLinesAccurate: scope.sourceLinesAccurate,
+      startLine: scope.startLine,
+      endLine: scope.endLine,
+      excerpt: scope.excerpt
+    }
+  }
+}
+
 const docExpanded = computed(() => artifactStore.isVisible(props.tab.id))
 const panelMinimized = computed(() => artifactStore.isPanelMinimized(props.tab.id))
 const toggleVisible = computed(() => docExpanded.value || panelMinimized.value)
@@ -73,6 +92,7 @@ function expandPanel(artifactId?: string) {
         ref="aiPanelRef"
         :tab-id="tab.id"
         :tab-active="isActive"
+        :consume-workbench-context="consumeWorkbenchContext"
       />
     </template>
     <template #toggle>

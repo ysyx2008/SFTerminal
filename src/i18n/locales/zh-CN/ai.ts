@@ -141,6 +141,11 @@ export default {
       '说明：内容来自终端选区，行号为摘录内顺序，可能与缓冲区内真实行号不一致。',
     quoteSnippetTerminalTabFallback: '终端',
     quoteOnlyPrompt: '（用户在本消息仅附上引用摘录，见下文；请结合摘录作答。）',
+    selectionScopeOnlyPrompt: '处理选中内容',
+    selectionScopeAppendixIntro:
+      '【选区作用域】用户正在对以下原文下指令。请只改这段（以原文内容为锚），除非用户明确要求扩大范围。',
+    selectionScopeAppendixDisclaimer:
+      '说明：选自可视化编辑器，无精确文件行号；请以摘录原文做内容锚定修改。',
     quoteSnippetRemove: '移除该引用',
     quoteSnippetAdded: '已加入引用摘录',
     composerImageLimit: '图片数量或大小已达上限，请先移除部分图片',

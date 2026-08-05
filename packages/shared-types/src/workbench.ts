@@ -16,3 +16,25 @@ export interface WorkbenchArtifactSnapshot {
   activeArtifactId: string | null
   artifacts: WorkbenchArtifactItem[]
 }
+
+/**
+ * Markdown 选区作用域（人机双写）：只进模型旁路，不上聊天气泡。
+ * 行号不精确时 Agent 以 excerpt 内容锚定。
+ */
+export interface WorkbenchSelectionScope {
+  label: string
+  sourcePath: string | null
+  sourceLinesAccurate: boolean
+  startLine: number | null
+  endLine: number | null
+  excerpt: string
+}
+
+/**
+ * 工作台 → Agent 的可扩展上下文袋。
+ * 组装进 API 消息信封，不写入 user_task / user_supplement 展示正文。
+ * 新增能力只加可选键，勿把脚手架拼进用户可见字符串。
+ */
+export interface WorkbenchContext {
+  selectionScope?: WorkbenchSelectionScope
+}

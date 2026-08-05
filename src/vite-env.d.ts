@@ -747,7 +747,14 @@ interface Window {
         newRecord: import('@shared/types').AgentRecord
       } | null>
       updateConfig: (ptyId: string, config: { executionMode?: ExecutionMode; commandTimeout?: number; profileId?: string }) => Promise<boolean>
-      addMessage: (ptyId: string, message: string, attachments?: import('@shared/types').AttachmentInfo[], documentContext?: string, images?: string[]) => Promise<boolean>
+      addMessage: (
+        ptyId: string,
+        message: string,
+        attachments?: import('@shared/types').AttachmentInfo[],
+        documentContext?: string,
+        images?: string[],
+        workbenchContext?: import('@shared/types').WorkbenchContext
+      ) => Promise<boolean>
       getExecutionPhase: (ptyId: string) => Promise<{
         phase: 'thinking' | 'executing_command' | 'writing_file' | 'waiting' | 'confirming' | 'idle'
         currentToolName?: string

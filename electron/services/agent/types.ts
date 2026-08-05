@@ -104,7 +104,15 @@ export interface AgentContext {
   currentPlan?: AgentPlan  // 当前执行计划（从前端 steps 恢复，用于跨对话持久化）
   wakeup?: boolean  // 唤醒模式：静默运行，不累积到会话历史
   proactiveContext?: string  // IM 场景：Agent 之前主动发送的消息内容，作为用户回复的上下文注入 API 消息
-  contextHint?: string  // 仅注入 API 消息的上下文提示（如首次联系提醒），不显示在 user_task 步骤中
+  /**
+   * 仅注入 API 消息的上下文提示（如首次联系提醒），不显示在 user_task 步骤中
+   */
+  contextHint?: string
+  /**
+   * 工作台可扩展旁路上下文（选区作用域等）：组装进 API 信封，不上聊天气泡。
+   * @see WorkbenchContext
+   */
+  workbenchContext?: import('@shared/types').WorkbenchContext
   // 分屏多屏感知（仅在 tab 处于分屏模式时由前端 IPC 注入）
   mode?: 'single' | 'split'
   panes?: AgentPaneInfo[]
@@ -158,6 +166,8 @@ export interface PendingUserMessage {
   attachments?: AttachmentInfo[]
   documentContext?: string
   images?: string[]
+  /** 旁路工作台上下文（不上 user_supplement 气泡） */
+  workbenchContext?: import('@shared/types').WorkbenchContext
 }
 
 // Agent 运行状态

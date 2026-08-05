@@ -66,9 +66,14 @@ const props = defineProps<{
   abortAgent: () => void
   ttsIsSpeaking: boolean
   ttsStop: () => void
-  submitMessage: (message: string) => void | Promise<void>
+  submitMessage: (message: string, options?: { workbenchContext?: import('@shared/types').WorkbenchContext }) => void | Promise<void>
   submitEmptyMessage: () => void | Promise<void>
   clearTabError: () => void
+  /**
+   * 发送时取出的旁路工作台上下文（不上聊天气泡）。
+   * 助手工作台用于 Markdown 选区作用域。
+   */
+  consumeWorkbenchContext?: () => import('@shared/types').WorkbenchContext | undefined
   /** 嵌入欢迎页等非面板场景：去掉顶部分割线，使用独立圆角容器 */
   embedded?: boolean
   /** 覆盖默认 placeholder（如欢迎页传入随机值） */
@@ -369,7 +374,7 @@ function snippetChipSummary(s: ComposerQuoteSnippet): string {
   return t('ai.quoteSnippetChipPreview', { label: s.label, count })
 }
 
-/** 发送时附加给模型：带行号的完整摘录 */
+/** 发送时附加给模型：带行号的完整摘录（显式引用胶囊；选区作用域已改走 workbenchContext） */
 function formatQuotesAppendix(snippets: ComposerQuoteSnippet[]): string {
   if (snippets.length === 0) return ''
   const blocks: string[] = [t('ai.quoteSnippetAppendixIntro')]
@@ -605,11 +610,14 @@ const handleSend = async () => {
   closeMentionMenu()
 
   const quotesSnapshot = [...quoteStore.getSnippets(props.currentTabId)]
+  const workbenchContext = props.consumeWorkbenchContext?.()
+  const hasSelectionScope = Boolean(workbenchContext?.selectionScope?.excerpt?.trim())
 
   if (
     !inputText.value.trim() &&
     !props.hasImages &&
     quotesSnapshot.length === 0 &&
+    !hasSelectionScope &&
     props.canSendEmpty &&
     props.isAgentRunning
   ) {
@@ -622,7 +630,12 @@ const handleSend = async () => {
     inputText.value = t('ai.describeImage')
   }
 
-  if (!inputText.value.trim() && !props.hasImages && quotesSnapshot.length === 0) {
+  if (
+    !inputText.value.trim() &&
+    !props.hasImages &&
+    quotesSnapshot.length === 0 &&
+    !hasSelectionScope
+  ) {
     return
   }
 
@@ -637,10 +650,14 @@ const handleSend = async () => {
   let mergedUser =
     contextParts.length > 0 ? `${rawInput}\n\n${contextParts.join('\n\n')}` : rawInput
 
-  if (!mergedUser.trim() && quotesSnapshot.length > 0) {
+  // 仅有选区作用域、用户未打字：气泡用短提示；摘录正文走 workbenchContext
+  if (!mergedUser.trim() && hasSelectionScope && quotesSnapshot.length === 0) {
+    mergedUser = t('ai.selectionScopeOnlyPrompt')
+  } else if (!mergedUser.trim() && quotesSnapshot.length > 0) {
     mergedUser = t('ai.quoteOnlyPrompt')
   }
 
+  // 显式引用胶囊仍附正文（终端等）；选区作用域不再拼进可见字符串
   const appendix = formatQuotesAppendix(quotesSnapshot)
   const finalMessage = appendix ? `${mergedUser}\n\n${appendix}` : mergedUser
 
@@ -648,7 +665,7 @@ const handleSend = async () => {
   quoteStore.clearSnippets(props.currentTabId)
 
   await new Promise(resolve => setTimeout(resolve, 0))
-  await props.submitMessage(finalMessage)
+  await props.submitMessage(finalMessage, workbenchContext ? { workbenchContext } : undefined)
 }
 
 const parsingSummary = computed(() => {

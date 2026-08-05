@@ -65,6 +65,11 @@ const props = withDefaults(defineProps<{
   visible?: boolean
   /** 所属 tab 是否为当前激活 tab（与 visible 解耦，避免切 tab 触发虚拟列表重绘） */
   tabActive?: boolean
+  /**
+   * 发送时取出的旁路工作台上下文（不上聊天气泡）。
+   * 助手工作台用于 Markdown 选区作用域。
+   */
+  consumeWorkbenchContext?: () => import('@shared/types').WorkbenchContext | undefined
 }>(), {
   visible: true,
   tabActive: true,
@@ -1213,9 +1218,12 @@ const clearTabError = () => {
   }
 }
 
-const handleComposerSubmit = async (message: string) => {
+const handleComposerSubmit = async (
+  message: string,
+  options?: { workbenchContext?: import('@shared/types').WorkbenchContext }
+) => {
   if (!(await guardVisionBeforeSend())) return
-  await runAgent(message)
+  await runAgent(message, options)
 }
 
 const handleComposerEmptySubmit = async () => {
@@ -2822,6 +2830,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :submit-message="handleComposerSubmit"
         :submit-empty-message="handleComposerEmptySubmit"
         :clear-tab-error="clearTabError"
+        :consume-workbench-context="props.consumeWorkbenchContext"
       >
         <template #footer-left>
           <AiProfileSelect
