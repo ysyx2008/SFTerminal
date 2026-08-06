@@ -37,6 +37,8 @@ const draft = ref('')
 const saving = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const editorWrapRef = ref<HTMLElement | null>(null)
+/** 是否存在可作作用域的选区（驱动底部状态行提示） */
+const hasSelectionScope = ref(false)
 let editorHandle: MarkdownWysiwygHandle | null = null
 /** 程序化 setContent 期间屏蔽 onDocChanged 回环 */
 let applyingExternal = false
@@ -65,6 +67,10 @@ const diskBaseline = computed(
 )
 /** dirty = 草稿 ≠ 磁盘基线（而非 ≠ store.content，flush 不再洗掉 dirty） */
 const isDirty = computed(() => draft.value !== diskBaseline.value)
+/** 有选区提示、未保存、或无路径时才显示底部状态行 */
+const showStatusBar = computed(
+  () => hasSelectionScope.value || (canSave.value && isDirty.value) || !canSave.value
+)
 /** 本组件最近一次展示/接受的内容（accept-vs-defer 判定；store 基线在挂起时会前进，不能替代它） */
 const lastSynced = ref('')
 /** 冲突时被挂起的外部版本（store 响应式，驱动横幅） */
@@ -175,7 +181,10 @@ async function mountEditor() {
       if (md !== draft.value) draft.value = md
     },
     resolveImageSrc,
-    locale: locale.value === 'en-US' ? 'en-US' : 'zh-CN'
+    locale: locale.value === 'en-US' ? 'en-US' : 'zh-CN',
+    onHasSelectionChange: (has) => {
+      hasSelectionScope.value = has
+    }
   })
   editorHandle.dom.addEventListener('contextmenu', openCtxMenu)
   // 图片相对资源走 sailfish-artifact:// 协议，需主进程缓存条目存在（content 不用于资源映射）
@@ -395,18 +404,6 @@ onUnmounted(() => {
 
 <template>
   <div ref="rootRef" class="markdown-renderer">
-    <div class="md-toolbar">
-      <div class="md-toolbar-mid">
-        <span class="md-shortcut-hint">{{ t('canvas.quoteHint') }}</span>
-      </div>
-      <div class="md-toolbar-right">
-        <span v-if="canSave && isDirty" class="md-dirty-hint">
-          {{ t('canvas.unsavedChanges') }}
-        </span>
-        <span v-else-if="!canSave" class="md-hint">{{ t('canvas.noPathHint') }}</span>
-      </div>
-    </div>
-
     <div v-if="deferredContent !== undefined" class="md-coedit-banner" role="alert">
       <Wand2 :size="13" aria-hidden="true" class="md-coedit-icon" />
       <span class="md-coedit-text">{{ t('canvas.coeditExternalHint') }}</span>
@@ -426,6 +423,16 @@ onUnmounted(() => {
         class="md-editor-wrap"
         :aria-label="t('canvas.markdownSource')"
       />
+    </div>
+
+    <div v-if="showStatusBar" class="md-status-bar" role="status">
+      <span v-if="hasSelectionScope" class="md-shortcut-hint">{{ t('canvas.quoteHint') }}</span>
+      <div class="md-status-right">
+        <span v-if="canSave && isDirty" class="md-dirty-hint">
+          {{ t('canvas.unsavedChanges') }}
+        </span>
+        <span v-else-if="!canSave" class="md-hint">{{ t('canvas.noPathHint') }}</span>
+      </div>
     </div>
 
     <Teleport to="body">
@@ -465,38 +472,33 @@ onUnmounted(() => {
   background: var(--bg-primary, #1e1e1e);
 }
 
-.md-toolbar {
+.md-status-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-shrink: 0;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  font-size: 11px;
-}
-
-.md-toolbar-mid {
-  display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  flex: 1;
-  min-width: 0;
-  justify-content: center;
+  flex-shrink: 0;
+  min-height: 22px;
+  padding: 3px 10px;
+  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  font-size: 11px;
 }
 
 .md-shortcut-hint {
   color: var(--text-tertiary, #6a6a6a);
   font-size: 10px;
+  line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.md-toolbar-right {
+.md-status-right {
+  margin-left: auto;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
 }
 
 .md-hint {

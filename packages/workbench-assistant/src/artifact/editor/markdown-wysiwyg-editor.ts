@@ -49,7 +49,16 @@ const stickySelectionKey = new PluginKey<{ from: number; to: number } | null>('s
  * 失焦后浏览器会清掉原生 ::selection 高亮，但 ProseMirror 选区通常仍在。
  * 用 decoration 在未聚焦时画出同等高亮；并缓存最近非空选区，供 getQuoteMeta 在偶发清空后回退。
  */
-function createStickySelectionPlugin(): Plugin {
+function createStickySelectionPlugin(onHasSelectionChange?: (has: boolean) => void): Plugin {
+  let lastHas = false
+  const emitHas = (state: EditorState) => {
+    const sel = state.selection
+    const cached = stickySelectionKey.getState(state)
+    const has = !sel.empty || !!(cached && cached.from !== cached.to)
+    if (has === lastHas) return
+    lastHas = has
+    onHasSelectionChange?.(has)
+  }
   return new Plugin({
     key: stickySelectionKey,
     state: {
@@ -67,6 +76,13 @@ function createStickySelectionPlugin(): Plugin {
           return null
         }
         return value
+      }
+    },
+    view() {
+      return {
+        update(view) {
+          emitHas(view.state)
+        }
       }
     },
     props: {
@@ -98,6 +114,8 @@ export async function createMarkdownWysiwygEditor(options: {
   resolveImageSrc?: (src: string) => string
   /** 界面语言：占位符与 TopBar 标题选项 */
   locale?: 'zh-CN' | 'en-US'
+  /** 是否存在可作作用域的选区（含失焦 sticky） */
+  onHasSelectionChange?: (hasSelection: boolean) => void
 }): Promise<MarkdownWysiwygHandle> {
   const isZh = options.locale !== 'en-US'
   const crepe = new Crepe({
@@ -138,7 +156,7 @@ export async function createMarkdownWysiwygEditor(options: {
     }
   })
 
-  crepe.editor.use($prose(() => createStickySelectionPlugin()))
+  crepe.editor.use($prose(() => createStickySelectionPlugin(options.onHasSelectionChange)))
 
   await crepe.create()
 
