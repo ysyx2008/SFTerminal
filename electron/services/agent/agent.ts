@@ -999,7 +999,8 @@ export abstract class Agent {
       taskStatus: status,
       result: result ?? null,
       reasoningContent: run.lastAssistantReasoningContent,
-      tokenUsage: run.tokenUsage
+      tokenUsage: run.tokenUsage,
+      imagesStripped: run.imagesStripped,
     })
     this.saveSessionToHistory()
 
@@ -1406,7 +1407,8 @@ export abstract class Agent {
       taskLog: run.taskMessageLog,
       cachePrefix: hasUserMessage ? run.messages : null,
       errorMessage,
-      tokenUsage: run.tokenUsage
+      tokenUsage: run.tokenUsage,
+      imagesStripped: run.imagesStripped
     })
     this.saveSessionToHistory()
 
@@ -1428,7 +1430,8 @@ export abstract class Agent {
     // 同一 session 内，直接沿用上一个任务的完整 messages 作为前缀，只追加新 user 消息。
     // LLM 的前缀缓存（Anthropic explicit / DeepSeek·OpenAI automatic）可命中整段前缀。
     // 跳过条件：首次任务、唤醒 run（Watch 等，上下文差异大）、上下文预算不足，
-    // 以及跨模型切到关联视觉模型且带图（避免把主模型长前缀塞给视觉模型多模态请求）。
+    // 以及「新图首投无图前缀」的跨模型视觉路由（避免把主模型长前缀塞给视觉模型多模态请求；
+    // 前缀已有图则说明视觉模型接受过它，照常复用）。
     if (this._previousRunMessages && this._previousRunMessages.length > 0 && !run.context.wakeup) {
       const contextLength = this._contextWindow.getContextLength()
       const prevTokens = this._lastPromptTokens || this._contextWindow.estimateTotalTokens(this._previousRunMessages)
@@ -1440,6 +1443,8 @@ export abstract class Agent {
             profiles: configService.getAiProfiles(),
             autoVisionModel: !!configService.get('autoVisionModel'),
             hasImages: this.requestWillContainImages(),
+            hasNewImagesThisTurn: this.requestHasNewImagesThisTurn(run),
+            prefixHasImages: this.conversationContainsImages(this._previousRunMessages),
             usingCachePath: true,
           })
         : false
@@ -2116,6 +2121,16 @@ export abstract class Agent {
   }
 
   /**
+   * 本轮是否「新增」图片：用户消息自带的图（context.images）或待 flush 补充消息里的图。
+   * 与 requestWillContainImages 的区别：不含 cache 前缀/历史消息里已有的图——
+   * 那是视觉模型已经接受过的内容，只有「新图首投」才需要避开主模型前缀。
+   */
+  private requestHasNewImagesThisTurn(run: AgentRun): boolean {
+    if (run.context.images && run.context.images.length > 0) return true
+    return run.pendingUserMessages.some(p => !!(p.images && p.images.length > 0))
+  }
+
+  /**
    * 预算侧「有没有图」：复用 conversationContainsImages，只看两处——
    * 已组装的 messages（或 cache 前缀 _previousRunMessages）+ 本轮即将附带的 context.images。
    * 不扫 taskMemory / conversation 全文：联络热路径靠 cache 前缀已够；冷启动偶发低估靠 emergencyCompress 兜底。
@@ -2480,6 +2495,11 @@ export abstract class Agent {
           }
           // 重试成功但服务端立即返回（无 content/tool_call 流）时，onChunk 不会触发，这里兜底关掉 spinner
           finalizeRetryStep()
+
+          // 视觉模型拒图后剥图重试成功：标记本轮，commit 时把 cache 前缀快照里的 images 剔除（防毒前缀循环）
+          if (result.imagesStripped) {
+            run.imagesStripped = true
+          }
 
           // 累积 token usage（由 LLM provider 返回的精确值）
           if (result.usage) {

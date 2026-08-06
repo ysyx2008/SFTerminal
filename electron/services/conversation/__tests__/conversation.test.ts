@@ -165,6 +165,50 @@ describe('Conversation 聚合根（领域模型）', () => {
     expect(prefix[prefix.length - 1]).toMatchObject({ role: 'assistant', content: '完成' })
   })
 
+  it('commitRun：imagesStripped 时 cache 前缀快照剔除 images（剥图自愈，防毒前缀循环）', () => {
+    const conv = Conversation.create({ agentKey: 'tab-s', terminalType: 'assistant' })
+    const runMessages: AiMessage[] = [
+      { role: 'user', content: '看图', images: ['data:image/png;base64,AAA'] },
+      { role: 'assistant', content: '画面没传过来，请重新发送' }
+    ]
+    conv.commitRun({
+      runId: 'run-s',
+      userRequest: '看图',
+      steps: [userStep('看图'), finalStep('画面没传过来，请重新发送')],
+      taskMessageLog: runMessages.map(m => ({ ...m })),
+      runMessages,
+      taskStatus: 'success',
+      result: '画面没传过来，请重新发送',
+      imagesStripped: true,
+    })
+
+    const prefix = conv.getCachePrefix()!
+    expect(prefix).toBeTruthy()
+    expect(prefix.every(m => !m.images || m.images.length === 0)).toBe(true)
+    // 文本内容保留
+    expect(prefix[0]).toMatchObject({ role: 'user', content: '看图' })
+  })
+
+  it('commitRun：未触发剥图降级时 cache 前缀原样保留 images', () => {
+    const conv = Conversation.create({ agentKey: 'tab-k', terminalType: 'assistant' })
+    const runMessages: AiMessage[] = [
+      { role: 'user', content: '看图', images: ['data:image/png;base64,BBB'] },
+      { role: 'assistant', content: '这是一只猫' }
+    ]
+    conv.commitRun({
+      runId: 'run-k',
+      userRequest: '看图',
+      steps: [userStep('看图'), finalStep('这是一只猫')],
+      taskMessageLog: runMessages.map(m => ({ ...m })),
+      runMessages,
+      taskStatus: 'success',
+      result: '这是一只猫',
+    })
+
+    const prefix = conv.getCachePrefix()!
+    expect(prefix[0].images).toEqual(['data:image/png;base64,BBB'])
+  })
+
   it('cache 前缀复用判定：无前缀/wakeup/超 70% 跳过', () => {
     const estimate = (msgs: AiMessage[]) => msgs.length * 100
     const conv = Conversation.create({ agentKey: 'tab-c', terminalType: 'assistant' })

@@ -42,20 +42,27 @@ export function resolveBudgetProfileId(params: ResolveBudgetProfileParams): stri
 /**
  * 是否应跳过 `_previousRunMessages` 的 cache path，改走冷启动重建。
  *
- * 跨模型切到关联视觉模型（如 DeepSeek → 豆包）且本轮带图时，不能把主模型的
- * 长前缀原样塞给视觉模型多模态请求——豆包等会因 `UnsupportedImageFormat` 报错，
+ * 有毒的只有一种组合：主模型构建的**无图长前缀** + 本轮**新图首投**视觉模型——
+ * 豆包等对从未见过的 DeepSeek 前缀多模态请求报 `UnsupportedImageFormat`，
  * 触发剥图降级，Agent 只能答「画面没传过来」。冷启动只保留压缩后的短上下文+新图。
  *
- * 仅跨模型路由到 vision（与主模型不同）且带图时返回 true；同 profile / 主模型
- * 本身 vision / 无图时保持原 cache 行为。
+ * 前缀已有图则**不**跳过：图只能经视觉可用路径进入消息，前缀带图说明视觉模型
+ * 已接受过这段前缀，复用安全；此时跳过反而迫使冷启动，而冷启动的 L1/L2 压缩
+ * 按文本重建会剥掉历史图（2026-08-06 续聊丢图回归）。
  */
 export function shouldSkipCachePathForVision(
-  params: ResolveBudgetProfileParams & { usingCachePath: boolean },
+  params: ResolveBudgetProfileParams & {
+    usingCachePath: boolean
+    /** 本轮是否新增图片（context.images / 待 flush 补充消息），不含前缀/历史里已有的图 */
+    hasNewImagesThisTurn: boolean
+    /** cache 前缀是否已含图片（含图 = 视觉模型已接受过该前缀，复用安全） */
+    prefixHasImages: boolean
+  },
 ): boolean {
   if (!params.usingCachePath) return false
-  // 契约自文档化：仅带图时考虑跳过；未来 resolveBudgetProfileId 新增其它路由到
-  // vision 的理由时，不会把无图请求也误判为跳过（见 claude-review 3.2）。
-  if (!params.hasImages) return false
+  // 仅「新图首投无图前缀」才需要避开主模型前缀；其余场景（无新图 / 前缀已带图）
+  // 复用不会引入视觉模型没见过的内容（见 claude-review 3.2 的契约自文档化考量）。
+  if (!params.hasNewImagesThisTurn || params.prefixHasImages) return false
   const effective = resolveBudgetProfileId(params)
   const main = params.mainProfileId || params.activeProfileId
   return !!effective && !!main && effective !== main

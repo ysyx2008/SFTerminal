@@ -99,69 +99,83 @@ describe('resolveBudgetProfileId', () => {
 })
 
 describe('shouldSkipCachePathForVision', () => {
-  it('跨模型切到视觉模型且带图 + cache path → 跳过 cache', () => {
+  const base = {
+    mainProfileId: 'ds',
+    activeProfileId: 'ds',
+    profiles: [deepseekWithVision, doubao],
+    autoVisionModel: true,
+    hasImages: true,
+    usingCachePath: true,
+  }
+
+  it('新图首投 + 无图前缀 + 跨模型路由 → 跳过 cache', () => {
     expect(shouldSkipCachePathForVision({
-      mainProfileId: 'ds',
-      activeProfileId: 'ds',
-      profiles: [deepseekWithVision, doubao],
-      autoVisionModel: true,
-      hasImages: true,
-      usingCachePath: true,
+      ...base,
+      hasNewImagesThisTurn: true,
+      prefixHasImages: false,
     })).toBe(true)
   })
 
-  it('无图 → 不切模型，保持 cache', () => {
+  it('前缀已有图（视觉模型已接受过该前缀）→ 保持 cache', () => {
     expect(shouldSkipCachePathForVision({
-      mainProfileId: 'ds',
-      activeProfileId: 'ds',
-      profiles: [deepseekWithVision, doubao],
-      autoVisionModel: true,
+      ...base,
+      hasNewImagesThisTurn: true,
+      prefixHasImages: true,
+    })).toBe(false)
+  })
+
+  it('纯文本续聊带图前缀（本轮无新图）→ 保持 cache', () => {
+    expect(shouldSkipCachePathForVision({
+      ...base,
+      hasNewImagesThisTurn: false,
+      prefixHasImages: true,
+    })).toBe(false)
+  })
+
+  it('无图会话（无新图、无前缀图）→ 不切模型，保持 cache', () => {
+    expect(shouldSkipCachePathForVision({
+      ...base,
       hasImages: false,
-      usingCachePath: true,
+      hasNewImagesThisTurn: false,
+      prefixHasImages: false,
     })).toBe(false)
   })
 
   it('主模型本身是 vision（同 profile）→ 保持 cache', () => {
     expect(shouldSkipCachePathForVision({
+      ...base,
       mainProfileId: 'db',
       activeProfileId: 'db',
       profiles: [doubao],
-      autoVisionModel: true,
-      hasImages: true,
-      usingCachePath: true,
+      hasNewImagesThisTurn: true,
+      prefixHasImages: false,
     })).toBe(false)
   })
 
   it('未配置 visionProfileId（留在主模型）→ 保持 cache', () => {
     expect(shouldSkipCachePathForVision({
-      mainProfileId: 'ds',
-      activeProfileId: 'ds',
+      ...base,
       profiles: [deepseek, doubao],
-      autoVisionModel: true,
-      hasImages: true,
-      usingCachePath: true,
+      hasNewImagesThisTurn: true,
+      prefixHasImages: false,
     })).toBe(false)
   })
 
   it('非 cache path（usingCachePath=false）→ 不跳过', () => {
     expect(shouldSkipCachePathForVision({
-      mainProfileId: 'ds',
-      activeProfileId: 'ds',
-      profiles: [deepseekWithVision, doubao],
-      autoVisionModel: true,
-      hasImages: true,
+      ...base,
       usingCachePath: false,
+      hasNewImagesThisTurn: true,
+      prefixHasImages: false,
     })).toBe(false)
   })
 
-  it('autoVisionModel 关闭 + 有图 + cache path → 保持 cache', () => {
+  it('autoVisionModel 关闭 + 新图首投 → 保持 cache', () => {
     expect(shouldSkipCachePathForVision({
-      mainProfileId: 'ds',
-      activeProfileId: 'ds',
-      profiles: [deepseekWithVision, doubao],
+      ...base,
       autoVisionModel: false,
-      hasImages: true,
-      usingCachePath: true,
+      hasNewImagesThisTurn: true,
+      prefixHasImages: false,
     })).toBe(false)
   })
 })

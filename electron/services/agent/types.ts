@@ -259,6 +259,13 @@ export interface AgentRun {
    * user 消息追加到 messages 末尾。
    */
   pendingToolImages?: string[]
+
+  /**
+   * 本轮 AI 请求触发过「剥图降级」（视觉模型拒收图片后剥离 images 重试成功）。
+   * commit 写 cache 前缀快照时据此剔除 images——前缀只装模型实际处理过的内容，
+   * 防止带图毒前缀每轮循环「拒图→剥图→说看不到」（SPEC: 跨模型带图）。
+   */
+  imagesStripped?: boolean
 }
 
 // 主机档案服务接口

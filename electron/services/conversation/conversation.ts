@@ -73,6 +73,12 @@ export interface CommitRunInput {
   reasoningContent?: string
   /** 本次 run 的 token 用量 */
   tokenUsage?: TokenUsage
+  /**
+   * 本轮触发过「剥图降级」（视觉模型拒收图片后剥离 images 重试成功）。
+   * 写 cache 前缀快照时据此剔除 images——前缀只装模型实际处理过的内容，
+   * 防止带图毒前缀每轮循环「拒图→剥图→说看不到」（agent/SPEC: 跨模型带图）。
+   */
+  imagesStripped?: boolean
 }
 
 export class Conversation {
@@ -739,7 +745,13 @@ export class Conversation {
     )
 
     // cache 前缀：run.messages（不含最终纯文本回复）+ 补最终回复
-    const snapshot = input.runMessages.map(m => ({ ...m }))
+    let snapshot = input.runMessages.map(m => ({ ...m }))
+    // 剥图降级自愈：视觉模型拒图后剥图重试成功时，快照里的图从未被模型处理过，
+    // 若原样保留会让下一轮继续带图触发同样的拒收→剥图循环；剔除后前缀只剩
+    // 模型实际处理过的文本内容（agent/SPEC: 跨模型带图「剥图自愈」）。
+    if (input.imagesStripped) {
+      snapshot = snapshot.map(m => (m.images?.length ? { ...m, images: undefined } : m))
+    }
     if (finalMsg) snapshot.push(finalMsg)
     this._cachePrefix = snapshot
 
@@ -762,6 +774,8 @@ export class Conversation {
     cachePrefix: AiMessage[] | null
     errorMessage: string
     tokenUsage?: TokenUsage
+    /** 本轮触发过剥图降级：写 cache 前缀时剔除 images（与 commitRun 对称） */
+    imagesStripped?: boolean
   }): void {
     this._taskMemory.saveTask(
       input.runId,
@@ -773,7 +787,11 @@ export class Conversation {
     )
 
     if (input.cachePrefix) {
-      this._cachePrefix = input.cachePrefix.map(m => ({ ...m }))
+      let snapshot = input.cachePrefix.map(m => ({ ...m }))
+      if (input.imagesStripped) {
+        snapshot = snapshot.map(m => (m.images?.length ? { ...m, images: undefined } : m))
+      }
+      this._cachePrefix = snapshot
     }
 
     this.accumulate(input.steps, input.taskLog, input.tokenUsage)

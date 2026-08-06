@@ -404,13 +404,32 @@ function getFullMessages(task: TaskMemory): AiMessage[] {
 }
 
 /**
+ * 从任务原始消息中找回「用户请求携带的图片」。
+ * L1/L2 压缩按文本重建会丢掉 AiMessage.images；近期任务（L1）里的图在冷启动
+ * 重建后仍应对视觉模型可见（agent/SPEC: L1 保图）。
+ *
+ * 注意不能按 content === task.userRequest 匹配：messages 里的 content 是
+ * buildUserMessage 增强后的组合文本（知识注入/系统上下文/图片注记），
+ * ≠ run.originalUserRequest 原文。任务首条真实用户消息即请求本身，直接取
+ * 第一条带图的非系统注入 user 消息。
+ */
+function taskRequestImages(task: TaskMemory): string[] | undefined {
+  const msgs = task.messages
+  if (!msgs || msgs.length === 0) return undefined
+  return msgs.find(m => m.role === 'user' && !m._systemInjected && m.images?.length)?.images
+}
+
+/**
  * Level 1: 获取压缩工具输出后的消息
  */
 function getCompressedMessages(task: TaskMemory): AiMessage[] {
   const messages: AiMessage[] = []
-  
-  // 用户请求
-  messages.push({ role: 'user', content: task.userRequest })
+
+  // 用户请求（保留原图：近期任务里的图在冷启动重建后仍应可见）
+  const images = taskRequestImages(task)
+  messages.push(images?.length
+    ? { role: 'user', content: task.userRequest, images }
+    : { role: 'user', content: task.userRequest })
   
   // 构建压缩后的 assistant 消息
   let assistantContent = ''

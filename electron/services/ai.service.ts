@@ -482,6 +482,12 @@ export interface ChatWithToolsResult {
   reasoning_content?: string  // think 模型的思考内容
   usage?: TokenUsageInfo
   aborted?: boolean  // 是否因外部中止（如用户补充新消息）被打断；调用方据此避免把已展示的正文从步骤卡里抹掉
+  /**
+   * 本次请求触发过「剥图降级」（视觉模型拒收图片后剥离 images 重试成功）。
+   * 调用方据此在写 cache 前缀快照时剔除 images——前缀只装模型实际处理过的内容，
+   * 防止带图毒前缀每轮循环「拒图→剥图→说看不到」（SPEC: 跨模型带图）。
+   */
+  imagesStripped?: boolean
 }
 
 import type { AiModelType, AiProfile } from '@shared/types'
@@ -2017,7 +2023,8 @@ export class AiService {
         content: choice.message?.content || undefined,
         tool_calls: choice.message?.tool_calls,
         finish_reason: choice.finish_reason as ChatWithToolsResult['finish_reason'],
-        usage: normalizedUsage
+        usage: normalizedUsage,
+        ...(stripImages ? { imagesStripped: true } : {})
       }
     }
 
@@ -2440,7 +2447,8 @@ export class AiService {
                   // DeepSeek V3.2+ 要求带 tool_calls 的 assistant 在后续请求中回传此字段，
                   // 因此即使思考内容为空字符串也保留，避免被 || 转为 undefined 后丢失
                   reasoning_content: hasReasoningOutput ? reasoningContent : undefined,
-                  usage: streamUsage
+                  usage: streamUsage,
+                  ...(stripImages ? { imagesStripped: true } : {})
                 }))
                 return
               }
@@ -2562,7 +2570,8 @@ export class AiService {
             tool_calls: hasToolCalls ? toolCalls : undefined,
             finish_reason: finishReason as ChatWithToolsResult['finish_reason'],
             reasoning_content: hasReasoningOutput ? reasoningContent : undefined,
-            usage: streamUsage
+            usage: streamUsage,
+            ...(stripImages ? { imagesStripped: true } : {})
           }))
         })
 

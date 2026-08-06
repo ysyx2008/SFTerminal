@@ -197,13 +197,35 @@ describe('buildRecentTasksContext', () => {
     store.saveTask('task1', 'Task 1', [], 'success', 'Done 1')
     store.saveTask('task2', 'Task 2', [], 'failed', 'Error')
     store.saveTask('task3', 'Task 3', [], 'success', 'Done 3')
-    
+
     const result = buildRecentTasksContext(store, 10000)
-    
+
     expect(result.availableTaskIds).toHaveLength(3)
     expect(result.availableTaskIds.map(t => t.id)).toContain('task1')
     expect(result.availableTaskIds.map(t => t.id)).toContain('task2')
     expect(result.availableTaskIds.map(t => t.id)).toContain('task3')
+  })
+
+  it('L1 压缩保留用户请求携带的图片（冷启动重建后近期历史图仍可见）', () => {
+    // 旧任务带图 → 落到 taskIndex 1（L1 压缩，按文本重建）；新任务占 taskIndex 0（L0 原文）
+    // 注意：messages 里的 content 是 buildUserMessage 增强后的组合文本（≠ userRequest 原文），
+    // 这里刻意用不同 content 覆盖真实匹配路径
+    const oldSteps: AgentStep[] = [
+      { id: 'o1', type: 'message', content: '这是一只猫', timestamp: Date.now() }
+    ]
+    store.saveTask('task-old', '看图说话', oldSteps, 'success', '这是一只猫', [
+      { role: 'user', content: '<system_context>\n终端: local\n</system_context>\n\n看图说话', images: ['data:image/png;base64,AAA'] },
+      { role: 'assistant', content: '这是一只猫' }
+    ])
+    store.saveTask('task-new', '再聊一句', [], 'success', '好', [
+      { role: 'user', content: '再聊一句' },
+      { role: 'assistant', content: '好' }
+    ])
+
+    const result = buildRecentTasksContext(store, 100000)
+
+    const oldUserMsg = result.recentTaskMessages.find(m => m.role === 'user' && m.content === '看图说话')
+    expect(oldUserMsg?.images).toEqual(['data:image/png;base64,AAA'])
   })
 })
 

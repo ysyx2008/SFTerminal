@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-08-03（L4 一句话概要句边界提取 + 注入包裹剥离）
+> Last verified: 2026-08-06（跨模型带图：收窄跳过条件 + 剥图自愈 + L1 保图）
 
 ## 职责
 
@@ -295,13 +295,19 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 - onDone / reportUsage 更新 contextBar；step 上仍写 token 字段供历史落盘
 - 本轮 usage 以 API 为唯一真相源：有 cache 明细才写，否则清空
 
-#### 跨模型带图：不复用主模型 cache 前缀（2026-08-03 设计）
+#### 跨模型带图：仅「新图首投无图前缀」才跳过 cache 前缀（2026-08-03 设计，2026-08-06 修正）
 
-**目标**：主模型（如 DeepSeek 1M）切到关联视觉模型（如豆包 256K）且本轮带图时，**不走** `_previousRunMessages` 整段复用的 cache path，改走冷启动重建（L1 压缩 + 新图）。
+**目标**：主模型（如 DeepSeek 1M）切到关联视觉模型（如豆包 256K）时，只在「**本轮新增图片**且 **cache 前缀无图**」的场景跳过 `_previousRunMessages` 复用、走冷启动重建；前缀已有图则照常复用。
 
-**为什么**：联络 cache 热路径会把数百条 DeepSeek 思考前缀原样发给豆包多模态；豆包返回 `The request failed because the image format is not supported by the API`（`UnsupportedImageFormat`），`ai.service` 的降级逻辑误当「模型不支持图」剥掉所有图片重试 → Agent 只能说「画面没传过来」。短上下文（任务/冷启动/豆包直跑）同样路由可正常看图。冷启动让视觉模型只面对短且兼容的上下文，绕开该误伤；任务/纯文本仍保留 prompt cache 收益。
+**为什么**：联络 cache 热路径会把数百条 DeepSeek 思考前缀原样发给豆包多模态；豆包返回 `The request failed because the image format is not supported by the API`（`UnsupportedImageFormat`），`ai.service` 的降级逻辑误当「模型不支持图」剥掉所有图片重试 → Agent 只能说「画面没传过来」。冷启动让视觉模型只面对短且兼容的上下文，绕开该误伤。
 
-**不变量**：仅「跨模型路由到 vision（`effectiveId` 与主模型不同）且请求带图」时禁 cache path；同 profile / 主模型本身是 vision / 无图 时维持原 cache 行为。后续轮次把视觉模型的 run 快照继续作为 `_previousRunMessages`（不再切模型即可复用）。
+**2026-08-06 修正（续聊丢图回归）**：初版条件过宽——只要前缀带图就跳过，导致纯文本续聊也被迫冷启动，而冷启动的 L1/L2 压缩按文本重建会剥掉历史图（仅最新 task 的 L0 保图），表现为「上一轮的图下一轮就丢了」。修正后的认知：**前缀已有图 = 视觉模型已接受过这段前缀**（图只能经视觉可用路径进入消息），复用安全且保住图片与 prompt cache；真正有毒的只是「主模型构建的无图长前缀 + 新图首投」。
+
+**不变量**：
+- 跳过条件 = 跨模型路由到 vision（`effectiveId` ≠ 主模型）**且** 本轮有新图（`context.images` / 待 flush 补充消息带图）**且** cache 前缀无图。三者缺一都维持原 cache 行为。
+- **剥图自愈**：`ai.service` 剥图降级（视觉模型拒图后剥图重试）触发时经响应 meta 上报；commit 写 cache 前缀快照时剔除 images——前缀只装模型实际处理过的内容，防止「带图毒前缀」每轮循环「拒图→剥图→说看不到」。
+- **L1 保图**：冷启动重建时 taskIndex 1–2 的任务（L1）若原用户消息带图则重新附上；L2 及更旧保持纯文本（更旧的图不值得常驻 token）。
+- **路径等价性有测试锚定**：`agent/__tests__/context-path-equivalence.test.ts` 镜像 cache path / cold start 两条装配路径，断言「视觉模型已接受的图在任何路径下都不丢」（含剥图自愈的有意分叉——禁止"顺手对齐"）。改这两条路径中任意一条前先跑它。
 
 #### 联络（companion）跟随全局 active 模型（2026-08-03 设计）
 
