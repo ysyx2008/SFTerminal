@@ -141,6 +141,22 @@ const translations = {
     'agent.context_limit_auto_compressed': '[系统] 对话上下文已超出模型限制，系统已自动压缩早期对话（保留最近 {keepRecent} 轮，释放约 {freed} tokens）。请基于压缩后的上下文继续完成任务。',
     'agent.context_limit_compress_failed': '[系统] 对话上下文已超出模型限制，且自动压缩未能释放足够空间。建议开始新对话或切换到上下文更长的模型。',
     'agent.context_proactive_compressed': '[系统] 检测到上下文用量即将达到模型上限（基于上一轮真实 token 用量），系统已主动压缩早期对话（保留最近 {keepRecent} 轮，释放约 {freed} tokens）。请基于压缩后的上下文继续完成任务。如需原始对话细节，可调用 recall_compressed 工具找回。',
+    'agent.compress_summary_prompt': `你的对话历史即将超出上下文窗口，早期部分将被移除，由你写的这份小结替代。
+这份小结是写给之后的你自己看的：你将基于它和最近的对话继续完成任务，被移除的原文无法再查看。
+
+请输出结构化小结，包含以下部分：
+
+【任务目标】用户最初要求做什么，一句话。
+【当前进度】已完成哪些步骤、进行到哪一步。有次序的必须写清数字（如"已评审 30/57 份，第 31 份进行中"）。
+【关键结论】到目前为止的结论、发现、重要数据。评审/分析类任务逐项保留结论要点；涉及的文件保留完整路径。
+【进行中的状态】正在编辑/打开的文件、写到哪、未完成的改动。
+【下一步】接下来要立即执行的动作。
+【注意事项】用户表达过的偏好、限制、待确认事项。
+
+要求：
+- 只保留对完成任务有用的信息；工具原始输出、重复内容、试错过程一律不写（除非是需要避免重犯的坑）。
+- 已保存到文件的指针（路径）必须原样保留，不得改写。
+- 全文控制在 {budget} 字以内。`,
     'agent.images_attached': '[系统：用户在本消息中附带了 {count} 张图片，图片已通过多模态格式发送给视觉模型，无需使用 read_file 读取。如果你确实看到了图像内容，请直接分析；如果你看到的是空白/无法理解的内容，请如实告知用户图片未送达，不要凭上下文猜测图片内容。]',
     'agent.image_from_tool': '[系统：工具读取了图片并已通过多模态格式发送给视觉模型。如果你确实看到了图像内容，请直接分析；如果看到的是空白/无法理解的内容，请如实告知，不要凭上下文猜测图片内容。]',
     'agent.user_image_no_vision': '[系统：用户附带了 {count} 张图片，但当前 AI 配置不具备视觉能力（当前模型不是视觉模型，且未关联视觉模型，或「自动使用视觉模型」开关未开启），图片已被自动忽略。请明确告知用户：1) 你没有看到图片，无法分析图像内容；2) 建议用户在 AI 设置中切换到视觉模型（如 qwen3.5-plus、gpt-5.5），或为当前模型关联视觉模型并打开「自动使用视觉模型」开关。不要凭上下文猜测图片内容。]',
@@ -1658,6 +1674,22 @@ const translations = {
     'agent.context_limit_auto_compressed': '[System] Conversation context exceeded the model limit. System has auto-compressed earlier conversation (kept recent {keepRecent} rounds, freed ~{freed} tokens). Please continue the task based on the compressed context.',
     'agent.context_limit_compress_failed': '[System] Conversation context exceeded the model limit, and auto-compression could not free enough space. Consider starting a new conversation or switching to a model with a longer context window.',
     'agent.context_proactive_compressed': '[System] Context usage is approaching the model limit (based on last turn\'s actual token usage). System has proactively compressed earlier conversation (kept recent {keepRecent} rounds, freed ~{freed} tokens). Please continue the task based on the compressed context. To retrieve original conversation details, use the recall_compressed tool.',
+    'agent.compress_summary_prompt': `Your conversation history is about to exceed the context window. The early part will be removed and replaced by the summary you write here.
+This summary is written for your future self: you will continue the task based on it plus the most recent messages; the removed originals cannot be viewed again.
+
+Output a structured summary with these sections:
+
+【Task Goal】What the user originally asked for, one sentence.
+【Progress】Steps completed and where you are now. For ordered work, include numbers (e.g. "reviewed 30/57, item 31 in progress").
+【Key Findings】Conclusions, discoveries, and important data so far. For review/analysis tasks, keep per-item findings; keep full paths of involved files.
+【Work in Progress】Files being edited/opened, how far you got, unfinished changes.
+【Next Step】The immediate action to take next.
+【Notes】User-stated preferences, constraints, pending confirmations.
+
+Requirements:
+- Keep only what is needed to finish the task; omit raw tool output, repeated content, and trial-and-error (unless it is a pitfall to avoid repeating).
+- Pointers to files already saved (paths) must be preserved verbatim, never rewritten.
+- Keep the whole summary within {budget} characters.`,
     'agent.images_attached': '[System: User attached {count} image(s) in this message. The images have been sent to the vision model in multimodal format — no need to use read_file. If you can actually see the image content, analyze it directly. If you see only blank/unintelligible content, tell the user honestly that the image did not reach you. Do NOT guess the image content from context.]',
     'agent.image_from_tool': '[System: A tool read an image and sent it to the vision model in multimodal format. If you can actually see the image content, analyze it directly. If you see only blank/unintelligible content, tell the user honestly. Do NOT guess the image content from context.]',
     'agent.user_image_no_vision': '[System: User attached {count} image(s), but the current AI configuration does not have vision capability (the active model is not a vision model, and either no linked vision model is configured or the "Auto Vision Model" switch is off). The images have been dropped automatically. You MUST clearly tell the user: 1) you did NOT see the image and cannot analyze its content; 2) suggest switching to a vision model (e.g. qwen3.5-plus, gpt-5.5) in AI Settings, or linking a vision model to the current profile and turning on the "Auto Vision Model" switch. Do NOT guess the image content from context.]',

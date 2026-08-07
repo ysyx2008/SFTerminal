@@ -31,6 +31,11 @@ export interface ContextWindowDeps {
   getLastCacheHitRate: () => number | undefined
   /** 把 token 用量推到当前 run 的 lastStep + onStep 回调(UI 展示)。 */
   reportUsage: (tokens: number, cacheHitRate?: number) => void
+  /**
+   * 生成待归档消息的 AI 小结（proactive 路径专用：窗口将满、API 还可用时摘要质量最高）。
+   * 返回 null 或抛错 → 回退固定模板。
+   */
+  summarizeMessages?: (messages: AiMessage[]) => Promise<string | null>
 }
 
 /** 压缩结果(供 compress_context 工具回报给 AI)。 */
@@ -46,8 +51,8 @@ export interface CompressResult {
 export class ContextWindowManager {
   /** 上下文管理功能激活阈值(用量百分比)。与 85% 警告消息对齐。 */
   static readonly THRESHOLD = 85
-  /** 主动压缩阈值(基于上一轮真实 prompt_tokens 的占比)。留 5% 余量给本轮新增内容。 */
-  static readonly PROACTIVE_THRESHOLD = 0.95
+  /** 主动压缩阈值(基于上一轮真实 prompt_tokens 的占比)。留 10% 余量：摘要调用本身要占一次请求。 */
+  static readonly PROACTIVE_THRESHOLD = 0.90
 
   /**
    * 判断错误是否为上下文超限错误。
@@ -199,10 +204,11 @@ export class ContextWindowManager {
   }
 
   /**
-   * 压缩当前任务的对话上下文:将早期的 assistant + tool 消息归档,替换为 AI 提供的摘要。
-   * 一组 = assistant 消息 + 对应的 tool result;从后往前保留 keepRecent 组。
+   * 计算可压缩范围：当前任务（最后一条非告警 user 消息之后）中，除最近 keepRecent 组
+   * assistant 轮次之外的早期消息。proactive 的摘要装配与 compress 共用此计算，
+   * 保证「摘要覆盖的消息」与「实际归档的消息」一致。
    */
-  compress(run: AgentRun, summary: string, keepRecent: number): CompressResult | null {
+  private findCompressibleRange(run: AgentRun, keepRecent: number): { lastUserIndex: number; toCompress: AiMessage[] } | null {
     // 找到当前任务的消息范围(最后一条 user 消息之后的部分)
     let lastUserIndex = -1
     for (let i = run.messages.length - 1; i >= 0; i--) {
@@ -237,9 +243,19 @@ export class ContextWindowManager {
       }
     }
 
-    // 需要压缩的消息
     const toCompress = taskMessages.slice(0, keepFromIndex)
     if (toCompress.length === 0) return null
+    return { lastUserIndex, toCompress }
+  }
+
+  /**
+   * 压缩当前任务的对话上下文:将早期的 assistant + tool 消息归档,替换为 AI 提供的摘要。
+   * 一组 = assistant 消息 + 对应的 tool result;从后往前保留 keepRecent 组。
+   */
+  compress(run: AgentRun, summary: string, keepRecent: number): CompressResult | null {
+    const range = this.findCompressibleRange(run, keepRecent)
+    if (!range) return null
+    const { lastUserIndex, toCompress } = range
 
     const beforeTokens = this.estimateTotalTokens(run.messages)
 
@@ -264,7 +280,7 @@ export class ContextWindowManager {
     }
 
     // 重建 messages: system + 历史任务消息 + user + 摘要 + 保留的最近消息
-    const preserved = taskMessages.slice(keepFromIndex)
+    const preserved = run.messages.slice(lastUserIndex + 1 + toCompress.length)
     run.messages = [...run.messages.slice(0, lastUserIndex + 1), summaryMessage, ...preserved]
 
     const afterTokens = this.estimateTotalTokens(run.messages)
@@ -317,22 +333,45 @@ export class ContextWindowManager {
   }
 
   /**
-   * 主动压缩（本地触发）：复用 emergencyCompress 的激进压缩逻辑，但用不同文案
-   * 让 AI 知道这是"预测性压缩"而非"API 报错后的紧急压缩"。
+   * 主动压缩（本地触发）：先让 AI 为待归档消息写小结（窗口将满、API 还可用时
+   * 摘要质量最高），小结直接替换被归档的早期对话；摘要调用失败/不可用才回退
+   * 固定模板。压缩动作本身复用 emergencyCompress 的激进逻辑。
    *
    * 同一 run 只压一次（_proactiveCompressedThisRun 标记），防止绕过 shouldProactiveCompress
    * 直接调用导致重复压缩。
    *
    * @returns 压缩结果；若已压缩过或 messages 结构不允许压缩返回 null
    */
-  proactiveCompress(run: AgentRun): CompressResult | null {
+  async proactiveCompress(run: AgentRun): Promise<CompressResult | null> {
     if (this._proactiveCompressedThisRun) return null
-    const result = this.compressAggressively(run, this.buildProactiveSummary())
+    const summary = await this.buildProactiveSummary(run)
+    const result = this.compressAggressively(run, summary)
     if (result) {
       this._proactiveCompressedThisRun = true
       log.info(`Proactive compress: freed ${result.freedTokens} tokens, kept recent ${result.keepRecent} rounds (archive ${result.archiveId})`)
     }
     return result
+  }
+
+  /**
+   * 主动压缩的摘要：优先让 AI 为待归档消息写小结（写给未来的自己），
+   * 失败/不可用才回退固定模板。
+   */
+  private async buildProactiveSummary(run: AgentRun): Promise<string> {
+    const summarize = this.deps.summarizeMessages
+    if (summarize) {
+      try {
+        // 与 compressAggressively 首轮 keepRecent=2 同一范围
+        const range = this.findCompressibleRange(run, 2)
+        if (range) {
+          const aiSummary = await summarize(range.toCompress)
+          if (aiSummary && aiSummary.trim()) return aiSummary.trim()
+        }
+      } catch (err) {
+        log.warn(`AI 小结生成失败，回退固定模板: ${err}`)
+      }
+    }
+    return this.buildProactiveTemplateSummary()
   }
 
   /**
@@ -365,10 +404,10 @@ export class ContextWindowManager {
   }
 
   /**
-   * 构建主动压缩的摘要文本。与紧急压缩不同——此时 API 尚未报错，是基于上一轮真实
-   * token 用量预测本轮会超限而提前压缩。文案上让 AI 知道这是"预防性"而非"事后补救"。
+   * 构建主动压缩的固定模板摘要（AI 小结不可用时的兜底）。此时 API 尚未报错，
+   * 是基于上一轮真实 token 用量预测本轮会超限而提前压缩。
    */
-  private buildProactiveSummary(): string {
+  private buildProactiveTemplateSummary(): string {
     return '【系统主动压缩】检测到上下文用量即将达到模型上限（基于上一轮真实 token 用量），' +
       '为避免本轮请求超限，已提前归档早期对话。关键信息摘要请参考上方的 task_memory / 知识文档；' +
       '如需原始对话细节，请调用 recall_compressed 工具按 archive_id 找回。'

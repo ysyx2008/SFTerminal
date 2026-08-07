@@ -37,6 +37,7 @@ import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
 import { Conversation, conversationPolicy } from '../conversation'
 import { ContextWindowManager } from './context-window'
+import { formatMessagesForSummary, capSummaryInput, SUMMARY_OUTPUT_BUDGET_CHARS } from './compression-summary'
 import { resolveBudgetProfileId, shouldSkipCachePathForVision } from './vision-routing'
 import {
   splitMessagesIntoTasks as splitMessagesIntoTasksShared,
@@ -262,6 +263,7 @@ export abstract class Agent {
       getProfileId: () => this.resolveContextBudgetProfileId(),
       getLastPromptTokens: () => this._lastPromptTokens,
       getLastCacheHitRate: () => this._lastCacheHitRate,
+      summarizeMessages: (messages) => this.summarizeForCompression(messages),
       reportUsage: (tokens, cacheHitRate) => {
         // updatePressure 拿到 API 精确值时刷新上下文栏（不靠 lastStep）。
         const next: AgentContextBar = {
@@ -1886,9 +1888,9 @@ export abstract class Agent {
     // - emergencyCompress：OpenAI 等"会真报错"的 provider 兜底
     // 同一 run 只主动压缩一次（_proactiveCompressedThisRun 标记），避免连续压缩
     if (this._contextWindow.shouldProactiveCompress(run)) {
-      const compressed = this._contextWindow.proactiveCompress(run)
+      const compressed = await this._contextWindow.proactiveCompress(run)
       if (compressed) {
-        log.warn(`Proactive compress triggered (lastPromptTokens=${this._lastPromptTokens}, threshold=${Math.round(this._contextWindow.getContextLength() * 0.95)}), kept recent ${compressed.keepRecent}, freed ${compressed.freedTokens} tokens`)
+        log.warn(`Proactive compress triggered (lastPromptTokens=${this._lastPromptTokens}, threshold=${Math.round(this._contextWindow.getContextLength() * ContextWindowManager.PROACTIVE_THRESHOLD)}), kept recent ${compressed.keepRecent}, freed ${compressed.freedTokens} tokens`)
         run.messages.push({
           role: 'user',
           content: t('agent.context_proactive_compressed', {
@@ -2158,6 +2160,32 @@ export abstract class Agent {
       autoVisionModel: !!configService.get('autoVisionModel'),
       hasImages: this.requestWillContainImages(),
     })
+  }
+
+  /**
+   * 主动压缩的 AI 小结：把待归档消息格式化为纯文字转录，调一次非流式 chat 写小结。
+   * 小结写给未来的自己（任务目标/进度/关键结论/下一步，提示词见 i18n
+   * agent.compress_summary_prompt）；返回 null 由 ContextWindowManager 回退固定模板。
+   *
+   * 模型与上下文预算同一 profile（resolveContextBudgetProfileId），避免按主模型
+   * 算预算却打到视觉模型。同一 run 只触发一次（_proactiveCompressedThisRun），成本可控。
+   */
+  private async summarizeForCompression(messages: AiMessage[]): Promise<string | null> {
+    const aiService = this.services.aiService
+    if (!aiService?.chat) return null
+    const transcript = formatMessagesForSummary(messages)
+    if (!transcript) return null
+    // 摘要输入预算：窗口 30%；超出保留头尾（头 = 任务起源，尾 = 最近进展）
+    const budgetTokens = Math.floor(this._contextWindow.getContextLength() * 0.3)
+    const input = capSummaryInput(transcript, budgetTokens)
+    const summary = await aiService.chat(
+      [
+        { role: 'system', content: t('agent.compress_summary_prompt', { budget: SUMMARY_OUTPUT_BUDGET_CHARS }) },
+        { role: 'user', content: input }
+      ],
+      this.resolveContextBudgetProfileId()
+    )
+    return summary?.trim() || null
   }
 
   /** 解析拟用 / 已确认 profile 的展示字段写入 bar（不 publish） */
