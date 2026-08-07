@@ -1305,13 +1305,21 @@ function getContextManagementTools(): ToolDefinition[] {
       type: 'function',
       function: {
         name: 'compress_context',
-        description: `压缩较早的工具调用以释放上下文空间。内容归档保留，可通过 recall_compressed 找回。摘要应包含关键结果、路径、命令和发现。`,
+        description: `压缩较早的对话以释放上下文空间。被压缩的内容归档保留，可通过 recall_compressed 找回。
+
+summary 是写给未来的你自己的——压缩后你将基于它和最近的对话继续完成任务，必须包含：
+1. 任务目标：用户最初要求做什么（一句话）
+2. 当前进度：已完成哪些步骤、进行到哪一步（有次序的写清数字，如"已处理 30/57，第 31 份进行中"）
+3. 关键结论：到目前为止的结论、发现、重要数据；评审/分析类任务逐项保留要点；涉及的文件保留完整路径
+4. 下一步：接下来要立即执行的动作
+
+只保留对完成任务有用的信息（工具原始输出、重复内容、试错过程不写）；已保存到文件的指针（路径）必须原样保留，不得改写。`,
         parameters: {
           type: 'object',
           properties: {
             summary: {
               type: 'string',
-              description: '被压缩内容的摘要，应包含关键命令、结果、路径和发现'
+              description: '被压缩内容的小结（写给未来的自己）：任务目标、当前进度（含数字）、关键结论/数据/文件完整路径、下一步'
             },
             keep_recent: {
               type: 'number',
