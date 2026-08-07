@@ -5,7 +5,6 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { app } from 'electron'
 import { t } from '../i18n'
 import { getTerminalStateService } from '../../terminal-state.service'
 import { getFileSearchService } from '../../file-search.service'
@@ -23,6 +22,10 @@ import { isUserDataForbidden } from '../command-audit/userdata-guard'
 import { isHardBlocked, riskNeedsConfirm } from '../command-audit/confirm-policy'
 import { getSystemPathSeverity, getWorkspaceZone } from '../command-audit/workspace-guard'
 import type { RiskLevel } from '@shared/types/agent'
+import { getWorkspacePath, getScratchPath } from '../workspace-paths'
+
+// 兼容 re-export：既有调用方从 tools/file 取路径不变；唯一定义在 workspace-paths.ts
+export { getWorkspacePath, getScratchPath }
 
 const DEFAULT_READ_OUTPUT_BUDGET: ToolOutputBudget = {
   maxChars: 24_576,
@@ -266,22 +269,6 @@ function writeTextFileSync(filePath: string, content: string, encoding: string):
 const AUTO_APPROVE_ROOT_FILENAMES = new Set([
   'CONTACTS.md', 'USER.md', 'HEARTBEAT.md', 'IDENTITY.md', 'SOUL.md',
 ])
-
-/**
- * 获取 Agent workspace 目录路径
- */
-export function getWorkspacePath(): string {
-  return path.join(app.getPath('userData'), 'agent-workspace')
-}
-
-/**
- * Agent 默认工作目录（临时脚本、草稿、中间产物）
- */
-export function getScratchPath(): string {
-  const scratch = path.join(getWorkspacePath(), 'scratch')
-  fs.mkdirSync(scratch, { recursive: true })
-  return scratch
-}
 
 /** 启动时确保 workspace 目录结构存在 */
 export function ensureAgentWorkspaceDirs(): void {
