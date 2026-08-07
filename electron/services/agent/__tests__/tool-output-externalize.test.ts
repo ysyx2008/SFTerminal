@@ -23,14 +23,6 @@ vi.mock('electron', () => ({
 }))
 
 import { externalizeToolOutput, externalizeFailedError } from '../tool-output-externalize'
-import type { ToolOutputBudget } from '../tool-output-budget'
-
-const budget = (maxChars: number): ToolOutputBudget => ({
-  maxChars,
-  maxLines: 100,
-  critical: false,
-  usagePercent: 50
-})
 
 afterAll(() => {
   fs.rmSync(TEST_USERDATA, { recursive: true, force: true })
@@ -40,7 +32,7 @@ describe('externalizeToolOutput', () => {
   it('预算内返回 null（短输出不落盘）', () => {
     const result = externalizeToolOutput({
       output: 'short output',
-      budget: budget(1000),
+      maxChars: 1000,
       toolName: 'read_file',
       excerpt: 'head'
     })
@@ -48,14 +40,14 @@ describe('externalizeToolOutput', () => {
   })
 
   it('空输出返回 null', () => {
-    expect(externalizeToolOutput({ output: '', budget: budget(0), toolName: 'exec', excerpt: 'tail' })).toBeNull()
+    expect(externalizeToolOutput({ output: '', maxChars: 0, toolName: 'exec', excerpt: 'tail' })).toBeNull()
   })
 
   it('超预算 → 全文落盘 + 指针含路径 + 头部摘录', () => {
     const output = 'A'.repeat(500) + 'B'.repeat(500)
     const result = externalizeToolOutput({
       output,
-      budget: budget(500),
+      maxChars: 500,
       toolName: 'read_file',
       excerpt: 'head'
     })
@@ -75,7 +67,7 @@ describe('externalizeToolOutput', () => {
     const output = 'A'.repeat(500) + 'B'.repeat(500)
     const result = externalizeToolOutput({
       output,
-      budget: budget(500),
+      maxChars: 500,
       toolName: 'exec',
       excerpt: 'tail'
     })
@@ -88,7 +80,7 @@ describe('externalizeToolOutput', () => {
     const output = 'X'.repeat(100)
     const result = externalizeToolOutput({
       output,
-      budget: budget(0),
+      maxChars: 0,
       toolName: 'exec',
       excerpt: 'tail'
     })
@@ -110,7 +102,7 @@ describe('externalizeToolOutput', () => {
     try {
       expect(() => externalizeToolOutput({
         output: 'A'.repeat(100),
-        budget: budget(10),
+        maxChars: 10,
         toolName: 'exec',
         excerpt: 'tail'
       })).toThrow()

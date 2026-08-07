@@ -13,7 +13,6 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { createLogger } from '../../utils/logger'
 import { getScratchPath } from './workspace-paths'
-import type { ToolOutputBudget } from './tool-output-budget'
 import { t } from './i18n'
 
 const log = createLogger('ToolOutputExternalize')
@@ -45,21 +44,22 @@ function buildOutputFilePath(toolName: string): string {
 }
 
 /**
- * 长输出落盘：output 超 budget.maxChars 时把全文写入 scratch，返回指针 + 摘录；
- * 预算内（或空输出）返回 null。budget.maxChars <= 0（上下文余量耗尽）也落盘，
+ * 长输出落盘：output 超 maxChars 时把全文写入 scratch，返回指针 + 摘录；
+ * 预算内（或空输出）返回 null。maxChars <= 0（上下文余量耗尽）也落盘，
  * 此时只给指针不附摘录。
  *
  * @throws 落盘 IO 失败时抛错（调用方必须转成工具错误，禁止退回截断）
  */
 export function externalizeToolOutput(opts: {
   output: string
-  budget: ToolOutputBudget
+  /** 单次输出预算字符数（调用方可先与自身硬上限取 min）；<= 0 表示余量耗尽，一律落盘 */
+  maxChars: number
   toolName: string
   excerpt: OutputExcerptMode
 }): ExternalizedOutput | null {
-  const { output, budget, toolName, excerpt } = opts
+  const { output, maxChars, toolName, excerpt } = opts
   if (!output) return null
-  if (budget.maxChars > 0 && output.length <= budget.maxChars) return null
+  if (maxChars > 0 && output.length <= maxChars) return null
 
   const filePath = buildOutputFilePath(toolName)
   fs.writeFileSync(filePath, output, 'utf-8')
@@ -67,7 +67,7 @@ export function externalizeToolOutput(opts: {
 
   const totalChars = output.length
   const total = totalChars.toLocaleString()
-  const excerptChars = Math.max(0, budget.maxChars - NOTICE_RESERVE_CHARS)
+  const excerptChars = Math.max(0, maxChars - NOTICE_RESERVE_CHARS)
 
   if (excerptChars === 0) {
     return {

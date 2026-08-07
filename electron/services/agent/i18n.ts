@@ -1526,7 +1526,6 @@ const translations = {
     'exec.pattern_matched_short': '命中 pattern (task_id={taskId})',
     'exec.still_running': '⏳ 任务仍在跑 [task_id={taskId}, pid={pid}, 已等 {waited}s]，可继续 await_exec 或 exec("kill {pid}") 停止',
     'exec.still_running_short': '仍在运行 (task_id={taskId})',
-    'exec.output_truncated': '⚠️ 输出已截断：共 {total} 字符（省略 {omittedLines} 行 / {omittedChars} 字符），以下展示开头 {head} + 末尾 {tail} 字符（可用 head/tail/grep 等缩小范围后重试）',
   },
   'en-US': {
     // Tool names
@@ -3044,7 +3043,6 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'exec.pattern_matched_short': 'Pattern matched (task_id={taskId})',
     'exec.still_running': '⏳ Task still running [task_id={taskId}, pid={pid}, waited {waited}s], can continue await_exec or exec("kill {pid}") to stop',
     'exec.still_running_short': 'Still running (task_id={taskId})',
-    'exec.output_truncated': '⚠️ Output truncated: {total} chars total ({omittedLines} lines / {omittedChars} chars omitted), showing first {head} + last {tail} chars (retry with head/tail/grep to narrow scope)',
   }
 } as const
 

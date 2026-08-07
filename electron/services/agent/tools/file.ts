@@ -106,7 +106,7 @@ function applyDocumentOutputBudget(
 ): { text: string } | { error: string } {
   const budget = getReadOutputBudget(executor)
   try {
-    const externalized = externalizeToolOutput({ output: content, budget, toolName: 'read_file', excerpt: 'head' })
+    const externalized = externalizeToolOutput({ output: content, maxChars: budget.maxChars, toolName: 'read_file', excerpt: 'head' })
     if (externalized) return { text: externalized.text }
   } catch (err) {
     return { error: externalizeFailedError(content.length, err instanceof Error ? err.message : String(err)) }

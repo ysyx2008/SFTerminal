@@ -1,7 +1,8 @@
 /**
- * exec 输出截断 helper 单元测试
+ * exec 输出处理测试：截断 utils 单测 + executeCommandDirect 落盘集成
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import * as fs from 'fs'
 
 // vi.mock 的 factory 会被提升到文件顶部，不能引用外部变量；
 // 用 vi.hoisted 让临时目录在 hoist 阶段就能算出来
@@ -200,7 +201,7 @@ describe('executeCommandDirect — 输出截断集成', () => {
     expect(result.output).not.toContain('Output truncated')
   })
 
-  itPosix('超长多行输出附加截断 notice 并保留头尾', async () => {
+  itPosix('超长多行输出落盘换指针：尾部摘录 + 全文可读回', async () => {
     const lineCount = 3000
     const result = await executeCommandDirect(
       {
@@ -212,9 +213,14 @@ describe('executeCommandDirect — 输出截断集成', () => {
       createMinimalExecutor()
     )
     expect(result.success).toBe(true)
-    expect(result.output).toMatch(/输出已截断|Output truncated/)
-    expect(result.output).toContain('line-0')
+    // 指针 + 尾部摘录：含末行，不含首行（不做 sandwich 截断）
     expect(result.output).toContain(`line-${lineCount - 1}`)
-    expect(result.output).toContain('\n...\n')
+    expect(result.output).not.toContain('line-0\n')
+    // 全文落盘可读回，不丢信息
+    const match = result.output.match(/\/[^\n]*?tool-outputs[^\n]*?\.txt/)
+    expect(match).not.toBeNull()
+    const saved = fs.readFileSync(match![0], 'utf-8')
+    expect(saved).toContain('line-0\n')
+    expect(saved).toContain(`line-${lineCount - 1}`)
   })
 })
