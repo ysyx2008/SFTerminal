@@ -36,6 +36,11 @@ export interface ContextWindowDeps {
    * 返回 null 或抛错 → 回退固定模板。
    */
   summarizeMessages?: (messages: AiMessage[]) => Promise<string | null>
+  /**
+   * 主动压缩的最小可压缩范围（tokens），缺省用 MIN_PROACTIVE_RANGE_TOKENS。
+   * 仅测试注入用——生产代码不要传。
+   */
+  minProactiveRangeTokens?: number
 }
 
 /** 压缩结果(供 compress_context 工具回报给 AI)。 */
@@ -53,6 +58,14 @@ export class ContextWindowManager {
   static readonly THRESHOLD = 85
   /** 主动压缩阈值(基于上一轮真实 prompt_tokens 的占比)。留 10% 余量：摘要调用本身要占一次请求。 */
   static readonly PROACTIVE_THRESHOLD = 0.90
+
+  /**
+   * 主动压缩的最小可压缩范围（tokens）。真实 E2E 发现：系统提示词占主导的会话里，
+   * 可压缩消息可能只有几百 token，而 AI 小结 + 归档包装本身就近千 token——
+   * 压缩反而净增（实测 freed=-148）。低于此下限跳过主动压缩，
+   * 等对话积累更多内容后再压；紧急压缩（API 报错兜底）不受此限。
+   */
+  static readonly MIN_PROACTIVE_RANGE_TOKENS = 3000
 
   /**
    * 判断错误是否为上下文超限错误。
@@ -122,6 +135,12 @@ export class ContextWindowManager {
 
   /** 估算消息列表的总 token 数量(含 tool_calls / reasoning_content / images + 4000 基线)。 */
   estimateTotalTokens(messages: AiMessage[]): number {
+    // +4000: 系统提示词/工具 schema 等固定开销的经验估值
+    return this.estimateMessagesTokens(messages) + 4000
+  }
+
+  /** 仅估算消息列表本身的 token（不含系统提示词等固定开销） */
+  estimateMessagesTokens(messages: AiMessage[]): number {
     const MESSAGE_OVERHEAD = 4
     // 多模态图片 token 估算（保守上限）：OpenAI high detail 模式下 1024×1024=765、
     // 1920×1080=595、2048×4096=1105；Anthropic 面积公式约 1590 封顶。取 1500 作为
@@ -129,7 +148,7 @@ export class ContextWindowManager {
     // 真实 prompt 超过模型上下文窗口被 LLM 截断（图片发出去但 AI 收不到）。
     const IMAGE_TOKENS_PER_ITEM = 1500
 
-    const messageTokens = messages.reduce((sum, msg) => {
+    return messages.reduce((sum, msg) => {
       let tokens = this.estimateTokens(msg.content) + MESSAGE_OVERHEAD
       if (msg.tool_calls) {
         tokens += msg.tool_calls.reduce(
@@ -148,8 +167,6 @@ export class ContextWindowManager {
       }
       return sum + tokens
     }, 0)
-
-    return messageTokens + 4000
   }
 
   /**
@@ -357,6 +374,14 @@ export class ContextWindowManager {
     // 否则「摘要覆盖的内容」和「被归档的内容」可能不一致
     const range = this.findCompressibleRange(run, 2)
     if (!range) return null
+    // 范围太小压缩是负收益（AI 小结 + 归档包装比原文还长），跳过；
+    // 不标记 _proactiveCompressedThisRun，等后续轮次积累更多内容仍可触发
+    const minRange = this.deps.minProactiveRangeTokens ?? ContextWindowManager.MIN_PROACTIVE_RANGE_TOKENS
+    const rangeTokens = this.estimateMessagesTokens(range.toCompress)
+    if (rangeTokens < minRange) {
+      log.info(`Proactive compress skipped: compressible range too small (~${rangeTokens} tokens < ${minRange})`)
+      return null
+    }
     const summary = await this.buildProactiveSummary(range.toCompress)
     const result = this.compressAggressively(run, summary, range)
     if (result) {

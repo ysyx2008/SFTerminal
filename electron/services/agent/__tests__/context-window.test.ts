@@ -22,6 +22,8 @@ function makeDeps(overrides?: Partial<ContextWindowDeps>): ContextWindowDeps {
     getLastPromptTokens: () => undefined,
     getLastCacheHitRate: () => undefined,
     reportUsage: vi.fn(),
+    // 测试消息普遍很短，默认绕过「最小可压缩范围」守卫；守卫本身有专项用例
+    minProactiveRangeTokens: 0,
     ...overrides
   }
 }
@@ -592,6 +594,25 @@ describe('ContextWindowManager.proactiveCompress', () => {
   it('无 user 消息 → null（无法压缩）', async () => {
     const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
     expect(await m.proactiveCompress(makeRun([asst('hi')]))).toBeNull()
+  })
+
+  it('可压缩范围低于下限 → 跳过（负收益守卫），且不标记已压缩（后续仍可触发）', async () => {
+    // 真实 E2E 发现：系统提示词占主导时可压缩消息仅几百 token，
+    // AI 小结 + 归档包装比原文还长（实测 freed=-148）
+    const m = new ContextWindowManager(makeDeps({
+      getLastPromptTokens: () => 122000,
+      minProactiveRangeTokens: 3000
+    }))
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3')
+    ])
+    expect(await m.proactiveCompress(run)).toBeNull()
+    expect(run.compressedArchives ?? []).toHaveLength(0)
+    // 未压缩过 → 后续轮次积累更多内容后仍允许触发
+    expect(m.shouldProactiveCompress(run)).toBe(true)
   })
 
   it('成功压缩：归档早期对话、保留最近 2 组、enabled 翻 true', async () => {
