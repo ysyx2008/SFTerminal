@@ -173,6 +173,20 @@ function writeTextFilePrefix(args: Record<string, unknown>): string {
 }
 
 /**
+ * write_text_file 的流式早失败校验：path+mode 一到就检测「以 create 写已存在文件」，
+ * 命中即中止生成，不等整段 content 流完。抽象层只读此元数据，不感知工具名。
+ * 模块级函数（非内联闭包）：保持跨调用引用稳定，工具列表多次构建可深度相等。
+ */
+function writeTextFileStreamValidate(args: Record<string, unknown>): string | null {
+  const p = typeof args.path === 'string' ? args.path : undefined
+  const mode = typeof args.mode === 'string' ? args.mode : undefined
+  if (!p || mode !== 'create') return null
+  const full = expandTilde(p)
+  if (!fs.existsSync(full)) return null
+  return t('error.file_exists_cannot_create', { path: full })
+}
+
+/**
  * dispatch_agents 的预卡片渲染。
  * 内容格式必须与 tools/sub-agent.ts 执行器 addStep 的 content 对齐：
  *   t('dispatch.running', { count, type })
@@ -739,14 +753,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         },
         // 流式早失败：path+mode 一到就检测「以 create 写已存在文件」，命中即中止生成，
         // 不等整段 content 流完。抽象层只读此元数据，不感知工具名。
-        streamValidate: (args) => {
-          const p = typeof args.path === 'string' ? args.path : undefined
-          const mode = typeof args.mode === 'string' ? args.mode : undefined
-          if (!p || mode !== 'create') return null
-          const full = expandTilde(p)
-          if (!fs.existsSync(full)) return null
-          return t('error.file_exists_cannot_create', { path: full })
-        }
+        streamValidate: writeTextFileStreamValidate
       }
     } as ToolDefinitionWithMeta,
     // ==================== 父 Agent 专用工具 ====================
