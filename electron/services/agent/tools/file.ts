@@ -23,6 +23,7 @@ import { isHardBlocked, riskNeedsConfirm } from '../command-audit/confirm-policy
 import { getSystemPathSeverity, getWorkspaceZone } from '../command-audit/workspace-guard'
 import type { RiskLevel } from '@shared/types/agent'
 import { getWorkspacePath, getScratchPath } from '../workspace-paths'
+import { externalizeToolOutput, externalizeFailedError } from '../tool-output-externalize'
 
 // 兼容 re-export：既有调用方从 tools/file 取路径不变；唯一定义在 workspace-paths.ts
 export { getWorkspacePath, getScratchPath }
@@ -93,12 +94,28 @@ function applyReadFileOutputBudget(
   )
 }
 
+/**
+ * 文档解析结果（PDF/Word 提取文本）的预算处理：超预算时全文落盘 scratch 换指针，
+ * 不做截断——解析文本不在磁盘上，截断即永久丢失，且 range 参数对解析内容不生效。
+ * 落盘失败返回 error（明确报错 + 建议缩小范围），由调用方转成工具错误。
+ */
 function applyDocumentOutputBudget(
   content: string,
   filePath: string,
   executor: ToolExecutorConfig
-): string {
-  return applyReadFileOutputBudget(content, filePath, executor)
+): { text: string } | { error: string } {
+  const budget = getReadOutputBudget(executor)
+  try {
+    const externalized = externalizeToolOutput({ output: content, budget, toolName: 'read_file', excerpt: 'head' })
+    if (externalized) return { text: externalized.text }
+  } catch (err) {
+    return { error: externalizeFailedError(content.length, err instanceof Error ? err.message : String(err)) }
+  }
+  // 预算内：保持原有高用量提示
+  if (budget.critical) {
+    return { text: `${content}\n\n${t('file.read_context_critical_hint', { usagePercent: budget.usagePercent })}` }
+  }
+  return { text: content }
 }
 
 /**
@@ -1199,15 +1216,26 @@ async function readDocumentFile(
       } catch (_) { /* skill already loaded or unavailable */ }
     }
 
+    const budgeted = applyDocumentOutputBudget(result.content, filePath, executor)
+    if ('error' in budgeted) {
+      executor.addStep({
+        type: 'tool_result',
+        content: `${t('file.read_failed')}: ${budgeted.error}`,
+        toolName: 'read_file',
+        toolResult: budgeted.error
+      })
+      return { success: false, output: '', error: budgeted.error }
+    }
+
     executor.addStep({
       type: 'tool_result',
       content: `${t('file.read_success')}: ${docInfo.join(', ')}`,
       toolName: 'read_file',
-      toolResult: truncateFromEnd(result.content, 500),
+      toolResult: truncateFromEnd(budgeted.text, 500),
       images: hasImages ? result.images : undefined
     })
 
-    return { success: true, output: applyDocumentOutputBudget(result.content, filePath, executor), images: hasImages ? result.images : undefined }
+    return { success: true, output: budgeted.text, images: hasImages ? result.images : undefined }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : t('file.parse_failed')
     executor.addStep({
