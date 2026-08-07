@@ -28,19 +28,20 @@ const COMMAND_OUTPUT_TRUNCATE = 16_384
  * @throws 落盘失败时抛错（明确报错 + 建议缩小范围，禁止退回截断）
  * @internal 导出仅为单元测试，业务代码请用 executeCommand 等入口
  */
-export function applyCommandOutputBudget(raw: string, executor: ToolExecutorConfig): string {
+export async function applyCommandOutputBudget(raw: string, executor: ToolExecutorConfig): Promise<string> {
   const budget = executor.getToolOutputBudget?.()
   const maxChars = budget && budget.maxChars > 0
     ? Math.min(budget.maxChars, COMMAND_OUTPUT_TRUNCATE)
     : COMMAND_OUTPUT_TRUNCATE
 
+  const trimmed = raw.trim()
   try {
-    const externalized = externalizeToolOutput({ output: raw, maxChars, toolName: 'execute_command', excerpt: 'tail' })
+    const externalized = await externalizeToolOutput({ output: trimmed, maxChars, toolName: 'execute_command', excerpt: 'tail' })
     if (externalized) return externalized.text
   } catch (err) {
-    throw new Error(externalizeFailedError(raw.length, err instanceof Error ? err.message : String(err)))
+    throw new Error(externalizeFailedError(trimmed.length, err instanceof Error ? err.message : String(err)))
   }
-  return raw
+  return trimmed
 }
 
 /**
@@ -376,11 +377,21 @@ export async function executeCommand(
 
     terminalStateService.completeCommandExecution(ptyId, 0, 'completed')
 
-    // 按上下文预算截断输出：上下文紧张时收紧，避免大输出撑爆上下文
+    // 按上下文预算处理输出：超预算全文落盘换指针。
+    // 落盘失败必须就地消化——命令已成功，若抛给外层 catch 会把终端状态错误覆盖成 failed，
+    // 还会让 AI 误以为命令没执行（对非幂等命令可能重复执行）
     const rawOutput = userApproved
       ? `[${t('status.user_approved')}]\n${result.output}`
       : result.output
-    const output = applyCommandOutputBudget(rawOutput, executor)
+    let output: string
+    try {
+      output = await applyCommandOutputBudget(rawOutput, executor)
+    } catch (budgetErr) {
+      output = t('tool_output.externalize_failed_after_success', {
+        total: rawOutput.length.toLocaleString(),
+        reason: budgetErr instanceof Error ? budgetErr.message : String(budgetErr)
+      })
+    }
 
     executor.addStep({
       type: 'tool_result',
@@ -558,7 +569,16 @@ async function executeSudoCommand(
       })
     }
 
-    const sudoOutput = applyCommandOutputBudget(cleanOutput, executor)
+    // 与 executeCommand 同理：落盘失败就地消化，不能把已成功的命令覆盖成 failed
+    let sudoOutput: string
+    try {
+      sudoOutput = await applyCommandOutputBudget(cleanOutput, executor)
+    } catch (budgetErr) {
+      sudoOutput = t('tool_output.externalize_failed_after_success', {
+        total: cleanOutput.length.toLocaleString(),
+        reason: budgetErr instanceof Error ? budgetErr.message : String(budgetErr)
+      })
+    }
 
     executor.addStep({
       type: 'tool_result',

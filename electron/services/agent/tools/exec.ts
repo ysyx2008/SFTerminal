@@ -42,7 +42,7 @@ const OUTPUT_TRUNCATE = 16_384      // 返回给 Agent 的输出截断上限（1
  * @throws 落盘失败时抛错（明确报错 + 建议缩小范围，禁止退回截断）
  * @internal 导出仅为单元测试，业务代码请用 executeCommandDirect 等入口
  */
-export function formatTaskOutput(raw: string, executor: ToolExecutorConfig): string {
+export async function formatTaskOutput(raw: string, executor: ToolExecutorConfig): Promise<string> {
   const budget = executor.getToolOutputBudget?.()
   const maxChars = budget && budget.maxChars > 0
     ? Math.min(budget.maxChars, OUTPUT_TRUNCATE)
@@ -50,7 +50,7 @@ export function formatTaskOutput(raw: string, executor: ToolExecutorConfig): str
 
   const trimmed = raw.trim()
   try {
-    const externalized = externalizeToolOutput({ output: trimmed, maxChars, toolName: 'exec', excerpt: 'tail' })
+    const externalized = await externalizeToolOutput({ output: trimmed, maxChars, toolName: 'exec', excerpt: 'tail' })
     if (externalized) return externalized.text
   } catch (err) {
     throw new Error(externalizeFailedError(trimmed.length, err instanceof Error ? err.message : String(err)))
@@ -195,7 +195,7 @@ export async function executeCommandDirect(
 
   // ============= abort：直接返回，但任务继续在后台跑 =============
   if (reason === 'aborted') {
-    const output = formatTaskOutput(snap.output, executor)
+    const output = await formatTaskOutput(snap.output, executor)
     executor.addStep({
       type: 'tool_result',
       content: `⏹️ ${t('status.user_rejected')}`,
@@ -216,7 +216,7 @@ export async function executeCommandDirect(
     const rawOutput = userApproved
       ? `[${t('status.user_approved')}]\n${snap.output}`
       : snap.output
-    const output = formatTaskOutput(rawOutput, executor)
+    const output = await formatTaskOutput(rawOutput, executor)
     const exitCode = snap.exitCode ?? (snap.signal ? 1 : 0)
     executor.addStep({
       type: 'tool_result',
@@ -245,7 +245,7 @@ export async function executeCommandDirect(
   }
 
   // ============= 任务仍在跑 → 转后台 =============
-  const output = formatTaskOutput(snap.output, executor)
+  const output = await formatTaskOutput(snap.output, executor)
   const header = t('exec.backgrounded', {
     taskId: snap.taskId,
     pid: String(snap.pid ?? 'unknown'),
@@ -320,7 +320,7 @@ export async function awaitExec(
   })
 
   const snap = manager.snapshot(task)
-  const output = formatTaskOutput(snap.output, executor)
+  const output = await formatTaskOutput(snap.output, executor)
 
   if (reason === 'aborted') {
     executor.addStep({

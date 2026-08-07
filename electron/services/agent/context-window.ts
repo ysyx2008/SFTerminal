@@ -253,7 +253,16 @@ export class ContextWindowManager {
    * 一组 = assistant 消息 + 对应的 tool result;从后往前保留 keepRecent 组。
    */
   compress(run: AgentRun, summary: string, keepRecent: number): CompressResult | null {
-    const range = this.findCompressibleRange(run, keepRecent)
+    return this.doCompress(run, summary, keepRecent, this.findCompressibleRange(run, keepRecent))
+  }
+
+  /** 压缩实现主体：range 为 null 表示当前结构不可压缩 */
+  private doCompress(
+    run: AgentRun,
+    summary: string,
+    keepRecent: number,
+    range: { lastUserIndex: number; toCompress: AiMessage[] } | null
+  ): CompressResult | null {
     if (!range) return null
     const { lastUserIndex, toCompress } = range
 
@@ -315,7 +324,7 @@ export class ContextWindowManager {
   /**
    * 是否应该主动压缩（本地触发路径，不等 API 报错）。
    *
-   * 触发条件：上一轮 API 返回的真实 prompt_tokens >= contextLength * 95%。
+   * 触发条件：上一轮 API 返回的真实 prompt_tokens >= contextLength * PROACTIVE_THRESHOLD（0.90）。
    * 仅用真实值，无真实值（首次对话 / cold start）时不触发——让 emergencyCompress
    * 兜底，避免估算误差导致误压缩。
    *
@@ -344,8 +353,12 @@ export class ContextWindowManager {
    */
   async proactiveCompress(run: AgentRun): Promise<CompressResult | null> {
     if (this._proactiveCompressedThisRun) return null
-    const summary = await this.buildProactiveSummary(run)
-    const result = this.compressAggressively(run, summary)
+    // 可压缩范围只算一次：摘要装配与实际归档必须用同一份消息切片，
+    // 否则「摘要覆盖的内容」和「被归档的内容」可能不一致
+    const range = this.findCompressibleRange(run, 2)
+    if (!range) return null
+    const summary = await this.buildProactiveSummary(range.toCompress)
+    const result = this.compressAggressively(run, summary, range)
     if (result) {
       this._proactiveCompressedThisRun = true
       log.info(`Proactive compress: freed ${result.freedTokens} tokens, kept recent ${result.keepRecent} rounds (archive ${result.archiveId})`)
@@ -357,16 +370,12 @@ export class ContextWindowManager {
    * 主动压缩的摘要：优先让 AI 为待归档消息写小结（写给未来的自己），
    * 失败/不可用才回退固定模板。
    */
-  private async buildProactiveSummary(run: AgentRun): Promise<string> {
+  private async buildProactiveSummary(toCompress: AiMessage[]): Promise<string> {
     const summarize = this.deps.summarizeMessages
     if (summarize) {
       try {
-        // 与 compressAggressively 首轮 keepRecent=2 同一范围
-        const range = this.findCompressibleRange(run, 2)
-        if (range) {
-          const aiSummary = await summarize(range.toCompress)
-          if (aiSummary && aiSummary.trim()) return aiSummary.trim()
-        }
+        const aiSummary = await summarize(toCompress)
+        if (aiSummary && aiSummary.trim()) return aiSummary.trim()
       } catch (err) {
         log.warn(`AI 小结生成失败，回退固定模板: ${err}`)
       }
@@ -377,14 +386,20 @@ export class ContextWindowManager {
   /**
    * 激进压缩的共享实现：先 keepRecent=2，若压缩后仍 >90% 再降到 keepRecent=1。
    * emergencyCompress（API 报错兜底）与 proactiveCompress（本地预测触发）共用此逻辑。
+   * proactiveCompress 会传入预计算的 keepRecent=2 范围，避免与摘要装配各算一遍。
    */
-  private compressAggressively(run: AgentRun, summary: string): CompressResult | null {
-    let result = this.compress(run, summary, 2)
+  private compressAggressively(
+    run: AgentRun,
+    summary: string,
+    precomputedRange?: { lastUserIndex: number; toCompress: AiMessage[] }
+  ): CompressResult | null {
+    let result = this.compressWithRange(run, summary, 2, precomputedRange)
     if (result) {
       const contextLength = this.getContextLength()
       const afterUsage = this.estimateTotalTokens(run.messages) / contextLength
       if (afterUsage > 0.9) {
-        const result2 = this.compress(run, summary, 1)
+        // 降级到 keepRecent=1 时归档范围比摘要装配时多一组最近轮次（该轮未进摘要但完整在归档里），补说明避免误读
+        const result2 = this.compressWithRange(run, summary + '\n\n（注：归档后上下文仍紧张，归档范围扩大为仅保留最近 1 轮；多归档的那一轮未纳入本摘要，但完整内容仍在归档中，可用 recall_compressed 查看。）', 1)
         if (result2) {
           result = result2
         }
@@ -392,6 +407,16 @@ export class ContextWindowManager {
       this._enabled = true
     }
     return result
+  }
+
+  /** compress 的内部实现：允许调用方传入预计算范围（仅当 keepRecent 与范围匹配时） */
+  private compressWithRange(
+    run: AgentRun,
+    summary: string,
+    keepRecent: number,
+    range?: { lastUserIndex: number; toCompress: AiMessage[] }
+  ): CompressResult | null {
+    return this.doCompress(run, summary, keepRecent, range ?? this.findCompressibleRange(run, keepRecent))
   }
 
   /**

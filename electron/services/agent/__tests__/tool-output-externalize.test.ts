@@ -29,8 +29,8 @@ afterAll(() => {
 })
 
 describe('externalizeToolOutput', () => {
-  it('预算内返回 null（短输出不落盘）', () => {
-    const result = externalizeToolOutput({
+  it('预算内返回 null（短输出不落盘）', async () => {
+    const result = await externalizeToolOutput({
       output: 'short output',
       maxChars: 1000,
       toolName: 'read_file',
@@ -39,13 +39,13 @@ describe('externalizeToolOutput', () => {
     expect(result).toBeNull()
   })
 
-  it('空输出返回 null', () => {
-    expect(externalizeToolOutput({ output: '', maxChars: 0, toolName: 'exec', excerpt: 'tail' })).toBeNull()
+  it('空输出返回 null', async () => {
+    await expect(externalizeToolOutput({ output: '', maxChars: 0, toolName: 'exec', excerpt: 'tail' })).resolves.toBeNull()
   })
 
-  it('超预算 → 全文落盘 + 指针含路径 + 头部摘录', () => {
+  it('超预算 → 全文落盘 + 指针含路径 + 头部摘录', async () => {
     const output = 'A'.repeat(500) + 'B'.repeat(500)
-    const result = externalizeToolOutput({
+    const result = await externalizeToolOutput({
       output,
       maxChars: 500,
       toolName: 'read_file',
@@ -63,9 +63,9 @@ describe('externalizeToolOutput', () => {
     expect(result!.text).not.toContain('B'.repeat(100))
   })
 
-  it('tail 摘录取末尾内容', () => {
+  it('tail 摘录取末尾内容', async () => {
     const output = 'A'.repeat(500) + 'B'.repeat(500)
-    const result = externalizeToolOutput({
+    const result = await externalizeToolOutput({
       output,
       maxChars: 500,
       toolName: 'exec',
@@ -76,9 +76,9 @@ describe('externalizeToolOutput', () => {
     expect(fs.readFileSync(result!.filePath, 'utf-8')).toBe(output)
   })
 
-  it('maxChars <= 0（余量耗尽）→ 落盘但只给指针', () => {
+  it('maxChars <= 0（余量耗尽）→ 落盘但只给指针', async () => {
     const output = 'X'.repeat(100)
-    const result = externalizeToolOutput({
+    const result = await externalizeToolOutput({
       output,
       maxChars: 0,
       toolName: 'exec',
@@ -91,7 +91,7 @@ describe('externalizeToolOutput', () => {
     expect(result!.text).not.toContain('X'.repeat(50))
   })
 
-  it('落盘失败抛错（禁止退回截断）', () => {
+  it('落盘失败抛错（禁止退回截断）', async () => {
     // 把当日的日期子目录占位成文件，使 mkdir 失败，模拟真实 IO 故障
     const day = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const outputsDir = path.join(TEST_USERDATA, 'agent-workspace', 'scratch', 'tool-outputs')
@@ -100,12 +100,12 @@ describe('externalizeToolOutput', () => {
     fs.mkdirSync(outputsDir, { recursive: true })
     fs.writeFileSync(blocker, 'not a dir')
     try {
-      expect(() => externalizeToolOutput({
+      await expect(externalizeToolOutput({
         output: 'A'.repeat(100),
         maxChars: 10,
         toolName: 'exec',
         excerpt: 'tail'
-      })).toThrow()
+      })).rejects.toThrow()
     } finally {
       fs.rmSync(blocker, { force: true })
     }

@@ -9,6 +9,7 @@
  * 禁止退回截断：落盘 IO 失败抛错，由调用方转成「明确报错 + 建议缩小范围」的
  * 工具错误，不得把残文当结果返回。
  */
+import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import { createLogger } from '../../utils/logger'
@@ -16,9 +17,6 @@ import { getScratchPath } from './workspace-paths'
 import { t } from './i18n'
 
 const log = createLogger('ToolOutputExternalize')
-
-/** notice 预留字符：摘录长度 = maxChars − 该值，保证「notice + 摘录」整体仍在预算内 */
-const NOTICE_RESERVE_CHARS = 400
 
 export type OutputExcerptMode = 'head' | 'tail'
 
@@ -32,13 +30,13 @@ export interface ExternalizedOutput {
 }
 
 /** scratch/tool-outputs/<YYYYMMDD>/<tool>-<HHmmss>-<nonce>.txt；日期分目录便于人工翻阅与过期清理 */
-function buildOutputFilePath(toolName: string): string {
+async function buildOutputFilePath(toolName: string): Promise<string> {
   const now = new Date()
   const day = now.toISOString().slice(0, 10).replace(/-/g, '')
   const time = now.toTimeString().slice(0, 8).replace(/:/g, '')
-  const nonce = Math.random().toString(36).slice(2, 6)
+  const nonce = crypto.randomBytes(4).toString('hex')
   const dir = path.join(getScratchPath(), 'tool-outputs', day)
-  fs.mkdirSync(dir, { recursive: true })
+  await fs.promises.mkdir(dir, { recursive: true })
   const safeTool = toolName.replace(/[^\w-]/g, '_')
   return path.join(dir, `${safeTool}-${time}-${nonce}.txt`)
 }
@@ -48,26 +46,32 @@ function buildOutputFilePath(toolName: string): string {
  * 预算内（或空输出）返回 null。maxChars <= 0（上下文余量耗尽）也落盘，
  * 此时只给指针不附摘录。
  *
+ * 写盘走异步 I/O——Electron 主进程即窗口消息泵，大输出同步写会阻塞窗口响应。
+ *
  * @throws 落盘 IO 失败时抛错（调用方必须转成工具错误，禁止退回截断）
  */
-export function externalizeToolOutput(opts: {
+export async function externalizeToolOutput(opts: {
   output: string
   /** 单次输出预算字符数（调用方可先与自身硬上限取 min）；<= 0 表示余量耗尽，一律落盘 */
   maxChars: number
   toolName: string
   excerpt: OutputExcerptMode
-}): ExternalizedOutput | null {
+}): Promise<ExternalizedOutput | null> {
   const { output, maxChars, toolName, excerpt } = opts
   if (!output) return null
   if (maxChars > 0 && output.length <= maxChars) return null
 
-  const filePath = buildOutputFilePath(toolName)
-  fs.writeFileSync(filePath, output, 'utf-8')
+  const filePath = await buildOutputFilePath(toolName)
+  await fs.promises.writeFile(filePath, output, 'utf-8')
   log.info(`[${toolName}] output externalized to ${filePath} (${output.length} chars)`)
 
   const totalChars = output.length
   const total = totalChars.toLocaleString()
-  const excerptChars = Math.max(0, maxChars - NOTICE_RESERVE_CHARS)
+
+  // notice 按实际文案长度动态预留（而非固定常量），避免改 i18n 文案后隐性超预算
+  const noticeKey = excerpt === 'tail' ? 'tool_output.externalized_tail' : 'tool_output.externalized_head'
+  const notice = t(noticeKey, { total, path: filePath })
+  const excerptChars = Math.max(0, maxChars - notice.length - 2) // 2 = notice 与摘录间的空行
 
   if (excerptChars === 0) {
     return {
@@ -78,9 +82,8 @@ export function externalizeToolOutput(opts: {
   }
 
   const excerptText = excerpt === 'tail' ? output.slice(-excerptChars) : output.slice(0, excerptChars)
-  const key = excerpt === 'tail' ? 'tool_output.externalized_tail' : 'tool_output.externalized_head'
   return {
-    text: `${t(key, { total, path: filePath })}\n\n${excerptText}`,
+    text: `${notice}\n\n${excerptText}`,
     filePath,
     totalChars
   }

@@ -99,14 +99,23 @@ function applyReadFileOutputBudget(
  * 不做截断——解析文本不在磁盘上，截断即永久丢失，且 range 参数对解析内容不生效。
  * 落盘失败返回 error（明确报错 + 建议缩小范围），由调用方转成工具错误。
  */
-function applyDocumentOutputBudget(
+async function applyDocumentOutputBudget(
   content: string,
   filePath: string,
   executor: ToolExecutorConfig
-): { text: string } | { error: string } {
+): Promise<{ text: string } | { error: string }> {
   const budget = getReadOutputBudget(executor)
+  // 与普通文件读取路径一致：余量耗尽时先让 AI 压缩上下文，而不是落盘后只给无摘录的指针
+  if (budget.maxChars <= 0) {
+    return {
+      error: t('file.read_context_exhausted', {
+        usagePercent: budget.usagePercent,
+        path: filePath,
+      })
+    }
+  }
   try {
-    const externalized = externalizeToolOutput({ output: content, maxChars: budget.maxChars, toolName: 'read_file', excerpt: 'head' })
+    const externalized = await externalizeToolOutput({ output: content, maxChars: budget.maxChars, toolName: 'read_file', excerpt: 'head' })
     if (externalized) return { text: externalized.text }
   } catch (err) {
     return { error: externalizeFailedError(content.length, err instanceof Error ? err.message : String(err)) }
@@ -1216,7 +1225,7 @@ async function readDocumentFile(
       } catch (_) { /* skill already loaded or unavailable */ }
     }
 
-    const budgeted = applyDocumentOutputBudget(result.content, filePath, executor)
+    const budgeted = await applyDocumentOutputBudget(result.content, filePath, executor)
     if ('error' in budgeted) {
       executor.addStep({
         type: 'tool_result',

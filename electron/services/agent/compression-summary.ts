@@ -64,18 +64,33 @@ export const SUMMARY_OUTPUT_BUDGET_CHARS = 2000
 /**
  * 摘要输入整体预算控制：超 budgetTokens 时保留头 40% + 尾 40%（按字符近似），
  * 中间以省略标记隔开。头 = 任务起源，尾 = 最近进展，是摘要最关键的两端。
+ *
+ * 字符预算不能按固定倍率近似——estimateTextTokens 对中文约 1 字 ≈ 1.5 token，
+ * 「字符 = token × 2」对纯中文输入会超预算约 3 倍。这里先给初始近似值，
+ * 再按实测 token 迭代收敛（每次按超出比例缩减，最多 5 轮）。
  */
 export function capSummaryInput(text: string, budgetTokens: number): string {
   if (estimateTextTokens(text) <= budgetTokens) return text
-  // token ≈ 中英混合字符数的一个比例，用字符数做保守近似：预算字符 = budgetTokens * 2
-  // （estimateTextTokens 对中文约 1 字 ≈ 1 token、英文约 4 字符 ≈ 1 token，取 2 偏保守）
-  const budgetChars = Math.max(1000, budgetTokens * 2)
-  if (text.length <= budgetChars) return text
-  const headChars = Math.floor(budgetChars * 0.4)
-  const tailChars = Math.floor(budgetChars * 0.4)
-  return (
-    text.slice(0, headChars) +
-    `\n\n[……中间 ${(text.length - headChars - tailChars).toLocaleString()} 字符从摘要输入中省略……]\n\n` +
-    text.slice(-tailChars)
-  )
+
+  const buildCandidate = (budgetChars: number): string => {
+    // 钳到 text.length 内，保证头 40% + 尾 40% 不重叠
+    const effective = Math.min(budgetChars, text.length)
+    const headChars = Math.floor(effective * 0.4)
+    const tailChars = Math.floor(effective * 0.4)
+    return (
+      text.slice(0, headChars) +
+      `\n\n[……中间 ${(text.length - headChars - tailChars).toLocaleString()} 字符从摘要输入中省略……]\n\n` +
+      text.slice(-tailChars)
+    )
+  }
+
+  // 初始近似值的下限本身也不能超过 token 预算（极小预算时 1000 字符仍可能超限）
+  let budgetChars = Math.max(Math.min(1000, budgetTokens), Math.floor(budgetTokens * 1.2))
+  for (let i = 0; i < 5; i++) {
+    const candidate = buildCandidate(budgetChars)
+    const tokens = estimateTextTokens(candidate)
+    if (tokens <= budgetTokens) return candidate
+    budgetChars = Math.floor(budgetChars * (budgetTokens / tokens) * 0.95)
+  }
+  return buildCandidate(Math.max(budgetChars, 200))
 }
