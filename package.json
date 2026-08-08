@@ -103,7 +103,7 @@
     "mailparser": "^3.9.11",
     "mammoth": "^1.11.0",
     "marked": "^18.0.5",
-    "mermaid": "^11.15.0",
+    "mermaid": "^11.16.1",
     "node-html-parser": "^7.1.0",
     "node-pty": "^1.0.0",
     "nodemailer": "^9.0.1",
