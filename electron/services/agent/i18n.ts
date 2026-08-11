@@ -1013,6 +1013,7 @@ const translations = {
     // 安全扫描与技能预览
     'scan.id_required': '技能 ID 不能为空',
     'scan.preview_failed': '预览失败',
+    'scan.install_failed': '安装失败',
     'scan.preview_title': '技能预览',
     'scan.source': '来源',
     'scan.source_local': '本地',
@@ -2547,6 +2548,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     // Security scan & skill preview
     'scan.id_required': 'Skill ID is required',
     'scan.preview_failed': 'Preview failed',
+    'scan.install_failed': 'Installation failed',
     'scan.preview_title': 'Skill Preview',
     'scan.source': 'Source',
     'scan.source_local': 'Local',

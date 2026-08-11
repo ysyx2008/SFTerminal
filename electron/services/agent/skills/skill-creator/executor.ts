@@ -48,9 +48,9 @@ export async function executeSkillCreatorTool(
     case 'skill_market_preview':
       return skillPreview(args)
     case 'skill_market_install':
-      return marketInstall(args, toolCallId, executor)
+      return marketInstall(args, toolCallId, config, executor)
     case 'skill_install_local':
-      return installLocal(args, toolCallId, executor)
+      return installLocal(args, toolCallId, config, executor)
     default:
       return { success: false, output: '', error: `未知的技能管理工具: ${toolName}` }
   }
@@ -852,6 +852,7 @@ function formatInstallOutput(
 async function marketInstall(
   args: Record<string, unknown>,
   toolCallId: string,
+  config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   const skillId = (args.skill_id as string)?.trim()
@@ -888,7 +889,7 @@ async function marketInstall(
       installResult = await service.installSkill(skillId)
     }
     if (!installResult.success) {
-      return { success: false, output: '', error: installResult.error || t('scan.preview_failed') }
+      return { success: false, output: '', error: installResult.error || t('scan.install_failed') }
     }
 
     const installOutput = formatInstallOutput(skillId, preview, hasScripts)
@@ -905,7 +906,7 @@ async function marketInstall(
     return {
       success: false,
       output: '',
-      error: `安装失败: ${error instanceof Error ? error.message : String(error)}`
+      error: `${t('scan.install_failed')}: ${error instanceof Error ? error.message : String(error)}`
     }
   }
 }
@@ -916,6 +917,7 @@ async function marketInstall(
 async function installLocal(
   args: Record<string, unknown>,
   toolCallId: string,
+  config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   const sourcePath = (args.source_path as string)?.trim()
@@ -958,7 +960,7 @@ async function installLocal(
     // 执行安装
     const result = service.installLocalSkillFiles(skillId, preview.filesMap)
     if (!result.success) {
-      return { success: false, output: '', error: result.error || t('scan.preview_failed') }
+      return { success: false, output: '', error: result.error || t('scan.install_failed') }
     }
 
     const overwriteNote = result.overwritten ? t('scan.overwritten') : ''
@@ -976,7 +978,7 @@ async function installLocal(
     return {
       success: false,
       output: '',
-      error: `${t('scan.preview_failed')}: ${error instanceof Error ? error.message : String(error)}`
+      error: `${t('scan.install_failed')}: ${error instanceof Error ? error.message : String(error)}`
     }
   }
 }
