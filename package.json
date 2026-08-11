@@ -169,7 +169,7 @@
     "protobufjs": "^7.5.6",
     "shell-quote": "^1.8.4",
     "hono": "^4.13.1",
-    "@hono/node-server": "^2.0.1",
+    "@hono/node-server": "^2.1.0",
     "axios": "^1.16.0",
     "tar": "^7.5.15",
     "minimatch": "^9.0.7",
