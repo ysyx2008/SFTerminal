@@ -66,7 +66,7 @@ Tasks come first on desktop; Reach sits at the end — all IM channels flow into
 | 🖥️ **Local & SSH Terminal** | Your secretary operates your machine and remote servers; JumpServer bastion sync |
 | 🛡️ **Security & Command Audit** | Shell-AST command parsing, four-level risk assessment, configurable command rules and allowlist |
 | 🌐 **Browser Bridge** | Control your open Chrome or Firefox — no new window, logins preserved |
-| 📦 **Artifact Panel** | Preview and switch documents, charts, PPT, and other outputs in the sidebar |
+| 📦 **Artifact Panel** | WYSIWYG Markdown editing, live HTML/URL preview, screenshot follow-ups, send to phone |
 | 📁 **File Manager** | Dual-pane local and remote file management |
 | 🐦 **Feishu / DingTalk / WeCom** | Calendar, tasks, approvals, docs, Bitable, and other enterprise office skills |
 | 📊 **Office Skills** | Excel, Word, PPT generation and editing via natural language |

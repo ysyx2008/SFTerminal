@@ -2,7 +2,32 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.5.0 (2026-07-27) (Latest)
+## v11.6.0 (2026-08-11) (Latest)
+
+> Artifacts are easier to edit, preview, and send to your phone; long chats make room automatically; Settings is tidier.
+
+### New Features
+- 🎯 **Real Markdown editing**: edit artifacts WYSIWYG in place — select text, use shortcuts, and avoid stepping on AI edits of the same doc
+- 🎯 **Live HTML/URL preview**: open in an embedded browser with an address bar; one-tap screenshot back into the chat to follow up
+- 🎯 **Send artifacts to phone**: push from the panel straight to a connected IM channel
+- 🎯 **Make room in long chats**: oversized command/file reads land on disk with a pointer; near the limit, the AI summarizes before continuing
+- 🎯 **General settings**: launch at login and language live under General; Settings grouped into System / AI / Integrations
+- 🎯 **SSH that reconnects**: reconnect after disconnect; the AI can ensure the link is up before working
+
+### Improvements
+- ⚡ **Clearer artifact names**: fewer machine-looking IDs; long filenames stay readable in the picker
+- ⚡ **Clearer todo progress**: remaining-time bands plus a hover peek card
+- ⚡ **Simpler pane controls**: open, close, and split live in one place
+
+### Bug Fixes
+- 🐛 **Lost images on resume / companion**: images no longer vanish when switching models or using cache
+- 🐛 **Companion stuck on old model**: companion follows the global active model after you switch
+- 🐛 **Windows focus after launch**: fewer interruptions during startup so the input can take focus again
+- 🐛 **SSH reconnect loses the terminal**: reconnect keeps the same identity so the list still matches
+- 🐛 **Skill install failure**: skills with companion files install cleanly
+- 🐛 **Misc**: calendar reminder defaults, heartbeat secretary tone, macOS filename quote links, and more
+
+## v11.5.0 (2026-07-27)
 
 > Speech recognition is download-on-demand; MCP is easier to discover; plus a Windows fix for freezes and black terminals.
 
