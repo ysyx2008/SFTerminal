@@ -105,6 +105,8 @@ export class McpService extends EventEmitter {
   private connections: Map<string, McpConnection> = new Map()
   // 存储工具名称映射：生成的名称 -> { serverId, toolName }
   private toolNameMap: Map<string, { serverId: string; toolName: string }> = new Map()
+  /** ensureConnected 进行中的 Promise，按 serverId 去重 */
+  private connecting: Map<string, Promise<void>> = new Map()
 
   constructor() {
     super()
@@ -121,10 +123,8 @@ export class McpService extends EventEmitter {
 
     log.info(`Connecting to server: ${config.name} (${config.id})`)
 
+    let transport: Transport | undefined
     try {
-      let transport: Transport
-      let childProcess: ChildProcess | undefined
-
       if (config.transport === 'stdio') {
         if (!config.command) {
           throw new Error('stdio 模式需要指定 command')
@@ -187,7 +187,6 @@ export class McpService extends EventEmitter {
         config,
         client,
         transport,
-        process: childProcess,
         tools,
         resources,
         prompts
@@ -198,9 +197,12 @@ export class McpService extends EventEmitter {
       
       this.emit('connected', config.id)
     } catch (error) {
+      if (transport) {
+        try { await transport.close() } catch { /* 连接失败时尽力关掉已拉起的 transport */ }
+      }
       const errorMsg = error instanceof Error ? error.message : '连接失败'
       log.error(`Failed to connect to ${config.name}:`, error)
-      throw new Error(`连接 MCP 服务器 ${config.name} 失败: ${errorMsg}`)
+      throw new Error(`连接 MCP 连接器 ${config.name} 失败: ${errorMsg}`)
     }
   }
 
@@ -362,7 +364,7 @@ export class McpService extends EventEmitter {
    */
   getServerCatalogText(): string {
     const connections = Array.from(this.connections.values())
-    if (connections.length === 0) return '（当前无已连接 MCP 服务器）'
+    if (connections.length === 0) return '（当前无已连接 MCP 连接器）'
     return connections
       .map(conn => {
         const { id, name, whenToUse } = conn.config
@@ -399,6 +401,37 @@ export class McpService extends EventEmitter {
       return { serverId: byName.id, name: byName.name, toolCount: byName.toolCount }
     }
     return null
+  }
+
+  /**
+   * 从已保存的配置里解析连接器（不要求已连接）。
+   * 匹配规则与 resolveServerRef 相同：id、`mcp:id`、显示名（忽略大小写）。
+   */
+  findConfiguredServer(ref: string, configs: McpServerConfig[]): McpServerConfig | null {
+    let key = ref.trim()
+    if (!key) return null
+    const fromSkill = parseMcpSkillId(key)
+    if (fromSkill) key = fromSkill
+    const byId = configs.find(s => s.id === key)
+    if (byId) return byId
+    const lower = key.toLowerCase()
+    return configs.find(s => s.name.toLowerCase() === lower) ?? null
+  }
+
+  /**
+   * 已连接则直接返回；否则按配置连接。
+   * 同一 id 的并发 ensureConnected 共用一次 connect，避免 stdio 双开再互杀。
+   */
+  async ensureConnected(config: McpServerConfig): Promise<void> {
+    if (this.isConnected(config.id)) return
+    let inflight = this.connecting.get(config.id)
+    if (!inflight) {
+      inflight = this.connect(config).finally(() => {
+        this.connecting.delete(config.id)
+      })
+      this.connecting.set(config.id, inflight)
+    }
+    await inflight
   }
 
   /** 公开：生成 LLM 可见的完整工具名 */

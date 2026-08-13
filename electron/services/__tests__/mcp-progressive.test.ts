@@ -16,7 +16,7 @@ import {
   toMcpSkillId,
   parseMcpSkillId
 } from '../agent/mcp-tool-session'
-import { McpService, type McpTool } from '../mcp.service'
+import { McpService, type McpTool, type McpServerConfig } from '../mcp.service'
 
 function makeTool(partial: Partial<McpTool> & Pick<McpTool, 'serverId' | 'serverName' | 'name'>): McpTool {
   return {
@@ -164,7 +164,7 @@ describe('McpService progressive helpers', () => {
 
   it('getServerCatalogText 空 connections 返回占位文案', () => {
     const empty = new McpService()
-    expect(empty.getServerCatalogText()).toBe('（当前无已连接 MCP 服务器）')
+    expect(empty.getServerCatalogText()).toBe('（当前无已连接 MCP 连接器）')
   })
 
   it('getServerCatalogText 空工具 server 标注（无工具）', () => {
@@ -173,5 +173,73 @@ describe('McpService progressive helpers', () => {
     conn.config = { id: 'qcc_risk', name: '企查查-风险信息' }
     const text = mcp.getServerCatalogText()
     expect(text).toContain('mcp:qcc_risk（企查查-风险信息）：（无工具）')
+  })
+})
+
+describe('findConfiguredServer / ensureConnected', () => {
+  const configs: McpServerConfig[] = [
+    { id: '6ea45bfe-9a56-4014-8ab0-8ce0df5e1884', name: '烯牛数据', enabled: true, transport: 'http', url: 'https://example.com/mcp' },
+    { id: 'qcc', name: '企查查', enabled: false, transport: 'stdio', command: 'npx' }
+  ]
+
+  it('匹配 id、mcp:id、显示名；未命中返回 null', () => {
+    const mcp = new McpService()
+    expect(mcp.findConfiguredServer('6ea45bfe-9a56-4014-8ab0-8ce0df5e1884', configs)?.name).toBe('烯牛数据')
+    expect(mcp.findConfiguredServer('mcp:6ea45bfe-9a56-4014-8ab0-8ce0df5e1884', configs)?.id)
+      .toBe('6ea45bfe-9a56-4014-8ab0-8ce0df5e1884')
+    expect(mcp.findConfiguredServer('烯牛数据', configs)?.id).toBe('6ea45bfe-9a56-4014-8ab0-8ce0df5e1884')
+    expect(mcp.findConfiguredServer('不存在', configs)).toBeNull()
+    expect(mcp.findConfiguredServer('  ', configs)).toBeNull()
+  })
+
+  it('ensureConnected 已连接时不重连', async () => {
+    const mcp = new McpService()
+    ;(mcp as unknown as { connections: Map<string, unknown> }).connections = new Map([
+      ['xiniu', { config: { id: 'xiniu', name: '烯牛数据' }, tools: [], resources: [], prompts: [] }]
+    ])
+    const connect = vi.spyOn(mcp, 'connect').mockResolvedValue()
+    await mcp.ensureConnected({
+      id: 'xiniu',
+      name: '烯牛数据',
+      enabled: true,
+      transport: 'http',
+      url: 'https://example.com/mcp'
+    })
+    expect(connect).not.toHaveBeenCalled()
+  })
+
+  it('ensureConnected 未连接时调用 connect', async () => {
+    const mcp = new McpService()
+    const connect = vi.spyOn(mcp, 'connect').mockResolvedValue()
+    const cfg = {
+      id: 'xiniu',
+      name: '烯牛数据',
+      enabled: true,
+      transport: 'http' as const,
+      url: 'https://example.com/mcp'
+    }
+    await mcp.ensureConnected(cfg)
+    expect(connect).toHaveBeenCalledWith(cfg)
+  })
+
+  it('ensureConnected 并发共用一次 connect', async () => {
+    const mcp = new McpService()
+    let resolveConnect!: () => void
+    const connect = vi.spyOn(mcp, 'connect').mockImplementation(
+      () => new Promise<void>(r => { resolveConnect = r })
+    )
+    const cfg = {
+      id: 'xiniu',
+      name: '烯牛数据',
+      enabled: true,
+      transport: 'http' as const,
+      url: 'https://example.com/mcp'
+    }
+    const a = mcp.ensureConnected(cfg)
+    const b = mcp.ensureConnected(cfg)
+    expect(connect).toHaveBeenCalledTimes(1)
+    resolveConnect()
+    await Promise.all([a, b])
+    expect(connect).toHaveBeenCalledTimes(1)
   })
 })

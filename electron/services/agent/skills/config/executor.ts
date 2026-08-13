@@ -98,7 +98,7 @@ const CONFIG_REGISTRY: ConfigMeta[] = [
   { key: 'sshSessions', label: 'SSH 会话', category: 'agent', type: 'array' },
   { key: 'sessionGroups', label: '会话分组', category: 'agent', type: 'array' },
   /** 仅整体展示；增删改须用 config_mcp_server_* 工具，禁止 config_set 覆盖列表 */
-  { key: 'mcpServers', label: 'MCP 服务器', category: 'mcp', type: 'array', readonly: true },
+  { key: 'mcpServers', label: 'MCP 连接器', category: 'mcp', type: 'array', readonly: true },
 ]
 
 const CONFIG_MAP = new Map(CONFIG_REGISTRY.map(m => [m.key, m]))
@@ -121,9 +121,9 @@ export async function executeConfigTool(
     case 'config_set':
       return setConfig(args)
     case 'config_mcp_server_add':
-      return addMcpServerConfig(args)
+      return addMcpServerConfig(args, executor)
     case 'config_mcp_server_update':
-      return updateMcpServerConfig(args)
+      return updateMcpServerConfig(args, executor)
     case 'config_mcp_server_delete':
       return deleteMcpServerConfig(args, executor)
     case 'im_connect':
@@ -174,7 +174,7 @@ function listConfig(args: Record<string, unknown>): ToolResult {
     calendar: '日历',
     gateway: '网关',
     proxy: '代理',
-    mcp: 'MCP 服务器',
+    mcp: 'MCP 连接器',
     knowledge: '知识库',
   }
 
@@ -271,12 +271,12 @@ function setConfig(args: Record<string, unknown>): ToolResult {
   }
 }
 
-// ==================== MCP 服务器（合并写入，禁止整表覆盖）====================
+// ==================== MCP 连接器（合并写入，禁止整表覆盖）====================
 
 function formatMcpServersSummary(config: ReturnType<typeof getConfigService>): string {
   const servers = config.getMcpServers()
   if (servers.length === 0) {
-    return '  - **MCP 服务器** — _(未配置)_  使用 `config_mcp_server_add` 添加'
+    return '  - **MCP 连接器** — _(未配置)_  使用 `config_mcp_server_add` 添加'
   }
   const lines = servers.map(s => {
     const endpoint = s.transport === 'stdio'
@@ -285,13 +285,13 @@ function formatMcpServersSummary(config: ReturnType<typeof getConfigService>): s
     const on = s.enabled ? '启用' : '禁用'
     return `    - **${s.name}** \`${s.id}\` · ${s.transport} · ${on} · ${endpoint}`
   })
-  return `  - **MCP 服务器** — ${servers.length} 个（勿用 config_set 整表覆盖；用 config_mcp_server_add 追加）\n${lines.join('\n')}`
+  return `  - **MCP 连接器** — ${servers.length} 个（勿用 config_set 整表覆盖；用 config_mcp_server_add 追加）\n${lines.join('\n')}`
 }
 
 function formatMcpServersDetail(config: ReturnType<typeof getConfigService>): string {
   const servers = config.getMcpServers()
   if (servers.length === 0) {
-    return '_(未配置)_\n\n使用 `config_mcp_server_add` 添加服务器。'
+    return '_(未配置)_\n\n使用 `config_mcp_server_add` 添加连接器。'
   }
   const lines = servers.map((s, i) => {
     const parts = [`${i + 1}. **${s.name}**`, `- id: \`${s.id}\``, `- transport: \`${s.transport}\``, `- enabled: \`${s.enabled}\``]
@@ -353,7 +353,67 @@ const isValidTransport = (t: string): t is McpTransport =>
 // 'sse' 和 'http' 都通过 url + headers 描述端点，验证逻辑相同
 const isRemoteTransport = (t: McpTransport) => t === 'sse' || t === 'http'
 
-function addMcpServerConfig(args: Record<string, unknown>): ToolResult {
+function mcpConnectionParamsChanged(a: McpServerConfig, b: McpServerConfig): boolean {
+  const sameRecord = (x?: Record<string, string>, y?: Record<string, string>) =>
+    JSON.stringify(x || {}) === JSON.stringify(y || {})
+  const sameArgs = (x?: string[], y?: string[]) =>
+    JSON.stringify(x || []) === JSON.stringify(y || [])
+  return a.transport !== b.transport
+    || a.command !== b.command
+    || a.cwd !== b.cwd
+    || a.url !== b.url
+    || !sameArgs(a.args, b.args)
+    || !sameRecord(a.env, b.env)
+    || !sameRecord(a.headers, b.headers)
+}
+
+async function dropMcpRuntime(
+  executor: ToolExecutorConfig,
+  serverId: string
+): Promise<void> {
+  try {
+    if (executor.mcpService?.isConnected(serverId)) {
+      await executor.mcpService.disconnect(serverId)
+    }
+  } catch (err) {
+    log.warn('Disconnect MCP after disable/delete failed:', err)
+  }
+  executor.mcpToolSession?.unloadServer(serverId)
+}
+
+async function syncMcpConnection(
+  executor: ToolExecutorConfig,
+  server: McpServerConfig,
+  previous?: McpServerConfig
+): Promise<string> {
+  if (!server.enabled) {
+    await dropMcpRuntime(executor, server.id)
+    return '已禁用，未连接。'
+  }
+  if (!executor.mcpService) {
+    return '配置已保存。当前无法连接（MCP 未就绪），稍后可用 skill load 重试，无需重启。'
+  }
+  const already = executor.mcpService.isConnected(server.id)
+  const paramsChanged = previous ? mcpConnectionParamsChanged(previous, server) : true
+  if (already && !paramsChanged) {
+    executor.mcpService.patchConnectedConfig(server)
+    return '已更新配置（连接未中断）。本会话用 skill load 加载后即可调用，无需重启。'
+  }
+  try {
+    await executor.mcpService.connect(server)
+    const status = executor.mcpService.resolveServerRef(server.id)
+    const n = status?.toolCount ?? 0
+    return `已连接，发现 ${n} 个工具。本会话用 skill load mcp:${server.id} 加载后即可调用，无需重启。`
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return `⚠️ 配置已保存，但连接失败：${msg}。可稍后 skill load mcp:${server.id} 重试，无需重启。`
+  }
+}
+
+async function addMcpServerConfig(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
   const name = argStr(args, 'name')
   const transport = args.transport as string
   if (!name) return { success: false, output: '', error: '缺少 name 参数' }
@@ -385,7 +445,7 @@ function addMcpServerConfig(args: Record<string, unknown>): ToolResult {
   const config = getConfigService()
   const servers = config.getMcpServers()
   if (servers.some(s => s.id === id)) {
-    return { success: false, output: '', error: `已存在 id 为 "${id}" 的 MCP 服务器` }
+    return { success: false, output: '', error: `已存在 id 为 "${id}" 的 MCP 连接器` }
   }
 
   const remote = isRemoteTransport(transport)
@@ -406,20 +466,24 @@ function addMcpServerConfig(args: Record<string, unknown>): ToolResult {
   config.addMcpServer(server)
   notifyFrontendConfigChanged()
   const n = config.getMcpServers().length
+  const connectNote = await syncMcpConnection(executor, server)
   return {
     success: true,
-    output: `✅ 已添加 MCP 服务器 **${name}**（id: \`${id}\`，${transport}）。当前共 ${n} 个。`,
+    output: `✅ 已添加 MCP 连接器 **${name}**（id: \`${id}\`，${transport}）。当前共 ${n} 个。\n${connectNote}`,
   }
 }
 
-function updateMcpServerConfig(args: Record<string, unknown>): ToolResult {
+async function updateMcpServerConfig(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
   const serverId = argStr(args, 'serverId') || argStr(args, 'id')
   if (!serverId) return { success: false, output: '', error: '缺少 serverId（或 id）参数' }
 
   const config = getConfigService()
   const existing = config.getMcpServers().find(s => s.id === serverId)
   if (!existing) {
-    return { success: false, output: '', error: `未找到 id 为 "${serverId}" 的 MCP 服务器` }
+    return { success: false, output: '', error: `未找到 id 为 "${serverId}" 的 MCP 连接器` }
   }
 
   const transport = (args.transport as string) || existing.transport
@@ -482,7 +546,8 @@ function updateMcpServerConfig(args: Record<string, unknown>): ToolResult {
 
   config.updateMcpServer(merged)
   notifyFrontendConfigChanged()
-  return { success: true, output: `✅ 已更新 MCP 服务器 **${name}**（\`${serverId}\`）。` }
+  const connectNote = await syncMcpConnection(executor, merged, existing)
+  return { success: true, output: `✅ 已更新 MCP 连接器 **${name}**（\`${serverId}\`）。\n${connectNote}` }
 }
 
 async function deleteMcpServerConfig(
@@ -496,23 +561,17 @@ async function deleteMcpServerConfig(
   const servers = config.getMcpServers()
   const found = servers.find(s => s.id === serverId)
   if (!found) {
-    return { success: false, output: '', error: `未找到 id 为 "${serverId}" 的 MCP 服务器` }
+    return { success: false, output: '', error: `未找到 id 为 "${serverId}" 的 MCP 连接器` }
   }
 
-  try {
-    if (executor.mcpService?.isConnected(serverId)) {
-      await executor.mcpService.disconnect(serverId)
-    }
-  } catch {
-    /* 断开失败仍继续删除配置 */
-  }
+  await dropMcpRuntime(executor, serverId)
 
   config.deleteMcpServer(serverId)
   notifyFrontendConfigChanged()
   const remaining = config.getMcpServers().length
   return {
     success: true,
-    output: `✅ 已删除 MCP 服务器 **${found.name}**（\`${serverId}\`）。剩余 ${remaining} 个。`,
+    output: `✅ 已删除 MCP 连接器 **${found.name}**（\`${serverId}\`）。剩余 ${remaining} 个。`,
   }
 }
 

@@ -615,9 +615,13 @@ export async function loadMcpServer(
   }
 
   const toolName = options?.viaSkill ? 'skill' : 'mcp_load'
-  const resolved = executor.mcpService.resolveServerRef(serverRef)
+  let resolved = executor.mcpService.resolveServerRef(serverRef)
+  const configured = executor.mcpService.findConfiguredServer(
+    serverRef,
+    getConfigService().getMcpServers()
+  )
   // 卡片展示用人类可读名称，勿只露 mcp:uuid
-  const displayLabel = resolved?.name || options?.skillId || serverRef
+  const displayLabel = resolved?.name || configured?.name || options?.skillId || serverRef
 
   executor.addStep({
     type: 'tool_call',
@@ -628,6 +632,34 @@ export async function loadMcpServer(
       : { server: serverRef },
     riskLevel: 'safe'
   })
+
+  if (!resolved && configured && configured.enabled === false) {
+    const err = t('mcp.load_server_disabled', { name: configured.name })
+    executor.addStep({
+      type: 'tool_result',
+      content: err,
+      toolName,
+      toolResult: err
+    })
+    return { success: false, output: '', error: err }
+  }
+
+  if (!resolved && configured && configured.enabled !== false) {
+    try {
+      await executor.mcpService.ensureConnected(configured)
+      resolved = executor.mcpService.resolveServerRef(configured.id)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const fail = t('mcp.load_connect_failed', { name: configured.name, error: msg })
+      executor.addStep({
+        type: 'tool_result',
+        content: fail,
+        toolName,
+        toolResult: fail
+      })
+      return { success: false, output: '', error: fail }
+    }
+  }
 
   if (!resolved) {
     const catalog = executor.mcpService.getServerCatalogText()
@@ -754,9 +786,16 @@ export async function loadSkillTool(
     return { success: false, output: '', error: t('skill.id_required') }
   }
 
-  // MCP 虚拟 skill：mcp:<id> 或已连接 server 的裸 id / 显示名
+  // MCP 虚拟 skill：mcp:<id>，或已连接 / 已配置（含尚未连上）的裸 id / 显示名
   const mcpSkillId = parseMcpSkillId(skillId)
-  if (mcpSkillId || (executor.mcpService?.resolveServerRef(skillId) && !getSkill(skillId))) {
+  const mcpConfigured = executor.mcpService?.findConfiguredServer(
+    skillId,
+    getConfigService().getMcpServers()
+  )
+  if (
+    mcpSkillId ||
+    ((executor.mcpService?.resolveServerRef(skillId) || mcpConfigured) && !getSkill(skillId))
+  ) {
     return loadMcpServer(
       { server: skillId, skill_id: skillId },
       executor,
