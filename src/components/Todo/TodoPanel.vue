@@ -170,7 +170,7 @@ function isStale(item: TodoItem): boolean {
 }
 
 /**
- * 综合关注度：时限（即将到期 ≥ 逾期）× 重要度 × 陈旧补洞。
+ * 综合关注度：时限（已逾期 ≥ 即将到期）× 重要度 × 陈旧补洞。
  * 无紧迫截止时 high/urgent 只轻度着色；陈旧再上浮一档，不得到 critical。
  */
 function attentionLevel(item: TodoItem): AttentionLevel {
@@ -178,11 +178,9 @@ function attentionLevel(item: TodoItem): AttentionLevel {
 
   const pri = item.priority
 
-  if (isDueSoon(item)) {
+  if (isOverdue(item) || isDueSoon(item)) {
     return pri === 'urgent' || pri === 'high' ? 'critical' : 'strong'
   }
-  // 逾期一律 warning 档，不与「今天」抢 brand-alert
-  if (isOverdue(item)) return 'medium'
   if (pri === 'urgent' || pri === 'high') {
     return isStale(item) ? 'medium' : 'mild'
   }
@@ -734,56 +732,6 @@ onUnmounted(() => {
         </div>
 
         <div v-else class="todo-lists">
-          <section v-if="showActiveSections && dueSoonItems.length" class="todo-section">
-            <div class="section-header">
-              <span class="section-title due-soon">{{ t('todoPanel.sectionDueSoon') }}</span>
-              <span class="section-count due-soon">{{ dueSoonItems.length }}</span>
-            </div>
-            <ul class="todo-list">
-              <li
-                v-for="item in dueSoonItems"
-                :key="item.id"
-                class="todo-row due-soon"
-                :class="{
-                  selected: selectedId === item.id,
-                  busy: busyIds.has(item.id),
-                  'has-due-progress': dueProgressRatio(item) != null,
-                  'full-due-progress': (dueProgressRatio(item) ?? 0) >= 0.995,
-                }"
-                :style="dueProgressVars(item)"
-                role="button"
-                tabindex="0"
-                @click="selectItem(item)"
-                @keydown="onRowKeydown(item, $event)"
-                @mousemove="onRowPointerMove(item, $event)"
-                @mouseleave="onRowPointerLeave"
-              >
-                <button
-                  type="button"
-                  class="check-btn"
-                  :disabled="busyIds.has(item.id)"
-                  :title="t('todoPanel.complete')"
-                  @click="handleComplete(item, $event)"
-                >
-                  <Check :size="12" :stroke-width="2.5" />
-                </button>
-                <div class="todo-row-main">
-                  <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
-                  <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
-                    {{ priorityLabel(item.priority) }}
-                  </span>
-                  <span v-if="item.dueDate" class="meta-chip due">{{ formatDueShort(item.dueDate) }}</span>
-                  <span class="meta-time">{{ formatRelative(item.createdAt) }}</span>
-                </div>
-                <div class="todo-actions" @click.stop>
-                  <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
-                    <Trash2 :size="13" />
-                  </button>
-                </div>
-              </li>
-            </ul>
-          </section>
-
           <section v-if="showActiveSections && overdueItems.length" class="todo-section">
             <div class="section-header">
               <span class="section-title overdue">{{ t('todoPanel.sectionOverdue') }}</span>
@@ -823,6 +771,56 @@ onUnmounted(() => {
                     {{ priorityLabel(item.priority) }}
                   </span>
                   <span v-if="item.dueDate" class="meta-chip due-overdue">{{ formatDueShort(item.dueDate) }}</span>
+                  <span class="meta-time">{{ formatRelative(item.createdAt) }}</span>
+                </div>
+                <div class="todo-actions" @click.stop>
+                  <button type="button" class="action-btn danger" :title="t('todoPanel.delete')" @click="handleDelete(item, $event)">
+                    <Trash2 :size="13" />
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </section>
+
+          <section v-if="showActiveSections && dueSoonItems.length" class="todo-section">
+            <div class="section-header">
+              <span class="section-title due-soon">{{ t('todoPanel.sectionDueSoon') }}</span>
+              <span class="section-count due-soon">{{ dueSoonItems.length }}</span>
+            </div>
+            <ul class="todo-list">
+              <li
+                v-for="item in dueSoonItems"
+                :key="item.id"
+                class="todo-row due-soon"
+                :class="{
+                  selected: selectedId === item.id,
+                  busy: busyIds.has(item.id),
+                  'has-due-progress': dueProgressRatio(item) != null,
+                  'full-due-progress': (dueProgressRatio(item) ?? 0) >= 0.995,
+                }"
+                :style="dueProgressVars(item)"
+                role="button"
+                tabindex="0"
+                @click="selectItem(item)"
+                @keydown="onRowKeydown(item, $event)"
+                @mousemove="onRowPointerMove(item, $event)"
+                @mouseleave="onRowPointerLeave"
+              >
+                <button
+                  type="button"
+                  class="check-btn"
+                  :disabled="busyIds.has(item.id)"
+                  :title="t('todoPanel.complete')"
+                  @click="handleComplete(item, $event)"
+                >
+                  <Check :size="12" :stroke-width="2.5" />
+                </button>
+                <div class="todo-row-main">
+                  <span class="todo-item-title" :data-attention="attentionLevel(item)">{{ item.title }}</span>
+                  <span v-if="priorityLabel(item.priority)" class="meta-chip priority" :data-p="item.priority">
+                    {{ priorityLabel(item.priority) }}
+                  </span>
+                  <span v-if="item.dueDate" class="meta-chip due">{{ formatDueShort(item.dueDate) }}</span>
                   <span class="meta-time">{{ formatRelative(item.createdAt) }}</span>
                 </div>
                 <div class="todo-actions" @click.stop>
@@ -1333,9 +1331,9 @@ onUnmounted(() => {
   color: var(--text-muted);
 }
 .section-title.due-soon,
-.section-count.due-soon { color: var(--brand-alert); }
+.section-count.due-soon,
 .section-title.overdue,
-.section-count.overdue { color: var(--accent-warning); }
+.section-count.overdue { color: var(--brand-alert); }
 .section-count {
   font-size: 11px;
   font-weight: 600;
@@ -1495,7 +1493,7 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 标题色：今天 alert、逾期/高优 warning；走主题变量 */
+/* 标题色：已逾期/即将到期 alert、高优 warning；走主题变量 */
 .todo-item-title[data-attention='critical'] {
   color: var(--brand-alert);
   font-weight: 600;
@@ -1529,14 +1527,11 @@ onUnmounted(() => {
   color: var(--text-muted);
   background: color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
-/* 今天：跨主题警戒红；逾期：主题 warning；高优：warning */
-.meta-chip.due {
+/* 即将到期与已逾期：跨主题警戒红；高优：warning */
+.meta-chip.due,
+.meta-chip.due-overdue {
   color: var(--brand-alert);
   background: color-mix(in srgb, var(--brand-alert) 14%, transparent);
-}
-.meta-chip.due-overdue {
-  color: var(--accent-warning);
-  background: color-mix(in srgb, var(--accent-warning) 14%, transparent);
 }
 .meta-chip.priority[data-p='urgent'] {
   color: var(--brand-alert);
