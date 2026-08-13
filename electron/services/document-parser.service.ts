@@ -10,6 +10,7 @@ import { app, utilityProcess, type UtilityProcess } from 'electron'
 import { createLogger } from '../utils/logger'
 import { VisionImageConverter } from '../utils/vision-image'
 import { buildPdfDocumentInit } from './pdfjs-config.mjs'
+import { extractPdfText } from './pdf-text-extract.mjs'
 import { t } from './document-parser.i18n'
 import type { DocumentParsePhase, DocumentParseProgress } from '@shared/types'
 
@@ -109,6 +110,17 @@ interface PdfWorkerProgress {
   current?: number
   total?: number
   message?: string
+}
+
+type PdfExtractType = 'TextBased' | 'Scanned' | 'ImageBased' | 'Mixed'
+
+interface PdfExtractResult {
+  content: string
+  pageCount: number
+  totalPages: number
+  pdfType?: PdfExtractType
+  pagesNeedingOcr?: number[]
+  extractor?: 'inspector' | 'pdfjs'
 }
 
 // 默认选项
@@ -491,7 +503,7 @@ export class DocumentParserService {
     opts: Required<ParseOptions>,
     report?: ProgressReporter
   ): Promise<void> {
-    let parsed: { content: string; pageCount: number; totalPages: number }
+    let parsed: PdfExtractResult
     try {
       parsed = await this.sendToPdfWorker('parsePdf', { filePath, maxTextLength: opts.maxTextLength }, (progress) => {
         this.reportProgress(
@@ -516,12 +528,31 @@ export class DocumentParserService {
     result.content = parsed.content
     result.pageCount = parsed.pageCount
     result.totalPages = parsed.totalPages
+    if (parsed.pdfType) {
+      result.metadata = { ...result.metadata, pdfType: parsed.pdfType }
+    }
+    if (parsed.extractor === 'inspector') {
+      const ocrNote = parsed.pagesNeedingOcr?.length
+        ? `, ocr-flagged ${parsed.pagesNeedingOcr.join(',')}`
+        : ''
+      log.info(`PDF ${parsed.pdfType}: structured extract, ${parsed.totalPages} pages${ocrNote}`)
+    }
 
     const PREVIEW_PAGES = 5
     const hasText = result.content.length > 0
+    const pdfType = parsed.pdfType
+    const ocrPages = (parsed.pagesNeedingOcr ?? []).filter(
+      (p) => Number.isInteger(p) && p >= 1 && p <= parsed.totalPages
+    )
+    const isVisual = pdfType === 'Scanned' || pdfType === 'ImageBased'
+    const mixedNeedsOcr = pdfType === 'Mixed' && ocrPages.length > 0
+    const legacyScanned = !pdfType && !hasText && parsed.totalPages > 0
 
-    if (!hasText && parsed.totalPages > 0) {
-      const pagesToRender = Array.from({ length: Math.min(parsed.totalPages, PREVIEW_PAGES) }, (_, i) => i + 1)
+    if ((isVisual || mixedNeedsOcr || legacyScanned) && parsed.totalPages > 0) {
+      const pagesToRender = (ocrPages.length > 0
+        ? ocrPages
+        : Array.from({ length: Math.min(parsed.totalPages, PREVIEW_PAGES) }, (_, i) => i + 1)
+      ).slice(0, PREVIEW_PAGES)
       try {
         const renderResult = await this.renderPdfPages(filePath, pagesToRender, undefined, (current, total) => {
           this.reportProgress(report, 'rendering-preview', 75 + (current / Math.max(total, 1)) * 20, current, total)
@@ -529,18 +560,25 @@ export class DocumentParserService {
         result.images = renderResult.images
         result.totalPages = renderResult.totalPages
         result.error = undefined
-        log.info(`Scanned PDF detected: ${parsed.totalPages} pages, rendered ${renderResult.images.length} preview pages`)
+        log.info(
+          `PDF vision pages: ${parsed.totalPages} total, rendered ${renderResult.images.length} ` +
+          `(${pagesToRender.join(',')})`
+        )
       } catch (renderErr) {
         log.warn('Failed to render scanned PDF page:', renderErr)
-        result.error = t('doc.scan_pdf_error', { pages: parsed.totalPages })
+        if (!hasText) {
+          result.error = t('doc.scan_pdf_error', { pages: parsed.totalPages })
+        }
       }
-      return
+      if (isVisual || legacyScanned) return
     }
 
     if (!hasText && parsed.totalPages === 0) {
       result.error = t('doc.empty_pdf_error')
       return
     }
+
+    if (result.images?.length) return
 
     if (hasText && opts.extractImages && parsed.totalPages > 0) {
       try {
@@ -587,33 +625,8 @@ export class DocumentParserService {
     filePath: string,
     maxTextLength: number,
     onPage?: (current: number, total: number) => void
-  ): Promise<{ content: string; pageCount: number; totalPages: number }> {
-    const pdfjs = await this.loadPdfjs()
-    const data = new Uint8Array(fs.readFileSync(filePath))
-    const doc = await pdfjs.getDocument(buildPdfDocumentInit(data)).promise
-    const totalPages = doc.numPages
-    const textContent: string[] = []
-    let totalChars = 0
-    let extractedPages = 0
-
-    try {
-      for (let i = 1; i <= totalPages; i++) {
-        const page = await doc.getPage(i)
-        const content = await page.getTextContent()
-        const pageText = content.items
-          .map(item => 'str' in item ? item.str : '')
-          .join(' ')
-          .trim()
-        textContent.push(pageText)
-        extractedPages = i
-        totalChars += pageText.length
-        onPage?.(i, totalPages)
-        if (totalChars >= maxTextLength) break
-      }
-    } finally {
-      doc.destroy()
-    }
-    return { content: textContent.join('\n\n').trim(), pageCount: extractedPages, totalPages }
+  ): Promise<PdfExtractResult> {
+    return extractPdfText(filePath, { maxTextLength, onProgress: onPage })
   }
 
   private async pdfHasImagesDirect(filePath: string, pageCount: number, onPage?: (current: number, total: number) => void): Promise<boolean> {

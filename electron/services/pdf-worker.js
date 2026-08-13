@@ -53,6 +53,13 @@ try {
 
 let pdfjsLib = null
 let napiCanvas = null
+let extractPdfText = null
+async function getExtractPdfText() {
+  if (!extractPdfText) {
+    extractPdfText = (await import('./pdf-text-extract.mjs')).extractPdfText
+  }
+  return extractPdfText
+}
 
 async function loadPdfjs() {
   if (!pdfjsLib) {
@@ -108,45 +115,18 @@ function makeThrottledProgress(send) {
 
 async function parsePdf({ filePath, maxTextLength }, sendProgress) {
   const progress = makeThrottledProgress(sendProgress)
-  const pdfjs = await loadPdfjs()
-  const data = new Uint8Array(fs.readFileSync(filePath))
-  const buildPdfDocumentInit = await getBuildPdfDocumentInit()
-  const doc = await pdfjs.getDocument(buildPdfDocumentInit(data)).promise
-
-  const pageCount = doc.numPages
-  const textParts = []
-  let totalChars = 0
-  let extractedPages = 0
-
-  try {
-    for (let i = 1; i <= pageCount; i++) {
-      const page = await doc.getPage(i)
-      const tc = await page.getTextContent()
-      const pageText = tc.items
-        .filter(item => 'str' in item)
-        .map(item => item.str)
-        .join(' ')
-        .trim()
-      textParts.push(pageText)
-      extractedPages = i
-      totalChars += pageText.length
+  const extract = await getExtractPdfText()
+  return extract(filePath, {
+    maxTextLength,
+    onProgress: (current, total) => {
       progress({
         phase: 'extracting-text',
-        current: i,
-        total: pageCount,
-        percent: Math.round((i / Math.max(pageCount, 1)) * 100),
+        current,
+        total,
+        percent: Math.round((current / Math.max(total, 1)) * 100),
       })
-      if (totalChars >= maxTextLength) break
-    }
-  } finally {
-    doc.destroy()
-  }
-
-  return {
-    content: textParts.join('\n\n').trim(),
-    pageCount: extractedPages,
-    totalPages: pageCount,
-  }
+    },
+  })
 }
 
 async function pdfHasImages({ filePath, pageCount }, sendProgress) {
