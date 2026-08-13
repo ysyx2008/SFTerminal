@@ -624,6 +624,7 @@ export default {
     connectFailed: 'Connection failed',
     retry: 'Retry',
     healthFailed: '{count} failed',
+    healthConnecting: 'Connecting…',
     partialConnectFailed: 'Some connectors failed to connect',
     toggleEnable: 'Enable/Disable',
     quickFill: 'Quick Fill:',

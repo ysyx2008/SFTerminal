@@ -189,13 +189,17 @@ const getTemplates = (): McpTemplate[] => [
 const templates = computed(() => getTemplates())
 
 // 计算属性
-const failedCount = computed(() => {
-  const connectedIds = new Set(serverStatuses.value.filter(s => s.connected).map(s => s.id))
-  return servers.value.filter(s => s.enabled && !connectedIds.has(s.id)).length
-})
+const isUnhealthy = (server: McpServerConfig) => {
+  if (!server.enabled) return false
+  const st = getServerStatus(server.id)
+  return !!st && !st.connected && !!st.error
+}
 
-const isUnhealthy = (server: McpServerConfig) =>
-  server.enabled && !getServerStatus(server.id)?.connected
+const isConnecting = (server: McpServerConfig) =>
+  server.enabled && !getServerStatus(server.id)?.connected && !isUnhealthy(server)
+
+const failedCount = computed(() => servers.value.filter(isUnhealthy).length)
+const connectingCount = computed(() => servers.value.filter(isConnecting).length)
 
 // 加载服务器配置
 const loadServers = async () => {
@@ -742,6 +746,9 @@ onUnmounted(() => {
           <span class="connection-badge health-failed" v-if="failedCount > 0">
             {{ t('mcpSettings.healthFailed', { count: failedCount }) }}
           </span>
+          <span class="connection-badge health-connecting" v-else-if="connectingCount > 0">
+            {{ t('mcpSettings.healthConnecting') }}
+          </span>
         </div>
         <div class="header-actions">
           <button class="btn btn-sm" @click="openImport" :title="t('mcpSettings.importJsonHint')">
@@ -790,6 +797,9 @@ onUnmounted(() => {
             >
               {{ getServerStatus(server.id)?.error || t('mcpSettings.connectionFailed') }}
             </div>
+            <div v-else-if="isConnecting(server)" class="server-connecting">
+              {{ t('mcpSettings.connecting') }}
+            </div>
             <div v-if="server.whenToUse" class="server-when-to-use" :title="server.whenToUse">
               {{ server.whenToUse }}
             </div>
@@ -822,14 +832,15 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 添加/编辑表单 -->
-    <div v-if="showForm" class="server-form">
-      <div class="form-header">
-        <h4>{{ editingServer ? t('mcpSettings.editServer') : t('mcpSettings.addServer') }}</h4>
-        <button class="btn-icon" @click="showForm = false" :title="t('common.close')">
-          <X :size="16" />
-        </button>
-      </div>
+    <!-- 添加/编辑表单弹窗 -->
+    <div v-if="showForm" class="details-modal" @click.self="showForm = false">
+      <div class="details-content server-form-modal">
+        <div class="form-header">
+          <h4>{{ editingServer ? t('mcpSettings.editServer') : t('mcpSettings.addServer') }}</h4>
+          <button class="btn-icon" @click="showForm = false" :title="t('common.close')">
+            <X :size="16" />
+          </button>
+        </div>
 
       <!-- 快速模板 -->
       <div class="templates" v-if="!editingServer">
@@ -950,6 +961,7 @@ onUnmounted(() => {
             {{ whenToUseGenerating ? t('mcpSettings.whenToUseGenerating') : t('common.save') }}
           </button>
         </div>
+      </div>
       </div>
     </div>
 
@@ -1107,6 +1119,11 @@ onUnmounted(() => {
   color: #fff;
 }
 
+.connection-badge.health-connecting {
+  background: var(--bg-tertiary);
+  color: var(--accent-primary);
+}
+
 .server-health-error {
   margin-top: 4px;
   font-size: 11px;
@@ -1115,6 +1132,12 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.server-connecting {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--accent-primary);
 }
 
 .header-actions {
@@ -1227,11 +1250,22 @@ onUnmounted(() => {
   margin-top: 8px;
 }
 
-/* 表单 */
-.server-form {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  overflow: hidden;
+/* 添加/编辑弹窗：盖过 .details-content 的 70vh，主体滚动、页脚固定 */
+.details-content.server-form-modal {
+  width: 560px;
+  max-height: 85vh;
+}
+
+.server-form-modal .form-header,
+.server-form-modal .templates,
+.server-form-modal .form-footer {
+  flex-shrink: 0;
+}
+
+.server-form-modal .form-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .form-header {
@@ -1330,6 +1364,7 @@ onUnmounted(() => {
 .transport-select {
   display: flex;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .radio-item {

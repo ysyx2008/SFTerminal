@@ -250,6 +250,7 @@ export default {
     retry: '重试',
     healthOk: '{count} 个已启用',
     healthFailed: '{count} 个连接失败',
+    healthConnecting: '正在连接 {connected}/{total}',
     connectAll: '全部连接',
     connect: '连接',
     disconnect: '断开',

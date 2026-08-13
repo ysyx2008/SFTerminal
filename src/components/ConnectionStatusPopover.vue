@@ -79,17 +79,30 @@ const imConnectedCount = computed(() => imChannels.value.filter(c => c.connected
 // "活跃"渠道：已连接 或 配置了自动连接的
 const imActiveCount = computed(() => imChannels.value.filter(c => c.connected || c.autoConnect).length)
 
+const getMcpStatus = (serverId: string): McpServerStatus | undefined => {
+  return mcpStatuses.value.find(s => s.id === serverId)
+}
+
 const mcpEnabledServers = computed(() => mcpServers.value.filter(s => s.enabled))
 const mcpConnectedCount = computed(() => mcpStatuses.value.filter(s => s.connected).length)
 const mcpEnabledCount = computed(() => mcpEnabledServers.value.length)
-const mcpFailedCount = computed(() => {
-  const connected = new Set(mcpStatuses.value.filter(s => s.connected).map(s => s.id))
-  return mcpEnabledServers.value.filter(s => !connected.has(s.id)).length
-})
+
+const isMcpFailed = (server: McpServerConfig): boolean => {
+  if (!server.enabled) return false
+  const st = getMcpStatus(server.id)
+  return !!st && !st.connected && !!st.error
+}
+
+const isMcpPending = (server: McpServerConfig): boolean =>
+  server.enabled && !getMcpStatus(server.id)?.connected && !isMcpFailed(server)
+
+const mcpFailedCount = computed(() => mcpEnabledServers.value.filter(isMcpFailed).length)
+const mcpPendingCount = computed(() => mcpEnabledServers.value.filter(isMcpPending).length)
 
 const showGateway = computed(() => gatewayRunning.value)
 
 // 顶栏角标只统计 IM / Gateway / MCP；浏览器助手为可选能力，未连接不算「待办」
+// 正在连接的 MCP 不计入已连接，也不当成故障——单独用 connecting 态
 const totalConnected = computed(() =>
   imConnectedCount.value + (showGateway.value ? 1 : 0) + mcpConnectedCount.value,
 )
@@ -97,8 +110,14 @@ const totalEnabled = computed(() =>
   imActiveCount.value + (showGateway.value ? 1 : 0) + mcpEnabledCount.value,
 )
 
+const mcpConnectingQuiet = computed(() =>
+  mcpPendingCount.value > 0 && mcpFailedCount.value === 0
+  && imConnectedCount.value === imActiveCount.value
+)
+
 const statusType = computed(() => {
   if (totalEnabled.value === 0) return 'none'
+  if (mcpConnectingQuiet.value) return 'connecting'
   if (totalConnected.value === 0) return 'offline'
   if (totalConnected.value >= totalEnabled.value) return 'all'
   return 'partial'
@@ -107,6 +126,7 @@ const statusType = computed(() => {
 const statusClass = computed(() => {
   switch (statusType.value) {
     case 'all': return 'status-all'
+    case 'connecting': return 'status-connecting'
     case 'partial': return 'status-partial'
     case 'offline': return 'status-offline'
     default: return 'status-none'
@@ -116,18 +136,40 @@ const statusClass = computed(() => {
 const statusIcon = computed(() => {
   switch (statusType.value) {
     case 'all': return '●'
-    case 'partial': return '◐'
+    case 'partial':
+    case 'connecting': return '◐'
     default: return '○'
   }
 })
 
-const statusTooltip = computed(() => `${totalConnected.value}/${totalEnabled.value} ${t('conn.connected')}`)
+const statusTooltip = computed(() => {
+  if (mcpConnectingQuiet.value) {
+    return t('mcp.healthConnecting', {
+      connected: mcpConnectedCount.value,
+      total: mcpEnabledCount.value,
+    })
+  }
+  return `${totalConnected.value}/${totalEnabled.value} ${t('conn.connected')}`
+})
 
-// ==================== MCP 辅助 ====================
+const mcpHeaderText = computed(() => {
+  if (mcpFailedCount.value > 0) return t('mcp.healthFailed', { count: mcpFailedCount.value })
+  if (mcpPendingCount.value > 0) {
+    return t('mcp.healthConnecting', {
+      connected: mcpConnectedCount.value,
+      total: mcpEnabledCount.value,
+    })
+  }
+  if (mcpEnabledCount.value > 0) return t('mcp.healthOk', { count: mcpEnabledCount.value })
+  return ''
+})
 
-const getMcpStatus = (serverId: string): McpServerStatus | undefined => {
-  return mcpStatuses.value.find(s => s.id === serverId)
-}
+const mcpHeaderClass = computed(() => {
+  if (mcpFailedCount.value > 0) return 'count-bad'
+  if (mcpPendingCount.value > 0) return 'count-connecting'
+  if (mcpEnabledCount.value > 0) return 'count-ok'
+  return ''
+})
 
 // ==================== 数据加载 ====================
 
@@ -373,7 +415,8 @@ onUnmounted(() => {
     >
       <Radio :size="18" />
       <span class="status-badge" :class="statusClass">
-        <span class="status-dot">{{ statusIcon }}</span>
+        <span v-if="statusType === 'connecting'" class="spinner"></span>
+        <span v-else class="status-dot">{{ statusIcon }}</span>
         <span class="status-count">{{ totalConnected }}/{{ totalEnabled }}</span>
       </span>
     </button>
@@ -458,11 +501,8 @@ onUnmounted(() => {
               <span class="col-title">🔌 {{ t('conn.mcpServers') }}</span>
               <span
                 class="col-count"
-                :class="mcpFailedCount > 0 ? 'count-bad' : (mcpEnabledCount > 0 ? 'count-ok' : '')"
-              >{{ mcpFailedCount > 0
-                ? t('mcp.healthFailed', { count: mcpFailedCount })
-                : (mcpEnabledCount > 0 ? t('mcp.healthOk', { count: mcpEnabledCount }) : '')
-              }}</span>
+                :class="mcpHeaderClass"
+              >{{ mcpHeaderText }}</span>
             </div>
             <div class="col-body">
               <div v-if="mcpServers.length === 0" class="empty-hint">
@@ -476,20 +516,24 @@ onUnmounted(() => {
               >
                 <span class="item-dot" :class="{
                   'dot-on': getMcpStatus(srv.id)?.connected,
-                  'dot-off': srv.enabled && !getMcpStatus(srv.id)?.connected,
+                  'dot-off': isMcpFailed(srv),
                   'dot-disabled': !srv.enabled
-                }">{{ getMcpStatus(srv.id)?.connected ? '●' : '○' }}</span>
+                }">
+                  <span v-if="isMcpPending(srv)" class="spinner"></span>
+                  <template v-else>{{ getMcpStatus(srv.id)?.connected ? '●' : '○' }}</template>
+                </span>
                 <div class="item-name-group">
                   <span class="item-name">{{ srv.name }}</span>
                   <span v-if="getMcpStatus(srv.id)?.connected" class="item-detail">{{ getMcpStatus(srv.id)?.toolCount }} {{ t('mcp.tools') }}</span>
                   <span v-else-if="!srv.enabled" class="item-tag">{{ t('mcp.disabled') }}</span>
+                  <span v-else-if="isMcpPending(srv)" class="item-connecting">{{ t('mcp.connecting') }}</span>
                   <span
-                    v-else
+                    v-else-if="isMcpFailed(srv)"
                     class="item-detail item-error"
-                    :title="getMcpStatus(srv.id)?.error || t('mcp.error')"
-                  >{{ getMcpStatus(srv.id)?.error || t('mcp.error') }}</span>
+                    :title="getMcpStatus(srv.id)?.error"
+                  >{{ getMcpStatus(srv.id)?.error }}</span>
                 </div>
-                <div class="item-actions" v-if="srv.enabled && !getMcpStatus(srv.id)?.connected">
+                <div class="item-actions" v-if="isMcpFailed(srv)">
                   <button class="btn-sm btn-connect" :disabled="mcpConnecting === srv.id" @click="retryMcp(srv)">
                     <span v-if="mcpConnecting === srv.id" class="spinner"></span>
                     <span v-else>{{ t('mcp.retry') }}</span>
@@ -558,6 +602,7 @@ onUnmounted(() => {
 .status-count { font-family: var(--font-mono); font-size: 10px; }
 
 .status-all .status-dot, .status-all.status-badge { color: var(--brand-vital); }
+.status-connecting .status-dot, .status-connecting.status-badge { color: var(--accent-primary); }
 .status-partial .status-dot, .status-partial.status-badge { color: var(--color-warning); }
 .status-offline .status-dot, .status-offline.status-badge { color: var(--color-error); }
 .status-none .status-dot, .status-none.status-badge { color: var(--text-muted); }
@@ -620,12 +665,22 @@ onUnmounted(() => {
   color: var(--brand-vital);
 }
 
+.col-count.count-connecting {
+  color: var(--accent-primary);
+}
+
 .col-count.count-bad {
   color: var(--accent-red, #e74c3c);
 }
 
 .item-error {
   color: var(--accent-red, #e74c3c);
+}
+
+.item-connecting {
+  font-size: 10px;
+  color: var(--accent-primary);
+  flex-shrink: 0;
 }
 
 /* 栏体：左栏随内容撑开（无滚动条）；右栏 MCP 列表可能较长，保留滚动 */
