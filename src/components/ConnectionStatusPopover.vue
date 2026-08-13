@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Radio, Settings } from 'lucide-vue-next'
+import { Radio } from 'lucide-vue-next'
 import {
   isBrowserBridgeComponentsInstalled,
   isChromiumBridgeConnection,
@@ -543,14 +543,6 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-
-        <!-- 底部 -->
-        <div class="conn-footer">
-          <button class="btn-settings" @click="openSettings()">
-            <Settings :size="14" />
-            {{ t('conn.settings') }}
-          </button>
-        </div>
       </div>
     </Teleport>
   </div>
@@ -844,33 +836,5 @@ onUnmounted(() => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-/* 底部 */
-.conn-footer {
-  padding: 8px 12px;
-  border-top: 1px solid var(--border-color);
-}
-
-.btn-settings {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  padding: 7px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-settings:hover {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border-color: var(--accent-primary);
 }
 </style>

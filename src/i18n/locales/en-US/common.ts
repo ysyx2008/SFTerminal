@@ -410,7 +410,6 @@ export default {
     disconnect: 'Disconnect',
     start: 'Start',
     stop: 'Stop',
-    settings: 'Settings',
     browserBridge: 'Browser Assistant',
     browserBridgeChromium: 'Chromium browser',
     browserBridgeFirefox: 'Firefox browser',
