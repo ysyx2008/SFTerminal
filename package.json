@@ -59,6 +59,7 @@
     "pack:chrome-extension": "bash scripts/pack-chrome-extension.sh"
   },
   "dependencies": {
+    "@firecrawl/pdf-inspector": "^1.14.1",
     "@huggingface/transformers": "^4.2.0",
     "@lancedb/lancedb": "^0.22.3",
     "@langchain/textsplitters": "^1.0.1",

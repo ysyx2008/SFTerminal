@@ -32,6 +32,7 @@ const WORKER_ENTRY_PACKAGES = [
   'sherpa-onnx-node',
   'pdfjs-dist',
   '@napi-rs/canvas',
+  '@firecrawl/pdf-inspector',
 ]
 
 /**
@@ -57,7 +58,7 @@ const ALLOW_MISSING = new Set([
 
 /** 跨平台 optional 原生包（当前机只装本平台，不必要求全平台解包） */
 const PLATFORM_OPTIONAL_RE =
-  /^(?:@img\/sharp(?:-libvips)?-|@lancedb\/lancedb-|@napi-rs\/canvas-|sherpa-onnx-(?!node$))/
+  /^(?:@img\/sharp(?:-libvips)?-|@lancedb\/lancedb-|@napi-rs\/canvas-|sherpa-onnx-(?!node$)|@firecrawl\/pdf-inspector-)/
 
 function exists(p) {
   try {

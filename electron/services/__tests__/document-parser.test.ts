@@ -856,4 +856,46 @@ describe('DocumentParserService', () => {
       expect(xlsType).toBeDefined()
     })
   })
+
+  describe('parseDocument - PDF', () => {
+    it('文字 PDF 应抽出正文且不报错', async () => {
+      const stream = 'BT /F1 24 Tf 72 720 Td (Hello SailFish) Tj ET\n'
+      const parts = [
+        '%PDF-1.4\n',
+        '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n',
+        '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n',
+        '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n',
+        `4 0 obj << /Length ${Buffer.byteLength(stream)} >> stream\n${stream}endstream endobj\n`,
+        '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n',
+      ]
+      const offsets: number[] = []
+      let cursor = 0
+      for (const part of parts) {
+        offsets.push(cursor)
+        cursor += Buffer.byteLength(part)
+      }
+      let xref = 'xref\n0 6\n0000000000 65535 f \n'
+      for (let i = 1; i <= 5; i++) {
+        xref += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
+      }
+      const pdf = Buffer.concat([
+        Buffer.from(parts.join('')),
+        Buffer.from(`${xref}trailer << /Size 6 /Root 1 0 R >>\nstartxref\n${cursor}\n%%EOF\n`),
+      ])
+      const tempFile = path.join(os.tmpdir(), `parse-pdf-${crypto.randomUUID()}.pdf`)
+      fs.writeFileSync(tempFile, pdf)
+      try {
+        const result = await service.parseDocument({
+          name: 'hello.pdf',
+          path: tempFile,
+          size: pdf.length
+        })
+        expect(result.fileType).toBe('pdf')
+        expect(result.error).toBeUndefined()
+        expect(result.content).toMatch(/Hello SailFish/)
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+  })
 })

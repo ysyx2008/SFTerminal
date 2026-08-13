@@ -57,6 +57,7 @@ asarUnpack:
   - dist-electron/services/speech/**/*
   - dist-electron/services/pdf-worker.js
   - dist-electron/services/pdfjs-config.mjs
+  - dist-electron/services/pdf-text-extract.mjs
   - dist-electron/services/knowledge/**/*
   - node_modules/@huggingface/transformers/**/*
   # LanceDB 原生 Rust addon（lancedb-worker.js 在 utilityProcess 中 require，必须在 asar 外）
@@ -67,6 +68,8 @@ asarUnpack:
   - node_modules/pdfjs-dist/**/*
   - node_modules/@napi-rs/canvas/**/*
   - node_modules/@napi-rs/canvas-*/**/*
+  - node_modules/@firecrawl/pdf-inspector/**/*
+  - node_modules/@firecrawl/pdf-inspector-*/**/*
   # sharp 是 native 模块，运行时按平台动态 require
   # build/Release/sharp-{platform}-{arch}.node，必须保留在文件系统而不是 asar 内
   - node_modules/sharp/**/*

@@ -132,7 +132,7 @@ function copyPdfWorker() {
     name: 'copy-pdf-worker',
     closeBundle() {
       const destDir = resolve(__dirname, 'dist-electron/services')
-      const files = ['pdf-worker.js', 'pdfjs-config.mjs']
+      const files = ['pdf-worker.js', 'pdfjs-config.mjs', 'pdf-text-extract.mjs']
       if (!existsSync(destDir)) {
         mkdirSync(destDir, { recursive: true })
       }
@@ -143,7 +143,7 @@ function copyPdfWorker() {
           copyFileSync(srcPath, destPath)
         }
       }
-      console.log('[copy-pdf-worker] Copied pdf-worker.js and pdfjs-config.mjs to dist-electron')
+      console.log('[copy-pdf-worker] Copied pdf-worker.js, pdfjs-config.mjs, pdf-text-extract.mjs to dist-electron')
     }
   }
 }
@@ -289,6 +289,7 @@ export default defineConfig({
                 // 转成 throw new Error('Could not resolve "bufferutil"')，破坏原本的 try/catch。
                 // 标记为 external 后 rollup 保留原样 require()，运行时由 ws 自行处理缺失情况。
                 '@napi-rs/canvas',
+                '@firecrawl/pdf-inspector',
                 // sharp 是 native 模块，内部用 dynamic require 加载平台对应的 .node prebuild
                 // (sharp-darwin-arm64v8.node / sharp-linux-x64.node / ...)，rollup 静态分析无法
                 // 处理这种 dynamic require，会报 "Could not dynamically require ..."。
@@ -373,6 +374,7 @@ export default defineConfig({
                 'dingtalk-stream',
                 '@larksuiteoapi/node-sdk',
                 '@napi-rs/canvas',
+                '@firecrawl/pdf-inspector',
                 'sharp',
                 /^pdfjs-dist/,
                 'bufferutil',
