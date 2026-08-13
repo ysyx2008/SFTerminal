@@ -243,16 +243,19 @@ export default {
     disconnected: 'Disconnected',
     connecting: 'Connecting',
     error: 'Error',
-    servers: 'Servers',
-    noServers: 'No servers configured',
+    servers: 'Connectors',
+    noServers: 'No connectors configured',
     openSettings: 'Open Settings',
-    serverList: 'MCP Servers',
+    serverList: 'MCP Connectors',
+    retry: 'Retry',
+    healthOk: '{count} enabled',
+    healthFailed: '{count} failed',
     connectAll: 'Connect All',
     connect: 'Connect',
     disconnect: 'Disconnect',
     tools: 'tools',
     disabled: 'Disabled',
-    noServersConfigured: 'No MCP servers configured'
+    noServersConfigured: 'No MCP connectors configured'
   },
 
 

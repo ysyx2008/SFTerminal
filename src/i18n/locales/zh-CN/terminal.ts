@@ -243,16 +243,19 @@ export default {
     disconnected: '未连接',
     connecting: '连接中',
     error: '错误',
-    servers: '服务器',
-    noServers: '未配置服务器',
+    servers: '连接器',
+    noServers: '未配置连接器',
     openSettings: '打开设置',
-    serverList: 'MCP 服务器',
+    serverList: 'MCP 连接器',
+    retry: '重试',
+    healthOk: '{count} 个已启用',
+    healthFailed: '{count} 个连接失败',
     connectAll: '全部连接',
     connect: '连接',
     disconnect: '断开',
     tools: '工具',
     disabled: '已禁用',
-    noServersConfigured: '尚未配置 MCP 服务器'
+    noServersConfigured: '尚未配置 MCP 连接器'
   },
 
 

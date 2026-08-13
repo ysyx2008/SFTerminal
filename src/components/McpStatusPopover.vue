@@ -40,25 +40,17 @@ const buttonRef = ref<HTMLElement | null>(null)
 
 // 计算属性：启用的服务器
 const enabledServers = computed(() => servers.value.filter(s => s.enabled))
-
-// 计算属性：已连接的服务器数量
-const connectedCount = computed(() => serverStatuses.value.length)
-
-// 计算属性：启用的服务器数量
+const connectedCount = computed(() => serverStatuses.value.filter(s => s.connected).length)
 const enabledCount = computed(() => enabledServers.value.length)
+const failedCount = computed(() => {
+  const connected = new Set(serverStatuses.value.filter(s => s.connected).map(s => s.id))
+  return enabledServers.value.filter(s => !connected.has(s.id)).length
+})
 
-// 计算属性：状态类型
 const statusType = computed(() => {
-  if (enabledCount.value === 0) {
-    return 'none' // 无启用的服务器
-  }
-  if (connectedCount.value === 0) {
-    return 'offline' // 全部离线
-  }
-  if (connectedCount.value >= enabledCount.value) {
-    return 'all' // 全部连接
-  }
-  return 'partial' // 部分连接
+  if (enabledCount.value === 0) return 'none'
+  if (failedCount.value > 0) return connectedCount.value === 0 ? 'offline' : 'partial'
+  return 'all'
 })
 
 // 计算属性：状态颜色类
@@ -85,13 +77,10 @@ const statusTooltip = computed(() => {
   if (enabledCount.value === 0) {
     return t('mcp.noServersConfigured')
   }
-  if (connectedCount.value === enabledCount.value) {
-    return `MCP: ${connectedCount.value} ${t('mcp.servers')} ${t('mcp.connected')}`
+  if (failedCount.value > 0) {
+    return t('mcp.healthFailed', { count: failedCount.value })
   }
-  if (connectedCount.value === 0) {
-    return `MCP: ${enabledCount.value} ${t('mcp.servers')} ${t('mcp.disconnected')}`
-  }
-  return `MCP: ${connectedCount.value}/${enabledCount.value} ${t('mcp.connected')}`
+  return t('mcp.healthOk', { count: enabledCount.value })
 })
 
 // 获取服务器状态
@@ -134,33 +123,17 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 // 连接服务器
-const connectServer = async (server: McpServerConfig) => {
+const retryConnect = async (server: McpServerConfig) => {
   connecting.value = server.id
   try {
     const plainServer = JSON.parse(JSON.stringify(server))
     await window.electronAPI.mcp.connect(plainServer)
   } catch (error) {
-    console.error('连接失败:', error)
+    console.error('MCP retry failed:', error)
   } finally {
     connecting.value = null
     await loadData()
   }
-}
-
-// 断开服务器
-const disconnectServer = async (server: McpServerConfig) => {
-  await window.electronAPI.mcp.disconnect(server.id)
-  await loadData()
-}
-
-// 连接所有启用的服务器
-const connectAll = async () => {
-  const results = await window.electronAPI.mcp.connectEnabledServers()
-  const failed = results.filter(r => !r.success)
-  if (failed.length > 0) {
-    console.warn('部分服务器连接失败:', failed)
-  }
-  await loadData()
 }
 
 // 打开设置
@@ -219,7 +192,8 @@ onUnmounted(() => {
       <!-- 状态徽章 -->
       <span class="status-badge" :class="statusClass">
         <span class="status-dot">{{ statusIcon }}</span>
-        <span v-if="enabledCount > 0" class="status-count">{{ connectedCount }}/{{ enabledCount }}</span>
+        <span v-if="failedCount > 0" class="status-count">{{ failedCount }}</span>
+        <span v-else-if="enabledCount > 0" class="status-count">{{ enabledCount }}</span>
         <span v-else class="status-count">-</span>
       </span>
     </button>
@@ -229,14 +203,6 @@ onUnmounted(() => {
       <div v-if="showPopover" ref="popoverRef" class="mcp-popover">
         <div class="popover-header">
           <span class="popover-title">{{ t('mcp.serverList') }}</span>
-          <button 
-            v-if="enabledServers.length > 0 && connectedCount < enabledCount"
-            class="btn-connect-all"
-            @click="connectAll"
-            :title="t('mcp.connectAll')"
-          >
-            {{ t('mcp.connectAll') }}
-          </button>
         </div>
 
         <div class="popover-body">
@@ -265,7 +231,6 @@ onUnmounted(() => {
                 {{ getServerStatus(server.id)?.connected ? '●' : '○' }}
               </span>
 
-              <!-- 服务器信息 -->
               <div class="server-info">
                 <span class="server-name">{{ server.name }}</span>
                 <span v-if="getServerStatus(server.id)?.connected" class="server-tools">
@@ -274,30 +239,26 @@ onUnmounted(() => {
                 <span v-else-if="!server.enabled" class="server-disabled-tag">
                   {{ t('mcp.disabled') }}
                 </span>
+                <span
+                  v-else
+                  class="server-tools"
+                  :title="getServerStatus(server.id)?.error || t('mcp.error')"
+                >
+                  {{ getServerStatus(server.id)?.error || t('mcp.error') }}
+                </span>
               </div>
 
-              <!-- 操作按钮 -->
               <div class="server-actions">
-                <template v-if="server.enabled">
-                  <button 
-                    v-if="!getServerStatus(server.id)?.connected"
-                    class="btn-action btn-connect"
-                    :disabled="connecting === server.id"
-                    @click="connectServer(server)"
-                    :title="t('mcp.connect')"
-                  >
-                    <span v-if="connecting === server.id" class="spinner-small"></span>
-                    <span v-else>{{ t('mcp.connect') }}</span>
-                  </button>
-                  <button 
-                    v-else
-                    class="btn-action btn-disconnect"
-                    @click="disconnectServer(server)"
-                    :title="t('mcp.disconnect')"
-                  >
-                    {{ t('mcp.disconnect') }}
-                  </button>
-                </template>
+                <button
+                  v-if="server.enabled && !getServerStatus(server.id)?.connected"
+                  class="btn-action btn-connect"
+                  :disabled="connecting === server.id"
+                  @click="retryConnect(server)"
+                  :title="t('mcp.retry')"
+                >
+                  <span v-if="connecting === server.id" class="spinner-small"></span>
+                  <span v-else>{{ t('mcp.retry') }}</span>
+                </button>
               </div>
             </div>
           </div>

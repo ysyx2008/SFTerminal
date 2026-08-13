@@ -107,6 +107,8 @@ export class McpService extends EventEmitter {
   private toolNameMap: Map<string, { serverId: string; toolName: string }> = new Map()
   /** ensureConnected 进行中的 Promise，按 serverId 去重 */
   private connecting: Map<string, Promise<void>> = new Map()
+  /** 最近一次连接失败（已连接成功或主动断开后清除） */
+  private lastErrors: Map<string, { name: string; error: string }> = new Map()
 
   constructor() {
     super()
@@ -192,6 +194,7 @@ export class McpService extends EventEmitter {
         prompts
       }
       this.connections.set(config.id, connection)
+      this.lastErrors.delete(config.id)
 
       log.info(`Connected to ${config.name}: ${tools.length} tools, ${resources.length} resources, ${prompts.length} prompts`)
       
@@ -201,6 +204,8 @@ export class McpService extends EventEmitter {
         try { await transport.close() } catch { /* 连接失败时尽力关掉已拉起的 transport */ }
       }
       const errorMsg = error instanceof Error ? error.message : '连接失败'
+      this.lastErrors.set(config.id, { name: config.name, error: errorMsg })
+      this.emit('error', { serverId: config.id, error: errorMsg })
       log.error(`Failed to connect to ${config.name}:`, error)
       throw new Error(`连接 MCP 连接器 ${config.name} 失败: ${errorMsg}`)
     }
@@ -227,6 +232,7 @@ export class McpService extends EventEmitter {
     }
 
     this.connections.delete(serverId)
+    this.lastErrors.delete(serverId)
     this.emit('disconnected', serverId)
   }
 
@@ -247,6 +253,9 @@ export class McpService extends EventEmitter {
     const connection = this.connections.get(serverId)
     if (connection) {
       this.connections.delete(serverId)
+      if (error) {
+        this.lastErrors.set(serverId, { name: connection.config.name, error })
+      }
       this.emit('error', { serverId, error })
     }
   }
@@ -324,10 +333,10 @@ export class McpService extends EventEmitter {
   }
 
   /**
-   * 获取所有已连接服务器的状态
+   * 已连接 + 最近连接失败的健康状态（失败项 connected=false 且带 error）。
    */
   getServerStatuses(): McpServerStatus[] {
-    return Array.from(this.connections.values()).map(conn => ({
+    const live = Array.from(this.connections.values()).map(conn => ({
       id: conn.config.id,
       name: conn.config.name,
       connected: true,
@@ -335,6 +344,20 @@ export class McpService extends EventEmitter {
       resourceCount: conn.resources.length,
       promptCount: conn.prompts.length
     }))
+    const failed: McpServerStatus[] = []
+    for (const [id, rec] of this.lastErrors) {
+      if (this.connections.has(id)) continue
+      failed.push({
+        id,
+        name: rec.name,
+        connected: false,
+        error: rec.error,
+        toolCount: 0,
+        resourceCount: 0,
+        promptCount: 0
+      })
+    }
+    return [...live, ...failed]
   }
 
   /**
@@ -390,7 +413,7 @@ export class McpService extends EventEmitter {
     if (!key) return null
     const fromSkill = parseMcpSkillId(key)
     if (fromSkill) key = fromSkill
-    const statuses = this.getServerStatuses()
+    const statuses = this.getServerStatuses().filter(s => s.connected)
     const byId = statuses.find(s => s.id === key)
     if (byId) {
       return { serverId: byId.id, name: byId.name, toolCount: byId.toolCount }

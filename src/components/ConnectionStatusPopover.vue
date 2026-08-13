@@ -80,8 +80,12 @@ const imConnectedCount = computed(() => imChannels.value.filter(c => c.connected
 const imActiveCount = computed(() => imChannels.value.filter(c => c.connected || c.autoConnect).length)
 
 const mcpEnabledServers = computed(() => mcpServers.value.filter(s => s.enabled))
-const mcpConnectedCount = computed(() => mcpStatuses.value.length)
+const mcpConnectedCount = computed(() => mcpStatuses.value.filter(s => s.connected).length)
 const mcpEnabledCount = computed(() => mcpEnabledServers.value.length)
+const mcpFailedCount = computed(() => {
+  const connected = new Set(mcpStatuses.value.filter(s => s.connected).map(s => s.id))
+  return mcpEnabledServers.value.filter(s => !connected.has(s.id)).length
+})
 
 const showGateway = computed(() => gatewayRunning.value)
 
@@ -268,28 +272,16 @@ const toggleGateway = async () => {
 
 // ==================== MCP 操作 ====================
 
-const connectMcp = async (server: McpServerConfig) => {
+const retryMcp = async (server: McpServerConfig) => {
   mcpConnecting.value = server.id
   try {
     await window.electronAPI.mcp.connect(JSON.parse(JSON.stringify(server)))
   } catch (e) {
-    console.error('MCP connect error:', e)
+    console.error('MCP retry error:', e)
   } finally {
     mcpConnecting.value = null
     await loadMcpData()
   }
-}
-
-const disconnectMcp = async (server: McpServerConfig) => {
-  await window.electronAPI.mcp.disconnect(server.id)
-  await loadMcpData()
-}
-
-const connectAllMcp = async () => {
-  const results = await window.electronAPI.mcp.connectEnabledServers()
-  const failed = results.filter((r: any) => !r.success)
-  if (failed.length > 0) console.warn('MCP partial connect failures:', failed)
-  await loadMcpData()
 }
 
 // ==================== 弹窗控制 ====================
@@ -464,12 +456,13 @@ onUnmounted(() => {
           <div class="conn-col">
             <div class="col-header">
               <span class="col-title">🔌 {{ t('conn.mcpServers') }}</span>
-              <span class="col-count" :class="mcpConnectedCount > 0 ? 'count-ok' : ''">{{ mcpConnectedCount }}/{{ mcpEnabledCount }}</span>
-              <button
-                v-if="mcpEnabledCount > 0 && mcpConnectedCount < mcpEnabledCount"
-                class="btn-link"
-                @click="connectAllMcp"
-              >{{ t('mcp.connectAll') }}</button>
+              <span
+                class="col-count"
+                :class="mcpFailedCount > 0 ? 'count-bad' : (mcpEnabledCount > 0 ? 'count-ok' : '')"
+              >{{ mcpFailedCount > 0
+                ? t('mcp.healthFailed', { count: mcpFailedCount })
+                : (mcpEnabledCount > 0 ? t('mcp.healthOk', { count: mcpEnabledCount }) : '')
+              }}</span>
             </div>
             <div class="col-body">
               <div v-if="mcpServers.length === 0" class="empty-hint">
@@ -490,13 +483,17 @@ onUnmounted(() => {
                   <span class="item-name">{{ srv.name }}</span>
                   <span v-if="getMcpStatus(srv.id)?.connected" class="item-detail">{{ getMcpStatus(srv.id)?.toolCount }} {{ t('mcp.tools') }}</span>
                   <span v-else-if="!srv.enabled" class="item-tag">{{ t('mcp.disabled') }}</span>
+                  <span
+                    v-else
+                    class="item-detail item-error"
+                    :title="getMcpStatus(srv.id)?.error || t('mcp.error')"
+                  >{{ getMcpStatus(srv.id)?.error || t('mcp.error') }}</span>
                 </div>
-                <div class="item-actions" v-if="srv.enabled">
-                  <button v-if="!getMcpStatus(srv.id)?.connected" class="btn-sm btn-connect" :disabled="mcpConnecting === srv.id" @click="connectMcp(srv)">
+                <div class="item-actions" v-if="srv.enabled && !getMcpStatus(srv.id)?.connected">
+                  <button class="btn-sm btn-connect" :disabled="mcpConnecting === srv.id" @click="retryMcp(srv)">
                     <span v-if="mcpConnecting === srv.id" class="spinner"></span>
-                    <span v-else>{{ t('conn.connect') }}</span>
+                    <span v-else>{{ t('mcp.retry') }}</span>
                   </button>
-                  <button v-else class="btn-sm btn-disconnect" @click="disconnectMcp(srv)">{{ t('conn.disconnect') }}</button>
                 </div>
               </div>
             </div>
@@ -621,6 +618,14 @@ onUnmounted(() => {
 
 .col-count.count-ok {
   color: var(--brand-vital);
+}
+
+.col-count.count-bad {
+  color: var(--accent-red, #e74c3c);
+}
+
+.item-error {
+  color: var(--accent-red, #e74c3c);
 }
 
 /* 栏体：左栏随内容撑开（无滚动条）；右栏 MCP 列表可能较长，保留滚动 */

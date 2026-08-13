@@ -242,4 +242,15 @@ describe('findConfiguredServer / ensureConnected', () => {
     await Promise.all([a, b])
     expect(connect).toHaveBeenCalledTimes(1)
   })
+
+  it('getServerStatuses 包含失败项；resolveServerRef 只认已连接', () => {
+    const mcp = new McpService()
+    ;(mcp as unknown as { lastErrors: Map<string, { name: string; error: string }> }).lastErrors = new Map([
+      ['xiniu', { name: '烯牛数据', error: 'timeout' }]
+    ])
+    const failed = mcp.getServerStatuses().find(s => s.id === 'xiniu')
+    expect(failed).toMatchObject({ connected: false, error: 'timeout', name: '烯牛数据' })
+    expect(mcp.resolveServerRef('xiniu')).toBeNull()
+    expect(mcp.resolveServerRef('烯牛数据')).toBeNull()
+  })
 })
