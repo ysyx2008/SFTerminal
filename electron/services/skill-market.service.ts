@@ -91,11 +91,25 @@ export interface SkillPreviewResult {
   scan?: SecurityScanResult
   /** 技能包内的文件列表（不含 SKILL.md 和元数据） */
   files?: string[]
+  /** 由已安装技能 ID 解析而来（不是磁盘上的导入路径） */
+  fromInstalled?: boolean
   error?: string
 }
 
 function validateSkillId(id: string): boolean {
   return SAFE_ID_RE.test(id) && !id.includes('..') && id.length <= 128
+}
+
+/**
+ * Bare skill ID (optional leading slash / .md suffix), not a filesystem path.
+ * `/it-project-review` → `it-project-review`; `/tmp/foo` → undefined.
+ */
+export function asInstalledSkillId(raw: string): string | undefined {
+  const trimmed = raw.trim()
+  if (!trimmed || /^[a-zA-Z]:/.test(trimmed)) return undefined
+  const id = trimmed.replace(/^\/+/, '').replace(/\.md$/i, '')
+  if (!id || !validateSkillId(id) || /[\\/]/.test(id)) return undefined
+  return id
 }
 
 function assertInsideDir(parent: string, child: string): void {
@@ -641,20 +655,49 @@ export class SkillMarketService {
   // ==================== 本地安装 ====================
 
   /**
-   * 预览本地技能包（ZIP 或目录），执行安全扫描但不安装
+   * 预览本地技能包（ZIP、目录、独立 .md）。
+   * `resolveInstalledId` 为 true 时，不存在的路径会再按已安装技能 ID 查找（仅预览用，安装不得开）。
    */
-  previewLocalSkill(localPath: string): SkillPreviewResult & { filesMap?: Record<string, string> } {
+  previewLocalSkill(
+    localPath: string,
+    opts?: { resolveInstalledId?: boolean }
+  ): SkillPreviewResult & { filesMap?: Record<string, string> } {
     const resolved = path.resolve(localPath)
-    if (!fs.existsSync(resolved)) {
-      return { success: false, error: `Path not found: ${resolved}` }
+    if (fs.existsSync(resolved)) {
+      return this.previewFromExistingPath(resolved)
     }
 
+    if (opts?.resolveInstalledId) {
+      const skillId = asInstalledSkillId(localPath)
+      if (skillId) {
+        const installed = this.userSkillService.getSkill(skillId)
+        if (installed) {
+          const skillDir = path.dirname(installed.filePath)
+          const skillsDir = this.userSkillService.getSkillsDir()
+          const target = path.basename(installed.filePath) === 'SKILL.md' && skillDir !== skillsDir
+            ? installed.baseDir
+            : installed.filePath
+          const result = this.previewFromExistingPath(target)
+          if (result.success) {
+            result.fromInstalled = true
+            if (result.skill) result.skill.id = installed.id
+          }
+          return result
+        }
+        return { success: false, error: `Skill not found: ${skillId}` }
+      }
+    }
+
+    return { success: false, error: `Path not found: ${resolved}` }
+  }
+
+  private previewFromExistingPath(resolved: string): SkillPreviewResult & { filesMap?: Record<string, string> } {
     try {
       let files: Record<string, string>
       let meta: Record<string, unknown> | undefined
 
       const stat = fs.statSync(resolved)
-      if (stat.isFile() && resolved.endsWith('.zip')) {
+      if (stat.isFile() && resolved.toLowerCase().endsWith('.zip')) {
         const zipBuffer = fs.readFileSync(resolved)
         if (zipBuffer.length > SkillMarketService.MAX_SKILL_SIZE) {
           return { success: false, error: `Package too large (${(zipBuffer.length / 1024).toFixed(0)}KB, max 1MB)` }
@@ -664,8 +707,13 @@ export class SkillMarketService {
         meta = extracted.meta
       } else if (stat.isDirectory()) {
         files = this.readDirectoryFiles(resolved)
+      } else if (stat.isFile() && resolved.toLowerCase().endsWith('.md')) {
+        if (stat.size > SkillMarketService.MAX_SKILL_SIZE) {
+          return { success: false, error: `Package too large (${(stat.size / 1024).toFixed(0)}KB, max 1MB)` }
+        }
+        files = { 'SKILL.md': fs.readFileSync(resolved, 'utf-8') }
       } else {
-        return { success: false, error: 'Source must be a .zip file or a directory' }
+        return { success: false, error: 'Source must be a .zip file, a directory, or a .md file' }
       }
 
       if (!files['SKILL.md']) {
@@ -682,7 +730,9 @@ export class SkillMarketService {
       const PREVIEW_EXCLUDED = new Set(['SKILL.md', '_meta.json', 'clawhub.meta.json'])
       const extraFiles = Object.keys(files).filter(f => !PREVIEW_EXCLUDED.has(f))
 
-      const skillId = path.basename(resolved, '.zip')
+      const skillId = stat.isFile()
+        ? path.basename(resolved).replace(/\.(zip|md)$/i, '')
+        : path.basename(resolved)
       const skill: MarketSkill = {
         id: skillId,
         name: skillId,

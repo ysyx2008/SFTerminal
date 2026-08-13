@@ -677,7 +677,7 @@ async function skillPreview(args: Record<string, unknown>): Promise<ToolResult> 
     let result: import('../../../skill-market.service').SkillPreviewResult & { filesMap?: Record<string, string> }
 
     if (source === 'local') {
-      result = service.previewLocalSkill(skillId)
+      result = service.previewLocalSkill(skillId, { resolveInstalledId: true })
     } else {
       result = await service.previewSkill(skillId, source as SkillSource)
     }
@@ -712,9 +712,13 @@ async function skillPreview(args: Record<string, unknown>): Promise<ToolResult> 
       ? result.content.slice(0, 8000) + `\n\n... (${t('scan.content_truncated', { length: result.content.length })})`
       : result.content
 
-    const installHint = source === 'local'
-      ? `skill_install_local("${skillId}")`
-      : `skill_market_install("${skill.id || skillId}", "${source}")`
+    const nextStep = result.fromInstalled
+      ? t('scan.already_installed_hint', { id: skill.id || skillId })
+      : t('scan.install_hint', {
+          command: source === 'local'
+            ? `skill_install_local("${skillId}")`
+            : `skill_market_install("${skill.id || skillId}", "${source}")`
+        })
 
     return {
       success: true,
@@ -732,7 +736,7 @@ ${contentPreview}
 </skill_content_for_review>
 
 ${t('scan.review_prompt')}
-${t('scan.install_hint', { command: installHint })}`
+${nextStep}`
     }
   } catch (error) {
     return {
@@ -912,7 +916,7 @@ async function marketInstall(
 }
 
 /**
- * 从本地路径安装技能（ZIP 或目录）
+ * 从本地路径安装技能（ZIP、目录或独立 .md）
  */
 async function installLocal(
   args: Record<string, unknown>,
