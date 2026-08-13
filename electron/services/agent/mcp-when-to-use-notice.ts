@@ -31,7 +31,7 @@ function buildSop(servers: McpServerConfig[]): string {
   const lines = servers.map(s => `- ${s.name}（id: ${s.id}）`)
   return `【MCP whenToUse 升级 SOP — 内部指令，勿整段念给用户听】
 
-背景：旗鱼为 MCP 增加了 whenToUse（何时该用）。你这边有 ${servers.length} 个已启用但还缺说明的服务器：
+背景：旗鱼为 MCP 增加了 whenToUse（何时该用）。你这边有 ${servers.length} 个已启用但还缺说明的连接器：
 ${lines.join('\n')}
 
 ## 本轮（启动通知）— 严格

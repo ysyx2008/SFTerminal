@@ -199,7 +199,7 @@ export interface BuildSystemPromptOptions {
   isOnboarding?: boolean
   /** 已加载技能的文档内容（Markdown，技能加载时自动注入） */
   skillsContent?: string
-  /** MCP server 目录（仅渐进披露 defer 模式提供，注入「可用的 MCP 服务器」一节） */
+  /** MCP 连接器目录（仅渐进披露 defer 模式提供，注入「可用的 MCP 连接器」一节） */
   mcpServerCatalog?: string
 }
 
@@ -716,10 +716,10 @@ export class PromptBuilder {
     const catalog = this.mcpServerCatalog?.trim()
     if (!catalog) return ''
     return [
-      '# 可用的 MCP 服务器',
+      '# 可用的 MCP 连接器',
       '',
-      'MCP 工具按服务器整包按需加载（与 skill 同一入口）：下方目录只列服务器与何时使用，完整参数定义未放入上下文。',
-      '规划任务时先对照下方目录：若已有能覆盖所需数据或服务的服务器，先 `skill load`（skill_id 为 `mcp:<serverId>` 或服务器名称）加载其全部工具，再调用对应的 `mcp_*`；不要只靠网页搜索拼凑同类数据。',
+      'MCP 工具按连接器整包按需加载（与 skill 同一入口）：下方目录只列连接器与何时使用，完整参数定义未放入上下文。',
+      '规划任务时先对照下方目录：若已有能覆盖所需数据或服务的连接器，先 `skill load`（skill_id 为 `mcp:<serverId>` 或连接器名称）加载其全部工具，再调用对应的 `mcp_*`；不要只靠网页搜索拼凑同类数据。',
       '加载后本会话内持续有效。',
       '',
       catalog,
@@ -757,7 +757,7 @@ export class PromptBuilder {
   private buildCapabilityRule(): string {
     const hasMcp = !!this.mcpServerCatalog?.trim()
     const capabilitySources = hasMcp
-      ? '已连接的 MCP 服务器（见「可用的 MCP 服务器」）或可加载的技能（`skill`）'
+      ? '已连接的 MCP 连接器（见「可用的 MCP 连接器」）或可加载的技能（`skill`）'
       : '可加载的技能（`skill`）'
     return `**能力优先**：着手前先盘点专用能力——任务涉及的数据或操作，若${capabilitySources}能覆盖，优先用它们，它们比通用网页搜索/命令更专业可靠，不要绕开去用搜索拼凑同类结果。有多个可选时，选与任务最对口、数据维度最全的，别停在第一个想到的熟悉工具。`
   }

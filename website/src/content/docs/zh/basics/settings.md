@@ -102,7 +102,7 @@ description: '了解旗鱼设置页面的各个配置项'
 
 管理 Model Context Protocol 工具：
 
-- **添加 MCP 服务器**：配置连接方式（stdio / SSE）
+- **添加 MCP 连接器**：配置连接方式（stdio / SSE）
 - **预设模板**：一键添加常用 MCP 工具
 - **状态管理**：启用/禁用/重连
 

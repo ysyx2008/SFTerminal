@@ -34,7 +34,7 @@ function buildPrompt(input: SuggestWhenToUseInput): string {
     const desc = (t.description || '').trim().replace(/\s+/g, ' ').slice(0, 80)
     return desc ? `- ${label}: ${desc}` : `- ${label}`
   })
-  return `你是产品文案助手。根据 MCP 服务器名称与工具列表，写一句「何时该用」说明，供 AI Agent 发现能力。
+  return `你是产品文案助手。根据 MCP 连接器名称与工具列表，写一句「何时该用」说明，供 AI Agent 发现能力。
 
 要求：
 - 只输出这一句话本身，不要引号、标题或解释
@@ -42,7 +42,7 @@ function buildPrompt(input: SuggestWhenToUseInput): string {
 - 写清适用场景；若明显可替代网页搜索，可点明勿用网页搜索代替
 - 不要写逐步操作教程，不要罗列全部工具名
 
-服务器名称：${input.name}
+连接器名称：${input.name}
 工具：
 ${toolLines.length > 0 ? toolLines.join('\n') : '（无工具元数据）'}`
 }

@@ -268,10 +268,10 @@ function buildSkillTool(mcpService?: McpService): ToolDefinitionWithMeta {
     type: 'function',
     function: {
       name: 'skill',
-      description: `加载或卸载技能管理模块，或加载已连接 MCP 服务器的全部工具定义。加载后会话内持续有效。涉及相关领域时先加载再执行。
+      description: `加载或卸载技能管理模块，或加载已连接 MCP 连接器的全部工具定义。加载后会话内持续有效。涉及相关领域时先加载再执行。
 
 ⚠️ 创建/更新/删除/安装技能 → 必须先 load skill-manager，严禁用 write_text_file 直接写 SKILL.md
-⚠️ MCP：对照系统提示「可用的 MCP 服务器」目录，用 skill load mcp:<id>（或服务器名称）整包加载后再调 mcp_*；不要只靠网页搜索。
+⚠️ MCP：对照系统提示「可用的 MCP 连接器」目录，用 skill load mcp:<id>（或连接器名称）整包加载后再调 mcp_*；不要只靠网页搜索。
 
 可用技能：
 ${skillsCompact}${mcpBlock}`,
@@ -343,7 +343,7 @@ function buildWebSearchTool(): ToolDefinitionWithMeta[] {
       name: 'web_search',
       description: `搜索互联网获取实时信息。需要查找最新资料、验证事实、获取在线内容时使用。返回搜索结果列表（标题、URL、摘要）。
 
-调用前先确认：若系统提示中列出的专用能力（MCP 服务器/技能）已覆盖所需数据，应用对应专用工具查询，本工具仅作通用检索与补充验证。`,
+调用前先确认：若系统提示中列出的专用能力（MCP 连接器/技能）已覆盖所需数据，应用对应专用工具查询，本工具仅作通用检索与补充验证。`,
       parameters: {
         type: 'object',
         properties: {
