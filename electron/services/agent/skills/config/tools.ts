@@ -11,10 +11,10 @@ export const configTools: ToolDefinition[] = [
       name: 'config_list',
       description: `列出所有可管理的旗鱼配置项及其当前值。
 
-返回按分类整理的配置清单（界面、终端、AI Agent、IM 渠道、邮箱、日历、网关、MCP 服务器等），
+返回按分类整理的配置清单（界面、终端、AI Agent、IM 渠道、邮箱、日历、网关、MCP 连接器等），
 每项标注是否可直接修改或需要用户确认。
 邮箱和日历账户会显示已配置的账户列表、服务商和当前连接状态。
-MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可用 config_set 整表覆盖）。`,
+MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可用 config_set 整表覆盖）。`,
       parameters: {
         type: 'object',
         properties: {
@@ -34,7 +34,7 @@ MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可
       description: `读取指定配置项的当前值。
 
 支持的配置 key 见 config_list 的输出。
-特殊用法：key="mcpServers" 可查看所有已配置的 MCP 服务器详情（id、transport、command/url 等），
+特殊用法：key="mcpServers" 可查看所有已配置的 MCP 连接器详情（id、transport、command/url 等），
 在执行 config_mcp_server_add/update/delete 前建议先用此工具了解现状。`,
       parameters: {
         type: 'object',
@@ -57,7 +57,7 @@ MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可
 **安全类配置**（界面语言、主题、终端字号等）直接生效。
 **敏感类配置**（IM 凭证、网关、代理）也可设置，写入后建议用 im_connect 测试连接。
 
-**MCP 服务器列表（mcpServers）不可通过本工具整表写入**，否则会覆盖已有服务器；请使用 \`config_mcp_server_add\` 追加、\`config_mcp_server_update\` 修改、\`config_mcp_server_delete\` 删除。
+**MCP 连接器列表（mcpServers）不可通过本工具整表写入**，否则会覆盖已有连接器；请使用 \`config_mcp_server_add\` 追加、\`config_mcp_server_update\` 修改、\`config_mcp_server_delete\` 删除。
 
 常见用法：
 - 切换语言: key="language", value="en-US"
@@ -222,13 +222,15 @@ MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可
     type: 'function',
     function: {
       name: 'config_mcp_server_add',
-      description: `向旗鱼追加一个 MCP 服务器配置（合并到现有列表，不会删除已有项）。
+      description: `向旗鱼追加一个 MCP 连接器配置（合并到现有列表，不会删除已有项）。
 
 **stdio**：必须提供 command；可选 args（字符串数组）、env（键值对象）、cwd。
 **http**（推荐，MCP Streamable HTTP 规范）：必须提供 url；可选 headers（键值对象，例如 \`{ "Authorization": "Bearer xxx" }\`）。
-**sse**（已被规范标记为 deprecated，仅用于兼容老服务器）：必须提供 url；可选 headers。
+**sse**（已被规范标记为 deprecated，仅用于兼容旧连接器）：必须提供 url；可选 headers。
 
 **whenToUse**（启用时必填）：一句「何时该用」说明，须先与用户确认再写入；禁止空着启用。
+
+启用时保存后会立刻在后台连接，当前对话即可 \`skill load mcp:<id>\` 加载工具，**无需重启客户端**。连接失败不撤销配置，工具结果里会说明原因。
 
 与 \`config_set\` 写入 mcpServers 不同，本工具只追加一条记录。`,
       parameters: {
@@ -238,7 +240,7 @@ MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可
           transport: { type: 'string', enum: ['stdio', 'sse', 'http'], description: '传输方式：远程服务优先选 http' },
           enabled: { type: 'boolean', description: '是否启用，默认 true' },
           whenToUse: { type: 'string', description: '何时该用（给模型的一句话，≤200 字；启用时必填，须用户确认）' },
-          id: { type: 'string', description: '服务器唯一 id，省略则自动生成 UUID' },
+          id: { type: 'string', description: '连接器唯一 id，省略则自动生成 UUID' },
           command: { type: 'string', description: 'stdio：可执行文件或命令' },
           args: {
             type: 'array',
@@ -258,17 +260,18 @@ MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可
     type: 'function',
     function: {
       name: 'config_mcp_server_update',
-      description: `按 id 更新已有 MCP 服务器。未传入的字段保持原值（部分更新）。
+      description: `按 id 更新已有 MCP 连接器。未传入的字段保持原值（部分更新）。
 
 切换 transport 时请同时提供对应模式下必填字段（stdio 需 command，sse / http 需 url）。
-补齐或修改 whenToUse 时须先与用户确认文案。新启用（enabled→true）必须带非空 whenToUse。`,
+补齐或修改 whenToUse 时须先与用户确认文案。新启用（enabled→true）必须带非空 whenToUse。
+启用态保存后会立刻连接（改连接参数会重连）；禁用则断开。无需重启。`,
       parameters: {
         type: 'object',
         properties: {
-          serverId: { type: 'string', description: '要更新的服务器 id（与 config_get key=mcpServers 中一致）' },
+          serverId: { type: 'string', description: '要更新的连接器 id（与 config_get key=mcpServers 中一致）' },
           name: { type: 'string', description: '显示名称' },
           transport: { type: 'string', enum: ['stdio', 'sse', 'http'] },
-          enabled: { type: 'boolean', description: '启用/禁用该服务器，不需要删除后重建' },
+          enabled: { type: 'boolean', description: '启用/禁用该连接器，不需要删除后重建' },
           whenToUse: { type: 'string', description: '何时该用（确认后的一句话）' },
           command: { type: 'string' },
           args: { type: 'array', items: { type: 'string' } },
@@ -285,11 +288,11 @@ MCP 服务器列表可通过 config_mcp_server_add/update/delete 管理（不可
     type: 'function',
     function: {
       name: 'config_mcp_server_delete',
-      description: '按 id 删除 MCP 服务器配置；若当前已连接会先断开。删除前请与用户确认。',
+      description: '按 id 删除 MCP 连接器配置；若当前已连接会先断开。删除前请与用户确认。',
       parameters: {
         type: 'object',
         properties: {
-          serverId: { type: 'string', description: '要删除的服务器 id' }
+          serverId: { type: 'string', description: '要删除的连接器 id' }
         },
         required: ['serverId']
       }

@@ -1,18 +1,20 @@
 # MCP Service SPEC
 
-> Last verified: 2026-08-04
+> Last verified: 2026-08-13
 
 ## 职责
 
-MCP（Model Context Protocol）客户端。连接和管理外部 MCP 服务器，聚合其提供的工具、资源和提示词，将工具定义转换为旗鱼内部 `ToolDefinition` 格式，供 Agent 发现和调用。
+MCP（Model Context Protocol）客户端。连接外部 MCP 连接器，聚合其提供的工具、资源和提示词，供 Agent 发现和调用。
 
 ## 设计目标
 
-1. **`whenToUse`**：给模型看的短触发说明，进入 L1 目录；**新保存 / 新启用**必须非空且经用户确认（可改后确认，不可跳过留空）；取消 = 配置失败。内容由短 AI 出草稿，用户确认后才落盘；禁止静默写入未确认文案。
-2. **老配置**：缺 `whenToUse` 仍可连接、可 `skill load`；升级时联络 **one-shot** 通知「这块升级了，可让我补或自己去设置」；**无**专用 `migrations/mcp-*.json` marker；防刷屏靠「仅本启跨过 schema v10 时通知一次」，「通知过了」靠联络历史。**通知时机避开启动窗口期**：等窗口首次获得用户焦点后再发出（用户一直不聚焦则超时兜底发出）——应用刚启动就弹系统通知，在 Windows 上会把窗口焦点态打坏，表现为所有输入框点不出光标、只能重启。
-3. **skill 化**：已连接 MCP 进入 `skill` 工具目录（id = `mcp:<serverId>`）；用 `skill load/unload` 整包加载/卸载工具 schema；**废弃 `mcp_load`**；有已连接 MCP 时 **始终** defer（取消「≤10 工具全量直灌」）。
-4. **目录文案**：有 `whenToUse` 用它作主句；否则回退 name + 工具名清单（兼容旧数据）。
-5. **不做**：关键词搜索式 preload；把 MCP 身份硬合并进 Skill 注册表 / `load_user_skill`；未确认静默写 `whenToUse`。
+1. **面向用户的名称**：界面和秘书对用户说话时用「MCP 连接器」，不用「MCP 服务器」——后者对普通用户不好理解。设置页、向导、状态提示、以及秘书回复里都用连接器。配置文件里的技术字段名保持兼容，不必跟着改。
+2. **`whenToUse`**：给模型看的短触发说明，进入 L1 目录；**新保存 / 新启用**必须非空且经用户确认（可改后确认，不可跳过留空）；取消 = 配置失败。内容由短 AI 出草稿，用户确认后才落盘；禁止静默写入未确认文案。
+3. **老配置**：缺 `whenToUse` 仍可连接、可 `skill load`；升级时联络 **one-shot** 通知「这块升级了，可让我补或自己去设置」；**无**专用 `migrations/mcp-*.json` marker；防刷屏靠「仅本启跨过 schema v10 时通知一次」，「通知过了」靠联络历史。**通知时机避开启动窗口期**：等窗口首次获得用户焦点后再发出（用户一直不聚焦则超时兜底发出）——应用刚启动就弹系统通知，在 Windows 上会把窗口焦点态打坏，表现为所有输入框点不出光标、只能重启。
+4. **skill 化**：已连接 MCP 进入 `skill` 工具目录（id = `mcp:<serverId>`）；用 `skill load/unload` 整包加载/卸载工具 schema；**废弃 `mcp_load`**；有已连接 MCP 时 **始终** defer（取消「≤10 工具全量直灌」）。
+5. **目录文案**：有 `whenToUse` 用它作主句；否则回退 name + 工具名清单（兼容旧数据）。
+6. **写完就能用，不必重启**：秘书或用户新保存、新启用一个连接器后，软件立刻在后台连上。当前这次对话里就可以加载它的工具，不必重启旗鱼、也不必去设置页再点一次连接。加载某连接器时，若已配置且已启用但还没连上，先连再加载工具。连不上不撤销刚才的配置，把失败原因告诉秘书。关掉或删掉时断开。
+7. **不做**：关键词搜索式 preload；把 MCP 身份硬合并进 Skill 注册表 / `load_user_skill`；未确认静默写 `whenToUse`；把「必须重启客户端」当成新连接器生效的条件。
 
 ## 文件 / 规模
 
@@ -41,7 +43,7 @@ MCP（Model Context Protocol）客户端。连接和管理外部 MCP 服务器�
 
 要点：
 
-1. **L1**：`skill` description + system prompt「可用的 MCP 服务器」；有 `whenToUse` 优先，否则 name + 工具名。
+1. **L1**：`skill` description + system prompt「可用的 MCP 连接器」；有 `whenToUse` 优先，否则 name + 工具名。
 2. **L2**：`skill load mcp:<serverId>`（或显示名 / 裸 id，经 `resolveServerRef`）→ 整包 schema。
 3. **Sticky 单位是 server**：直到 `resetSession` / `cleanup` / `skill unload`；不设「最多 N 家」逐出。
 4. **未 load 却调 `mcp_*`**：自动整包 load，提示下一轮重试。
@@ -49,7 +51,7 @@ MCP（Model Context Protocol）客户端。连接和管理外部 MCP 服务器�
 
 ### 可发现性
 
-- 目录带 `whenToUse` 或工具名线索；system prompt Tier 2 注入「可用的 MCP 服务器」，指引用 `skill load mcp:…`。
+- 目录带 `whenToUse` 或工具名线索；system prompt Tier 2 注入「可用的 MCP 连接器」，指引用 `skill load mcp:…`。
 - 核心规则「能力优先」：MCP 与 skill 并列，按对口度择优。
 - `web_search` description 提醒先确认专用能力（静态，不随 defer 切换）。
 
@@ -86,3 +88,4 @@ MCP（Model Context Protocol）客户端。连接和管理外部 MCP 服务器�
 - 映射表须覆盖全部已连接工具（含未 load 的），保证 `parseToolCallName` / `callTool`
 - 已 load 追加在核心工具之后，保护 prompt cache 前缀
 - stdio 子进程须清理；工具名冲突靠 `mcp_{serverId}_` 前缀
+- 新保存或新启用后立刻连接；加载时若已配置已启用但未连接，先连再加载工具；连接失败不回滚配置
