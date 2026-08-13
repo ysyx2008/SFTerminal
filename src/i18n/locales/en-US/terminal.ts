@@ -250,6 +250,7 @@ export default {
     retry: 'Retry',
     healthOk: '{count} enabled',
     healthFailed: '{count} failed',
+    healthConnecting: 'Connecting {connected}/{total}',
     connectAll: 'Connect All',
     connect: 'Connect',
     disconnect: 'Disconnect',

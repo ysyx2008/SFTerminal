@@ -624,6 +624,7 @@ export default {
     connectFailed: '连接失败',
     retry: '重试',
     healthFailed: '{count} 个连接失败',
+    healthConnecting: '正在连接…',
     partialConnectFailed: '部分连接器连接失败',
     toggleEnable: '启用/禁用',
     quickFill: '快速填充：',

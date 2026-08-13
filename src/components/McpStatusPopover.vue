@@ -42,13 +42,21 @@ const buttonRef = ref<HTMLElement | null>(null)
 const enabledServers = computed(() => servers.value.filter(s => s.enabled))
 const connectedCount = computed(() => serverStatuses.value.filter(s => s.connected).length)
 const enabledCount = computed(() => enabledServers.value.length)
-const failedCount = computed(() => {
-  const connected = new Set(serverStatuses.value.filter(s => s.connected).map(s => s.id))
-  return enabledServers.value.filter(s => !connected.has(s.id)).length
-})
+const isUnhealthy = (server: McpServerConfig) => {
+  if (!server.enabled) return false
+  const st = getServerStatus(server.id)
+  return !!st && !st.connected && !!st.error
+}
+
+const isConnecting = (server: McpServerConfig) =>
+  server.enabled && !getServerStatus(server.id)?.connected && !isUnhealthy(server)
+
+const failedCount = computed(() => enabledServers.value.filter(isUnhealthy).length)
+const connectingCount = computed(() => enabledServers.value.filter(isConnecting).length)
 
 const statusType = computed(() => {
   if (enabledCount.value === 0) return 'none'
+  if (connectingCount.value > 0 && failedCount.value === 0) return 'connecting'
   if (failedCount.value > 0) return connectedCount.value === 0 ? 'offline' : 'partial'
   return 'all'
 })
@@ -57,6 +65,7 @@ const statusType = computed(() => {
 const statusClass = computed(() => {
   switch (statusType.value) {
     case 'all': return 'status-all'
+    case 'connecting': return 'status-connecting'
     case 'partial': return 'status-partial'
     case 'offline': return 'status-offline'
     default: return 'status-none'
@@ -79,6 +88,12 @@ const statusTooltip = computed(() => {
   }
   if (failedCount.value > 0) {
     return t('mcp.healthFailed', { count: failedCount.value })
+  }
+  if (connectingCount.value > 0) {
+    return t('mcp.healthConnecting', {
+      connected: connectedCount.value,
+      total: enabledCount.value,
+    })
   }
   return t('mcp.healthOk', { count: enabledCount.value })
 })
@@ -191,8 +206,10 @@ onUnmounted(() => {
       <Sun :size="18" />
       <!-- 状态徽章 -->
       <span class="status-badge" :class="statusClass">
-        <span class="status-dot">{{ statusIcon }}</span>
+        <span v-if="statusType === 'connecting'" class="spinner-small"></span>
+        <span v-else class="status-dot">{{ statusIcon }}</span>
         <span v-if="failedCount > 0" class="status-count">{{ failedCount }}</span>
+        <span v-else-if="connectingCount > 0" class="status-count">{{ connectedCount }}/{{ enabledCount }}</span>
         <span v-else-if="enabledCount > 0" class="status-count">{{ enabledCount }}</span>
         <span v-else class="status-count">-</span>
       </span>
@@ -225,10 +242,11 @@ onUnmounted(() => {
               <!-- 状态指示 -->
               <span class="server-dot" :class="{
                 'dot-connected': getServerStatus(server.id)?.connected,
-                'dot-enabled': server.enabled && !getServerStatus(server.id)?.connected,
+                'dot-enabled': isUnhealthy(server),
                 'dot-disabled': !server.enabled
               }">
-                {{ getServerStatus(server.id)?.connected ? '●' : '○' }}
+                <span v-if="isConnecting(server)" class="spinner-small"></span>
+                <template v-else>{{ getServerStatus(server.id)?.connected ? '●' : '○' }}</template>
               </span>
 
               <div class="server-info">
@@ -239,18 +257,21 @@ onUnmounted(() => {
                 <span v-else-if="!server.enabled" class="server-disabled-tag">
                   {{ t('mcp.disabled') }}
                 </span>
+                <span v-else-if="isConnecting(server)" class="server-connecting">
+                  {{ t('mcp.connecting') }}
+                </span>
                 <span
-                  v-else
+                  v-else-if="isUnhealthy(server)"
                   class="server-tools"
-                  :title="getServerStatus(server.id)?.error || t('mcp.error')"
+                  :title="getServerStatus(server.id)?.error"
                 >
-                  {{ getServerStatus(server.id)?.error || t('mcp.error') }}
+                  {{ getServerStatus(server.id)?.error }}
                 </span>
               </div>
 
               <div class="server-actions">
                 <button
-                  v-if="server.enabled && !getServerStatus(server.id)?.connected"
+                  v-if="isUnhealthy(server)"
                   class="btn-action btn-connect"
                   :disabled="connecting === server.id"
                   @click="retryConnect(server)"
@@ -315,6 +336,11 @@ onUnmounted(() => {
 .status-all .status-dot,
 .status-all.status-badge {
   color: var(--brand-vital);
+}
+
+.status-connecting .status-dot,
+.status-connecting.status-badge {
+  color: var(--accent-primary);
 }
 
 .status-partial .status-dot,
@@ -457,6 +483,12 @@ onUnmounted(() => {
 .server-tools {
   font-size: 11px;
   color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.server-connecting {
+  font-size: 11px;
+  color: var(--accent-primary);
   flex-shrink: 0;
 }
 
