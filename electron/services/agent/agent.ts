@@ -15,6 +15,7 @@ import type {
   AgentConfig,
   AgentStep,
   AgentContextBar,
+  TokenUsage,
   AgentContext,
   AgentPlan,
   AgentRun,
@@ -198,6 +199,12 @@ export abstract class Agent {
 
   /** 会话级上下文栏快照（UI 唯一实时源；与 step 解耦） */
   private _contextBar: AgentContextBar = {}
+
+  /**
+   * 当前会话在本进程内的累计 API 消耗（不落盘、不从历史回种）。
+   * 与 Conversation.tokenUsage（会写入历史统计）分开，避免恢复旧对话时数字跳变。
+   */
+  private _consumedUsage: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
 
   /** 上下文窗口管理协作者(token估算/压力/压缩/工具序列修复)。构造时装配,见 _contextWindow。 */
   private _contextWindow!: ContextWindowManager
@@ -1209,6 +1216,7 @@ export abstract class Agent {
    */
   attachConversation(conversation: Conversation, opts?: { cachePrefix?: AiMessage[] }): void {
     this._conversation = conversation
+    this.resetConsumedUsage()
     if (opts?.cachePrefix && opts.cachePrefix.length > 0) {
       // setCachePrefix 内部深拷贝，避免与源 Agent 共享引用
       this._conversation.setCachePrefix(opts.cachePrefix)
@@ -1226,6 +1234,7 @@ export abstract class Agent {
     this._conversation = undefined
     this._lastStatsProfileId = undefined
     this._contextBar = {}
+    this.resetConsumedUsage()
     this.taskMemory.clear()
     this._mcpToolSession?.clear()
   }
@@ -1242,6 +1251,7 @@ export abstract class Agent {
     this._conversation = undefined
     this._lastStatsProfileId = undefined
     this._contextBar = {}
+    this.resetConsumedUsage()
   }
 
   
@@ -2214,9 +2224,34 @@ export abstract class Agent {
   }
 
   private setContextBar(bar: AgentContextBar): void {
+    this.stampConsumedOnContextBar(bar)
     this._contextBar = bar
     const agentKey = this._agentId ?? this.currentRun?.id ?? ''
     this.callbacks?.onContextBar?.(agentKey, { ...bar })
+  }
+
+  private resetConsumedUsage(): void {
+    this._consumedUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+  }
+
+  private addConsumedUsage(usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }): void {
+    this._consumedUsage.prompt_tokens += usage.prompt_tokens
+    this._consumedUsage.completion_tokens += usage.completion_tokens
+    this._consumedUsage.total_tokens += usage.total_tokens
+  }
+
+  /** 把本进程累计消耗写入 bar（live；为 0 则去掉字段） */
+  private stampConsumedOnContextBar(bar: AgentContextBar): void {
+    const used = this._consumedUsage
+    if (used.total_tokens > 0) {
+      bar.consumedTokens = used.total_tokens
+      bar.consumedPromptTokens = used.prompt_tokens
+      bar.consumedCompletionTokens = used.completion_tokens
+    } else {
+      delete bar.consumedTokens
+      delete bar.consumedPromptTokens
+      delete bar.consumedCompletionTokens
+    }
   }
 
   /**
@@ -2543,6 +2578,7 @@ export abstract class Agent {
             if (result.usage.cache_miss_tokens !== undefined) {
               run.tokenUsage.cache_miss_tokens = (run.tokenUsage.cache_miss_tokens || 0) + result.usage.cache_miss_tokens
             }
+            this.addConsumedUsage(result.usage)
             this._conversation?.setLastPromptTokens(result.usage.prompt_tokens)
           }
 
