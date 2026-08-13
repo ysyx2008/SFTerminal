@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Play, Pause, Pencil, Trash2, X } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, X } from 'lucide-vue-next'
 import { v4 as uuidv4 } from 'uuid'
 
 const { t } = useI18n()
@@ -189,9 +189,13 @@ const getTemplates = (): McpTemplate[] => [
 const templates = computed(() => getTemplates())
 
 // 计算属性
-const connectedCount = computed(() => {
-  return serverStatuses.value.filter(s => s.connected).length
+const failedCount = computed(() => {
+  const connectedIds = new Set(serverStatuses.value.filter(s => s.connected).map(s => s.id))
+  return servers.value.filter(s => s.enabled && !connectedIds.has(s.id)).length
 })
+
+const isUnhealthy = (server: McpServerConfig) =>
+  server.enabled && !getServerStatus(server.id)?.connected
 
 // 加载服务器配置
 const loadServers = async () => {
@@ -490,7 +494,7 @@ const persistServer = async (server: McpServerConfig) => {
     try {
       await window.electronAPI.mcp.connect(plain)
     } catch {
-      /* 连接失败不回滚配置；用户可稍后手动连 */
+      /* 连接失败不回滚配置；列表会显示原因和重试 */
     }
   }
   await loadServers()
@@ -574,27 +578,20 @@ const toggleEnabled = async (server: McpServerConfig) => {
 }
 
 // 连接服务器
-const connectServer = async (server: McpServerConfig) => {
+const retryConnect = async (server: McpServerConfig) => {
   connecting.value = server.id
   try {
-    // 深拷贝避免 IPC 克隆错误
     const plainServer = JSON.parse(JSON.stringify(server))
     const result = await window.electronAPI.mcp.connect(plainServer)
     if (!result.success) {
-      alert(`${t('mcpSettings.connectFailed')}: ${result.error}`)
+      /* 失败原因由 getServerStatuses.error 展示 */
     }
   } catch (error) {
-    alert(`${t('mcpSettings.connectFailed')}: ${error instanceof Error ? error.message : t('common.unknown')}`)
+    console.error('MCP retry failed:', error)
   } finally {
     connecting.value = null
     await refreshStatuses()
   }
-}
-
-// 断开服务器
-const disconnectServer = async (server: McpServerConfig) => {
-  await window.electronAPI.mcp.disconnect(server.id)
-  await refreshStatuses()
 }
 
 // 查看服务器详情
@@ -706,16 +703,6 @@ const importFromJson = async () => {
   setTimeout(() => { showImport.value = false }, 1200)
 }
 
-// 连接所有启用的服务器
-const connectAllEnabled = async () => {
-  const results = await window.electronAPI.mcp.connectEnabledServers()
-  const failed = results.filter(r => !r.success)
-  if (failed.length > 0) {
-    alert(`${t('mcpSettings.partialConnectFailed')}:\n${failed.map(f => `${f.id}: ${f.error}`).join('\n')}`)
-  }
-  await refreshStatuses()
-}
-
 // 事件监听清理函数
 let unsubConnected: (() => void) | null = null
 let unsubDisconnected: (() => void) | null = null
@@ -752,14 +739,11 @@ onUnmounted(() => {
       <div class="section-header">
         <div class="header-left">
           <h4>{{ t('mcpSettings.title') }}</h4>
-          <span class="connection-badge" v-if="connectedCount > 0">
-            {{ connectedCount }} {{ t('mcpSettings.connected') }}
+          <span class="connection-badge health-failed" v-if="failedCount > 0">
+            {{ t('mcpSettings.healthFailed', { count: failedCount }) }}
           </span>
         </div>
         <div class="header-actions">
-          <button class="btn btn-sm" @click="connectAllEnabled" v-if="servers.some(s => s.enabled)">
-            {{ t('common.connect') }}
-          </button>
           <button class="btn btn-sm" @click="openImport" :title="t('mcpSettings.importJsonHint')">
             {{ t('mcpSettings.importJson') }}
           </button>
@@ -792,15 +776,19 @@ onUnmounted(() => {
           <div class="server-info" @click="server.enabled && viewServerDetails(server)">
             <div class="server-name">
               {{ server.name }}
-              <span class="server-status" v-if="getServerStatus(server.id)?.connected">
-                ● {{ t('mcpSettings.connected') }}
-              </span>
             </div>
             <div class="server-detail">
               {{ server.transport === 'stdio' ? server.command : server.url }}
               <template v-if="getServerStatus(server.id)?.connected">
                 · {{ t('mcpSettings.toolsCount', { count: getServerStatus(server.id)?.toolCount }) }}
               </template>
+            </div>
+            <div
+              v-if="isUnhealthy(server)"
+              class="server-health-error"
+              :title="getServerStatus(server.id)?.error || t('mcpSettings.connectionFailed')"
+            >
+              {{ getServerStatus(server.id)?.error || t('mcpSettings.connectionFailed') }}
             </div>
             <div v-if="server.whenToUse" class="server-when-to-use" :title="server.whenToUse">
               {{ server.whenToUse }}
@@ -810,26 +798,15 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="server-actions">
-            <template v-if="server.enabled">
-              <button 
-                v-if="!getServerStatus(server.id)?.connected"
-                class="btn-icon btn-sm" 
-                @click="connectServer(server)"
-                :disabled="connecting === server.id"
-                :title="t('common.connect')"
-              >
-                <Play v-if="connecting !== server.id" :size="14" />
-                <span v-else class="spinner"></span>
-              </button>
-              <button 
-                v-else
-                class="btn-icon btn-sm" 
-                @click="disconnectServer(server)"
-                :title="t('common.disconnect')"
-              >
-                <Pause :size="14" />
-              </button>
-            </template>
+            <button
+              v-if="isUnhealthy(server)"
+              class="btn btn-sm"
+              @click="retryConnect(server)"
+              :disabled="connecting === server.id"
+            >
+              <span v-if="connecting === server.id" class="spinner"></span>
+              <span v-else>{{ t('mcpSettings.retry') }}</span>
+            </button>
             <button class="btn-icon btn-sm" @click="openEditServer(server)" :title="t('common.edit')">
               <Pencil :size="14" />
             </button>
@@ -1123,6 +1100,21 @@ onUnmounted(() => {
   background: var(--accent-green);
   color: var(--bg-primary);
   border-radius: 10px;
+}
+
+.connection-badge.health-failed {
+  background: var(--accent-red, #e74c3c);
+  color: #fff;
+}
+
+.server-health-error {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--accent-red, #e74c3c);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-actions {
