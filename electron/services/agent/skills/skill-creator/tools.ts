@@ -184,12 +184,12 @@ export const skillCreatorTools: ToolDefinition[] = [
         properties: {
           skill_id: {
             type: 'string',
-            description: '技能 ID 或本地路径。市场技能填 ID（如 "docker-operations"），本地技能填 .zip 文件路径或目录路径'
+            description: '技能 ID 或本地路径。市场技能填 ID（如 "docker-operations"）。本地：已安装技能填 ID（如 "it-project-review"，不要加前导斜杠），或填 .zip / 技能目录 / 独立 .md 文件路径'
           },
           source: {
             type: 'string',
             enum: ['sailfish', 'clawhub', 'local'],
-            description: '技能来源。SailFish 官方用 "sailfish"，ClawHub 社区用 "clawhub"，本地文件/目录用 "local"'
+            description: '技能来源。SailFish 官方用 "sailfish"，ClawHub 社区用 "clawhub"，已安装技能或本地 zip/目录/独立 md 用 "local"'
           }
         },
         required: ['skill_id', 'source']
@@ -291,7 +291,7 @@ key 会加密存储，技能执行脚本时通过 \`exec(..., skill_id)\` 自动
     type: 'function',
     function: {
       name: 'skill_install_local',
-      description: `从本地路径安装技能（ZIP 文件或目录）。安装前请审阅内容安全性；有附属文件或结构隐蔽线索时会要求用户确认。不做关键词正则硬拦。
+      description: `从本地路径安装技能（ZIP 文件、目录或独立 .md）。安装前请审阅内容安全性；有附属文件或结构隐蔽线索时会要求用户确认。不做关键词正则硬拦。
 
 ⛔ **这是从本地路径安装技能的唯一正确方式**。严禁使用 run_command 或任何 shell 命令直接操作技能目录。`,
       parameters: {
@@ -299,7 +299,7 @@ key 会加密存储，技能执行脚本时通过 \`exec(..., skill_id)\` 自动
         properties: {
           source_path: {
             type: 'string',
-            description: '本地路径，可以是 .zip 文件路径或包含 SKILL.md 的目录路径'
+            description: '本地路径，可以是 .zip、独立 .md，或包含 SKILL.md 的目录'
           },
           skill_id: {
             type: 'string',
