@@ -152,7 +152,7 @@ Keep your response under 100 words, be warm and helpful.`
 回复控制在 100 字以内，保持亲切友好的语气。`,
     
     5: isEnglish
-      ? `You are the AI assistant for SailFish. The user is in the setup wizard at the "MCP Services" step.
+      ? `You are the AI assistant for SailFish. The user is in the setup wizard at the "MCP Connectors" step.
 
 Please proactively introduce this step in a friendly and concise manner:
 1. Briefly explain what MCP is (Model Context Protocol, lets AI access external tools)
@@ -160,7 +160,7 @@ Please proactively introduce this step in a friendly and concise manner:
 3. Mention it can be configured later in settings
 
 Keep your response under 100 words, be warm and helpful.`
-      : `你是旗鱼的 AI 助手。用户正在首次使用引导向导的「MCP 服务」步骤。
+      : `你是旗鱼的 AI 助手。用户正在首次使用引导向导的「MCP 连接器」步骤。
 
 请用简洁友好的语言解释 MCP 是什么，对新手来说是否需要配置：
 1. 简单解释 MCP 是什么（Model Context Protocol，让 AI 能访问外部工具）
@@ -324,7 +324,7 @@ The setup wizard has 6 steps in total:
 2. Configure AI Model - Set up LLM API (required, cannot skip)
 3. Import SSH Hosts - Import from Xshell or other tools (current step: ${props.step === 3})
 4. Knowledge Base - Enable local knowledge base for smarter AI (current step: ${props.step === 4})
-5. MCP Services - Configure Model Context Protocol servers (current step: ${props.step === 5})
+5. MCP Connectors - Configure Model Context Protocol connectors (current step: ${props.step === 5})
 6. Complete - Summary and finish
 
 Answer their questions in a helpful and friendly manner. Keep responses concise and accurate.`
@@ -335,7 +335,7 @@ Answer their questions in a helpful and friendly manner. Keep responses concise 
 2. 配置大模型 - 设置 AI 大模型 API（必须完成，不能跳过）
 3. 导入 SSH 主机 - 从 Xshell 等工具导入主机配置${props.step === 3 ? '（当前步骤）' : ''}
 4. 知识库设置 - 启用本地知识库让 AI 更智能${props.step === 4 ? '（当前步骤）' : ''}
-5. MCP 服务 - 配置 Model Context Protocol 服务器${props.step === 5 ? '（当前步骤）' : ''}
+5. MCP 连接器 - 配置 Model Context Protocol 连接器${props.step === 5 ? '（当前步骤）' : ''}
 6. 完成 - 配置总结，开始使用
 
 请友好地回答用户的问题，保持简洁准确。`

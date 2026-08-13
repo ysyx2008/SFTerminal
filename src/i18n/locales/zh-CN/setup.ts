@@ -92,15 +92,15 @@ export default {
       saveFailed: '保存失败'
     },
     mcp: {
-      title: 'MCP 服务',
-      subtitle: '连接 MCP 服务器，扩展 AI 能力',
+      title: 'MCP 连接器',
+      subtitle: '连接 MCP 连接器，扩展 AI 能力',
       shortDesc: '扩展 AI 能力（高级用户）',
       intro: 'MCP (Model Context Protocol) 是一种协议，允许 AI 访问外部工具和资源。',
-      hint: '您可以稍后在设置中添加 MCP 服务器，现在可以跳过此步骤。',
-      configuredServers: '已配置的 MCP 服务器',
-      noServers: '尚未配置 MCP 服务器',
-      noServersHint: '可在设置中添加 MCP 服务器',
-      servers: '个服务'
+      hint: '您可以稍后在设置中添加 MCP 连接器，现在可以跳过此步骤。',
+      configuredServers: '已配置的 MCP 连接器',
+      noServers: '尚未配置 MCP 连接器',
+      noServersHint: '可在设置中添加 MCP 连接器',
+      servers: '个连接器'
     },
     complete: {
       title: '一切就绪！',
@@ -118,8 +118,8 @@ export default {
         hostsImported: '已导入 {count} 个主机',
         knowledgeEnabled: '知识库已启用',
         knowledgeNotEnabled: '知识库未启用',
-        mcpConfigured: 'MCP 服务已配置',
-        mcpNotConfigured: 'MCP 服务未配置'
+        mcpConfigured: 'MCP 连接器已配置',
+        mcpNotConfigured: 'MCP 连接器未配置'
       },
       tip: '您可以在设置中随时修改这些配置'
     },

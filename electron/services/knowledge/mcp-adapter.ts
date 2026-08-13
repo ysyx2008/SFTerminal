@@ -62,7 +62,7 @@ export class McpKnowledgeAdapter {
    */
   async search(query: string, options?: Partial<SearchOptions>): Promise<SearchResult[]> {
     if (!this.mcpService.isConnected(this.serverId)) {
-      throw new Error(`MCP 服务器 ${this.serverId} 未连接`)
+      throw new Error(`MCP 连接器 ${this.serverId} 未连接`)
     }
 
     const result = await this.mcpService.callTool(
@@ -90,7 +90,7 @@ export class McpKnowledgeAdapter {
    */
   async embed(texts: string[]): Promise<number[][]> {
     if (!this.hasEmbeddingTool()) {
-      throw new Error('MCP 服务器不支持 embedding')
+      throw new Error('MCP 连接器不支持 embedding')
     }
 
     const result = await this.mcpService.callTool(

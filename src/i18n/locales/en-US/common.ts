@@ -169,7 +169,7 @@ export default {
     tip7: 'Upload docs to knowledge base, AI auto-retrieves relevant content',
     tip8: 'Agent auto-detects host environment, system and installed tools',
     tip9: 'Set MBTI personality for Agent to get different response styles',
-    tip10: 'Configure MCP servers to let AI access external tools and resources',
+    tip10: 'Configure MCP connectors to let AI access external tools and resources',
     tip11: 'Knowledge base supports PDF, Word, text and more formats',
     tip12: 'Agent can remember important info and recall it in future sessions',
     tip13: 'Double-click a session to quickly connect to SSH server',

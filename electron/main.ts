@@ -5662,7 +5662,7 @@ ipcMain.handle('mcp:setServers', async (_event, servers: McpServerConfig[]) => {
 // 添加 MCP 服务器
 ipcMain.handle('mcp:addServer', async (_event, server: McpServerConfig) => {
   if (server.enabled && !(server.whenToUse || '').trim()) {
-    throw new Error('Enabled MCP server requires non-empty whenToUse')
+    throw new Error('Enabled MCP connector requires non-empty whenToUse')
   }
   configService.addMcpServer(server)
 })
@@ -5674,7 +5674,7 @@ ipcMain.handle('mcp:updateServer', async (_event, server: McpServerConfig) => {
   if (server.enabled && !(server.whenToUse || '').trim()) {
     // 新启用必须有 whenToUse；已启用旧配置允许缺省（升级兼容）
     if (enabling || !existing) {
-      throw new Error('Enabled MCP server requires non-empty whenToUse')
+      throw new Error('Enabled MCP connector requires non-empty whenToUse')
     }
   }
   configService.updateMcpServer(server)

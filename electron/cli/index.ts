@@ -525,7 +525,7 @@ async function mcpList(): Promise<void> {
   const servers = config.getMcpServers()
   
   if (servers.length === 0) {
-    console.log('No MCP servers configured.')
+    console.log('No MCP connectors configured.')
     return
   }
 

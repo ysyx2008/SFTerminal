@@ -102,7 +102,7 @@ Manage the AI's extended skills:
 
 Manage Model Context Protocol tools:
 
-- **Add MCP servers**: Configure connection (stdio / SSE)
+- **Add MCP connectors**: Configure connection (stdio / SSE)
 - **Preset templates**: One-click add for common MCP tools
 - **Status**: Enable, disable, or reconnect
 

@@ -92,15 +92,15 @@ export default {
       saveFailed: 'Save failed'
     },
     mcp: {
-      title: 'MCP Services',
-      subtitle: 'Connect MCP servers to extend AI capabilities',
+      title: 'MCP Connectors',
+      subtitle: 'Connect MCP connectors to extend AI capabilities',
       shortDesc: 'Extend AI capabilities (advanced)',
       intro: 'MCP (Model Context Protocol) is a protocol that allows AI to access external tools and resources.',
-      hint: 'You can add MCP servers in settings later, feel free to skip this step.',
-      configuredServers: 'Configured MCP Servers',
-      noServers: 'No MCP servers configured',
-      noServersHint: 'Configure MCP servers in settings',
-      servers: 'servers'
+      hint: 'You can add MCP connectors in settings later, feel free to skip this step.',
+      configuredServers: 'Configured MCP Connectors',
+      noServers: 'No MCP connectors configured',
+      noServersHint: 'Configure MCP connectors in settings',
+      servers: 'connectors'
     },
     complete: {
       title: 'All Set!',
@@ -118,8 +118,8 @@ export default {
         hostsImported: 'Imported {count} hosts',
         knowledgeEnabled: 'Knowledge base enabled',
         knowledgeNotEnabled: 'Knowledge base not enabled',
-        mcpConfigured: 'MCP services configured',
-        mcpNotConfigured: 'MCP services not configured'
+        mcpConfigured: 'MCP connectors configured',
+        mcpNotConfigured: 'MCP connectors not configured'
       },
       tip: 'You can modify these settings anytime in Settings'
     },

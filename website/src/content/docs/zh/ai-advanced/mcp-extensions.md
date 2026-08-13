@@ -54,17 +54,17 @@ MCP 生态中已有大量开源工具，覆盖数据库、文件系统、版本�
 |------|------|------|
 | 名称 | 自定义名称，便于识别 | 「生产数据库」 |
 | 传输方式 | stdio（本地进程）或 SSE（远程服务） | stdio |
-| 命令 | 启动 MCP 服务器的命令（stdio 模式） | `npx @modelcontextprotocol/server-mysql` |
+| 命令 | 启动 MCP 连接器的命令（stdio 模式） | `npx @modelcontextprotocol/server-mysql` |
 | 参数 | 命令行参数 | `--host 10.0.1.50 --port 3306` |
 | 环境变量 | 传递给 MCP 进程的环境变量 | `MYSQL_PASSWORD=xxx` |
-| URL | MCP 服务器地址（SSE 模式） | `http://localhost:8080/sse` |
+| URL | MCP 连接器地址（SSE 模式） | `http://localhost:8080/sse` |
 
 ### 两种传输方式
 
 | 传输方式 | 工作原理 | 适用场景 |
 |---------|---------|---------|
 | **stdio** | 旗鱼启动一个本地进程，通过标准输入/输出通信 | 大多数场景（推荐） |
-| **SSE** | 连接远程 HTTP 服务器，通过 Server-Sent Events 通信 | MCP 服务部署在远程服务器上 |
+| **SSE** | 连接远程 HTTP 服务器，通过 Server-Sent Events 通信 | MCP 连接器部署在远程服务器上 |
 
 ## 常用 MCP 推荐
 

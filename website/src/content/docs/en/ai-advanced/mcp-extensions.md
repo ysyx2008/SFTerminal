@@ -54,17 +54,17 @@ If no preset fits your needs, you can manually configure any MCP-compatible tool
 |-------|-------------|---------|
 | Name | Custom name for identification | "Production Database" |
 | Transport | stdio (local process) or SSE (remote service) | stdio |
-| Command | Command to start the MCP server (stdio mode) | `npx @modelcontextprotocol/server-mysql` |
+| Command | Command to start the MCP connector (stdio mode) | `npx @modelcontextprotocol/server-mysql` |
 | Arguments | Command-line arguments | `--host 10.0.1.50 --port 3306` |
 | Environment variables | Variables passed to the MCP process | `MYSQL_PASSWORD=xxx` |
-| URL | MCP server address (SSE mode) | `http://localhost:8080/sse` |
+| URL | MCP connector address (SSE mode) | `http://localhost:8080/sse` |
 
 ### Two Transport Modes
 
 | Transport | How It Works | Use Case |
 |-----------|--------------|----------|
 | **stdio** | SailFish starts a local process and communicates via stdin/stdout | Most scenarios (recommended) |
-| **SSE** | Connects to a remote HTTP server via Server-Sent Events | MCP service hosted on a remote server |
+| **SSE** | Connects to a remote HTTP server via Server-Sent Events | MCP connector hosted on a remote server |
 
 ## Recommended MCP Tools
 
