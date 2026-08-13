@@ -22,12 +22,6 @@ interface KnowledgeSettings {
   mcpKnowledgeServerId?: string
 }
 
-interface McpServerStatus {
-  id: string
-  name: string
-  connected: boolean
-}
-
 interface KnowledgeDocument {
   id: string
   filename: string
@@ -60,7 +54,6 @@ const settings = ref<KnowledgeSettings>({
   enableHostMemory: true
 })
 
-const mcpServers = ref<McpServerStatus[]>([])
 const loading = ref(true)
 const saving = ref(false)
 const isKnowledgeInitialized = ref(false)
@@ -161,7 +154,10 @@ const loadSettings = async () => {
     settings.value = await api.knowledge.getSettings()
     settings.value.localModel = 'lite'
     settings.value.embeddingMode = 'local'
-    mcpServers.value = await api.mcp.getServerStatuses()
+    if (settings.value.mcpKnowledgeServerId) {
+      settings.value.mcpKnowledgeServerId = ''
+      await saveSettings()
+    }
     if (!settings.value.enabled) {
       settings.value.enabled = true
       await saveSettings()
@@ -179,6 +175,7 @@ const saveSettings = async () => {
     saving.value = true
     settings.value.localModel = 'lite'
     settings.value.embeddingMode = 'local'
+    settings.value.mcpKnowledgeServerId = ''
     const plainSettings = JSON.parse(JSON.stringify(settings.value))
     const result = await api.knowledge.updateSettings(plainSettings)
     if (!result.success) {
@@ -740,15 +737,6 @@ onUnmounted(() => {
               <input type="checkbox" v-model="settings.autoSaveUploads" @change="saveSettings" />
               <span class="slider"></span>
             </label>
-          </div>
-          <div class="bottom-item">
-            <label class="setting-label">{{ t('knowledgeSettings.mcpKnowledgeService') }}</label>
-            <select v-model="settings.mcpKnowledgeServerId" class="select select-sm" @change="saveSettings">
-              <option value="">{{ t('knowledgeSettings.notUse') }}</option>
-              <option v-for="server in mcpServers.filter(s => s.connected)" :key="server.id" :value="server.id">
-                {{ server.name }}
-              </option>
-            </select>
           </div>
           <div class="bottom-item">
             <label

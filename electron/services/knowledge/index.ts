@@ -236,13 +236,7 @@ export class KnowledgeService extends EventEmitter {
         this.reranker = createReranker(this.aiService)
       }
 
-      // 初始化 MCP 适配器
-      if (this.mcpService && this.settings.mcpKnowledgeServerId) {
-        this.mcpAdapter = new McpKnowledgeAdapter(
-          this.mcpService, 
-          this.settings.mcpKnowledgeServerId
-        )
-      }
+      // MCP 知识库入口已对用户隐藏（功能未完成），不接外部协同搜索
 
       this.isInitialized = true
       this.permanentInitError = null
@@ -1393,18 +1387,6 @@ export class KnowledgeService extends EventEmitter {
       })
     }
 
-    // 更新 MCP 适配器
-    if (settings.mcpKnowledgeServerId !== undefined) {
-      if (settings.mcpKnowledgeServerId && this.mcpService) {
-        this.mcpAdapter = new McpKnowledgeAdapter(
-          this.mcpService,
-          settings.mcpKnowledgeServerId
-        )
-      } else {
-        this.mcpAdapter = null
-      }
-    }
-
     // 更新重排序
     if (settings.enableRerank !== undefined) {
       if (settings.enableRerank && !this.reranker) {
@@ -1466,13 +1448,6 @@ export class KnowledgeService extends EventEmitter {
    */
   setMcpService(mcpService: McpService): void {
     this.mcpService = mcpService
-    
-    if (this.settings.mcpKnowledgeServerId) {
-      this.mcpAdapter = new McpKnowledgeAdapter(
-        mcpService,
-        this.settings.mcpKnowledgeServerId
-      )
-    }
   }
 
   /**
