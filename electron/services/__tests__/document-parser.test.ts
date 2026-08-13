@@ -7,6 +7,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as crypto from 'crypto'
+import sharp from 'sharp'
 
 // Mock Electron 模块
 vi.mock('electron', () => ({
@@ -166,15 +167,36 @@ describe('DocumentParserService', () => {
      * 用 jszip 构造一个最小化的 .docx 文件（含正文文本 + 一张嵌入图片 + 一个表格）
      * .docx 本质是 zip，最少需要 [Content_Types].xml、word/document.xml、word/_rels/document.xml.rels、word/media/image1.png
      */
-    async function createTestDocx(tempDir: string, options: { withImage?: boolean; withTable?: boolean; imageCount?: number } = {}): Promise<string> {
+    async function createTestDocx(tempDir: string, options: {
+      withImage?: boolean
+      withTable?: boolean
+      imageCount?: number
+      emfWithEmbeddedPng?: boolean
+      emfGarbage?: boolean
+    } = {}): Promise<string> {
       const JSZip = (await import('jszip')).default
       const zip = new JSZip()
 
       const imgCount = options.imageCount ?? (options.withImage ? 1 : 0)
+      const emfCount = (options.emfWithEmbeddedPng ? 1 : 0) + (options.emfGarbage ? 1 : 0)
 
-      // 1x1 red pixel PNG
+      // 1x1 red pixel PNG（直接作为 png 嵌入时不走 EMF 筛选）
       const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=='
       const pngBuffer = Buffer.from(pngBase64, 'base64')
+      const patterned = Buffer.alloc(64 * 64 * 3)
+      for (let y = 0; y < 64; y++) {
+        for (let x = 0; x < 64; x++) {
+          const on = ((x >> 3) ^ (y >> 3)) & 1
+          const i = (y * 64 + x) * 3
+          const v = on ? 255 : 0
+          patterned[i] = v
+          patterned[i + 1] = v
+          patterned[i + 2] = v
+        }
+      }
+      const emfPng = await sharp(patterned, { raw: { width: 64, height: 64, channels: 3 } }).png().toBuffer()
+      const emfWithPng = Buffer.concat([Buffer.from([0x01, 0x00, 0x00, 0x00]), emfPng])
+      const emfGarbage = Buffer.from([0x01, 0x00, 0x00, 0x00, 0x20, 0x45, 0x4d, 0x46])
 
       // Content_Types
       let contentTypes = '<?xml version="1.0" encoding="UTF-8"?>' +
@@ -184,6 +206,9 @@ describe('DocumentParserService', () => {
         '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
       if (imgCount > 0) {
         contentTypes += '<Default Extension="png" ContentType="image/png"/>'
+      }
+      if (emfCount > 0) {
+        contentTypes += '<Default Extension="emf" ContentType="image/x-emf"/>'
       }
       contentTypes += '</Types>'
       zip.file('[Content_Types].xml', contentTypes)
@@ -201,6 +226,12 @@ describe('DocumentParserService', () => {
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
       for (let i = 0; i < imgCount; i++) {
         docRels += `<Relationship Id="rId${10 + i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image${i + 1}.png"/>`
+      }
+      if (options.emfWithEmbeddedPng) {
+        docRels += '<Relationship Id="rId80" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image-emf.emf"/>'
+      }
+      if (options.emfGarbage) {
+        docRels += '<Relationship Id="rId81" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image-junk.emf"/>'
       }
       docRels += '</Relationships>'
       zip.file('word/_rels/document.xml.rels', docRels)
@@ -233,6 +264,39 @@ describe('DocumentParserService', () => {
           '</w:drawing></w:r></w:p>'
       }
 
+      if (options.emfWithEmbeddedPng) {
+        bodyContent +=
+          '<w:p><w:r><w:drawing>' +
+            '<wp:inline distT="0" distB="0" distL="0" distR="0">' +
+              '<wp:extent cx="100" cy="100"/>' +
+              '<wp:docPr id="80" name="Picture EMF"/>' +
+              '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+                '<pic:pic>' +
+                  '<pic:nvPicPr><pic:cNvPr id="80" name="image-emf.emf"/><pic:cNvPicPr/></pic:nvPicPr>' +
+                  '<pic:blipFill><a:blip r:embed="rId80"/></pic:blipFill>' +
+                  '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr>' +
+                '</pic:pic>' +
+              '</a:graphicData></a:graphic>' +
+            '</wp:inline>' +
+          '</w:drawing></w:r></w:p>'
+      }
+      if (options.emfGarbage) {
+        bodyContent +=
+          '<w:p><w:r><w:drawing>' +
+            '<wp:inline distT="0" distB="0" distL="0" distR="0">' +
+              '<wp:extent cx="100" cy="100"/>' +
+              '<wp:docPr id="81" name="Picture junk"/>' +
+              '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+                '<pic:pic>' +
+                  '<pic:nvPicPr><pic:cNvPr id="81" name="image-junk.emf"/><pic:cNvPicPr/></pic:nvPicPr>' +
+                  '<pic:blipFill><a:blip r:embed="rId81"/></pic:blipFill>' +
+                  '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr>' +
+                '</pic:pic>' +
+              '</a:graphicData></a:graphic>' +
+            '</wp:inline>' +
+          '</w:drawing></w:r></w:p>'
+      }
+
       if (options.withTable) {
         bodyContent +=
           '<w:tbl>' +
@@ -247,6 +311,12 @@ describe('DocumentParserService', () => {
 
       for (let i = 0; i < imgCount; i++) {
         zip.file(`word/media/image${i + 1}.png`, pngBuffer)
+      }
+      if (options.emfWithEmbeddedPng) {
+        zip.file('word/media/image-emf.emf', emfWithPng)
+      }
+      if (options.emfGarbage) {
+        zip.file('word/media/image-junk.emf', emfGarbage)
       }
 
       const tempFile = path.join(tempDir, `test-docx-${crypto.randomUUID()}.docx`)
@@ -342,6 +412,41 @@ describe('DocumentParserService', () => {
         result.images!.forEach(img => {
           expect(img).toMatch(/^data:image\/png;base64,/)
         })
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+
+    it('EMF 内嵌 png 应转成 png data URL', async () => {
+      const tempDir = os.tmpdir()
+      const tempFile = await createTestDocx(tempDir, { emfWithEmbeddedPng: true })
+
+      try {
+        const result = await service.parseDocument(
+          { name: 'emf.docx', path: tempFile, size: fs.statSync(tempFile).size },
+          { extractImages: true }
+        )
+        expect(result.error).toBeUndefined()
+        expect(result.images).toBeDefined()
+        expect(result.images!.length).toBe(1)
+        expect(result.images![0]).toMatch(/^data:image\/png;base64,/)
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+
+    it('无法转换的 EMF 应丢掉，正文仍可用', async () => {
+      const tempDir = os.tmpdir()
+      const tempFile = await createTestDocx(tempDir, { emfGarbage: true })
+
+      try {
+        const result = await service.parseDocument(
+          { name: 'junk-emf.docx', path: tempFile, size: fs.statSync(tempFile).size },
+          { extractImages: true }
+        )
+        expect(result.error).toBeUndefined()
+        expect(result.content).toContain('单元测试文档正文')
+        expect(result.images).toBeUndefined()
       } finally {
         fs.unlinkSync(tempFile)
       }

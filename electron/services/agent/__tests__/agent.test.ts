@@ -624,15 +624,15 @@ describe('Agent', () => {
 
       // 两个工具依次完成，每个都返回图片
       agent.testProcessToolResult(run, makeToolCall('tc-a', 'read_file'), {
-        success: true, output: 'ok-a', images: ['imgA']
+        success: true, output: 'ok-a', images: ['data:image/png;base64,AAA']
       })
       agent.testProcessToolResult(run, makeToolCall('tc-b', 'read_file'), {
-        success: true, output: 'ok-b', images: ['imgB']
+        success: true, output: 'ok-b', images: ['data:image/png;base64,BBB']
       })
 
       // 此时 messages 中只能是 assistant → tool_a → tool_b（user 还没注入）
       expect(run.messages.map((m: any) => m.role)).toEqual(['assistant', 'tool', 'tool'])
-      expect(run.pendingToolImages).toEqual(['imgA', 'imgB'])
+      expect(run.pendingToolImages).toEqual(['data:image/png;base64,AAA', 'data:image/png;base64,BBB'])
 
       // 批次结束 flush
       agent.testFlushPendingToolImages(run)
@@ -641,14 +641,14 @@ describe('Agent', () => {
       // 关键：两条 tool 消息之间没有 user 消息，DeepSeek API 才会接受
       expect(run.messages.map((m: any) => m.role)).toEqual(['assistant', 'tool', 'tool', 'user'])
       const userMsg = run.messages[3]
-      expect(userMsg.images).toEqual(['imgA', 'imgB'])
+      expect(userMsg.images).toEqual(['data:image/png;base64,AAA', 'data:image/png;base64,BBB'])
       expect(run.pendingToolImages).toEqual([])
     })
 
     it('should not write images to taskMessageLog (they are too large to persist)', () => {
       const run = makeRun()
       agent.testProcessToolResult(run, makeToolCall('tc-a', 'read_file'), {
-        success: true, output: 'ok', images: ['large-base64-data']
+        success: true, output: 'ok', images: ['data:image/png;base64,large']
       })
       agent.testFlushPendingToolImages(run)
 
@@ -665,7 +665,7 @@ describe('Agent', () => {
       expect(run.messages).toEqual([])
 
       agent.testProcessToolResult(run, makeToolCall('tc-a', 'read_file'), {
-        success: true, output: 'ok', images: ['img']
+        success: true, output: 'ok', images: ['data:image/png;base64,CCC']
       })
       agent.testFlushPendingToolImages(run)
       const lengthAfterFirst = run.messages.length
@@ -704,7 +704,7 @@ describe('Agent', () => {
         ]
       })
       noVisionAgent.testProcessToolResult(run, makeToolCall('tc-a', 'read_file'), {
-        success: true, output: 'ok', images: ['imgA', 'imgB']
+        success: true, output: 'ok', images: ['data:image/png;base64,AAA', 'data:image/png;base64,BBB']
       })
       noVisionAgent.testFlushPendingToolImages(run)
 
@@ -729,7 +729,7 @@ describe('Agent', () => {
         ]
       })
       agent.testProcessToolResult(run, makeToolCall('tc-a', 'read_file'), {
-        success: true, output: 'ok', images: ['img']
+        success: true, output: 'ok', images: ['data:image/png;base64,CCC']
       })
       agent.testFlushPendingToolImages(run)
       const userMsg = run.messages.find((m: any) => m.role === 'user')

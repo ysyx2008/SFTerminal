@@ -8,6 +8,7 @@ import * as path from 'path'
 import { pathToFileURL } from 'url'
 import { app, utilityProcess, type UtilityProcess } from 'electron'
 import { createLogger } from '../utils/logger'
+import { VisionImageConverter } from '../utils/vision-image'
 import { buildPdfDocumentInit } from './pdfjs-config.mjs'
 import { t } from './document-parser.i18n'
 import type { DocumentParsePhase, DocumentParseProgress } from '@shared/types'
@@ -133,6 +134,7 @@ export class DocumentParserService {
     onProgress?: (progress: PdfWorkerProgress) => void
   }>()
   private pdfWorkerMsgId = 0
+  private readonly visionImages = new VisionImageConverter()
 
   constructor() {
     // 延迟加载解析库
@@ -673,19 +675,24 @@ export class DocumentParserService {
     const MAX_TOTAL_BYTES = 20 * 1024 * 1024 // 总图片原始大小上限 20MB
     const images: string[] = []
     let totalBytes = 0
+    let skippedUnconverted = 0
 
     try {
       const htmlResult = await this.mammoth!.convertToHtml({ path: filePath }, {
         convertImage: this.mammoth!.images.imgElement(
-          (image: { contentType: string; read: (encoding: string) => Promise<string> }) => {
-            return image.read('base64').then((b64: string) => {
-              const rawBytes = b64.length * 3 / 4
-              if (images.length < MAX_IMAGES && rawBytes < MAX_IMAGE_BYTES && totalBytes + rawBytes < MAX_TOTAL_BYTES) {
-                images.push(`data:${image.contentType};base64,${b64}`)
+          async (image: { contentType: string; read: (encoding: string) => Promise<string> }) => {
+            const b64 = await image.read('base64')
+            const rawBytes = b64.length * 3 / 4
+            if (images.length < MAX_IMAGES && rawBytes < MAX_IMAGE_BYTES && totalBytes + rawBytes < MAX_TOTAL_BYTES) {
+              const dataUrl = await this.visionImages.convertToDataUrl(image.contentType, b64)
+              if (dataUrl) {
+                images.push(dataUrl)
                 totalBytes += rawBytes
+              } else {
+                skippedUnconverted++
               }
-              return { src: '' }
-            })
+            }
+            return { src: '' }
           }
         )
       })
@@ -699,7 +706,13 @@ export class DocumentParserService {
 
       if (images.length > 0) {
         result.images = images
-        log.info(`Docx images extracted: ${images.length} images, ${tableCount} tables from ${result.filename}`)
+      }
+      if (images.length > 0 || skippedUnconverted > 0) {
+        log.info(
+          `Docx images extracted: ${images.length} images` +
+          (skippedUnconverted > 0 ? ` (${skippedUnconverted} skipped, conversion failed)` : '') +
+          `, ${tableCount} tables from ${result.filename}`
+        )
       }
       if (tableCount > 0) {
         result.metadata = { ...result.metadata, tableCount: String(tableCount) }
