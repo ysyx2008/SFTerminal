@@ -703,6 +703,7 @@ watch(
   (target) => {
     const start = displayedConsumed.value
     if (target <= start) {
+      cancelAnimationFrame(consumedAnimRaf)
       displayedConsumed.value = target
       return
     }
@@ -730,10 +731,8 @@ const consumedTokenLabel = computed(() => {
 
 const consumedTokenTitle = computed(() => {
   const stats = props.contextStats
-  const total = stats.consumedTokens
-  if (!total || total <= 0) return ''
+  if (!stats.consumedTokens || stats.consumedTokens <= 0) return ''
   return t('ai.sessionConsumedTitle', {
-    total: total.toLocaleString(),
     prompt: (stats.consumedPromptTokens ?? 0).toLocaleString(),
     completion: (stats.consumedCompletionTokens ?? 0).toLocaleString(),
   })

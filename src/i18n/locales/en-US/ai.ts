@@ -151,8 +151,8 @@ export default {
     composerImageLimit: 'Image count or size limit reached — remove some images first',
     context: 'Context',
     contextUsed: 'used',
-    sessionConsumedTitle: 'This session: {total} tokens (in {prompt} · out {completion})',
-    sessionConsumedChip: '{count} tokens',
+    sessionConsumedTitle: '{prompt} in · {completion} out',
+    sessionConsumedChip: 'Used {count} tokens',
     contextUsageShowDetail: 'Show breakdown',
     contextUsageHideDetail: 'Hide breakdown',
     contextComposition: {
