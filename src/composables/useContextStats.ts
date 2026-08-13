@@ -30,6 +30,10 @@ export interface ContextStatsResult {
   effectiveModel?: string
   /** 字数组成树（live；历史回退无此字段） */
   composition?: ContextCompositionNode
+  /** 当前会话本进程累计消耗（live；不落盘） */
+  consumedTokens?: number
+  consumedPromptTokens?: number
+  consumedCompletionTokens?: number
 }
 
 export function useContextStats(
@@ -69,6 +73,9 @@ export function useContextStats(
       cacheHitRate: bar?.cacheHitRate,
       effectiveModel: modelName,
       composition: bar?.composition,
+      consumedTokens: bar?.consumedTokens,
+      consumedPromptTokens: bar?.consumedPromptTokens,
+      consumedCompletionTokens: bar?.consumedCompletionTokens,
     }
   })
 

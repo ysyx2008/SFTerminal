@@ -385,6 +385,13 @@ export interface AgentContextBar {
    * 占比按 chars；UI 只展示百分比（不折算约数 tokens）。
    */
   composition?: ContextCompositionNode
+  /**
+   * 当前会话在本进程内的累计 API 消耗（live 推送；不落盘、不从历史回种）。
+   * 与 contextTokens（当前窗口占用）不是同一件事。
+   */
+  consumedTokens?: number
+  consumedPromptTokens?: number
+  consumedCompletionTokens?: number
 }
 
 /** 从步骤流倒查最近一次带 contextTokens 的统计（历史加载 / 无 live 推送时回退） */

@@ -151,6 +151,7 @@ export default {
     composerImageLimit: '图片数量或大小已达上限，请先移除部分图片',
     context: '上下文',
     contextUsed: '已使用',
+    sessionConsumedTitle: '本次累计 {total}（输入 {prompt} · 输出 {completion}）',
     contextUsageShowDetail: '查看组成',
     contextUsageHideDetail: '收起组成',
     contextComposition: {

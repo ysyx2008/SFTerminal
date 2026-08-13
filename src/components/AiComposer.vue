@@ -19,6 +19,9 @@ interface ContextStats {
   cacheHitRate?: number
   effectiveModel?: string
   composition?: ContextCompositionNode
+  consumedTokens?: number
+  consumedPromptTokens?: number
+  consumedCompletionTokens?: number
 }
 
 interface PendingImage {
@@ -685,6 +688,33 @@ const getParsePhaseLabel = (doc: ParsingDocument) => {
 const slots = useSlots()
 const isTwoRow = computed(() => !!slots['footer-left'])
 
+function formatCompactTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+  if (n >= 1_000) {
+    const k = (n / 1_000).toFixed(1)
+    if (k === '1000.0') return '1M'
+    return `${k.replace(/\.0$/, '')}K`
+  }
+  return String(n)
+}
+
+const consumedTokenLabel = computed(() => {
+  const n = props.contextStats.consumedTokens
+  if (!n || n <= 0) return ''
+  return formatCompactTokens(n)
+})
+
+const consumedTokenTitle = computed(() => {
+  const stats = props.contextStats
+  const total = stats.consumedTokens
+  if (!total || total <= 0) return ''
+  return t('ai.sessionConsumedTitle', {
+    total: total.toLocaleString(),
+    prompt: (stats.consumedPromptTokens ?? 0).toLocaleString(),
+    completion: (stats.consumedCompletionTokens ?? 0).toLocaleString(),
+  })
+})
+
 defineExpose({
   focusInput,
   appendText,
@@ -958,6 +988,11 @@ const handleSendClick = (event: MouseEvent) => {
             <Plus v-else :size="18" />
           </button>
           <slot name="footer-left" />
+          <span
+            v-if="consumedTokenLabel"
+            class="session-token-chip"
+            :title="consumedTokenTitle"
+          >{{ consumedTokenLabel }}</span>
         </div>
         <div class="input-footer-right">
           <button
@@ -1675,6 +1710,16 @@ const handleSendClick = (event: MouseEvent) => {
   gap: 4px;
   flex: 1;
   min-width: 0;
+}
+
+.session-token-chip {
+  flex-shrink: 0;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  cursor: default;
+  user-select: none;
 }
 
 .input-footer-right {
