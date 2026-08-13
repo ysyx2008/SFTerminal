@@ -152,6 +152,7 @@ export default {
     context: 'Context',
     contextUsed: 'used',
     sessionConsumedTitle: 'This session: {total} tokens (in {prompt} · out {completion})',
+    sessionConsumedChip: '{count} tokens',
     contextUsageShowDetail: 'Show breakdown',
     contextUsageHideDetail: 'Hide breakdown',
     contextComposition: {

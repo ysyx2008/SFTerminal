@@ -11,6 +11,8 @@ import type { ParsedDocument } from '../stores/terminal'
 import type { ParsingDocument } from '../composables/useDocumentUpload'
 import type { ContextCompositionId, ContextCompositionNode } from '@shared/types'
 import AttachmentFileIcon from './AttachmentFileIcon.vue'
+import HoverTipOverlay from './HoverTipOverlay.vue'
+import { useHoverTip } from '../composables/useHoverTip'
 
 interface ContextStats {
   tokenEstimate: number
@@ -688,20 +690,42 @@ const getParsePhaseLabel = (doc: ParsingDocument) => {
 const slots = useSlots()
 const isTwoRow = computed(() => !!slots['footer-left'])
 
-function formatCompactTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
-  if (n >= 1_000) {
-    const k = (n / 1_000).toFixed(1)
-    if (k === '1000.0') return '1M'
-    return `${k.replace(/\.0$/, '')}K`
-  }
-  return String(n)
+function formatLiveTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}M`
+  return n.toLocaleString()
 }
 
+const displayedConsumed = ref(0)
+let consumedAnimRaf = 0
+
+watch(
+  () => props.contextStats.consumedTokens ?? 0,
+  (target) => {
+    const start = displayedConsumed.value
+    if (target <= start) {
+      displayedConsumed.value = target
+      return
+    }
+    const delta = target - start
+    const dur = Math.min(400, Math.max(120, delta * 0.35))
+    const t0 = performance.now()
+    cancelAnimationFrame(consumedAnimRaf)
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - t0) / dur)
+      const eased = 1 - (1 - p) ** 2
+      displayedConsumed.value = Math.round(start + delta * eased)
+      if (p < 1) consumedAnimRaf = requestAnimationFrame(tick)
+    }
+    consumedAnimRaf = requestAnimationFrame(tick)
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => cancelAnimationFrame(consumedAnimRaf))
+
 const consumedTokenLabel = computed(() => {
-  const n = props.contextStats.consumedTokens
-  if (!n || n <= 0) return ''
-  return formatCompactTokens(n)
+  if (displayedConsumed.value <= 0) return ''
+  return t('ai.sessionConsumedChip', { count: formatLiveTokens(displayedConsumed.value) })
 })
 
 const consumedTokenTitle = computed(() => {
@@ -713,6 +737,17 @@ const consumedTokenTitle = computed(() => {
     prompt: (stats.consumedPromptTokens ?? 0).toLocaleString(),
     completion: (stats.consumedCompletionTokens ?? 0).toLocaleString(),
   })
+})
+
+const { hoverTip: consumedHoverTip, showTip: showConsumedTip, hideTip: hideConsumedTip } = useHoverTip({
+  placement: 'top',
+  delayMs: 200,
+})
+
+watch(consumedTokenTitle, (text) => {
+  if (consumedHoverTip.value && text) {
+    consumedHoverTip.value = { ...consumedHoverTip.value, text }
+  }
 })
 
 defineExpose({
@@ -991,7 +1026,8 @@ const handleSendClick = (event: MouseEvent) => {
           <span
             v-if="consumedTokenLabel"
             class="session-token-chip"
-            :title="consumedTokenTitle"
+            @mouseenter="showConsumedTip($event, consumedTokenTitle, 'top')"
+            @mouseleave="hideConsumedTip"
           >{{ consumedTokenLabel }}</span>
         </div>
         <div class="input-footer-right">
@@ -1101,6 +1137,7 @@ const handleSendClick = (event: MouseEvent) => {
     </div>
   </div>
   </div>
+  <HoverTipOverlay :tip="consumedHoverTip" />
 </template>
 
 <style scoped>
@@ -1718,7 +1755,7 @@ const handleSendClick = (event: MouseEvent) => {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
-  cursor: default;
+  cursor: help;
   user-select: none;
 }
 

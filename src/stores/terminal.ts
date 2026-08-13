@@ -2377,7 +2377,8 @@ export const useTerminalStore = defineStore('terminal', () => {
         sessionStartTime: preserveSession ? tab.agentState?.sessionStartTime : undefined,
         userTask: preserveSession ? tab.agentState?.userTask : undefined,
         title: preserveSession ? tab.agentState?.title : undefined,
-        steps: preserveSession ? (tab.agentState?.steps || []) : []
+        steps: preserveSession ? (tab.agentState?.steps || []) : [],
+        contextBar: preserveSession ? tab.agentState?.contextBar : undefined,
       }
     }
   }

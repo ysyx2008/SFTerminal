@@ -152,6 +152,7 @@ export default {
     context: '上下文',
     contextUsed: '已使用',
     sessionConsumedTitle: '本次累计 {total}（输入 {prompt} · 输出 {completion}）',
+    sessionConsumedChip: '{count} tokens',
     contextUsageShowDetail: '查看组成',
     contextUsageHideDetail: '收起组成',
     contextComposition: {

@@ -45,6 +45,7 @@ import {
   splitStepsIntoTasks as splitStepsIntoTasksShared
 } from '../conversation/messages'
 import { inferConversationKind } from '@shared/types'
+import { estimateTextTokens } from './token-estimate'
 import { isOemFeatureEnabled } from '@shared/oem-features'
 import { getBondService } from '../bond.service'
 import type { ToolExecutorConfig, ToolResult } from './tools/types'
@@ -205,6 +206,8 @@ export abstract class Agent {
    * 与 Conversation.tokenUsage（会写入历史统计）分开，避免恢复旧对话时数字跳变。
    */
   private _consumedUsage: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+  /** 当前请求进行中的估算（发请求时计入 prompt 估，流式输出时累加 completion 估；onDone 用精确值替换） */
+  private _pendingUsage: TokenUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
 
   /** 上下文窗口管理协作者(token估算/压力/压缩/工具序列修复)。构造时装配,见 _contextWindow。 */
   private _contextWindow!: ContextWindowManager
@@ -2232,6 +2235,7 @@ export abstract class Agent {
 
   private resetConsumedUsage(): void {
     this._consumedUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+    this._pendingUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
   }
 
   private addConsumedUsage(usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }): void {
@@ -2240,9 +2244,48 @@ export abstract class Agent {
     this._consumedUsage.total_tokens += usage.total_tokens
   }
 
-  /** 把本进程累计消耗写入 bar（live；为 0 则去掉字段） */
+  /** 本轮请求开始：先把 prompt 估算挂上，数字立刻跳起来，等流式输出再往上加。 */
+  private beginPendingUsage(run: AgentRun): void {
+    const promptEst = this._contextWindow.estimateTotalTokens(run.messages)
+    this._pendingUsage = {
+      prompt_tokens: promptEst,
+      completion_tokens: 0,
+      total_tokens: promptEst,
+    }
+  }
+
+  private updatePendingCompletion(streamText: string): void {
+    const completionEst = estimateTextTokens(streamText)
+    if (completionEst <= this._pendingUsage.completion_tokens) return
+    this._pendingUsage.completion_tokens = completionEst
+    this._pendingUsage.total_tokens = this._pendingUsage.prompt_tokens + completionEst
+  }
+
+  /** 精确 usage 入账并清掉估算；没有精确值则把估算折算进去，避免中断后数字回退。 */
+  private commitPendingUsage(usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }): void {
+    if (usage) {
+      this.addConsumedUsage(usage)
+    } else if (this._pendingUsage.total_tokens > 0) {
+      this.addConsumedUsage(this._pendingUsage)
+    }
+    this._pendingUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+  }
+
+  private liveConsumed(): TokenUsage {
+    return {
+      prompt_tokens: this._consumedUsage.prompt_tokens + this._pendingUsage.prompt_tokens,
+      completion_tokens: this._consumedUsage.completion_tokens + this._pendingUsage.completion_tokens,
+      total_tokens: this._consumedUsage.total_tokens + this._pendingUsage.total_tokens,
+    }
+  }
+
+  private publishConsumedLive(): void {
+    this.setContextBar({ ...this._contextBar })
+  }
+
+  /** 把本进程累计消耗写入 bar（含进行中估算；为 0 则去掉字段） */
   private stampConsumedOnContextBar(bar: AgentContextBar): void {
-    const used = this._consumedUsage
+    const used = this.liveConsumed()
     if (used.total_tokens > 0) {
       bar.consumedTokens = used.total_tokens
       bar.consumedPromptTokens = used.prompt_tokens
@@ -2448,6 +2491,8 @@ export abstract class Agent {
       })
       lastContentUpdate = Date.now()
       pendingUpdate = false
+      this.updatePendingCompletion(streamContent)
+      this.publishConsumedLive()
     }
     
     const availableTools = this.getAvailableTools()
@@ -2456,6 +2501,7 @@ export abstract class Agent {
 
     // 字数组成树：在 stripToolMeta 之后、真正发请求前测量，写入 contextBar（onDone 只更新总量）
     const composition = measureContextComposition(run.messages, llmTools)
+    this.beginPendingUsage(run)
     {
       const bar: AgentContextBar = { ...this._contextBar, composition }
       this.applyProfileFieldsToContextBar(bar)
@@ -2527,6 +2573,8 @@ export abstract class Agent {
               isStreaming: true,
             }, effectiveProfileId)
             lastContentUpdate = Date.now()
+            this.updatePendingCompletion(streamContent)
+            this.publishConsumedLive()
             return
           }
           
@@ -2578,8 +2626,10 @@ export abstract class Agent {
             if (result.usage.cache_miss_tokens !== undefined) {
               run.tokenUsage.cache_miss_tokens = (run.tokenUsage.cache_miss_tokens || 0) + result.usage.cache_miss_tokens
             }
-            this.addConsumedUsage(result.usage)
+            this.commitPendingUsage(result.usage)
             this._conversation?.setLastPromptTokens(result.usage.prompt_tokens)
+          } else {
+            this.commitPendingUsage()
           }
 
           // 先定稿流式步骤
@@ -2649,6 +2699,9 @@ export abstract class Agent {
               }
             }
           }
+          if (!result.usage) {
+            this.publishConsumedLive()
+          }
           unsubProfileFallback()
           resolve(result)
         },
@@ -2656,6 +2709,8 @@ export abstract class Agent {
         (error) => {
           unsubProfileFallback()
           clearSlowTtftTimer()
+          this.commitPendingUsage()
+          this.publishConsumedLive()
           // 出错时把预创建的 tool_call 卡片移除，避免留下没有结果的空卡
           this.discardPreToolCallSteps(run)
           // 重试最终失败时也要把 spinner 关掉，否则"正在重试"卡片会一直转
@@ -2745,6 +2800,8 @@ export abstract class Agent {
           if (displayContent === undefined) return  // 还没可显示内容
           if (built !== null) run.pendingPreToolCallText.set(toolCallId, built)
           toolProgressThrottle.set(toolCallId, now)
+          this.updatePendingCompletion(streamContent + '\n' + partialArgs)
+          this.publishConsumedLive()
 
           if (!run.pendingPreToolCallStepIds) run.pendingPreToolCallStepIds = new Map()
           let stepId = run.pendingPreToolCallStepIds.get(toolCallId)
@@ -2780,6 +2837,9 @@ export abstract class Agent {
           pendingUpdate = false
           lastContentUpdate = 0
           toolProgressThrottle.clear()
+          this._pendingUsage.completion_tokens = 0
+          this._pendingUsage.total_tokens = this._pendingUsage.prompt_tokens
+          this.publishConsumedLive()
           if (streamStepCreated) {
             this.removeStep(streamStepId)
             streamStepCreated = false
