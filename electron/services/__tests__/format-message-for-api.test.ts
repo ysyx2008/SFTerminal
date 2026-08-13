@@ -163,6 +163,29 @@ describe('formatMessageForApi - DeepSeek thinking mode compliance', () => {
       const out = formatMessageForApi(msg, true)
       expect(out.content).toBe('看下这张图')
     })
+
+    it('不支持的图片格式应丢掉，走纯文本', () => {
+      const msg: AiMessage = {
+        role: 'user',
+        content: '看图',
+        images: ['data:image/x-emf;base64,AAAA']
+      }
+      const out = formatMessageForApi(msg)
+      expect(out.content).toBe('看图')
+    })
+
+    it('混有合格与不合格图片时只发出合格的', () => {
+      const msg: AiMessage = {
+        role: 'user',
+        content: '看图',
+        images: ['data:image/x-emf;base64,AAAA', imgUrl]
+      }
+      const out = formatMessageForApi(msg)
+      expect(Array.isArray(out.content)).toBe(true)
+      const parts = out.content as Array<{ type: string; image_url?: { url: string } }>
+      expect(parts.filter(p => p.type === 'image_url')).toHaveLength(1)
+      expect(parts.find(p => p.type === 'image_url')?.image_url?.url).toBe(imgUrl)
+    })
   })
 
   describe('回归场景：TaskMemory 压缩重建的纯文本 assistant 消息', () => {

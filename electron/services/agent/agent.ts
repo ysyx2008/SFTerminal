@@ -68,6 +68,7 @@ import { createSkillSession, SkillSession } from './skills'
 import { McpToolSession } from './mcp-tool-session'
 import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
+import { toSendableVisionImageUrl } from '../../utils/vision-image'
 import { assembleUserMessageContent, formatSelectionScopeBody, wrapSystemContext } from './message-envelope'
 import { notifyFrontendConfigChanged } from './skills/config/executor'
 import { getBrowserBridgeService } from '../browser-bridge/browser-bridge.service'
@@ -2132,7 +2133,10 @@ export abstract class Agent {
    * 若主模型不支持视觉却未切换到关联视觉模型，会报错（例如火山 deepseek「Model do not support image input」）。
    */
   private conversationContainsImages(messages: AiMessage[]): boolean {
-    return messages.some(m => m.role === 'user' && m.images && m.images.length > 0)
+    return messages.some(m =>
+      m.role === 'user' &&
+      !!m.images?.some(url => toSendableVisionImageUrl(url) !== null)
+    )
   }
 
   /**
@@ -3364,14 +3368,26 @@ export abstract class Agent {
     const pending = run.pendingToolImages
     if (!pending || pending.length === 0) return
 
-    const imageCount = pending.length
+    const sendable = pending
+      .map(url => toSendableVisionImageUrl(url))
+      .filter((url): url is string => url !== null)
+    const skipped = pending.length - sendable.length
+    if (skipped > 0) {
+      log.warn(`Dropping ${skipped} tool-returned image(s): unsupported MIME for vision APIs`)
+    }
+    if (sendable.length === 0) {
+      run.pendingToolImages = []
+      return
+    }
+
+    const imageCount = sendable.length
     const visionAvailable = this.currentProfileHasVision()
     let imageMsg: AiMessage
     if (visionAvailable) {
       imageMsg = {
         role: 'user',
         content: t('agent.image_from_tool'),
-        images: [...pending],
+        images: [...sendable],
         // 标记为系统注入，避免 splitMessagesIntoTasks 把它当作 task 边界——
         // 否则会把同一个 task 切成两段，第二段开头是 tool 消息（孤儿 tool），
         // 下次启动时会触发 DeepSeek "tool must be a response to tool_calls" 错误。

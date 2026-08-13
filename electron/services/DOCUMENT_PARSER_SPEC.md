@@ -1,10 +1,20 @@
 # Document Parser Service SPEC
 
-> Last verified: 2026-05-22
+> Last verified: 2026-08-13
 
 ## 职责
 
 本地文档解析引擎。将 PDF、DOCX、XLSX、CSV 等常用格式转为 Markdown 文本，供 Agent 引用分析。支持 PDF Worker 子进程解析和 Direct 解析双模式，PDF 可渲染为图片供视觉模型使用。
+
+## 设计目标
+
+### 抽给视觉模型的图必须是视觉模型能看的格式
+
+Word 里经常嵌着 EMF/WMF 这类图表，视觉模型直接吃会报错。抽图时，已经是 png / jpeg / gif / webp / bmp 的原样保留（jpeg 不必转 png）；其余格式优先转成 png。转不了的才丢掉，正文照常给 AI。
+
+### Office 矢量图没有有效画面就丢掉
+
+Word 里的架构图常常是 EMF/WMF：真正的画面是矢量画出来的，文件里往往只有一张几乎空白的底图，再加几枚小图标。空白底图和小碎片不要发给视觉模型，缩略图也不要显示灰块。已经是正常照片或截图的（包括被包进 EMF 里的）照旧用。不为这类图去启动 Word，也不整篇转 PDF 再截页面。
 
 ## 文件 / 规模
 

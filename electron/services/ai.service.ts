@@ -8,6 +8,7 @@ import { stripCompositionMarkers } from './agent/context-composition'
 import { getAiDebugService } from './ai-debug.service'
 import type { ProviderChatParams } from './plugin/types'
 import { createLogger } from '../utils/logger'
+import { toSendableVisionImageUrl } from '../utils/vision-image'
 
 const log = createLogger('AI')
 
@@ -616,6 +617,30 @@ function isGenericParamErrorWithImages(errorMsg: string): boolean {
 }
 
 /**
+ * 图片已经发出，但接口判定 payload 无效（豆包 Invalid base64 image_url 等）。
+ * 与「模型不支持图片」不同，但同样应剥图用正文重试，避免整单失败。
+ */
+function isUnusableImagePayloadError(errorMsg: string): boolean {
+  const lower = errorMsg.toLowerCase()
+  return (
+    lower.includes('invalid base64 image_url') ||
+    lower.includes('unsupportedimageformat') ||
+    (lower.includes('image format') && (
+      lower.includes('not supported') ||
+      lower.includes('unsupported')
+    ))
+  )
+}
+
+function shouldRetryWithoutImages(errorMsg: string): boolean {
+  return (
+    isVisionNotSupportedError(errorMsg) ||
+    isGenericParamErrorWithImages(errorMsg) ||
+    isUnusableImagePayloadError(errorMsg)
+  )
+}
+
+/**
  * 解析模型的合适 temperature 值
  * 部分模型有固定 temperature 要求（如 Kimi K2.5 只允许 temperature=1），
  * 此函数根据模型名称返回合适的值，未命中时返回 defaultTemp。
@@ -633,7 +658,10 @@ function resolveTemperature(profile: { model: string; temperature?: number }, de
  * 检测消息列表中是否包含会发往 API 的多模态图片（与 formatMessageForApi 一致，仅 user 角色）
  */
 function messagesContainImages(messages: AiMessage[]): boolean {
-  return messages.some(m => m.role === 'user' && m.images && m.images.length > 0)
+  return messages.some(m =>
+    m.role === 'user' &&
+    !!m.images?.some(url => toSendableVisionImageUrl(url) !== null)
+  )
 }
 
 /**
@@ -665,17 +693,19 @@ export function formatMessageForApi(msg: AiMessage, stripImages = false): Record
   // user / system 消息：如果有图片且未要求剥离，转为多模态格式
   if (!stripImages && msg.images && msg.images.length > 0 && msg.role === 'user') {
     const parts: AiContentPart[] = []
-    // 文本部分
     if (msg.content) {
       parts.push({ type: 'text', text: msg.content })
     }
-    // 图片部分（指定 high detail 确保文字清晰可读）
     for (const imageUrl of msg.images) {
-      parts.push({ type: 'image_url', image_url: { url: imageUrl, detail: 'high' } })
+      const url = toSendableVisionImageUrl(imageUrl)
+      if (!url) continue
+      parts.push({ type: 'image_url', image_url: { url, detail: 'high' } })
     }
-    return {
-      role: msg.role,
-      content: parts
+    if (parts.some(p => p.type === 'image_url')) {
+      return {
+        role: msg.role,
+        content: parts
+      }
     }
   }
   // vLLM 等推理引擎拒绝空 content，纯 assistant 文本消息也需保护
@@ -1967,8 +1997,8 @@ export class AiService {
       } catch (err) {
         if (signal?.aborted) throw new Error('Aborted')
         if (!stripImages && hasImages && err instanceof Error &&
-            (isVisionNotSupportedError(err.message) || isGenericParamErrorWithImages(err.message))) {
-          log.warn(`Model ${profile.model} may not support images (error: ${err.message}), retrying without images`)
+            shouldRetryWithoutImages(err.message)) {
+          log.warn(`Vision request failed with images (error: ${err.message}), retrying without images`)
           return doRequest(true)
         }
         throw err
@@ -1981,8 +2011,8 @@ export class AiService {
         }
         const errorMsg = data.error.message || t('error.api_error_generic')
         if (!stripImages && hasImages &&
-            (isVisionNotSupportedError(errorMsg) || isGenericParamErrorWithImages(errorMsg))) {
-          log.warn(`Model ${profile.model} may not support images (error: ${errorMsg}), retrying without images`)
+            shouldRetryWithoutImages(errorMsg)) {
+          log.warn(`Vision request failed with images (error: ${errorMsg}), retrying without images`)
           return doRequest(true)
         }
         const friendly = translateApiBusinessError(undefined, code, profile.model)
@@ -2218,9 +2248,8 @@ export class AiService {
 
     // 视觉降级重试：剥离图片后重新请求（最多触发一次）
     const tryVisionFallback = (errorMsg: string): boolean => {
-      if (!stripImages && hasImages &&
-          (isVisionNotSupportedError(errorMsg) || isGenericParamErrorWithImages(errorMsg))) {
-        log.warn(`Model ${profile.model} may not support images (error: ${errorMsg}), retrying without images`)
+      if (!stripImages && hasImages && shouldRetryWithoutImages(errorMsg)) {
+        log.warn(`Vision request failed with images (error: ${errorMsg}), retrying without images`)
         stripImages = true
         requestBody = rebuildRequestBody()
         closeOpenReasoningBlock()
