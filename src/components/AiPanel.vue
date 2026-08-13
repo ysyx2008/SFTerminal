@@ -2232,8 +2232,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
             {{ t('ai.agentWelcome.notProbed') }}
           </div>
         </div>
-        <!-- 从原 ai-header 迁移的控件，保持"最右侧"的对齐 -->
-        <div class="ai-header-actions">
+        <!-- 任务 / 独立助手：关会话走侧栏或 Tab 栏，顶栏清空/关闭易误触，不展示 -->
+        <div v-if="!isStandaloneAssistant || isCompanionTab" class="ai-header-actions">
           <button class="btn-icon btn-icon-sm" @click="clearMessages" :title="t('ai.clearChat')">
             <Trash2 :size="13" />
           </button>
