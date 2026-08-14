@@ -1,7 +1,7 @@
 ---
 name: 火山引擎多媒体生成
-description: 通过火山引擎（方舟）API 调用 Seedream（文生图）和 Seedance（视频生成）模型，支持图片生成、视频生成及任务状态查询。图片生成后自动下载到本地。
-version: "1.3.0"
+description: 通过火山引擎（方舟）API 调用 Seedream（文生图/图生图）和 Seedance 2.5（视频生成）模型，支持图片生成、视频生成及任务状态查询。图片生成后自动下载到本地。
+version: "1.4.0"
 enabled: true
 metadata:
   {
@@ -36,8 +36,8 @@ metadata:
 
 | 模型 | 能力 | 模型 ID |
 |------|------|---------|
-| Seedream 5.0 | 文生图 | `doubao-seedream-5-0-260128` |
-| Seedance 2.0 | 文生视频 / 图生视频 | `doubao-seedance-2-0-260128` |
+| Seedream 5.0 | 文生图 / 图生图（多图参考） | `doubao-seedream-5-0-260128` |
+| Seedance 2.5 | 文生视频 / 图生视频（最高50个全模态素材参考） | `doubao-seedance-2-5-260628` |
 | Seedance 2.0 Fast | 快速视频生成 | `doubao-seedance-2-0-fast-260128` |
 | Hyper3D Gen2 | 3D 模型生成 | `hyper3d-gen2-260112` |
 | HiTemp3D 2.0 | 3D 内容生成 | `hitem3d-2-0-251223` |
@@ -61,11 +61,31 @@ POST https://ark.cn-beijing.volces.com/api/v3/images/generations
 
 ### 请求体
 
+#### 文生图
+
 ```json
 {
   "model": "doubao-seedream-5-0-260128",
   "prompt": "赛博朋克城市夜景，霓虹灯，雨夜，电影感",
   "n": 1
+}
+```
+
+#### 图生图（多图参考，支持风格迁移/主体融合）
+
+通过 `content` 数组传入参考图片（支持URL或base64），可同时传多张参考图：
+
+```json
+{
+  "model": "doubao-seedream-5-0-260128",
+  "prompt": "以第二张图人物为主体，将色调和质感调整为第一张图的电影风格",
+  "n": 1,
+  "size": "1440x2560",
+  "content": [
+    {"type": "text", "text": "以第二张图人物为主体..."},
+    {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}},
+    {"type": "image_url", "image_url": {"url": "https://example.com/ref.jpg"}}
+  ]
 }
 ```
 
@@ -106,7 +126,7 @@ POST https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks
 
 ```json
 {
-  "model": "doubao-seedance-2-0-260128",
+  "model": "doubao-seedance-2-5-260628",
   "content": [
     {
       "type": "text",
@@ -124,7 +144,7 @@ POST https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks
 
 ```json
 {
-  "model": "doubao-seedance-2-0-260128",
+  "model": "doubao-seedance-2-5-260628",
   "content": [
     {
       "type": "text",
@@ -150,7 +170,7 @@ POST https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks
 |------|------|------|------|
 | model | string | 是 | 模型 ID |
 | content | array | 是 | 输入内容，支持 text / image_url 类型 |
-| parameters.duration | int | 否 | 视频时长（秒），默认 5，最长 15 |
+| parameters.duration | int | 否 | 视频时长（秒），默认 5，最长 30（Seedance 2.5 原生支持 30 秒直出） |
 | parameters.resolution | string | 否 | 分辨率，可选 `720P`、`1080P` |
 
 #### 响应
@@ -174,7 +194,7 @@ GET https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/{task_id
 ```json
 {
   "id": "cgt-xxxxxxxxxxxxx",
-  "model": "doubao-seedance-2-0-260128",
+  "model": "doubao-seedance-2-5-260628",
   "status": "running",
   "created_at": 1234567890,
   "updated_at": 1234567890,
@@ -190,7 +210,7 @@ GET https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/{task_id
 ```json
 {
   "id": "cgt-xxxxxxxxxxxxx",
-  "model": "doubao-seedance-2-0-260128",
+  "model": "doubao-seedance-2-5-260628",
   "status": "succeeded",
   "output": {
     "results": [
@@ -319,7 +339,7 @@ def generate_image_to_local(prompt: str, filename: str = None,
 
 # --- 视频生成 ---
 def create_video_task(prompt: str, image_url: str = None,
-                      model: str = "doubao-seedance-2-0-260128",
+                      model: str = "doubao-seedance-2-5-260628",
                       duration: int = 5) -> str:
     """创建视频生成任务，返回 task_id"""
     content = [{"type": "text", "text": prompt}]
@@ -380,7 +400,7 @@ curl -X POST "https://ark.cn-beijing.volces.com/api/v3/contents/generations/task
   -H "Authorization: Bearer $VOLC_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "doubao-seedance-2-0-260128",
+    "model": "doubao-seedance-2-5-260628",
     "content": [{"type":"text","text":"夕阳海滩，海浪轻拍，慢动作"}],
     "parameters": {"duration":5, "resolution":"720P"}
   }'

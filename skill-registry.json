@@ -198,15 +198,15 @@
     {
       "id": "volcengine-media-gen",
       "name": "火山引擎多媒体生成",
-      "description": "通过火山引擎 API 调用 Seedream 文生图和 Seedance 视频生成模型，支持文生图、文生视频、图生视频和 3D 模型生成",
-      "version": "1.3.0",
+      "description": "通过火山引擎 API 调用 Seedream 5.0（文生图/图生图）和 Seedance 2.5 视频生成模型，支持多图参考、文生视频、图生视频、3D 模型生成",
+      "version": "1.4.0",
       "author": "旗鱼",
       "category": "media",
       "tags": ["ai", "image", "video", "3d", "volcengine", "multimedia"],
       "featured": true,
       "url": "https://www.sfterm.com/skills/volcengine-media-gen/SKILL.md",
       "createdAt": "2026-06-10",
-      "updatedAt": "2026-06-10"
+      "updatedAt": "2026-08-14"
     }
   ]
 }
