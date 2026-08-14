@@ -2,13 +2,48 @@
   "version": 2,
   "updated": "2026-02-19",
   "categories": [
-    { "id": "recommended", "name": "推荐", "nameEn": "Recommended", "icon": "⭐" },
-    { "id": "safety", "name": "安全", "nameEn": "Safety", "icon": "🛡️" },
-    { "id": "devops", "name": "DevOps", "nameEn": "DevOps", "icon": "🔧" },
-    { "id": "ops", "name": "运维", "nameEn": "Ops", "icon": "🖥️" },
-    { "id": "development", "name": "开发", "nameEn": "Development", "icon": "💻" },
-    { "id": "database", "name": "数据库", "nameEn": "Database", "icon": "🗄️" },
-    { "id": "media", "name": "多媒体", "nameEn": "Media", "icon": "🎬" }
+    {
+      "id": "recommended",
+      "name": "推荐",
+      "nameEn": "Recommended",
+      "icon": "⭐"
+    },
+    {
+      "id": "safety",
+      "name": "安全",
+      "nameEn": "Safety",
+      "icon": "🛡️"
+    },
+    {
+      "id": "devops",
+      "name": "DevOps",
+      "nameEn": "DevOps",
+      "icon": "🔧"
+    },
+    {
+      "id": "ops",
+      "name": "运维",
+      "nameEn": "Ops",
+      "icon": "🖥️"
+    },
+    {
+      "id": "development",
+      "name": "开发",
+      "nameEn": "Development",
+      "icon": "💻"
+    },
+    {
+      "id": "database",
+      "name": "数据库",
+      "nameEn": "Database",
+      "icon": "🗄️"
+    },
+    {
+      "id": "media",
+      "name": "多媒体",
+      "nameEn": "Media",
+      "icon": "🎬"
+    }
   ],
   "skills": [
     {
@@ -18,7 +53,11 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "safety",
-      "tags": ["safety", "delete", "rm"],
+      "tags": [
+        "safety",
+        "delete",
+        "rm"
+      ],
       "featured": true,
       "url": "https://www.sfterm.com/skills/safe-delete-reminder/SKILL.md",
       "createdAt": "2026-02-19",
@@ -31,7 +70,11 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "devops",
-      "tags": ["git", "commit", "convention"],
+      "tags": [
+        "git",
+        "commit",
+        "convention"
+      ],
       "featured": true,
       "url": "https://www.sfterm.com/skills/git-commit-convention/SKILL.md",
       "createdAt": "2026-02-19",
@@ -44,7 +87,11 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "devops",
-      "tags": ["docker", "container", "compose"],
+      "tags": [
+        "docker",
+        "container",
+        "compose"
+      ],
       "featured": true,
       "url": "https://www.sfterm.com/skills/docker-operations/SKILL.md",
       "createdAt": "2026-02-19",
@@ -57,7 +104,12 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "ops",
-      "tags": ["nginx", "proxy", "ssl", "web"],
+      "tags": [
+        "nginx",
+        "proxy",
+        "ssl",
+        "web"
+      ],
       "url": "https://www.sfterm.com/skills/nginx-config/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -69,7 +121,11 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "ops",
-      "tags": ["systemd", "linux", "service"],
+      "tags": [
+        "systemd",
+        "linux",
+        "service"
+      ],
       "url": "https://www.sfterm.com/skills/systemd-service/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -81,7 +137,12 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "database",
-      "tags": ["mysql", "database", "backup", "sql"],
+      "tags": [
+        "mysql",
+        "database",
+        "backup",
+        "sql"
+      ],
       "featured": true,
       "url": "https://www.sfterm.com/skills/mysql-operations/SKILL.md",
       "createdAt": "2026-02-19",
@@ -94,7 +155,11 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "safety",
-      "tags": ["ssh", "security", "firewall"],
+      "tags": [
+        "ssh",
+        "security",
+        "firewall"
+      ],
       "url": "https://www.sfterm.com/skills/ssh-security/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -106,7 +171,12 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "ops",
-      "tags": ["log", "journalctl", "grep", "troubleshoot"],
+      "tags": [
+        "log",
+        "journalctl",
+        "grep",
+        "troubleshoot"
+      ],
       "url": "https://www.sfterm.com/skills/log-analysis/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -118,7 +188,12 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "development",
-      "tags": ["python", "venv", "pip", "poetry"],
+      "tags": [
+        "python",
+        "venv",
+        "pip",
+        "poetry"
+      ],
       "url": "https://www.sfterm.com/skills/python-venv/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -130,7 +205,12 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "development",
-      "tags": ["nodejs", "npm", "pnpm", "javascript"],
+      "tags": [
+        "nodejs",
+        "npm",
+        "pnpm",
+        "javascript"
+      ],
       "url": "https://www.sfterm.com/skills/node-project/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -142,7 +222,12 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "safety",
-      "tags": ["backup", "rsync", "cron", "restore"],
+      "tags": [
+        "backup",
+        "rsync",
+        "cron",
+        "restore"
+      ],
       "url": "https://www.sfterm.com/skills/backup-strategy/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -154,7 +239,12 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "ops",
-      "tags": ["ssl", "letsencrypt", "certbot", "https"],
+      "tags": [
+        "ssl",
+        "letsencrypt",
+        "certbot",
+        "https"
+      ],
       "url": "https://www.sfterm.com/skills/ssl-certificate/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -166,7 +256,12 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "safety",
-      "tags": ["firewall", "iptables", "ufw", "security"],
+      "tags": [
+        "firewall",
+        "iptables",
+        "ufw",
+        "security"
+      ],
       "url": "https://www.sfterm.com/skills/firewall-rules/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -178,7 +273,12 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "ops",
-      "tags": ["cron", "crontab", "schedule", "automation"],
+      "tags": [
+        "cron",
+        "crontab",
+        "schedule",
+        "automation"
+      ],
       "url": "https://www.sfterm.com/skills/cron-tasks/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -190,7 +290,12 @@
       "version": "1.0.0",
       "author": "sailfish",
       "category": "devops",
-      "tags": ["git", "branch", "merge", "rebase"],
+      "tags": [
+        "git",
+        "branch",
+        "merge",
+        "rebase"
+      ],
       "url": "https://www.sfterm.com/skills/git-workflow/SKILL.md",
       "createdAt": "2026-02-19",
       "updatedAt": "2026-02-19"
@@ -198,15 +303,22 @@
     {
       "id": "volcengine-media-gen",
       "name": "火山引擎多媒体生成",
-      "description": "通过火山引擎 API 调用 Seedream 文生图和 Seedance 视频生成模型，支持文生图、文生视频、图生视频和 3D 模型生成",
-      "version": "1.3.0",
+      "description": "通过火山引擎 API 调用 Seedream 5.0（文生图/图生图）和 Seedance 2.5 视频生成模型，支持多图参考、文生视频、图生视频、3D 模型生成",
+      "version": "1.4.0",
       "author": "旗鱼",
       "category": "media",
-      "tags": ["ai", "image", "video", "3d", "volcengine", "multimedia"],
+      "tags": [
+        "ai",
+        "image",
+        "video",
+        "3d",
+        "volcengine",
+        "multimedia"
+      ],
       "featured": true,
       "url": "https://www.sfterm.com/skills/volcengine-media-gen/SKILL.md",
       "createdAt": "2026-06-10",
-      "updatedAt": "2026-06-10"
+      "updatedAt": "2026-08-14"
     }
   ]
 }
