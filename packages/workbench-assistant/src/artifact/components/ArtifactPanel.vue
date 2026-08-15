@@ -1645,6 +1645,12 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
+.canvas-renderer-host > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
 .canvas-ctx-overlay {
   position: fixed;
   inset: 0;

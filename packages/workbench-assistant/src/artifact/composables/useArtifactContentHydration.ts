@@ -4,8 +4,10 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { useAssistantArtifactStore } from '../store'
 import {
+  ARTIFACT_CONTENT_RELOAD_DELAYS_MS,
   artifactNeedsContentReload,
-  loadArtifactContentFromDisk
+  loadArtifactContentFromDisk,
+  sleep
 } from '../domain/artifact-content-loader'
 
 export function useArtifactContentHydration(
@@ -33,13 +35,24 @@ export function useArtifactContentHydration(
 
     loadingFromDisk.value = true
     try {
-      const data = await loadArtifactContentFromDisk(art, {
-        previewArtifact: previewApi,
-        readFile: readApi
-      })
-      if (data) {
-        // 磁盘回填走冲突分流（用户草稿 dirty 时挂起，由渲染器提示）
-        artifactStore.ingestExternalContent(tabId, data, art.id)
+      for (let attempt = 0; ; attempt++) {
+        const current = artifactStore.getArtifactById(tabId, art.id)
+        if (!current || !artifactNeedsContentReload(current)) return
+
+        const data = await loadArtifactContentFromDisk(current, {
+          previewArtifact: previewApi,
+          readFile: readApi
+        })
+        if (data) {
+          // 磁盘回填走冲突分流（用户草稿 dirty 时挂起，由渲染器提示）
+          // 签名：ingestExternalContent(tabId, artifactId, content)
+          artifactStore.ingestExternalContent(tabId, art.id, data)
+          return
+        }
+
+        const delay = ARTIFACT_CONTENT_RELOAD_DELAYS_MS[attempt]
+        if (delay === undefined) return
+        await sleep(delay)
       }
     } finally {
       loadingFromDisk.value = false

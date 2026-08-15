@@ -35,6 +35,7 @@ const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 
 const draft = ref('')
 const saving = ref(false)
+const mountError = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const editorWrapRef = ref<HTMLElement | null>(null)
 /** 是否存在可作作用域的选区（驱动底部状态行提示） */
@@ -166,45 +167,51 @@ function resolveImageSrc(src: string): string {
 async function mountEditor() {
   const el = editorWrapRef.value
   if (!el) return
-  // 动态引入：Crepe + ProseMirror + KaTeX 不进主包
-  const { createMarkdownWysiwygEditor } = await import('../editor/markdown-wysiwyg-editor')
-  if (!editorWrapRef.value) return
-  const initialDoc = pendingExternalDoc ?? draft.value
-  pendingExternalDoc = null
-  editorHandle = await createMarkdownWysiwygEditor({
-    parent: el,
-    doc: initialDoc,
-    onDocChanged: (md) => {
-      if (applyingExternal) return
-      // 拒绝用空串覆盖非空草稿（Crepe destroy / 瞬时清空的常见副作用）
-      if (!md.trim() && draft.value.trim()) return
-      if (md !== draft.value) draft.value = md
-    },
-    resolveImageSrc,
-    locale: locale.value === 'en-US' ? 'en-US' : 'zh-CN',
-    onHasSelectionChange: (has) => {
-      hasSelectionScope.value = has
+  mountError.value = false
+  try {
+    // 动态引入：Crepe + ProseMirror + KaTeX 不进主包
+    const { createMarkdownWysiwygEditor } = await import('../editor/markdown-wysiwyg-editor')
+    if (!editorWrapRef.value) return
+    const initialDoc = pendingExternalDoc ?? draft.value
+    pendingExternalDoc = null
+    editorHandle = await createMarkdownWysiwygEditor({
+      parent: el,
+      doc: initialDoc,
+      onDocChanged: (md) => {
+        if (applyingExternal) return
+        // 拒绝用空串覆盖非空草稿（Crepe destroy / 瞬时清空的常见副作用）
+        if (!md.trim() && draft.value.trim()) return
+        if (md !== draft.value) draft.value = md
+      },
+      resolveImageSrc,
+      locale: locale.value === 'en-US' ? 'en-US' : 'zh-CN',
+      onHasSelectionChange: (has) => {
+        hasSelectionScope.value = has
+      }
+    })
+    editorHandle.dom.addEventListener('contextmenu', openCtxMenu)
+    // 图片相对资源走 sailfish-artifact:// 协议，需主进程缓存条目存在（content 不用于资源映射）
+    void window.electronAPI?.artifactPreview?.sync({ tabId: props.tabId, artifactId: props.artifactId, content: '' })
+    // 干净态挂载：初始内容规范化回写基线（dirty 态挂载 = 恢复用户草稿，不动基线）。
+    // 以 store 的 dirty 标记为准——draft===lastSynced 在「dirty 但基线未建立」的边界下会误判
+    if (!artifactStore.isArtifactDirty(props.tabId, props.artifactId)) {
+      const canonical = editorHandle.getContent()
+      if (!canonical.trim() && initialDoc.trim()) {
+        // 序列化异常：不推进空基线，保留 initialDoc
+        draft.value = initialDoc
+        lastSynced.value = initialDoc
+        return
+      }
+      if (canonical !== draft.value) {
+        draft.value = canonical
+        artifactStore.updateContent(props.tabId, canonical, props.artifactId)
+      }
+      artifactStore.syncCoeditBaseline(props.tabId, props.artifactId, canonical)
+      lastSynced.value = canonical
     }
-  })
-  editorHandle.dom.addEventListener('contextmenu', openCtxMenu)
-  // 图片相对资源走 sailfish-artifact:// 协议，需主进程缓存条目存在（content 不用于资源映射）
-  void window.electronAPI?.artifactPreview?.sync({ tabId: props.tabId, artifactId: props.artifactId, content: '' })
-  // 干净态挂载：初始内容规范化回写基线（dirty 态挂载 = 恢复用户草稿，不动基线）。
-  // 以 store 的 dirty 标记为准——draft===lastSynced 在「dirty 但基线未建立」的边界下会误判
-  if (!artifactStore.isArtifactDirty(props.tabId, props.artifactId)) {
-    const canonical = editorHandle.getContent()
-    if (!canonical.trim() && initialDoc.trim()) {
-      // 序列化异常：不推进空基线，保留 initialDoc
-      draft.value = initialDoc
-      lastSynced.value = initialDoc
-      return
-    }
-    if (canonical !== draft.value) {
-      draft.value = canonical
-      artifactStore.updateContent(props.tabId, canonical, props.artifactId)
-    }
-    artifactStore.syncCoeditBaseline(props.tabId, props.artifactId, canonical)
-    lastSynced.value = canonical
+  } catch (err) {
+    mountError.value = true
+    toastError(err instanceof Error ? err.message : t('canvas.htmlPreviewFailed'))
   }
 }
 
@@ -416,13 +423,13 @@ onUnmounted(() => {
     </div>
 
     <div class="md-body">
-      <div v-if="loadingFromDisk && !draft.trim()" class="md-loading">{{ t('canvas.htmlPreviewLoading') }}</div>
       <div
-        v-show="!(loadingFromDisk && !draft.trim())"
         ref="editorWrapRef"
         class="md-editor-wrap"
         :aria-label="t('canvas.markdownSource')"
       />
+      <div v-if="loadingFromDisk && !draft.trim()" class="md-loading">{{ t('canvas.htmlPreviewLoading') }}</div>
+      <div v-else-if="mountError" class="md-loading">{{ t('canvas.htmlPreviewFailed') }}</div>
     </div>
 
     <div v-if="showStatusBar" class="md-status-bar" role="status">
@@ -466,6 +473,7 @@ onUnmounted(() => {
 .markdown-renderer {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -516,6 +524,7 @@ onUnmounted(() => {
 }
 
 .md-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -524,10 +533,12 @@ onUnmounted(() => {
 }
 
 .md-loading {
-  flex: 1;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: var(--bg-primary, #1e1e1e);
   color: var(--text-secondary, #888);
   font-size: 13px;
 }
