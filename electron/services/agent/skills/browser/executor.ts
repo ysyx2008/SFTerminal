@@ -18,6 +18,7 @@ import {
   saveStorageState,
   listStorageProfiles,
   hasStorageState,
+  isSessionOpen,
   DEFAULT_PROFILE
 } from './session'
 import { getSnapshot, resolveRef, getSnapshotStats } from './snapshot'
@@ -59,6 +60,13 @@ export async function executeBrowserTool(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
+  // Playwright 独立窗口一旦打开，后续工具必须继续走它。
+  // 否则 ensureBridgeSessionIfPreferred 会因扩展在线而重建 attach，把 snapshot/evaluate 悄悄切回去。
+  const playwrightOpen = isSessionOpen(ptyId)
+  if (playwrightOpen && hasBridgeSession(ptyId)) {
+    closeBridgeSession(ptyId)
+  }
+
   if (
     toolName.startsWith('browser_') &&
     toolName !== 'browser_launch' &&
@@ -66,10 +74,10 @@ export async function executeBrowserTool(
     toolName !== 'browser_list_profiles' &&
     toolName !== 'browser_save_login'
   ) {
-    await ensureBridgeSessionIfPreferred(ptyId, args)
+    await ensureBridgeSessionIfPreferred(ptyId, args, playwrightOpen)
   }
 
-  if (toolName !== 'browser_launch' && shouldUseBridge(ptyId)) {
+  if (toolName !== 'browser_launch' && shouldUseBridge(ptyId, playwrightOpen)) {
     switch (toolName) {
       case 'browser_snapshot':
         return bridgeBrowserSnapshot(ptyId, args, executor)

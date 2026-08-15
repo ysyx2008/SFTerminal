@@ -599,7 +599,9 @@ export function shouldPreferAttach(
 export async function ensureBridgeSessionIfPreferred(
   ptyId: string,
   args: Record<string, unknown>,
+  playwrightOpen = false,
 ): Promise<boolean> {
+  if (playwrightOpen) return false
   if (getBridgeSession(ptyId)) return true
   if (!shouldPreferAttach(args)) return false
   try {
@@ -610,6 +612,7 @@ export async function ensureBridgeSessionIfPreferred(
   }
 }
 
-export function shouldUseBridge(ptyId: string): boolean {
+export function shouldUseBridge(ptyId: string, playwrightOpen = false): boolean {
+  if (playwrightOpen) return false
   return !!getBridgeSession(ptyId)
 }

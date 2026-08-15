@@ -4,6 +4,12 @@
 
 ## 设计目标
 
+### Agent 能看见两档浏览器能力（2026-08-15）
+
+- **问题**：助手连上用户浏览器时，说明几乎只写吸附档，独立窗口的能力边界没有中性呈现，Agent 不容易知道还有另一档。
+- **成功标准**：技能说明和助手在线提示中性写清两档分别能做什么、不能做什么；未指定模式时助手在线仍默认吸附。不向 Agent 承诺「把用户浏览器的开发者工具挂过来」。
+- **明确不做**：不改扩展权限、不上架调试器能力；不对 Agent 规定何时必须换档。
+
 ### 启动不堵主进程（2026-07-23）
 
 - **问题**：`initBrowserBridgeService` 在 gateway `start()` 后同步 `install()`（全量 `copyDir` + Windows `execFileSync('reg')`），主线程可冻约 24s，窗口兜底 show 被拖死，标题「未响应」。
@@ -90,11 +96,12 @@ legacy `list_tabs` / `switch_tab` / `goto` / `close_tab` 内部委托 `shared/ta
 ### Agent 集成
 
 - `browser_launch` 增加 `attach: true` 或 `mode: 'attach'`：连接用户浏览器，不启动 Playwright
+- 显式打开独立浏览器窗口后，后续操作必须继续走这个窗口，直到关掉或再次明确要求连回用户浏览器；不能因为浏览器助手在线就把后续操作悄悄切回去
 - `browser_launch.browser`：`auto` | `firefox` | `chromium`（`chrome`/`edge` 别名）；双开时必须显式指定；会话绑定后后续 `browser_*` 走同一路由
 - attach 会话存于 `bridge-session.ts`（含 `origin` + `browserTarget` + `extensionPing`），与 Playwright `session.ts` 并行
 - `browser_get_content`（auto/article）：扩展 `page_html` → 桌面端 `extractPageContentFromHtml`
 - 未 attach 时行为不变
-- Agent 系统提示在 Tier 2 注入 `buildBrowserBridgePromptSection()`（扩展在线时告知优先 attach、无需 browser_launch）
+- 助手在线时，系统提示中性写清两档分别能做什么、不能做什么
 - prompt cache 复用路径下，`agent.ts` 调用 `patchBrowserBridgeSectionInSystemPrompt()` 刷新 system 消息中的该章节，避免同会话追问时状态过期
 
 ### Native Host 名

@@ -9,43 +9,29 @@ export const browserTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_launch',
-      description: `启动浏览器，建立会话。
+      description: `启动浏览器，建立会话。两档能力如下。
 
-**默认策略**：若 SailFish 浏览器助手已连接（Chrome/Edge/Firefox 扩展在线），**自动 attach** 到用户当前浏览器，复用登录态与标签页，无需传参。
-仅当需要独立窗口、无头模式、**截图（browser_screenshot）** 或 profile 时才用 launch 模式。
+**① 吸附 attach**：连用户正在用的 Chrome/Edge/Firefox，复用登录态和已开标签。
+- 助手已在线且未指定 mode 时走这一档（也可 \`{ "mode": "attach" }\`）
+- 能：打开网页、点选填表、读文章/整页、复用已登录站点
+- 不能：任意 JS、截图、按元素等待、Network/开发者工具。evaluate 仅白名单属性（见 browser_evaluate）
 
-**双浏览器**：Chromium（Chrome/Edge）与 Firefox 可同时连接。仅连一个时 \`browser\` 可省略（auto）；两个都连时必须指定 \`browser: "firefox"\` 或 \`"chromium"\`（用户说火狐/Firefox → firefox，Chrome/谷歌 → chromium）。切换浏览器：\`browser_close\` 后重新 \`browser_launch\` 并指定 \`browser\`。
+**② 独立窗口 launch**：\`{ "mode": "launch" }\` 或 \`{ "attach": false }\`。
+- 能：完整页面 JS（含 \`localStorage.getItem\`、\`fetch\`、函数）、截图、按元素等待
+- 打开后后续 browser_* 保持独立窗口，直到 browser_close 或再次显式 attach
+- 登录态靠 \`profile\`，不等于用户日常浏览器；无助手或 headless 时也会走这一档
 
-**两种模式**：
-- **attach（优先）**：浏览器助手已连接时自动启用；也可显式 \`{ "attach": true }\` 或 \`{ "mode": "attach" }\`
-- **launch（Playwright 独立窗口）**：\`{ "mode": "launch" }\` 或 \`{ "attach": false }\`；需要 headless / profile / **截图** 时自动或显式使用
+没有把用户浏览器开发者工具（Network/Console/任意调试）挂给 Agent 的档。
 
-**阅读 vs 交互（attach 必读）**：
-- **读文章 / 新闻 / 博客正文** → \`browser_read_article\`（Readability 类智能提取，过滤导航噪声）
-- **读整页可见内容 / 含导航侧栏的页面** → \`browser_read_page\`（body 可见文本；需要 HTML 源码时 \`format: html\`）
-- **点按钮 / 填表 / 找可点击元素** → \`browser_snapshot\`（无障碍树 + ref）
-- 公开 URL 且无需登录态 → \`web_fetch\`
-- \`browser_get_content\` 已废弃，等价于 \`browser_read_article\`
+**双浏览器**：仅连一个时 \`browser\` 可省略；两个都连时必须指定 \`"firefox"\` 或 \`"chromium"\`。切换：\`browser_close\` 后重新 launch 并指定 \`browser\`。
 
-**attach 能力边界（Chrome / Edge / Firefox 一致）**：
-- **不支持** \`browser_screenshot\`；需截图请 \`browser_launch { "mode": "launch" }\`，或用 \`browser_snapshot\` / \`browser_read_page\`
-- \`browser_wait\` **仅支持 delay**；不支持 selector 等待（需等元素请轮询 snapshot 或改用 launch）
-- \`browser_evaluate\` 仅 **safe-eval 白名单子集**（扩展 CSP 禁止 eval/Function，三浏览器相同）：
-  - ✅ \`document\` / \`location\` / \`window\` 属性链（如 \`document.title\`、\`document.body.scrollHeight\`、\`document.cookie\`、\`location.href\`、\`window.localStorage.length\`）
-  - ✅ \`document.querySelectorAll('…').length\`
-  - ✅ \`document.querySelector('…')\` 及 \`.textContent\` / \`.innerText\` / \`.innerHTML\` / \`.value\`
-  - ❌ \`querySelector\` 结果取 \`.href\` 等其它属性、返回 NodeList、方法调用（\`JSON.stringify\`、\`localStorage.getItem\`）、\`navigator\`、运算/函数式
-  - 复杂 JS 请 \`browser_launch { "mode": "launch" }\`
-- goto / snapshot / click / type / scroll / list_tabs / switch_tab 三浏览器无差异
-- attach 下 \`browser_goto\` **默认新开标签页**，不覆盖用户当前标签
+**阅读 vs 交互**：
+- 读文章/新闻 → \`browser_read_article\`
+- 读整页/区域（HTML 源码用 \`format: html\`）→ \`browser_read_page\`
+- 点按钮/填表 → \`browser_snapshot\`
+- 公开 URL 且无需登录 → \`web_fetch\`
 
-**注意**：
-- 每个终端最多一个浏览器会话
-- launch 模式 5 分钟无操作自动关闭；attach 模式 browser_close 仅断开连接
-- attach 需安装浏览器助手：Chrome/Edge 扩展页；Firefox \`about:debugging\` 临时加载或签名 XPI。改扩展后需重载并刷新目标页
-
-**登录状态（launch 模式）**：
-- profile 参数可恢复持久化登录；attach 模式直接复用用户浏览器登录态`,
+**其它**：每终端一个会话；launch 5 分钟无操作自动关；attach 的 close 只断开连接、不关用户窗口。attach 下 \`browser_goto\` 默认新开标签，不覆盖当前页。`,
       parameters: {
         type: 'object',
         properties: {
@@ -182,8 +168,7 @@ export const browserTools: ToolDefinition[] = [
       name: 'browser_screenshot',
       description: `对当前页面截图并保存。
 
-**⚠️ 仅 launch（Playwright 独立窗口）模式可用**；attach（吸附用户浏览器）模式**不支持**本工具。
-若当前为 attach 会话且用户要截图：先 \`browser_close\`，再 \`browser_launch { "mode": "launch" }\` 后调用本工具；或改用 \`browser_snapshot\` / \`browser_read_page\`。
+**仅 launch（独立窗口）可用**；吸附 attach **不支持**截图。
 
 **💡 提示**：多数场景 browser_snapshot 比截图更高效。截图适用于 launch 模式下需要视觉确认的场景。
 
@@ -461,14 +446,13 @@ export const browserTools: ToolDefinition[] = [
       name: 'browser_evaluate',
       description: `在页面中执行 JavaScript 代码。
 
-**attach 模式（Chrome / Edge / Firefox 相同）**：扩展 CSP 禁止 eval/Function，经 content script safe-eval 静态求值，仅支持：
-- ✅ \`document\` / \`location\` / \`window\` 属性链（\`document.title\`、\`document.body.scrollHeight\`、\`document.cookie\`、\`location.href\`、\`window.scrollY\`、\`window.localStorage.length\` 等）
+**① 吸附 attach**：仅白名单表达式，不是完整 JS。
+- ✅ \`document\` / \`location\` / \`window\` 属性链（\`document.title\`、\`location.href\`、\`window.localStorage.length\`）
 - ✅ \`document.querySelectorAll('…').length\`
 - ✅ \`document.querySelector('…')\` 及 \`.textContent\` / \`.innerText\` / \`.innerHTML\` / \`.value\`
-- ❌ \`querySelector('…').href\` 等链式取属性、返回集合对象、方法调用、\`navigator\`、运算/函数式（如 \`JSON.stringify\`、\`Array.from\`）
-复杂 JS 请 \`browser_launch { "mode": "launch" }\`。
+- ❌ 方法调用（\`localStorage.getItem\`、\`fetch\`、\`JSON.stringify\`）、函数/async、对 \`querySelector\` 结果再取 \`.href\` 等其它属性
 
-**launch 模式**：完整 JavaScript 执行（Playwright 页面上下文）。
+**② 独立窗口 launch**：完整页面 JS。
 
 **返回值**：脚本返回值 JSON 序列化后返回`,
       parameters: {

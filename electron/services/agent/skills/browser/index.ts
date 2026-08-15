@@ -15,7 +15,7 @@ const log = createLogger('BrowserSkill')
 const browserSkill: Skill = {
   id: 'browser',
   name: '浏览器自动化',
-  description: '浏览器自动化。已连接浏览器助手时优先 attach。读文章用 browser_read_article；读整页/区域用 browser_read_page；交互用 browser_snapshot。',
+  description: '浏览器自动化。两档：①吸附用户浏览器（复用登录态；脚本/截图/按元素等待受限）②独立窗口（完整 JS/截图/按元素等待）。读文章 browser_read_article；读整页/区域 browser_read_page；交互 browser_snapshot。',
   tools: browserTools,
   
   async init() {

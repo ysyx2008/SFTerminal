@@ -3,6 +3,7 @@ import {
   isAttachLaunch,
   requiresPlaywrightLaunch,
   shouldPreferAttach,
+  shouldUseBridge,
   wantsExplicitLaunch,
 } from '../../agent/skills/browser/bridge-executor'
 
@@ -29,5 +30,11 @@ describe('bridge-executor helpers', () => {
     expect(wantsExplicitLaunch({ attach: false })).toBe(true)
     expect(requiresPlaywrightLaunch({ headless: true })).toBe(true)
     expect(requiresPlaywrightLaunch({ profile: 'x' })).toBe(true)
+  })
+
+  it('shouldUseBridge follows playwrightOpen', () => {
+    // 建不起真实 bridge 会话（需 Native Host），这里只守住 playwrightOpen 的短路语义
+    expect(shouldUseBridge('pty-1', true)).toBe(false)
+    expect(shouldUseBridge('pty-1', false)).toBe(false)
   })
 })

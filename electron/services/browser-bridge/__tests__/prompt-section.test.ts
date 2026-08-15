@@ -33,6 +33,9 @@ describe('buildBrowserBridgePromptSection', () => {
     expect(section).toContain('已连接')
     expect(section).toContain('无需')
     expect(section).toContain('browser_list_tabs')
+    expect(section).toContain('两档能力')
+    expect(section).toContain('mode": "launch"')
+    expect(section).toContain('完整 JS')
     expect(section).not.toContain('两个浏览器都在线')
   })
 
