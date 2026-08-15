@@ -72,22 +72,28 @@ export function formatAgentAttentionTooltip(
   return t('tabs.needsAttentionTaskFinished')
 }
 
+/** 壳层当前落在哪儿——判断某条会话是否正在用户眼前所需的全部状态 */
+export interface ConversationSurfaceState {
+  activeTabId: string
+  hubFocusedAssistantTabId: string
+  todosActive?: boolean
+  /** 人在「终端」这个地方但一个终端 tab 也没有：activeTabId 同样是空的，但眼前是空终端页 */
+  terminalPlaceActive?: boolean
+}
+
 /**
- * 用户是否正在看该助手会话（attention / 未读判断）。
- * Hub 焦点仅在任务区（activeTabId 为空且非待办面）时生效；
- * 切到联络/终端 Tab / 待办面后不算「正在看」（Hub 焦点 id 仍可保留以便切回）。
+ * 用户是否正在看该助手会话（attention / 未读判断 / 侧栏高亮）。
+ * Hub 焦点只在任务区生效；切到联络 / 终端 Tab / 待办面 / 空终端页后都不算「正在看」
+ * （Hub 焦点 id 仍保留以便切回，所以不能只看它有没有值）。
  */
 export function isAssistantConversationSurfaceVisible(
   tabId: string,
-  activeTabId: string,
-  hubFocusedAssistantTabId: string,
-  todosActive = false
+  surface: ConversationSurfaceState
 ): boolean {
+  const { activeTabId, hubFocusedAssistantTabId, todosActive, terminalPlaceActive } = surface
   if (activeTabId && tabId === activeTabId) return true
-  if (!activeTabId && !todosActive && hubFocusedAssistantTabId && tabId === hubFocusedAssistantTabId) {
-    return true
-  }
-  return false
+  if (activeTabId || todosActive || terminalPlaceActive) return false
+  return Boolean(hubFocusedAssistantTabId) && tabId === hubFocusedAssistantTabId
 }
 
 type HubAttentionTabSlice = {

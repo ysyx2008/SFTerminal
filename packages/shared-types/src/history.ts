@@ -85,5 +85,11 @@ export interface AgentHistorySummary {
   /** 会话类别（task/companion/watch）。缺失时由 inferConversationKind(agentKey) 推断 */
   kind?: ConversationKind
   sshHost?: string
+  /**
+   * 这条会话当初绑定的终端编号。
+   * 老记录的索引里没存过，因此它同时充当「形态是否可信」的凭据：
+   * 声称是终端却给不出编号的记录，一律不当终端看待（历史上曾把助手会话误存为本地终端）。
+   */
+  terminalId?: string
   status: 'completed' | 'failed' | 'aborted'
 }

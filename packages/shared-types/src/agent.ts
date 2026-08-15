@@ -3,6 +3,8 @@
  * 前后端通用，IPC 安全（不含不可序列化的字段如函数回调）
  */
 
+import type { WorkbenchContext } from './workbench'
+
 /** 终端/执行环境类型：本地终端、SSH 远程终端、纯助手模式（无终端） */
 export type TerminalType = 'local' | 'ssh' | 'assistant'
 
@@ -185,6 +187,74 @@ export interface AttachmentInfo {
   totalPages?: number
   /** 已渲染为预览图片的页数 */
   previewPages?: number
+}
+
+/** 分屏窗格信息（用于多屏感知 system prompt 注入） */
+export interface AgentPaneInfo {
+  paneId: string
+  ptyId: string
+  label: string
+  isActive: boolean
+  terminalOutput: string[]
+  terminalType: 'local' | 'ssh'
+}
+
+/**
+ * 一次 Agent 运行的上下文：它在哪台机器上、看到什么、带了什么材料。
+ *
+ * 前后端共用同一份定义——发起方（前端 IPC / IM / 网关 / 关切）少填一个字段，
+ * 后端就只能靠猜，猜错还会落进历史记录里（曾把助手会话全存成本地终端）。
+ */
+export interface AgentContext {
+  ptyId?: string
+  /** 最近的终端输出（分屏模式下为激活窗格的输出） */
+  terminalOutput: string[]
+  systemInfo: {
+    os: string
+    shell: string
+  }
+  terminalType: TerminalType
+  remoteChannel?: RemoteChannel
+  /** 当前工作目录（告知 AI 当前位置，帮助正确处理相对路径） */
+  cwd?: string
+  /** 主机档案 ID */
+  hostId?: string
+  /** 用户上传的文档内容 */
+  documentContext?: string
+  /** 用户上传的图片（base64 data URL），发送给 AI 用于视觉理解 */
+  images?: string[]
+  /** UI 展示用的预览图片（仅 PDF 页面渲染），缺省时用 images */
+  previewImages?: string[]
+  /** 用户上传的文件元信息（用于 user_task 步骤展示） */
+  attachments?: AttachmentInfo[]
+  /** SSH 主机地址（用于历史记录元数据） */
+  sshHost?: string
+  /** 从历史恢复的会话 ID（后端自行加载历史数据） */
+  sessionId?: string
+  /** 从历史恢复的会话开始时间 */
+  sessionStartTime?: number
+  /** 当前执行计划（从前端 steps 恢复，用于跨对话持久化） */
+  currentPlan?: AgentPlan
+  /** 唤醒模式：静默运行，不累积到会话历史 */
+  wakeup?: boolean
+  /** IM 场景：Agent 之前主动发送的消息内容，作为用户回复的上下文注入 API 消息 */
+  proactiveContext?: string
+  /** 仅注入 API 消息的上下文提示（如首次联系提醒），不显示在 user_task 步骤中 */
+  contextHint?: string
+  /**
+   * 工作台可扩展旁路上下文（选区作用域等）：组装进 API 信封，不上聊天气泡。
+   * @see WorkbenchContext
+   */
+  workbenchContext?: WorkbenchContext
+  // 分屏多屏感知（仅在 tab 处于分屏模式时由前端 IPC 注入）
+  mode?: 'single' | 'split'
+  panes?: AgentPaneInfo[]
+  activePaneId?: string
+  /**
+   * 工作台 UI 描述（由前端在特定 workbench tab 对话时注入，prompt-builder 原样插入）。
+   * 例如独立助手工作台的 Artifact 产出物面板说明；IM/Web/Watch 不传。
+   */
+  workbenchPrompt?: string
 }
 
 /** 子 Agent 类型（与 sub-agent.ts 中 SUB_AGENT_TYPES 注册表对应） */

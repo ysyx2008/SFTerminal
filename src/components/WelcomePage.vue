@@ -5,7 +5,7 @@
  */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, SquareTerminal, Monitor, Eye, PanelTopOpen, Upload } from 'lucide-vue-next'
+import { Bot, SquareTerminal, Monitor, Eye, Upload } from 'lucide-vue-next'
 import { useConfigStore, type SshSession } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import MatrixRain from './EasterEgg/MatrixRain.vue'
@@ -14,10 +14,6 @@ import DropOverlay from './DropOverlay.vue'
 import sailfishLogo from '../../resources/logo.png'
 import { useWatchAnomalyCount } from '../composables/useWatchAnomalyCount'
 import { useWelcomeSubtitle } from '../composables/useWelcomeSubtitle'
-import {
-  useConversationDropTarget,
-  useOpenConversationInTab,
-} from '../composables/useConversationDragDrop'
 import { useFileDropTarget } from '../composables/useFileDropTarget'
 import { isWorkbenchAvailable } from '../workbench/registry'
 import { isOemFeatureEnabled } from '@shared/oem-features'
@@ -82,15 +78,6 @@ const dismissOnboardingInvite = async () => {
   onboardingMeetPending.value = false
 }
 
-const { openConversationInTab } = useOpenConversationInTab()
-const {
-  isDragOver: isConversationDragOver,
-  handleDragEnter: handleConversationDragEnter,
-  handleDragOver: handleConversationDragOver,
-  handleDragLeave: handleConversationDragLeave,
-  handleDrop: handleConversationDrop,
-} = useConversationDropTarget(openConversationInTab)
-
 const welcomeComposerRef = ref<InstanceType<typeof WelcomeChatComposer> | null>(null)
 
 const ingestWelcomeFiles = async (files: FileList) => {
@@ -108,22 +95,18 @@ const {
 
 const onWelcomeDragEnter = (event: DragEvent) => {
   if (!isSteamBuild) handleFileDragEnter(event)
-  handleConversationDragEnter(event)
 }
 
 const onWelcomeDragOver = (event: DragEvent) => {
   if (!isSteamBuild) handleFileDragOver(event)
-  handleConversationDragOver(event)
 }
 
 const onWelcomeDragLeave = (event: DragEvent) => {
   if (!isSteamBuild) handleFileDragLeave(event)
-  handleConversationDragLeave(event)
 }
 
 const onWelcomeDrop = (event: DragEvent) => {
   if (!isSteamBuild) handleFileDrop(event)
-  handleConversationDrop(event)
 }
 
 // 彩蛋：连续点击 Logo 20 次触发 Matrix 数字雨
@@ -309,16 +292,6 @@ onUnmounted(() => {
     >
       <template #icon>
         <Upload :size="48" :stroke-width="1.5" />
-      </template>
-    </DropOverlay>
-
-    <DropOverlay
-      v-if="isConversationDragOver"
-      :title="t('welcome.conversations.dropToOpenInTab')"
-      :hint="t('welcome.conversations.dropToOpenInTabHint')"
-    >
-      <template #icon>
-        <PanelTopOpen :size="48" :stroke-width="1.5" />
       </template>
     </DropOverlay>
 

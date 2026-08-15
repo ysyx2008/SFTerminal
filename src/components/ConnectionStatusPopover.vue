@@ -43,7 +43,12 @@ interface IMChannelState {
   autoConnect: boolean
 }
 
-// ==================== Emits ====================
+// ==================== Props / Emits ====================
+
+const props = withDefaults(defineProps<{
+  /** sidebar：秘书行右部的装备位，触发器是紧凑胶囊，面板贴着侧栏向上弹 */
+  variant?: 'header' | 'sidebar'
+}>(), { variant: 'header' })
 
 const emit = defineEmits<{
   openSettings: [tab?: string]
@@ -54,6 +59,8 @@ const emit = defineEmits<{
 const showPopover = ref(false)
 const popoverRef = ref<HTMLElement | null>(null)
 const buttonRef = ref<HTMLElement | null>(null)
+/** sidebar 形态下动态算出的面板位置；header 形态留空走 CSS 里的固定位置 */
+const popoverStyle = ref<Record<string, string>>({})
 
 // IM
 const imChannels = ref<IMChannelState[]>([])
@@ -330,18 +337,48 @@ const retryMcp = async (server: McpServerConfig) => {
 
 let gatewayPollTimer: ReturnType<typeof setInterval> | null = null
 
+const POPOVER_WIDTH = 520
+const VIEWPORT_MARGIN = 8
+
+/**
+ * sidebar 形态下面板贴着触发器向上弹：底边与触发器齐平、左边落在侧栏右侧。
+ * 窗口窄到放不下时向内收，避免面板被切掉。
+ */
+const updateSidebarPosition = () => {
+  const rect = buttonRef.value?.getBoundingClientRect()
+  if (!rect) return
+  const left = Math.max(
+    VIEWPORT_MARGIN,
+    Math.min(rect.right + VIEWPORT_MARGIN, window.innerWidth - POPOVER_WIDTH - VIEWPORT_MARGIN)
+  )
+  popoverStyle.value = {
+    left: `${left}px`,
+    bottom: `${Math.max(VIEWPORT_MARGIN, window.innerHeight - rect.bottom)}px`,
+    // 面板从底部往上长，窗口矮时封顶让它自己滚，别把顶部溢出到视口外
+    maxHeight: `${Math.max(240, rect.bottom - VIEWPORT_MARGIN * 2)}px`,
+    top: 'auto',
+    right: 'auto',
+  }
+}
+
 const togglePopover = async () => {
   showPopover.value = !showPopover.value
   if (showPopover.value) {
+    if (props.variant === 'sidebar') {
+      updateSidebarPosition()
+      window.addEventListener('resize', updateSidebarPosition)
+    }
     await loadAll()
     gatewayPollTimer = setInterval(loadGatewayData, 5000)
   } else {
+    window.removeEventListener('resize', updateSidebarPosition)
     if (gatewayPollTimer) { clearInterval(gatewayPollTimer); gatewayPollTimer = null }
   }
 }
 
 const closePopover = () => {
   showPopover.value = false
+  window.removeEventListener('resize', updateSidebarPosition)
   if (gatewayPollTimer) { clearInterval(gatewayPollTimer); gatewayPollTimer = null }
 }
 
@@ -400,20 +437,21 @@ onUnmounted(() => {
   if (gatewayPollTimer) clearInterval(gatewayPollTimer)
   document.removeEventListener('click', handleClickOutside)
   document.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('resize', updateSidebarPosition)
 })
 </script>
 
 <template>
   <div class="conn-wrapper">
-    <!-- 顶栏按钮 -->
+    <!-- 触发器：顶栏图标按钮 / 秘书行右部的紧凑胶囊 -->
     <button
       ref="buttonRef"
       class="btn-icon conn-btn"
-      :class="statusClass"
+      :class="[statusClass, { 'conn-btn--sidebar': props.variant === 'sidebar' }]"
       :title="statusTooltip"
       @click="togglePopover"
     >
-      <Radio :size="18" />
+      <Radio :size="props.variant === 'sidebar' ? 13 : 18" />
       <span class="status-badge" :class="statusClass">
         <span v-if="statusType === 'connecting'" class="spinner"></span>
         <span v-else class="status-dot">{{ statusIcon }}</span>
@@ -423,7 +461,13 @@ onUnmounted(() => {
 
     <!-- 弹出面板 -->
     <Teleport to="body">
-      <div v-if="showPopover" ref="popoverRef" class="conn-popover">
+      <div
+        v-if="showPopover"
+        ref="popoverRef"
+        class="conn-popover"
+        :class="{ 'conn-popover--sidebar': props.variant === 'sidebar' }"
+        :style="props.variant === 'sidebar' ? popoverStyle : undefined"
+      >
         <!-- 双栏内容 -->
         <div class="conn-columns">
           <!-- 左栏：远程渠道 -->
@@ -577,6 +621,27 @@ onUnmounted(() => {
   filter: none;
 }
 
+/* 秘书行右部的装备胶囊：整体收窄，让出空间给秘书名字 */
+.conn-btn--sidebar {
+  height: 22px;
+  gap: 3px;
+  padding: 0 5px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.conn-btn--sidebar:hover {
+  transform: none;
+  background: var(--bg-hover, rgba(127, 127, 127, 0.14));
+}
+
+/* 胶囊内已有底板，徽章去掉自己的背景免得套两层 */
+.conn-btn--sidebar .status-badge {
+  padding: 0;
+  background: transparent;
+  opacity: 1;
+}
+
 /* 状态徽章：作为图标的附属信息，对比度刻意压低，不与 Radio 图标抢视觉重点 */
 .status-badge {
   display: flex;
@@ -611,6 +676,20 @@ onUnmounted(() => {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   z-index: 1100;
   animation: popIn 0.15s ease;
+}
+
+/* sidebar 形态：位置由脚本按触发器实时算出（贴侧栏向上弹），这里只负责让出 CSS 固定值 */
+.conn-popover--sidebar {
+  top: auto;
+  right: auto;
+  overflow-y: auto;
+  animation: popInUp 0.15s ease;
+}
+
+/* 向上弹就从下方浮起，别再沿用顶栏那套自上而下的入场 */
+@keyframes popInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes popIn {

@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Pin, PinOff, Loader2, CircleDot } from 'lucide-vue-next'
+import { Pin, PinOff, Loader2, CircleDot, Monitor, SquareTerminal } from 'lucide-vue-next'
 import type { AgentHistorySummary } from '@shared/types'
 import type { HistoryConversationTabStatus } from '../stores/terminal'
-import { beginConversationDrag } from '../composables/useConversationDragDrop'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
 
 const props = defineProps<{
@@ -45,18 +44,35 @@ const handleContextMenu = (event: MouseEvent) => {
   emit('context-menu', event)
 }
 
-const handleDragStart = (event: DragEvent) => {
-  if (props.isEditing || props.isOpening) {
-    event.preventDefault()
-    return
-  }
-  beginConversationDrag(event, props.record.id)
-}
-
 const normalizeTitle = (text: string): string => text.trim().replace(/\s+/g, ' ')
 
 const displayTitle = computed(() =>
   normalizeTitle(resolveConversationDisplayTitle(props.record))
+)
+
+/**
+ * 终端会话与助手会话混在一条列表里，形态得能一眼看出。主机名太长，不占行宽，只进悬停提示。
+ *
+ * 只在记录拿得出终端编号时才标：早期助手会话被误存成了本地终端，而它们没有编号，
+ * 老记录的索引里也从未存过这个字段——宁可不标，也不标错。
+ */
+const hasTerminalEvidence = computed(() => !!props.record.terminalId)
+const isSshConversation = computed(
+  () => props.record.terminalType === 'ssh' && hasTerminalEvidence.value
+)
+const isTerminalConversation = computed(
+  () => (props.record.terminalType === 'local' && hasTerminalEvidence.value) || isSshConversation.value
+)
+
+const originTooltip = computed(() => {
+  if (isSshConversation.value) {
+    return props.record.sshHost || t('welcome.sshConnect')
+  }
+  return t('welcome.localTerminal')
+})
+
+const itemTooltip = computed(() =>
+  isTerminalConversation.value ? `${originTooltip.value}\n${props.record.userTask}` : props.record.userTask
 )
 
 const editInputRef = ref<HTMLInputElement | null>(null)
@@ -94,8 +110,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       'is-open-in-tab': isOpenInTab,
       'needs-attention': tabStatus === 'attention',
     }"
-    draggable="true"
-    @dragstart="handleDragStart"
   >
     <div class="leading-slot">
       <button
@@ -125,10 +139,20 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       type="button"
       class="conversation-item"
       :disabled="isOpening"
-      :title="record.userTask"
+      :title="itemTooltip"
       @click="handleItemClick"
       @contextmenu="handleContextMenu"
     >
+      <span
+        v-if="isTerminalConversation && !isEditing"
+        class="origin-icon"
+        :title="originTooltip"
+        :aria-label="originTooltip"
+        role="img"
+      >
+        <Monitor v-if="isSshConversation" :size="11" :stroke-width="2" />
+        <SquareTerminal v-else :size="11" :stroke-width="2" />
+      </span>
       <input
         v-if="isEditing"
         ref="editInputRef"
@@ -316,6 +340,21 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
 
 .conversation-item:disabled {
   cursor: wait;
+}
+
+/* 形态图标：压低对比度，只在需要辨认时才被注意到 */
+.origin-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.conversation-row:hover .origin-icon,
+.conversation-row.is-active .origin-icon {
+  color: var(--text-secondary);
+  opacity: 1;
 }
 
 .item-title {

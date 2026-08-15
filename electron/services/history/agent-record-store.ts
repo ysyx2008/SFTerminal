@@ -74,6 +74,8 @@ export interface AgentIndexEntry {
   /** Agent 的身份 key，来自 AgentRecord.agentKey（如 '__companion__'、'__watch__'） */
   agentKey?: string
   sshHost?: string
+  /** 会话绑定的终端编号；助手会话没有，老索引也没存过（见 AgentHistorySummary.terminalId） */
+  terminalId?: string
   status: 'completed' | 'failed' | 'aborted'
   tokenUsage?: TokenUsage
 }
@@ -302,6 +304,7 @@ export class AgentRecordStore {
     }
     const title = record.title?.trim()
     if (title) entry.title = title
+    if (record.terminalId) entry.terminalId = record.terminalId
     if (record.tokenUsage) {
       entry.tokenUsage = record.tokenUsage
     }
@@ -799,6 +802,7 @@ export class AgentRecordStore {
       terminalType: e.terminalType,
       agentKey: e.agentKey,
       sshHost: e.sshHost,
+      terminalId: e.terminalId,
       status: e.status,
     }))
   }

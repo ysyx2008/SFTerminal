@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronLeft, ChevronRight, Pin, Plus, Search, X } from 'lucide-vue-next'
 import type { AgentHistorySummary, AgentRecord } from '@shared/types'
-import type { HistoryConversationTabStatus } from '../stores/terminal'
+import type { HistoryConversationTabStatus, TerminalTab } from '../stores/terminal'
 import {
   CLOSED_HISTORY_CONVERSATION_META,
   formatHistoryConversationTooltip,
@@ -15,12 +15,13 @@ import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { toast } from '../composables/useToast'
 import { showConfirm } from '../composables/useConfirm'
-import { useOpenConversationInTab } from '../composables/useConversationDragDrop'
 import { useConversationWarmup } from '../composables/useConversationWarmup'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
 
 const props = defineProps<{
   collapsed?: boolean
+  /** 嵌在主导航侧栏里：不显示收起按钮，保留搜索和新建 */
+  embedded?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -37,7 +38,6 @@ const searchInputRef = ref<HTMLInputElement | null>(null)
 const summaries = ref<AgentHistorySummary[]>([])
 const isLoading = ref(false)
 const openingId = ref<string | null>(null)
-const { openConversationInTab } = useOpenConversationInTab(openingId)
 const hasLoaded = ref(false)
 
 /** 新建对话：回到欢迎页，右侧清空等待输入 */
@@ -359,9 +359,7 @@ const conversationMetaById = computed(() => {
 
     const isVisible = tab && isAssistantConversationSurfaceVisible(
       tab.id,
-      terminalStore.activeTabId,
-      terminalStore.hubFocusedAssistantTabId,
-      terminalStore.todosActive
+      terminalStore.conversationSurface
     )
 
     let meta: HistoryConversationMeta
@@ -387,35 +385,58 @@ const getRecordMeta = (id: string) =>
     tooltip: formatHistoryConversationTooltip(CLOSED_HISTORY_CONVERSATION_META, t),
   }
 
+/** 认一条会话来自哪种形态所需的最小信息，摘要与完整记录都满足 */
+type ConversationOrigin = Pick<AgentHistorySummary, 'terminalType' | 'agentKey'>
+
+const isTerminalOrigin = (origin: ConversationOrigin): boolean =>
+  origin.terminalType === 'local' || origin.terminalType === 'ssh'
+
 /**
- * 判断某条历史对话是否为当前"激活"状态：
- * - Hub 焦点（非提升）：当前在主区展示的会话
- * - promoted tab：当前 activeTabId 与该 tab 匹配
- * 用于侧栏高亮，仅视觉，不含状态图标语义。
+ * 终端会话的 agentKey 就是当初那个终端 tab 的 id。
+ * 会话状态被清掉后 sessionId 对不上，仍能靠它认回原 tab，而不是错落到助手区。
  */
-const isActiveSurface = (historyId: string): boolean => {
-  const tab = terminalStore.findTabByHistoryId(historyId)
+const findTerminalTabByOrigin = (origin: ConversationOrigin): TerminalTab | undefined => {
+  if (!isTerminalOrigin(origin) || !origin.agentKey) return undefined
+  return terminalStore.tabs.find(
+    t => t.id === origin.agentKey && (t.type === 'local' || t.type === 'ssh')
+  )
+}
+
+/**
+ * 判断某条历史对话是否为当前「用户正在看」的那条，用于侧栏高亮（仅视觉，不含状态图标语义）。
+ * 与状态图标共用同一套可见性判据——切到终端后 Hub 焦点仍留着以便切回，
+ * 但那条会话已经不在眼前了，不能跟着一起亮。
+ */
+const isActiveSurface = (summary: AgentHistorySummary): boolean => {
+  const tab = terminalStore.findTabByHistoryId(summary.id) ?? findTerminalTabByOrigin(summary)
   if (!tab) return false
-  if (tab.isPromoted) return terminalStore.activeTabId === tab.id
-  // Hub 焦点：agentState.sessionId 对应 historyId
-  const focused = terminalStore.hubFocusedTab
-  return !!focused && focused.agentState?.sessionId === historyId
+  return isAssistantConversationSurfaceVisible(tab.id, terminalStore.conversationSurface)
+}
+
+/**
+ * 命中已有 tab 时的落点：
+ * 本地未提升助手走 Hub 主区聚焦（停留首页视图，侧栏保留）；
+ * 终端 tab 切到终端并掀开 AI 侧栏——对话在那儿，面板收着就等于没跳过去；
+ * 其余（已提升独立 tab / 远程助手）直接激活。
+ */
+const activateExistingTab = (tab: TerminalTab) => {
+  const isHubAssistant = tab.type === 'assistant' && !tab.isPromoted && !tab.isRemote
+  if (isHubAssistant) {
+    terminalStore.focusHubConversation(tab.id)
+    return
+  }
+  terminalStore.setActiveTab(tab.id)
+  if (tab.type === 'local' || tab.type === 'ssh') {
+    terminalStore.requestTerminalAiPanelReveal(tab.id)
+  }
 }
 
 const openConversation = async (summary: AgentHistorySummary) => {
   if (editingId.value || openingId.value) return
 
-  const existingTab = terminalStore.findTabByHistoryId(summary.id)
+  const existingTab = terminalStore.findTabByHistoryId(summary.id) ?? findTerminalTabByOrigin(summary)
   if (existingTab) {
-    // 终端 tab / 已提升独立 tab / 远程助手 → 激活该 tab；
-    // 仅本地未提升的助手会话走 Hub 主区聚焦（停留首页视图，侧栏保留）
-    const isHubAssistant =
-      existingTab.type === 'assistant' && !existingTab.isPromoted && !existingTab.isRemote
-    if (isHubAssistant) {
-      terminalStore.focusHubConversation(existingTab.id)
-    } else {
-      terminalStore.setActiveTab(existingTab.id)
-    }
+    activateExistingTab(existingTab)
     return
   }
 
@@ -427,19 +448,19 @@ const openConversation = async (summary: AgentHistorySummary) => {
 
     const warmed = terminalStore.findTabByHistoryId(summary.id)
     if (warmed) {
-      const isHubAssistant =
-        warmed.type === 'assistant' && !warmed.isPromoted && !warmed.isRemote
-      if (isHubAssistant) {
-        terminalStore.focusHubConversation(warmed.id)
-      } else {
-        terminalStore.setActiveTab(warmed.id)
-      }
+      activateExistingTab(warmed)
       return
     }
 
     const record = (await window.electronAPI.history.getAgentRecordById(summary.id)) as AgentRecord | undefined
     if (!record) {
       toast.error(t('ai.agentWelcome.historyRecordMissing'))
+      return
+    }
+    // 完整记录的形态信息比摘要可靠，落到助手 tab 前再兜一次原终端 tab
+    const originTab = findTerminalTabByOrigin(record)
+    if (originTab) {
+      activateExistingTab(originTab)
       return
     }
     terminalStore.openHistoryConversation(record)
@@ -484,13 +505,6 @@ const onMenuRename = () => {
   const record = contextMenu.value.record
   closeContextMenu()
   if (record) startRename(record)
-}
-
-const onMenuOpenInTab = async () => {
-  const record = contextMenu.value.record
-  closeContextMenu()
-  if (!record) return
-  await openConversationInTab(record.id)
 }
 
 const onMenuTogglePin = async () => {
@@ -642,6 +656,7 @@ const loadMore = () => {
         <!-- 正常态：折叠（左侧固定）+ 新的对话按钮 + 搜索 -->
         <template v-else>
           <button
+            v-if="!props.embedded"
             type="button"
             class="panel-action-btn"
             :title="t('welcome.conversations.collapseSidebar')"
@@ -649,7 +664,9 @@ const loadMore = () => {
           >
             <ChevronLeft :size="14" />
           </button>
+          <span v-else class="embedded-label">{{ t('shell.recent') }}</span>
           <button
+            v-if="!props.embedded"
             type="button"
             class="new-conversation-btn"
             :class="{ 'is-active': isWelcomeHomeActive }"
@@ -686,7 +703,7 @@ const loadMore = () => {
               :record="entry.record"
               :is-pinned="entry.pinned"
               :is-opening="openingId === entry.record.id"
-              :is-active="isActiveSurface(entry.record.id)"
+              :is-active="isActiveSurface(entry.record)"
               :tab-status="getRecordMeta(entry.record.id).status"
               :status-tooltip="getRecordMeta(entry.record.id).tooltip"
               :is-editing="editingId === entry.record.id"
@@ -728,10 +745,6 @@ const loadMore = () => {
         @click.stop
         @contextmenu.prevent
       >
-        <button type="button" class="context-menu-item" @click="onMenuOpenInTab">
-          {{ t('welcome.conversations.openInTab') }}
-        </button>
-        <div class="context-menu-separator" role="separator" />
         <button type="button" class="context-menu-item" @click="onMenuRename">
           {{ t('welcome.conversations.rename') }}
         </button>
@@ -772,6 +785,14 @@ const loadMore = () => {
 
 .panel-header.is-search-open {
   padding-left: 8px;
+}
+
+.embedded-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .panel-header--collapsed {

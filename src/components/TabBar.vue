@@ -1,60 +1,22 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Zap, PanelTopOpen, MessagesSquare, ListTodo } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Zap, MessagesSquare, ListTodo } from 'lucide-vue-next'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { formatAgentAttentionTooltip } from '../utils/agent-tab-ui-meta'
 import BatchCommandPanel from './BatchCommandPanel.vue'
-import {
-  isConversationDragEvent,
-  useConversationDropTarget,
-  useOpenConversationInTab,
-} from '../composables/useConversationDragDrop'
 import { isWorkbenchAvailable } from '../workbench/registry'
 import { useTodoOverdueCount } from '../composables/useTodoOverdueCount'
+
+const props = defineProps<{
+  /** terminal：只显示本机 / SSH，藏掉任务 / 联络 / 待办 */
+  variant?: 'global' | 'terminal'
+}>()
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
 const { overdueCount, hasUnseenOverdue } = useTodoOverdueCount()
-const { openConversationInTab } = useOpenConversationInTab()
-const {
-  isDragOver: isConversationDragOver,
-  handleDragEnter: handleConversationDragEnter,
-  handleDragOver: handleConversationDragOver,
-  handleDragLeave: handleConversationDragLeave,
-  handleDrop: handleConversationDrop,
-} = useConversationDropTarget(openConversationInTab)
-
 const tabBarRef = ref<HTMLElement | null>(null)
-const conversationDropHintStyle = ref<Record<string, string>>({})
-
-const updateConversationDropHintPosition = () => {
-  const rect = tabBarRef.value?.getBoundingClientRect()
-  if (!rect) return
-  conversationDropHintStyle.value = {
-    top: `${rect.bottom + 8}px`,
-    left: `${rect.left + rect.width / 2}px`,
-    transform: 'translateX(-50%)',
-  }
-}
-
-const onConversationDragEnter = (event: DragEvent) => {
-  handleConversationDragEnter(event)
-  if (isConversationDragEvent(event)) {
-    nextTick(updateConversationDropHintPosition)
-  }
-}
-
-const onConversationDragOver = (event: DragEvent) => {
-  handleConversationDragOver(event)
-  if (isConversationDragEvent(event)) {
-    updateConversationDropHintPosition()
-  }
-}
-
-watch(isConversationDragOver, (over) => {
-  if (over) nextTick(updateConversationDropHintPosition)
-})
 
 /** 远程 Tab 已有 SatelliteDish 图标，标题里去掉历史遗留的 📡 前缀避免重复 */
 function displayTabTitle(tab: { customTitle?: string; title: string; isRemote?: boolean }): string {
@@ -236,7 +198,6 @@ const handleDragStart = (index: number, event: DragEvent) => {
 
 // 拖拽经过
 const handleDragOver = (index: number, event: DragEvent) => {
-  if (isConversationDragEvent(event)) return
   event.preventDefault()
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = 'move'
@@ -258,7 +219,6 @@ const toRealIndex = (displayIndex: number): number => {
 
 // 放置
 const handleDrop = (toIndex: number, event: DragEvent) => {
-  if (isConversationDragEvent(event)) return
   event.preventDefault()
   if (dragIndex.value !== null && dragIndex.value !== toIndex) {
     terminalStore.reorderTabs(toRealIndex(dragIndex.value), toRealIndex(toIndex))
@@ -285,13 +245,16 @@ const hasMultipleTerminals = computed(() => {
  * Tab 栏显示的 tab 列表：过滤掉「未提升的本地助手」和「联络常驻 tab」——
  * 本地助手在 Hub 主区按焦点显示，联络 tab 单独固定渲染（不参与拖拽排序）。
  */
-const displayedTabs = computed(() =>
-  terminalStore.tabs.filter(
+const displayedTabs = computed(() => {
+  if (props.variant === 'terminal') {
+    return terminalStore.tabs.filter(tab => tab.type === 'local' || tab.type === 'ssh')
+  }
+  return terminalStore.tabs.filter(
     tab =>
       !(tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted) &&
       tab.agentId !== COMPANION_TAB_AGENT_ID
   )
-)
+})
 // 联络常驻 tab
 const companionTab = computed(() =>
   terminalStore.tabs.find(t => t.agentId === COMPANION_TAB_AGENT_ID) ?? null
@@ -359,26 +322,12 @@ const tasksAreaAttentionTooltip = computed(() => {
   <div
     ref="tabBarRef"
     class="tab-bar-host"
-    :class="{ 'conversation-drag-over': isConversationDragOver }"
-    @dragenter="onConversationDragEnter"
-    @dragover="onConversationDragOver"
-    @dragleave="handleConversationDragLeave"
-    @drop="handleConversationDrop"
+    :class="{ 'is-terminal-place': props.variant === 'terminal' }"
   >
-    <Teleport to="body">
-      <div
-        v-if="isConversationDragOver"
-        class="tab-conversation-drop-hint"
-        :style="conversationDropHintStyle"
-      >
-        <PanelTopOpen :size="14" :stroke-width="1.5" />
-        <span>{{ t('welcome.conversations.dropToOpenInTab') }}</span>
-      </div>
-    </Teleport>
-
-    <div class="tab-bar">
+    <div class="tab-bar" :class="{ 'tab-bar--terminal': props.variant === 'terminal' }">
     <!-- 任务按钮：切回任务区（保留 Hub 焦点），激活态与 hover 与其他 tab 一致 -->
     <div
+      v-if="props.variant !== 'terminal'"
       class="tab tab-home"
       :class="{
         active: isTasksHomeActive,
@@ -484,7 +433,7 @@ const tasksAreaAttentionTooltip = computed(() => {
 
     <!-- 联络常驻 tab：次要入口，固定在新建按钮之前、滚动区之外，不隐藏 -->
     <div
-      v-if="canShowCompanion && companionTab"
+      v-if="props.variant !== 'terminal' && canShowCompanion && companionTab"
       class="tab tab-pinned"
       :class="{
         active: companionTab.id === terminalStore.activeTabId,
@@ -504,7 +453,7 @@ const tasksAreaAttentionTooltip = computed(() => {
 
     <!-- 待办常驻 tab：固定在联络右侧、新建按钮之前 -->
     <div
-      v-if="canShowCompanion"
+      v-if="props.variant !== 'terminal' && canShowCompanion"
       class="tab tab-pinned"
       :class="{
         active: terminalStore.todosActive,
@@ -520,11 +469,15 @@ const tasksAreaAttentionTooltip = computed(() => {
     </div>
 
     <!-- 新建终端按钮（带下拉菜单） -->
-    <div v-if="canCreateAssistant || canCreateLocal || canCreateSsh" class="new-tab-wrapper">
+    <div v-if="(props.variant === 'terminal' ? (canCreateLocal || canCreateSsh) : (canCreateAssistant || canCreateLocal || canCreateSsh))" class="new-tab-wrapper">
       <button
         class="btn-new-tab"
-        @click="canCreateAssistant ? handleNewAssistant() : canCreateLocal ? handleNewTab() : handleOpenSsh()"
-        :title="canCreateAssistant ? t('tabs.assistant', 'AI 助手') : canCreateLocal ? t('tabs.newTab') : t('tabs.sshConnect')"
+        @click="props.variant === 'terminal'
+          ? (canCreateLocal ? handleNewTab() : handleOpenSsh())
+          : (canCreateAssistant ? handleNewAssistant() : canCreateLocal ? handleNewTab() : handleOpenSsh())"
+        :title="props.variant === 'terminal'
+          ? (canCreateLocal ? t('tabs.newTab') : t('tabs.sshConnect'))
+          : (canCreateAssistant ? t('tabs.assistant', 'AI 助手') : canCreateLocal ? t('tabs.newTab') : t('tabs.sshConnect'))"
       >
         <Plus :size="14" />
       </button>
@@ -538,7 +491,7 @@ const tasksAreaAttentionTooltip = computed(() => {
     <Teleport to="body">
       <div v-if="showNewMenu" class="shell-menu-overlay" @click="hideNewMenu"></div>
       <div v-if="showNewMenu" class="shell-menu" :style="menuPosition">
-        <template v-if="canCreateAssistant">
+        <template v-if="props.variant !== 'terminal' && canCreateAssistant">
           <div 
             class="shell-menu-item"
             @click="handleNewAssistant"
@@ -585,11 +538,12 @@ const tasksAreaAttentionTooltip = computed(() => {
   position: relative;
 }
 
-.tab-bar-host.conversation-drag-over {
-  background: rgba(var(--accent-rgb), 0.1);
-  box-shadow: inset 0 -2px 0 var(--accent-primary);
-  outline: 2px dashed color-mix(in srgb, var(--accent-primary) 55%, transparent);
-  outline-offset: -2px;
+/* 终端形态嵌在主区顶条里：高度、底边、背景都由顶条提供，这里只管排列 */
+.tab-bar-host.is-terminal-place {
+  flex: 1;
+  justify-content: flex-start;
+  height: 100%;
+  background: transparent;
 }
 
 .tab-bar {
@@ -599,32 +553,6 @@ const tasksAreaAttentionTooltip = computed(() => {
   gap: 2px;
   max-width: 100%;
   overflow: hidden;
-  /* 内容宽度居中；拖放由外层 tab-bar-host 全宽接收 */
-}
-
-.tab-conversation-drop-hint {
-  position: fixed;
-  z-index: 10000;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  color: var(--accent-primary);
-  background: var(--bg-primary);
-  border: 1px solid color-mix(in srgb, var(--accent-primary) 45%, var(--border-color));
-  border-radius: 8px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
-  pointer-events: none;
-  white-space: nowrap;
-  animation: tabDropHintFadeIn 0.15s ease;
-}
-
-@keyframes tabDropHintFadeIn {
-  from { opacity: 0; translate: 0 -4px; }
-  to { opacity: 1; translate: 0 0; }
 }
 
 .scroll-btn {

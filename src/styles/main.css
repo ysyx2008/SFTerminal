@@ -31,6 +31,11 @@
   
   /* 尺寸 */
   --header-height: 32px;
+  /* 侧栏顶与主区顶同源，两段顶条必须齐平，否则窗口上沿会看出参差；
+     取 34px 是为了装得下终端 Tab 条（tab 本身 28px + 上下各 3px 呼吸）。
+     改这个值必须同步 electron/main.ts 的 trafficLightPosition.y = (本值 - 12) / 2，
+     否则 macOS 红绿灯与同排图标会差出一档，看着就是「没对齐」。 */
+  --shell-top-height: 34px;
   --sidebar-width: 320px;
   --tab-height: 28px;
 
@@ -621,7 +626,7 @@
 }
 
 /* 赛博朋克主题特殊效果 */
-[data-ui-theme="cyberpunk"] .app-header {
+[data-ui-theme="cyberpunk"] .shell-top--main.shell-top--tabs {
   background: linear-gradient(180deg, rgba(15, 15, 24, 0.95), rgba(10, 10, 15, 0.98));
   border-bottom: 1px solid rgba(0, 255, 255, 0.2);
   box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
@@ -882,6 +887,11 @@ html, body {
 }
 
 .btn-icon {
+  /* 必须显式居中：图标是行内元素，默认按文字基线排，基线下方还要留出字母下沉的位置，
+     图标就被顶到偏上——按钮越矮、越是紧邻红绿灯，这一两像素越显眼 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px;
   background: transparent;
   border: none;
@@ -2005,6 +2015,37 @@ textarea:focus {
 .app-container.is-mac.is-fullscreen .settings-modal > .settings-header,
 .app-container.is-mac.is-fullscreen .watch-panel > .panel-header {
   padding-left: 12px;
+}
+
+/* ==================== 无边框窗口：第一排契约 ==================== */
+/* 窗口没有标题栏，各面板顶到窗口上沿的那一排既是功能行、也是窗口拖拽区。
+   壳层把「要给浮在其上的窗口控件让出多少」放进 --shell-inset-left / --shell-inset-right，
+   第一排消费这两个值即可，不必知道侧栏收没收起、是哪个平台。
+   面板内的交互元素统一 no-drag，否则点击会被拖拽区吃掉。 */
+.tab-view-workbench .system-info-bar,
+.tab-view-workbench .canvas-header,
+.tab-view-workbench .artifact-panel-rail-header {
+  -webkit-app-region: drag;
+}
+
+.tab-view-workbench .system-info-bar > *,
+.tab-view-workbench .canvas-header > *,
+.tab-view-workbench .artifact-panel-rail-header > * {
+  -webkit-app-region: no-drag;
+}
+
+/* 聊天区是主区最左那一栏，让开侧栏开关与 macOS 红绿灯。
+   Windows 下壳层顶条常驻、已经接管了这些控件，面板不再是第一排，也就不必让位。
+   让位宽度随侧栏开合改变，与侧栏用同一档节奏挪动，避免一边在滑一边在跳。 */
+.app-container:not(.is-win) .tab-view-workbench .system-info-bar {
+  padding-left: max(12px, var(--shell-inset-left));
+  transition: padding-left 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 巡检页自带全宽页头，左侧同样让位 */
+.app-container:not(.is-win) .smart-patrol-page > .patrol-header {
+  padding-left: max(20px, var(--shell-inset-left));
+  transition: padding-left 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Windows 改为完全自绘标题栏（WindowControls.vue）后，三个按钮是普通 DOM 元素。

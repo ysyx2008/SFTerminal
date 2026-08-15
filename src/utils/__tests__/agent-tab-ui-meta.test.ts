@@ -71,17 +71,42 @@ describe('formatHistoryConversationTooltip', () => {
 
 describe('isAssistantConversationSurfaceVisible', () => {
   it('returns true for active TabBar tab', () => {
-    expect(isAssistantConversationSurfaceVisible('tab-a', 'tab-a', 'tab-b')).toBe(true)
+    expect(isAssistantConversationSurfaceVisible('tab-a', {
+      activeTabId: 'tab-a',
+      hubFocusedAssistantTabId: 'tab-b',
+    })).toBe(true)
   })
 
   it('returns true for hub focus only when in task area', () => {
-    expect(isAssistantConversationSurfaceVisible('hub-tab', '', 'hub-tab')).toBe(true)
-    expect(isAssistantConversationSurfaceVisible('hub-tab', 'companion-tab', 'hub-tab')).toBe(false)
-    expect(isAssistantConversationSurfaceVisible('hub-tab', '', 'hub-tab', true)).toBe(false)
+    expect(isAssistantConversationSurfaceVisible('hub-tab', {
+      activeTabId: '',
+      hubFocusedAssistantTabId: 'hub-tab',
+    })).toBe(true)
+    expect(isAssistantConversationSurfaceVisible('hub-tab', {
+      activeTabId: 'companion-tab',
+      hubFocusedAssistantTabId: 'hub-tab',
+    })).toBe(false)
+    expect(isAssistantConversationSurfaceVisible('hub-tab', {
+      activeTabId: '',
+      hubFocusedAssistantTabId: 'hub-tab',
+      todosActive: true,
+    })).toBe(false)
+  })
+
+  // 空终端页与任务区一样没有活跃 tab，靠这个标志才分得开
+  it('returns false on the empty terminal place', () => {
+    expect(isAssistantConversationSurfaceVisible('hub-tab', {
+      activeTabId: '',
+      hubFocusedAssistantTabId: 'hub-tab',
+      terminalPlaceActive: true,
+    })).toBe(false)
   })
 
   it('returns false when neither active nor visible hub focus', () => {
-    expect(isAssistantConversationSurfaceVisible('hub-tab', 'ssh-tab', 'other-hub')).toBe(false)
+    expect(isAssistantConversationSurfaceVisible('hub-tab', {
+      activeTabId: 'ssh-tab',
+      hubFocusedAssistantTabId: 'other-hub',
+    })).toBe(false)
   })
 })
 

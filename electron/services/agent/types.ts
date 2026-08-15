@@ -19,7 +19,12 @@ export type {
   AttachmentInfo,
   TokenUsage,
   CommandRiskPolicy,
+  AgentPaneInfo,
 } from '@shared/types'
+
+// 本文件内部也要用（AgentRun.context），故单独 import 一份
+import type { AgentContext } from '@shared/types'
+export type { AgentContext }
 
 import type { TerminalType, ExecutionMode, RemoteChannel, PendingConfirmation, PendingSecureInput, AgentStep, AgentContextBar, AgentPlan, AttachmentInfo, TokenUsage, CommandRiskPolicy } from '@shared/types'
 
@@ -72,57 +77,7 @@ export interface PreviousTaskContext {
   messages?: import('../ai.service').AiMessage[]
 }
 
-// 分屏窗格信息（用于多屏感知 system prompt 注入）
-export interface AgentPaneInfo {
-  paneId: string
-  ptyId: string
-  label: string
-  isActive: boolean
-  terminalOutput: string[]
-  terminalType: 'local' | 'ssh'
-}
-
-// Agent 上下文
-export interface AgentContext {
-  ptyId?: string
-  terminalOutput: string[]  // 最近的终端输出（分屏模式下为激活窗格的输出）
-  systemInfo: {
-    os: string
-    shell: string
-  }
-  terminalType: TerminalType
-  remoteChannel?: RemoteChannel
-  cwd?: string  // 当前工作目录（用于告知 AI 当前位置，帮助正确处理相对路径）
-  hostId?: string  // 主机档案 ID
-  documentContext?: string  // 用户上传的文档内容
-  images?: string[]  // 用户上传的图片（base64 data URL），发送给 AI 用于视觉理解
-  previewImages?: string[]  // UI 展示用的预览图片（仅 PDF 页面渲染），缺省时用 images
-  attachments?: import('@shared/types').AttachmentInfo[]  // 用户上传的文件元信息（用于 user_task 步骤展示）
-  sshHost?: string  // SSH 主机地址（用于历史记录元数据）
-  sessionId?: string  // 从 HistoryService 恢复的会话 ID（后端自行加载历史数据）
-  sessionStartTime?: number  // 从 HistoryService 恢复的会话开始时间
-  currentPlan?: AgentPlan  // 当前执行计划（从前端 steps 恢复，用于跨对话持久化）
-  wakeup?: boolean  // 唤醒模式：静默运行，不累积到会话历史
-  proactiveContext?: string  // IM 场景：Agent 之前主动发送的消息内容，作为用户回复的上下文注入 API 消息
-  /**
-   * 仅注入 API 消息的上下文提示（如首次联系提醒），不显示在 user_task 步骤中
-   */
-  contextHint?: string
-  /**
-   * 工作台可扩展旁路上下文（选区作用域等）：组装进 API 信封，不上聊天气泡。
-   * @see WorkbenchContext
-   */
-  workbenchContext?: import('@shared/types').WorkbenchContext
-  // 分屏多屏感知（仅在 tab 处于分屏模式时由前端 IPC 注入）
-  mode?: 'single' | 'split'
-  panes?: AgentPaneInfo[]
-  activePaneId?: string
-  /**
-   * 工作台 UI 描述（由前端在特定 workbench tab 对话时注入，prompt-builder 原样插入）。
-   * 例如独立助手工作台的 Artifact 产出物面板说明；IM/Web/Watch 不传。
-   */
-  workbenchPrompt?: string
-}
+// AgentContext / AgentPaneInfo 已上移到 @shared/types（见文件顶部转出）
 
 // 工具执行结果
 export interface ToolResult {

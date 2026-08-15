@@ -10,23 +10,25 @@
 将过去"每个本地助手对话独占一个独立 Tab"的模型，改为**单一助手工作台（Hub）+ 最近对话侧栏**，使：
 - 任意数量的本地助手对话共用一个工作台区域，通过侧栏切换
 - 终端 Tab（local/ssh）保持独立全屏，不受影响
-- 用户可将任意会话"提升"为独立 Tab，兼顾重度多任务需求
+- 会话不再能"提升"为独立 Tab（2026-08-15 取消，见第七节）
 - 外部渠道（IM/Watch 通知）统一汇集到**联络常驻 Tab**（`__companion__`）
 
 ---
 
-## 一·A. 任务 / 联络双入口模型（2026-06-21 新增）
+## 一·A. 侧栏三地方（2026-08-14 更新）
 
-> 产品级定位（任务 vs 联络的关系形态、为何不合并、联络上下文设计）见 `.cursor/rules/project-architecture.mdc`「任务 / 联络 双入口模型」。本节只描述 TabBar 交互机制。
+> 产品级定位见 `.cursor/rules/project-architecture.mdc`「任务 / 联络 / 关切 / 唤醒」。壳层取舍见 `src/APP_SPEC.md` 设计目标。
 
-TabBar 顺序：`[任务] [可滚动普通 tab 区] [批量按钮] [联络] [待办] [新建+]`。
+固定入口在左侧，不再钉在顶栏。联络和终端点了是回这个地方；「新对话」点了就是开一个新的。
 
-| 入口 | 位置 | 行为 |
-|---|---|---|
-| **任务**（`tab-home` 按钮） | 最左端 | 始终可见；激活态为无可见 tab 且非待办面；点击 `focusTaskArea()` 切回任务区（**保留**此前 Hub 焦点会话；无焦点则欢迎页） |
-| **联络**（`tab-pinned`，`agentId = __companion__`） | 固定在滚动区外、**待办左侧** | 常驻不可关闭，点击激活 `__companion__` tab；IM / Watch `talk_to_user` 消息均路由到此 tab；**不清除** Hub 焦点 |
-| **待办**（`tab-pinned` 伪 Tab） | 固定在**联络右侧**、新建按钮之前 | 非 Agent 会话；点击 `openTodos()` 主区渲染 `TodoPanel`；**不清除** Hub 焦点（切回任务区可恢复）；与 `TODO.json` / Agent `todo_*` 共用真相源（见 `skills/todo/SPEC.md`） |
-| **新建 +**（`btn-new-tab`） | 最右端 | 点击 `handleNewAssistant()` 新建一个**空白独立助手 tab**（`createAssistantTab({ isPromoted: true })`，直接进 Tab 栏并激活，不走 Hub 焦点）；下拉菜单可选新建终端/SSH |
+| 入口 | 行为 |
+|---|---|
+| **新对话** | 回到任务区，**保留**此前正在看的助手会话；没有则欢迎页。最近对话列表就是它的「多个」。 |
+| **联络** | 打开那条常驻联络线；IM / 关切找人的消息都进这里。不清除任务区里正在看的会话。 |
+| **终端** | 回到上次那个本机或远程工作台；一个都没有才进空页（打开本机 + 已存主机）。页内 tab 只挂本机和远程。 |
+| **待办** | 在秘书菜单里。打开待办面，不清除任务区会话；切回新对话可恢复。 |
+
+快捷键的跳转保持现状：新建助手仍打开那个对话，新建本机终端仍打开那个工作台，关掉后的去向也不另发明一套。
 
 `displayedTabs` 同时排除：
 1. 未提升的本地助手（`!tab.isRemote && !tab.isPromoted`）
@@ -137,18 +139,39 @@ sessionId 不在 summaryById 中（未落盘）
 | 状态 | 高亮方式 |
 |---|---|
 | Hub 焦点会话（当前可见）| 行背景高亮 + hover 时文字也高亮 |
+| 当前激活的终端 Tab 里的会话 | 行背景高亮 |
 | 已提升为独立 Tab | 显示「独立 tab」图标 |
 | 后台运行中（用户看不见）| 显示运行中动画图标 |
 | 后台需要确认（用户看不见）| 显示 attention 图标 |
 
 **规则：当前用户正在看的会话（Hub 焦点 / 已提升活跃 tab）不显示运行中/attention 图标**，因为用户已经看到了。
 
+**「正在看」以人眼前是什么为准，不以焦点还记着谁为准。** 离开任务区去了联络、待办、终端——包括一个终端也没开时停在的那张空终端页——记着的 Hub 焦点都不再算数：那条会话已经不在眼前，行不该继续亮着，运行中 / 待确认的图标也该照常提醒。
+
+### 形态标识
+
+终端会话与助手会话混在同一条列表里，必须一眼能分辨哪条来自终端：终端会话带图标，本机与远程各一个。主机名有用但太长，不占行宽，只在悬停时给出。
+
+**只在记录能自证形态时才标**。一条会话说自己来自终端，就得给得出它当初绑的那个终端；给不出的一律不标。这是因为早期助手会话曾被误存成本地终端，那批历史数据不做改写——宁可不标，也不标错。
+
 ### 点击行为
 
-1. `findTabByHistoryId(summary.id)` 找到现有 tab  
-   - 本地未提升助手会话（`type==='assistant' && !isPromoted && !isRemote`）→ `focusHubConversation`（Hub 焦点，侧栏保留）  
-   - 其余（终端 tab / 已提升独立 Tab / 远程助手）→ `setActiveTab`（激活该 Tab）  
-2. 未找到 tab → 从历史加载 `openHistoryConversation(record)`
+会话的形态（本机 / 远程 / 助手）不可变，点开一条会话必须落回它原本的形态：
+
+| 这条会话 | 点开后 |
+|---|---|
+| 助手会话 | 回到 Hub 主区，侧栏保留 |
+| 终端会话，原终端还开着 | 切回那个终端，并展开 AI 侧栏——对话在那儿，面板收着等于没跳过去 |
+| 终端会话，原终端已关闭 | 在助手区回看（见下方取舍） |
+| 已提升独立 Tab / 远程助手 | 直接激活对应 Tab |
+
+认回原终端不能只靠会话编号：终端的会话状态被清掉后编号就对不上了，此时仍要能凭这条记录记着的来源认回那个终端。侧栏的行高亮也按同一套认定，否则切过去了行还是灰的。
+
+**已关闭终端会话的取舍**：维持现状，在助手区回看。同形态重建也回不到当时那台主机和那个目录，假装续上反而让 AI 按早已不存在的现场往下说。
+
+**空闲预热只针对助手会话**。给终端会话预建助手 Tab 会反过来劫持点击——本该切回终端的，落进了预热出来的助手会话里。
+
+**一条会话同一时刻只归属一个地方**。在助手区回看过的会话，之后被某个终端接着往下聊（原终端关了、换一个继续，会话不分叉），此时先前那份回看副本必须让位——否则同一条会话被两处记着，侧栏点击就可能落到那份不干活的副本上：终端那边在跑、甚至在等你确认，你却被送进一个静止的页面。让位的做法是把回看副本收走（它本就是只读缓存，随时能再打开）；正在跑或正等确认的一方永远不被收，真出现两处都在跑，宁可留着让问题暴露。
 
 ### 另开一聊（Fork）
 
@@ -156,8 +179,7 @@ sessionId 不在 summaryById 中（未落盘）
 
 | 源会话 | 新分支 |
 |---|---|
-| Hub 侧栏会话（`!isPromoted`） | `focusHubConversation`：留在 Hub，侧栏保留 |
-| 已提升独立 Tab（`isPromoted`） | `promoteConversationToTab`：新 Tab 出现在 Tab 栏 |
+| Hub 侧栏会话 | `focusHubConversation`：留在 Hub，侧栏保留 |
 | 终端 Tab 内 AI 面板 | 默认走 Hub（`focusHubConversation`） |
 
 **禁止**对 Hub 会话 fork 后直接 `activeTabId = newTabId`——会导致侧栏隐藏且 Tab 栏也不显示该会话（悬空面板）。
@@ -185,7 +207,6 @@ sessionId 不在 summaryById 中（未落盘）
 
 | 操作 | 行为 |
 |---|---|
-| 在新标签页中打开 | `promoteConversationToTab`（已有 tab 直接提升；无 tab 则先加载历史再提升）|
 | 重命名 | 写入 `configStore` 自定义标题（以 summary.id 为 key） |
 | 置顶 / 取消置顶 | `configStore.togglePinConversation` |
 | 删除 | 见删除行为表格 |
@@ -222,27 +243,13 @@ Watch 触发、Gateway 远程任务、IM 消息等触发的助手任务：
 
 ---
 
-## 七、会话提升与降级
+## 七、会话提升（已取消）
 
-### 提升（Hub → 独立 Tab）
+**对话不再能被「提升」成独立 Tab。** 壳层重排后顶栏 Tab 条已撤走，终端页那条只认本机 / SSH，提升出来的会话没有任何标签能承载它——用户既切不走也找不回，只剩一个凭空出现的全屏页面。
 
-触发：侧栏右键「在新标签页中打开」
-```
-tab.isPromoted = true
-hubFocusedAssistantTabId = ''（清空 Hub 焦点）
-setActiveTab(tabId)（激活独立 Tab）
-```
-- 提升后豁免 LRU 淘汰
-- Tab 栏出现该会话
+因此侧栏右键的「在新标签页中打开」、拖对话到 Tab 条 / 欢迎页这几个入口一并取消。对话的「多个」由最近对话列表表达，这已经够用。
 
-### 降级（关闭独立 Tab）
-
-关闭已提升 Tab 时：
-```
-tab.isPromoted = false（降级，非删除）
-tab 从 TabBar 消失，但仍存在于 terminalStore.tabs
-侧栏可重新打开该会话（历史记录仍在）
-```
+新会话一律进 Hub 焦点流，在最近对话列表里有位置、能切换、能退回。
 
 ---
 
@@ -290,7 +297,7 @@ tab 从 TabBar 消失，但仍存在于 terminalStore.tabs
 | `goToHome()` | 清空 activeTabId + hubFocusedAssistantTabId，完全回欢迎页（侧栏「新建对话」） |
 | `focusTaskArea()` | 退出联络/待办等可见面，切回任务区；**保留** hubFocusedAssistantTabId |
 | `openTodos()` | 打开待办面；清空 activeTabId，**保留** hubFocusedAssistantTabId |
-| `promoteConversationToTab(tabId)` | 提升为独立 Tab |
+| `promoteConversationToTab(tabId)` | 提升为独立 Tab（**已无用户入口**，仅 fork 继承路径保留） |
 | `openHistoryConversation(record)` | 从历史记录恢复会话到 Hub |
 | `createAssistantTab({ activate })` | 创建新本地助手 tab；`activate: false` = 不进 TabBar |
 | `setActiveTab(tabId)` | 激活 TabBar 可见 Tab（不清除 Hub 焦点） |

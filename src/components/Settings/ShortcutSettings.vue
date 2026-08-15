@@ -11,7 +11,8 @@ const isSteamBuild = __STEAM_BUILD__
 
 type ShortcutAction = keyof KeyboardShortcuts
 
-const AI_ACTIONS: ShortcutAction[] = ['newAssistantTab', 'toggleAiPanel', 'toggleKnowledge', 'aiDebugConsole', 'voiceInput']
+// newAssistantTab 不在此列：它已是「跟随当前位置新建」，无助手的 Steam 版仍能用它开终端
+const AI_ACTIONS: ShortcutAction[] = ['toggleAiPanel', 'toggleKnowledge', 'aiDebugConsole', 'voiceInput']
 
 const allActions: ShortcutAction[] = ([
   'newAssistantTab',

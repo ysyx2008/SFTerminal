@@ -259,20 +259,8 @@ export interface UserSkill {
 }
 
 // Agent 相关类型（从共享类型导入）
-import type { ExecutionMode, RemoteChannel, AgentStep, PendingConfirmation, IMProcessMode } from '@shared/types'
-export type { ExecutionMode, RemoteChannel, RiskLevel, AgentStep, PendingConfirmation, IMProcessMode } from '@shared/types'
-
-export interface AgentContext {
-  ptyId: string
-  terminalOutput: string[]
-  systemInfo: {
-    os: string
-    shell: string
-  }
-  hostId?: string
-  documentContext?: string
-  images?: string[]
-}
+import type { ExecutionMode, RemoteChannel, AgentStep, PendingConfirmation, IMProcessMode, AgentContext } from '@shared/types'
+export type { ExecutionMode, RemoteChannel, RiskLevel, AgentStep, PendingConfirmation, IMProcessMode, AgentContext } from '@shared/types'
 
 export interface AgentConfig {
   enabled?: boolean

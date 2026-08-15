@@ -1130,13 +1130,6 @@ export function useAgentMode(
     return items
   })
 
-  // 保存当前会话（供外部调用，如清空对话时）
-  // 注意：会话历史现在由后端 Agent 在 finalizeRun 时自动保存到 HistoryService
-  // 此方法保留接口但不再执行操作，避免前端重复保存
-  const saveCurrentSession = () => {
-    // 后端已在每次 run 结束时自动保存，无需前端再次保存
-  }
-
   // 运行 Agent 或发送补充消息
   const runAgent = async (
     overrideMessage?: string,
@@ -1200,9 +1193,15 @@ export function useAgentMode(
       tts.startNewTask()
     }
 
-    // 获取 Agent 上下文
+    // 获取 Agent 上下文。助手会话必须自报形态——漏了它，落盘的会话形态会被兜底成「本地终端」，
+    // 之后再也分不清这条对话到底来自终端还是助手
     const context = isAssistantMode
-      ? { mode: 'single' as const, terminalOutput: [] as string[], systemInfo: getLocalSystemInfo() } as any
+      ? {
+          mode: 'single' as const,
+          terminalOutput: [] as string[],
+          systemInfo: getLocalSystemInfo(),
+          terminalType: 'assistant' as const,
+        }
       : terminalStore.getAgentContext(tabId)
     // 终端模式下 ptyId 必须存在（分屏取激活窗格，单屏取 tab.ptyId）
     const runPtyId = isAssistantMode
@@ -1298,11 +1297,13 @@ export function useAgentMode(
         : undefined
 
       if (isAssistantMode && currentTab.value?.agentId) {
+        // 两个分支的判断条件不同，类型上收不窄，这里显式认回助手形状（终端分支同理）
+        const assistantContext = context as AgentContext
         result = await window.electronAPI.agent.runStandalone(
           currentTab.value.agentId,
           message,
           {
-            ...context,
+            ...assistantContext,
             hostId,
             documentContext,
             images: images.length > 0 ? images : undefined,
@@ -1318,13 +1319,16 @@ export function useAgentMode(
           activeProfileId.value || undefined
         )
       } else {
+        // 走到这里必是终端模式（上方已 return 掉拿不到终端上下文的情况），
+        // 但两个分支的判断条件不同，类型上收不窄，这里显式认回终端形状
+        const terminalContext = context as NonNullable<ReturnType<typeof terminalStore.getAgentContext>>
         // agentKey = tabId（Agent 索引主键），context.ptyId = 当前激活窗格 ptyId（Agent 操作目标）。
         // 这两个不再耦合：Agent 实例归 tab 所有，跨多个窗格的生命周期。
         result = await window.electronAPI.agent.run(
           tabId,
           message,
           {
-            ...context,
+            ...terminalContext,
             hostId,
             sshHost: currentTab.value?.sshConfig?.host,
             documentContext,
@@ -1700,12 +1704,7 @@ export function useAgentMode(
       // 任务在后台 tab 结束时，标签栏高亮（与待确认一致），便于多 tab 定位
       if (
         foundTabId &&
-        !isAssistantConversationSurfaceVisible(
-          foundTabId,
-          terminalStore.activeTabId,
-          terminalStore.hubFocusedAssistantTabId,
-          terminalStore.todosActive
-        )
+        !isAssistantConversationSurfaceVisible(foundTabId, terminalStore.conversationSurface)
       ) {
         terminalStore.setAgentCompletedUnseen(foundTabId, true)
       }
@@ -1724,12 +1723,7 @@ export function useAgentMode(
 
       if (
         foundTabId &&
-        !isAssistantConversationSurfaceVisible(
-          foundTabId,
-          terminalStore.activeTabId,
-          terminalStore.hubFocusedAssistantTabId,
-          terminalStore.todosActive
-        )
+        !isAssistantConversationSurfaceVisible(foundTabId, terminalStore.conversationSurface)
       ) {
         terminalStore.setAgentCompletedUnseen(foundTabId, true)
       }
@@ -2104,7 +2098,6 @@ export function useAgentMode(
     loadHistoryRecord,
     hasExistingConversation,
     formatHistoryTime,
-    saveCurrentSession,  // 保存当前会话（清空对话时调用）
     getAgentKey,  // 获取当前 tab 对应的 Agent 标识符
     // TTS 语音播报
     ttsIsSpeaking: tts.isSpeaking,

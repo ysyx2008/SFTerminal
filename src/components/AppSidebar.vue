@@ -1,0 +1,431 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import {
+  Eye,
+  Heart,
+  ListTodo,
+  MessageSquare,
+  MessagesSquare,
+  Settings,
+  SquareTerminal,
+} from 'lucide-vue-next'
+import { isOemFeatureEnabled } from '@shared/oem-features'
+import { isWorkbenchAvailable } from '../workbench/registry'
+import { useConfigStore } from '../stores/config'
+import { useTerminalStore } from '../stores/terminal'
+import { useAuthStore } from '../stores/auth'
+import { useTodoOverdueCount } from '../composables/useTodoOverdueCount'
+import { useWatchAnomalyCount } from '../composables/useWatchAnomalyCount'
+import RecentConversationsPanel from './RecentConversationsPanel.vue'
+import ConnectionStatusPopover from './ConnectionStatusPopover.vue'
+
+const props = defineProps<{
+  awakened: boolean
+}>()
+
+const emit = defineEmits<{
+  'open-todos': []
+  'open-watch': []
+  'open-awaken': []
+  /** tab：连接面板里「去设置」指向的具体页（渠道 / MCP / 浏览器助手） */
+  'open-connection': [tab?: string]
+  'open-settings': []
+  logout: []
+}>()
+
+const { t } = useI18n()
+const configStore = useConfigStore()
+const terminalStore = useTerminalStore()
+const authStore = useAuthStore()
+const { overdueCount, hasUnseenOverdue } = useTodoOverdueCount()
+const { anomalyCount: watchAnomalyCount } = useWatchAnomalyCount()
+
+const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
+const canShowAssistant = !isSteamBuild && isWorkbenchAvailable('assistant')
+const canShowCompanion = isWorkbenchAvailable('companion')
+const canShowTerminal = isWorkbenchAvailable('local') || isWorkbenchAvailable('ssh')
+const canShowAwaken = !isSteamBuild && isOemFeatureEnabled('awaken')
+const canShowWatch = !isSteamBuild && isOemFeatureEnabled('watch')
+
+/** Steam 版用独立品牌名 */
+const steamAppTitle = computed(() =>
+  (configStore.language || 'zh-CN').startsWith('zh') ? '旗鱼终端' : 'SFTerm'
+)
+
+/** 应用的名字只在这里露一次：秘书就是这个应用本身 */
+const secretaryName = computed(() => {
+  const name = configStore.agentName?.trim()
+  if (name) return name
+  return isSteamBuild ? steamAppTitle.value : t('app.title')
+})
+
+const secretaryInitial = computed(() => secretaryName.value.slice(0, 1))
+
+const appVersion = ref('')
+
+/**
+ * 副文案位给低频信息：常态显示版本号，
+ * 未觉醒时让位——那是个需要用户去做点什么的状态。
+ */
+const secretarySub = computed(() => {
+  if (canShowAwaken && !props.awakened) return t('shell.notAwakened')
+  return appVersion.value ? `v${appVersion.value}` : ''
+})
+
+/** 觉醒状态不再常驻占一行，悬停时仍能确认 */
+const secretaryTitle = computed(() => {
+  if (!canShowAwaken) return secretaryName.value
+  const state = props.awakened ? t('shell.awakened') : t('shell.notAwakened')
+  return `${secretaryName.value} · ${state}`
+})
+
+const place = computed(() => terminalStore.shellPlace)
+
+/**
+ * 「新对话」只在主区真是空白起点时高亮。
+ * 正在看某条会话时高亮落在最近对话列表里那条，避免两处同时亮。
+ */
+const atNewChat = computed(() =>
+  place.value === 'tasks' && !terminalStore.activeTabId && !terminalStore.hubFocusedTab
+)
+
+const menuOpen = ref(false)
+const menuRef = ref<HTMLElement | null>(null)
+
+const secretaryHasBadge = computed(() =>
+  hasUnseenOverdue.value || watchAnomalyCount.value > 0
+)
+
+function closeMenu() {
+  menuOpen.value = false
+}
+
+function onDocClick(e: MouseEvent) {
+  if (!menuRef.value?.contains(e.target as Node)) closeMenu()
+}
+
+onMounted(async () => {
+  document.addEventListener('click', onDocClick)
+  try {
+    appVersion.value = await window.electronAPI.app.getVersion()
+  } catch { /* 版本号拿不到就不显示，不影响其他 */ }
+})
+onUnmounted(() => document.removeEventListener('click', onDocClick))
+
+/** 点「新对话」就是开新的：清掉正在看的会话，主区回到空白起点 */
+function goTasks() {
+  terminalStore.goToHome()
+}
+
+function goCompanion() {
+  terminalStore.focusCompanionPlace()
+}
+
+function goTerminal() {
+  terminalStore.focusTerminalPlace()
+}
+
+function pick(action: 'open-todos' | 'open-watch' | 'open-awaken' | 'open-settings') {
+  closeMenu()
+  if (action === 'open-todos') emit('open-todos')
+  else if (action === 'open-watch') emit('open-watch')
+  else if (action === 'open-awaken') emit('open-awaken')
+  else emit('open-settings')
+}
+</script>
+
+<template>
+  <div class="app-sidebar">
+    <nav class="place-nav" aria-label="shell">
+      <button
+        v-if="canShowAssistant"
+        type="button"
+        class="place-item"
+        :class="{ active: atNewChat }"
+        @click="goTasks"
+      >
+        <MessageSquare :size="16" :stroke-width="1.75" />
+        <span>{{ t('shell.newChat') }}</span>
+        <span v-if="terminalStore.hasTasksAreaAttention" class="dot" />
+      </button>
+      <button
+        v-if="canShowCompanion"
+        type="button"
+        class="place-item"
+        :class="{ active: place === 'companion' }"
+        @click="goCompanion"
+      >
+        <MessagesSquare :size="16" :stroke-width="1.75" />
+        <span>{{ t('shell.companion') }}</span>
+        <span v-if="terminalStore.hasCompanionAttention" class="dot" />
+      </button>
+      <button
+        v-if="canShowTerminal"
+        type="button"
+        class="place-item"
+        :class="{ active: place === 'terminal' }"
+        @click="goTerminal"
+      >
+        <SquareTerminal :size="16" :stroke-width="1.75" />
+        <span>{{ t('shell.terminal') }}</span>
+        <span v-if="terminalStore.hasTerminalPlaceAttention" class="dot" />
+      </button>
+    </nav>
+
+    <div v-if="canShowAssistant" class="recent-slot">
+      <RecentConversationsPanel embedded />
+    </div>
+
+    <div ref="menuRef" class="secretary">
+      <div class="secretary-row">
+        <button type="button" class="secretary-btn" :title="secretaryTitle" @click.stop="menuOpen = !menuOpen">
+          <span class="avatar" :class="{ awakened: props.awakened }">
+            {{ secretaryInitial }}
+            <span v-if="secretaryHasBadge" class="avatar-dot" />
+          </span>
+          <span class="secretary-meta">
+            <span class="secretary-name">{{ secretaryName }}</span>
+            <span v-if="secretarySub" class="secretary-sub">{{ secretarySub }}</span>
+          </span>
+        </button>
+        <!-- 装备位：连接了多少外部系统。将来的技能也落在这一格。
+             点这里先收起秘书菜单，避免两个浮层同时挂着 -->
+        <span v-if="canShowAssistant" class="equip-slot" @click="closeMenu">
+          <ConnectionStatusPopover
+            variant="sidebar"
+            @open-settings="(tab?: string) => emit('open-connection', tab)"
+          />
+        </span>
+      </div>
+
+      <div v-if="menuOpen" class="secretary-menu" @click.stop>
+        <button type="button" class="menu-item" @click="pick('open-todos')">
+          <ListTodo :size="14" />
+          <span>{{ t('shell.todos') }}</span>
+          <span v-if="overdueCount > 0" class="menu-badge">{{ overdueCount > 99 ? '99+' : overdueCount }}</span>
+        </button>
+        <button v-if="canShowWatch" type="button" class="menu-item" @click="pick('open-watch')">
+          <Eye :size="14" />
+          <span>{{ t('shell.watch') }}</span>
+          <span v-if="watchAnomalyCount > 0" class="menu-badge">{{ watchAnomalyCount > 99 ? '99+' : watchAnomalyCount }}</span>
+        </button>
+        <button v-if="canShowAwaken" type="button" class="menu-item" @click="pick('open-awaken')">
+          <Heart :size="14" :fill="props.awakened ? 'currentColor' : 'none'" />
+          <span>{{ t('shell.awaken') }}</span>
+        </button>
+        <button type="button" class="menu-item" @click="pick('open-settings')">
+          <Settings :size="14" />
+          <span>{{ t('shell.settings') }}</span>
+        </button>
+        <button
+          v-if="authStore.showSoftEntry && authStore.isAuthenticated"
+          type="button"
+          class="menu-item menu-item--danger"
+          @click="closeMenu(); emit('logout')"
+        >
+          <span>{{ t('header.ssoLogout') }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.app-sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.place-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px 6px;
+}
+
+.place-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.place-item:hover {
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+  color: var(--text-primary);
+}
+
+.place-item.active {
+  background: var(--bg-active, rgba(127, 127, 127, 0.18));
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.recent-slot {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.secretary {
+  position: relative;
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* 身份在左、装备在右：两个独立按钮并排，各点各的 */
+.secretary-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.equip-slot {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.secretary-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.secretary-btn:hover {
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+
+.avatar {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary, rgba(127, 127, 127, 0.2));
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.avatar.awakened {
+  color: var(--brand-vital, #3d9a6a);
+  box-shadow: 0 0 0 1px var(--brand-vital, #3d9a6a);
+}
+
+/* 待办逾期 / 关切异常打在头像上，右侧让给装备位 */
+.avatar-dot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #7aa2f7);
+  box-shadow: 0 0 0 2px var(--bg-secondary);
+}
+
+.secretary-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.secretary-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secretary-sub {
+  font-size: 11px;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.secretary-menu {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 4px);
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  z-index: 20;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.menu-item:hover {
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+
+.menu-item--danger {
+  color: var(--text-secondary);
+}
+
+.menu-badge {
+  margin-left: auto;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--danger, #c45c5c);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.dot {
+  position: absolute;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent, #7aa2f7);
+}
+</style>

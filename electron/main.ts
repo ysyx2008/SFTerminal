@@ -1163,7 +1163,8 @@ function createWindow() {
     // macOS: 隐藏原生标题栏但保留红绿灯按钮（浮在内容上）
     ...(process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset' as const,
-      trafficLightPosition: { x: 8, y: 8 }
+      // y 让红绿灯（直径 12）垂直居中于顶条：(--shell-top-height 34 - 12) / 2
+      trafficLightPosition: { x: 8, y: 11 }
     } : {}),
     // Windows: 完全无边框（不用 titleBarOverlay，因为系统按钮区无法被应用 DOM 覆盖，
     // 全屏模态时会和模态自身关闭按钮挤一起）。改由渲染端 WindowControls.vue 自绘三按钮，

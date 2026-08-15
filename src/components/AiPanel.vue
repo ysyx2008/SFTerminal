@@ -6,7 +6,7 @@
  */
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted, toRef, nextTick, withDefaults } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Upload, Trash2, X, HelpCircle, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-vue-next'
+import { Upload, X, HelpCircle, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-vue-next'
 import { Virtualizer } from 'virtua/vue'
 import type { VirtualizerHandle } from 'virtua/vue'
 import type { MessageScrollerHandle } from '../types/message-scroller'
@@ -75,11 +75,6 @@ const props = withDefaults(defineProps<{
   tabActive: true,
 })
 
-// Emits
-const emit = defineEmits<{
-  close: []
-}>()
-
 // i18n
 const { t, tm } = useI18n()
 
@@ -100,14 +95,6 @@ const isCompanionTab = computed(() => {
   const tab = terminalStore.tabs.find(t => t.id === props.tabId)
   return tab?.type === 'assistant' && tab?.agentId === COMPANION_AGENT_KEY
 })
-
-const handleClose = () => {
-  if (isStandaloneAssistant.value) {
-    terminalStore.closeTab(props.tabId)
-  } else if (terminalStore.tabs.some(t => t.id === props.tabId)) {
-    emit('close')
-  }
-}
 
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
@@ -690,7 +677,6 @@ const {
   loadHistoryRecord,
   hasExistingConversation,
   formatHistoryTime,
-  saveCurrentSession,
   getAgentKey,
   ttsIsSpeaking,
   ttsStop,
@@ -927,65 +913,6 @@ const handleLoadHistory = async (row: AgentRecord | AgentHistorySummary) => {
   }
   await loadHistoryRecord(record)
 }
-
-// ==================== 消息清空 ====================
-
-// 清空对话确认框状态
-const showClearConfirm = ref(false)
-
-// 请求清空对话（如果 Agent 正在执行，需要用户确认）
-const requestClearMessages = async () => {
-  if (isAgentRunning.value) {
-    // Agent 正在执行，需要确认
-    showClearConfirm.value = true
-  } else {
-    // Agent 未运行，直接清空
-    await doClearMessages()
-  }
-}
-
-// 确认清空对话（先停止 Agent，再清空）
-const confirmClearMessages = async () => {
-  showClearConfirm.value = false
-  
-  // 如果 Agent 正在执行，先停止它
-  if (isAgentRunning.value) {
-    await abortAgent()
-  }
-  
-  // 然后清空对话
-  await doClearMessages()
-}
-
-// 取消清空对话
-const cancelClearMessages = () => {
-  showClearConfirm.value = false
-}
-
-// 执行清空对话（包括 Agent 状态和历史）
-const doClearMessages = async () => {
-  if (currentTabId.value) {
-    // 在清空之前，保存当前会话到历史记录（会话级保存）
-    saveCurrentSession()
-    terminalStore.clearAiMessages(currentTabId.value)
-    terminalStore.clearAgentState(currentTabId.value, false)  // 不保留历史
-    
-    // 清空后端的任务历史记忆
-    const key = getAgentKey()
-    if (key) {
-      try {
-        await window.electronAPI.agent.clearHistory(key)
-      } catch (e) {
-        console.warn('[AiPanel] Failed to clear agent history:', e)
-      }
-    }
-  }
-  // 清空上传的文档
-  clearUploadedDocs()
-}
-
-// 兼容旧的 clearMessages（现在改为 requestClearMessages）
-const clearMessages = requestClearMessages
 
 // ==================== 确认框辅助函数 ====================
 
@@ -1865,12 +1792,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
       cancelFreeMode()
       return
     }
-    if (showClearConfirm.value) {
-      e.preventDefault()
-      e.stopImmediatePropagation()
-      cancelClearMessages()
-      return
-    }
     if (showHistoryModal.value) {
       e.preventDefault()
       e.stopImmediatePropagation()
@@ -2127,31 +2048,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         </div>
       </div>
 
-      <!-- 清空对话确认对话框（Agent 执行中） -->
-      <div v-if="showClearConfirm" class="free-mode-confirm-overlay">
-        <div class="free-mode-confirm-dialog clear-confirm-dialog">
-          <div class="confirm-dialog-header">
-            <span class="confirm-dialog-icon">⚠️</span>
-            <span class="confirm-dialog-title">{{ t('ai.clearConfirmTitle') }}</span>
-          </div>
-          <div class="confirm-dialog-content">
-            <p>{{ t('ai.clearConfirmDesc') }}</p>
-            <ul class="confirm-dialog-warnings">
-              <li>{{ t('ai.clearConfirmWarning1') }}</li>
-              <li>{{ t('ai.clearConfirmWarning2') }}</li>
-            </ul>
-          </div>
-          <div class="confirm-dialog-actions">
-            <button class="btn btn-sm btn-outline" @click="cancelClearMessages">
-              {{ t('common.cancel') }}
-            </button>
-            <button class="btn btn-sm btn-danger" @click="confirmClearMessages">
-              {{ t('ai.clearConfirmButton') }}
-            </button>
-          </div>
-        </div>
-      </div>
-
       <!-- 系统环境信息 + Agent 设置 -->
       <div class="system-info-bar">
         <!-- Agent 模式设置 -->
@@ -2231,15 +2127,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
           <div v-else class="popover-empty">
             {{ t('ai.agentWelcome.notProbed') }}
           </div>
-        </div>
-        <!-- 任务 / 独立助手：关会话走侧栏或 Tab 栏，顶栏清空/关闭易误触，不展示 -->
-        <div v-if="!isStandaloneAssistant || isCompanionTab" class="ai-header-actions">
-          <button class="btn-icon btn-icon-sm" @click="clearMessages" :title="t('ai.clearChat')">
-            <Trash2 :size="13" />
-          </button>
-          <button class="btn-icon btn-icon-sm" @click="handleClose" :title="t('ai.closePanel')">
-            <X :size="13" />
-          </button>
         </div>
       </div>
 
@@ -3044,15 +2931,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   white-space: nowrap;
   position: relative;
   flex-shrink: 0;
-}
-
-/* ai-header-actions 固定在最右侧（无论 system-info-left 是否渲染） */
-.ai-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  margin-left: auto;
 }
 
 .system-info-left {

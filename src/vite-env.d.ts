@@ -29,6 +29,7 @@ type StepProgress = import('@shared/types').StepProgress
 type AgentPlanStep = import('@shared/types').AgentPlanStep
 type AgentPlan = import('@shared/types').AgentPlan
 type AgentStep = import('@shared/types').AgentStep
+type AgentContext = import('@shared/types').AgentContext
 type PendingConfirmation = import('@shared/types').PendingConfirmation
 type HostProfile = import('@shared/types').HostProfile
 type PlanStepStatus = import('@shared/types').PlanStepStatus
@@ -653,18 +654,8 @@ interface Window {
       run: (
         ptyId: string,
         message: string,
-        context: {
-          ptyId: string
-          terminalOutput: string[]
-          systemInfo: { os: string; shell: string }
-          terminalType: TerminalType
-          hostId?: string
-          sshHost?: string
-          documentContext?: string
-          images?: string[]
-          sessionId?: string
-          sessionStartTime?: number
-        },
+        /** 终端模式必须指明操作哪个窗格 */
+        context: AgentContext & { ptyId: string },
         config?: {
           enabled?: boolean
           maxSteps?: number
@@ -678,19 +669,7 @@ interface Window {
       runStandalone: (
         agentId: string,
         message: string,
-        context: {
-          ptyId?: string
-          terminalOutput?: string[]
-          systemInfo?: { os: string; shell: string }
-          terminalType?: TerminalType
-          hostId?: string
-          sshHost?: string
-          documentContext?: string
-          images?: string[]
-          remoteChannel?: RemoteChannel
-          sessionId?: string
-          sessionStartTime?: number
-        },
+        context: AgentContext,
         config?: {
           executionMode?: ExecutionMode
           commandTimeout?: number

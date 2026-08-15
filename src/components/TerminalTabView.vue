@@ -175,16 +175,16 @@ watch(terminalPanes, (panes) => {
   <div ref="containerRef" class="terminal-tab" :class="`ai-panel-${aiPanelPosition}`">
     <template v-if="!isSteamBuild && aiPanelMounted">
       <div
-        v-show="showAiPanel"
         class="tab-ai-sidebar"
-        :style="{ width: aiPanelWidth + 'px' }"
+        :class="{ 'is-collapsed': !showAiPanel, 'is-resizing': isResizing }"
+        :style="{ '--ai-panel-width': aiPanelWidth + 'px', width: showAiPanel ? aiPanelWidth + 'px' : '0px' }"
+        :inert="showAiPanel ? undefined : true"
       >
         <AiPanel
           ref="aiPanelRef"
           :tab-id="tab.id"
           :visible="showAiPanel"
           :tab-active="isActive"
-          @close="showAiPanel = false"
         />
         <!-- 拖拽手柄：绝对定位覆盖在 sidebar 朝 terminal 一侧的边缘，不占据 flex 流空间，
              这样 sidebar 与 terminal 视觉上紧贴，hover 时才显示拖拽提示 -->
@@ -272,6 +272,31 @@ watch(terminalPanes, (panes) => {
   flex-direction: column;
   flex-shrink: 0;
   position: relative;
+  /* 收起是把面板推出视野，不是让它凭空消失：宽度归零、内容被裁掉。
+     收起后元素仍留在 DOM 里（display:none 没法过渡），靠 inert 挡住键盘焦点。 */
+  overflow: hidden;
+  transition: width 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 内容按展开宽度定住，收缩时是被裁走而不是挤成一团；拖宽手柄贴着边缘，不参与定宽 */
+.tab-ai-sidebar > :not(.resize-handle) {
+  width: var(--ai-panel-width);
+}
+
+/* 折叠到零：最小宽度、内边距、边框和那条装饰线都得让开，否则会留下一道缝 */
+.tab-ai-sidebar.is-collapsed {
+  min-width: 0;
+  padding: 0;
+  border-width: 0;
+}
+
+.tab-ai-sidebar.is-collapsed::before {
+  display: none;
+}
+
+/* 拖宽时宽度每帧都在变，过渡会让它跟不上手 */
+.tab-ai-sidebar.is-resizing {
+  transition: none;
 }
 
 /* 在右侧时换为左边框，左右布局完全镜像 */

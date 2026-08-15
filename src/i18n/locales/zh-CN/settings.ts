@@ -906,7 +906,7 @@ export default {
     description: '自定义应用快捷键。点击快捷键区域后按下新的组合键即可修改。',
     actions: {
       newLocalTerminal: '新建本地终端',
-      newAssistantTab: '新建 AI 助手',
+      newAssistantTab: '新建（终端里开终端，其他地方开新对话）',
       newSshConnection: '新建 SSH 连接',
       batchCommand: '批量操作',
       openFileManager: '打开文件管理器',

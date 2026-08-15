@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Monitor, Bot, Settings, X, Loader2, Heart, Menu as MenuIcon } from 'lucide-vue-next'
+import { X, Loader2, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-vue-next'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from './stores/terminal'
 import { initSplitPaneHandler, disposeSplitPaneHandler } from './services/split-pane-handler'
 import { initWorkbenchHandler, disposeWorkbenchHandler } from './services/workbench-handler'
@@ -12,10 +12,10 @@ import { resolveWorkbenchRenderer, resolveWorkbenchKind, isWorkbenchAvailable } 
 import { bootstrapWorkbenchCapabilities } from './workbench/bootstrap'
 import { isOemFeatureEnabled } from '@shared/oem-features'
 import SessionManager from './components/SessionManager.vue'
-import RecentConversationsPanel from './components/RecentConversationsPanel.vue'
+import AppSidebar from './components/AppSidebar.vue'
+import TerminalPlaceEmpty from './components/TerminalPlaceEmpty.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
 import FileExplorer from './components/FileExplorer/FileExplorer.vue'
-import ConnectionStatusPopover from './components/ConnectionStatusPopover.vue'
 import Awaken from './components/Awaken.vue'
 import WatchPanel from './components/Awaken/WatchPanel.vue'
 import WindowControls from './components/WindowControls.vue'
@@ -55,7 +55,6 @@ const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
 /** 觉醒 / 关切：已拆成两个独立面板，OEM 特性各自控制入口 */
 const canShowAwaken = !isSteamBuild && isOemFeatureEnabled('awaken')
 const canShowWatch = !isSteamBuild && isOemFeatureEnabled('watch')
-const canShowAssistantUi = !isSteamBuild && isWorkbenchAvailable('assistant')
 
 // 知识库索引重建状态
 // cause 区分了为什么会重建，决定显示哪种文案：
@@ -126,19 +125,6 @@ function knowledgeText(cause?: 'dimension_mismatch' | 'data_corrupted' | 'missin
 const terminalStore = useTerminalStore()
 const configStore = useConfigStore()
 
-// Steam 版使用独立品牌名
-const steamAppTitle = computed(() => {
-  const lang = configStore.language || 'zh-CN'
-  return lang.startsWith('zh') ? '旗鱼终端' : 'SFTerm'
-})
-
-// 应用版本号（异步从主进程拉取）
-const appVersion = ref('')
-const appTitleText = computed(() => {
-  const customName = configStore.agentName?.trim()
-  if (customName) return customName
-  return isSteamBuild ? steamAppTitle.value : t('app.title')
-})
 const { show: showConfirmDialog, options: confirmOptions, handleConfirm, handleCancel, handleNeutral, handleClose } = useConfirm()
 const { start: startUpdaterPrompts, stop: stopUpdaterPrompts } = useAppUpdaterPrompts()
 
@@ -177,7 +163,7 @@ function writeCachedRecallSidebarWidth(width: number): void {
 const recallSidebarWidth = ref(readCachedRecallSidebarWidth())
 const isRecallSidebarResizing = ref(false)
 const recallSidebarCollapsed = ref(
-  (() => { try { return localStorage.getItem('recallSidebarCollapsed') === '1' } catch { return false } })()
+  (() => { try { return localStorage.getItem('appSidebarCollapsed') === '1' || localStorage.getItem('recallSidebarCollapsed') === '1' } catch { return false } })()
 )
 
 const showSettings = ref(false)
@@ -298,7 +284,7 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
 
   if (matchAccelerator(event, shortcuts.newAssistantTab)) {
     event.preventDefault()
-    if (!isSteamBuild) openAssistantFromWelcome()
+    newInPlace()
     return
   }
 
@@ -418,6 +404,9 @@ const handleCloseShortcut = async () => {
   } else if (terminalStore.todosActive) {
     // 待办固定面与联络一致：Cmd+W 退回欢迎页，不关窗口
     terminalStore.goToHome()
+  } else if (terminalStore.terminalPlaceActive) {
+    // 空终端页：与待办一样退回欢迎页，不关窗口
+    terminalStore.goToHome()
   } else if (terminalStore.hubFocusedAssistantTabId) {
     // Hub 焦点模式（正在看某个对话）：Cmd+W 退回欢迎页，不关窗口
     terminalStore.goToHome()
@@ -509,10 +498,6 @@ onMounted(async () => {
   } catch (e) {
     log.warn('auth init failed:', e)
   }
-
-  try {
-    appVersion.value = await window.electronAPI.app.getVersion()
-  } catch { /* ignore */ }
 
   // 同步全屏状态：初始查询 + 监听变化（macOS 全屏会隐藏红绿灯，需要调整 header 左侧留白）
   try {
@@ -903,9 +888,7 @@ onMounted(async () => {
       // 用户正在看这个对话（活跃 Tab 或任务区内 Hub 焦点），无需标记未读
       const isVisible = isAssistantConversationSurfaceVisible(
         foundTabId,
-        terminalStore.activeTabId,
-        terminalStore.hubFocusedAssistantTabId,
-        terminalStore.todosActive
+        terminalStore.conversationSurface
       )
       if (isVisible) return
       if (data.pendingUserMessages && data.pendingUserMessages.length > 0) return
@@ -924,9 +907,7 @@ onMounted(async () => {
       if (!foundTabId) return
       const isVisible = isAssistantConversationSurfaceVisible(
         foundTabId,
-        terminalStore.activeTabId,
-        terminalStore.hubFocusedAssistantTabId,
-        terminalStore.todosActive
+        terminalStore.conversationSurface
       )
       if (isVisible) return
       terminalStore.setAgentCompletedUnseen(foundTabId, true)
@@ -1102,26 +1083,77 @@ const initializeApp = async () => {
 const activeSurfaceTabId = computed(
   () => terminalStore.activeTabId || terminalStore.hubFocusedTab?.id || ''
 )
-// 是否显示欢迎页：没有任何 surface tab、且非待办/巡检时显示
+const shellPlace = computed(() => terminalStore.shellPlace)
+const showTerminalEmpty = computed(() =>
+  !showSmartPatrol.value && shellPlace.value === 'terminal' && !terminalStore.tabs.some(t =>
+    t.id === terminalStore.activeTabId && (t.type === 'local' || t.type === 'ssh')
+  )
+)
+const showTerminalTabStrip = computed(() =>
+  shellPlace.value === 'terminal' && terminalStore.terminalTabs.length > 0
+)
+// 是否显示欢迎页：任务区且没有任何 surface tab、且非待办/巡检/空终端页
 const showWelcomePage = computed(() =>
-  !showSmartPatrol.value && !terminalStore.todosActive && !activeSurfaceTabId.value
+  !showSmartPatrol.value &&
+  !terminalStore.todosActive &&
+  !showTerminalEmpty.value &&
+  !activeSurfaceTabId.value
 )
-/** 主工作区显示某个 tab 工作台（欢迎页 / 智能巡检 / 待办时隐藏，但 tab 组件保持挂载） */
+/**
+ * 主区要不要壳层顶条：装终端 Tab 条时要；
+ * 欢迎页 / 空终端 / 待办这三个页面自己没有第一排，需要一条透明区兜住窗口拖拽；
+ * 助手工作台与巡检有自己的第一排，让它们直接顶到窗口上沿。
+ *
+ * Windows 例外——三个自绘窗口按钮宽 138px，而产出物面板收窄后只剩 40px，
+ * 浮上去必然压住它的展开按钮，所以 Windows 一律保留这条顶条来托住按钮。
+ */
+const needsShellTop = computed(() =>
+  isWin ||
+  showTerminalTabStrip.value ||
+  showWelcomePage.value ||
+  showTerminalEmpty.value ||
+  terminalStore.todosActive
+)
+/** 主工作区显示某个 tab 工作台（欢迎页 / 智能巡检 / 待办 / 空终端时隐藏，但 tab 组件保持挂载） */
 const showTabWorkbench = computed(
-  () => !showSmartPatrol.value && !terminalStore.todosActive && !showWelcomePage.value
+  () => !showSmartPatrol.value && !terminalStore.todosActive && !showWelcomePage.value && !showTerminalEmpty.value
 )
-// 最近对话侧栏：Hub 视图常驻；独立终端/助手/待办全屏时隐藏
-const showRecallSidebar = computed(() =>
-  !terminalStore.activeTabId && !showSmartPatrol.value && !terminalStore.todosActive && canShowAssistantUi
+// 主导航侧栏：未收起时始终在
+const showRecallSidebar = computed(() => !recallSidebarCollapsed.value)
+
+// 主机管理侧栏：叠在主导航侧栏上时与它同宽，独占最左时用默认宽度
+const hostSidebarWidth = computed(() =>
+  showRecallSidebar.value ? `${recallSidebarWidth.value}px` : 'var(--sidebar-width)'
+)
+
+const sidebarToggleAttention = computed(() =>
+  recallSidebarCollapsed.value && (
+    terminalStore.hasTasksAreaAttention ||
+    terminalStore.hasCompanionAttention ||
+    terminalStore.hasTerminalPlaceAttention
+  )
 )
 /** 欢迎页是否真正展示给用户（启动完成 + 无全屏遮挡），用于控制首次启动入场动画 */
 const welcomePageReady = computed(
   () => welcomeUiReady.value && showWelcomePage.value && !isFullScreenOverlayOpen.value
 )
-// 从欢迎页打开助手（新建独立 tab 并激活，与 Tab 栏「新建助手」一致）
+/**
+ * 从欢迎页打开助手：新会话走 Hub 焦点流，在侧栏最近对话里有位置、可切换、可退回。
+ * 不能提升为独立 tab —— 顶栏 Tab 条已撤，提升出来的助手页没有任何标签归属。
+ */
 const openAssistantFromWelcome = () => {
   if (!isWorkbenchAvailable('assistant')) return
-  terminalStore.createAssistantTab({ isPromoted: true, activate: true })
+  const id = terminalStore.createAssistantTab({ activate: false })
+  terminalStore.focusHubConversation(id)
+}
+
+/** 新建快捷键：在当前这个地方新建一个——终端里开本机终端，其他地方回到新对话的空白起点 */
+const newInPlace = () => {
+  if (terminalStore.shellPlace === 'terminal' || !isWorkbenchAvailable('assistant')) {
+    if (isWorkbenchAvailable('local')) terminalStore.createTab('local')
+    return
+  }
+  terminalStore.goToHome()
 }
 
 // 从欢迎页打开本地终端
@@ -1152,7 +1184,7 @@ const openSshFromWelcome = async (session: SshSession) => {
   })
 }
 
-// 从欢迎页打开会话管理器
+// 从欢迎页打开会话管理器：用户意图明确是挑主机连接，直接开主机管理，不绕经空终端页
 const openSessionManagerFromWelcome = () => {
   openHostSidebar()
 }
@@ -1208,8 +1240,12 @@ const openHostSidebar = () => {
 
 const toggleRecallSidebarCollapsed = () => {
   recallSidebarCollapsed.value = !recallSidebarCollapsed.value
-  try { localStorage.setItem('recallSidebarCollapsed', recallSidebarCollapsed.value ? '1' : '0') } catch { /* ignore */ }
-  window.electronAPI.config.set('recallSidebarCollapsed', recallSidebarCollapsed.value).catch(() => {})
+  try {
+    localStorage.setItem('appSidebarCollapsed', recallSidebarCollapsed.value ? '1' : '0')
+    // 旧键只写不读，为的是用户降级回旧版本时侧栏状态还在；等不再支持降级即可删
+    localStorage.setItem('recallSidebarCollapsed', recallSidebarCollapsed.value ? '1' : '0')
+  } catch { /* ignore */ }
+  window.electronAPI.config.set('appSidebarCollapsed', recallSidebarCollapsed.value).catch(() => {})
 }
 
 const handleRecallSidebarResize = (e: MouseEvent) => {
@@ -1256,6 +1292,13 @@ const toggleAiPanel = () => {
   getActiveTabView()?.toggleAiPanel()
 }
 
+// 开关画的是「收起」还是「展开」，得看当前终端的侧栏开着没
+const aiPanelVisible = computed(() => {
+  const id = terminalStore.activeTabId
+  if (!isTerminalTab(id)) return false
+  return !!tabViewRefs.value[id]?.showAiPanel
+})
+
 // 确保指定 tab 的 AI 面板可见
 function ensureAiPanel(tabId?: string) {
   const id = tabId || terminalStore.activeTabId
@@ -1288,6 +1331,13 @@ watch(() => Object.keys(terminalStore.pendingSchedulerTasks), (tabIds) => {
   for (const tabId of tabIds) {
     ensureAiPanel(tabId)
   }
+})
+
+// 从最近对话点开终端会话：切过去还得把 AI 侧栏掀开，否则看不到那条对话
+watch(() => terminalStore.terminalAiPanelRevealSeq, () => {
+  const tabId = terminalStore.terminalAiPanelRevealTabId
+  if (!tabId) return
+  nextTick(() => ensureAiPanel(tabId))
 })
 
 // 同步终端标签页状态到菜单栏（控制文件管理器等菜单项的启用/禁用）
@@ -1332,7 +1382,7 @@ const handleMenuCommand = async (command: string) => {
       terminalStore.createTab('local')
       break
     case 'newAssistantTab':
-      if (!isSteamBuild) openAssistantFromWelcome()
+      newInPlace()
       break
     case 'newSshConnection':
       openHostSidebar()
@@ -1443,102 +1493,55 @@ onUnmounted(() => {
       'is-mac': isMac,
       'is-win': isWin,
       'is-fullscreen': isFullScreen,
+      'nav-collapsed': !showRecallSidebar,
+      'main-leftmost': !showRecallSidebar && !showSidebar,
     }"
     :data-ui-theme="currentUiTheme"
     :data-color-scheme="currentColorScheme"
   >
-    <!-- 顶部工具栏 -->
-    <header class="app-header">
-      <div class="header-left">
-        <!-- Windows 汉堡菜单：替代 frame:false 下消失的原生菜单栏，弹出 menuService 注册的应用菜单。
-             Alt 键也可唤起（见 handleGlobalKeydown）。其他平台用各自原生菜单（macOS 全局菜单栏 / Linux frame 内菜单栏），不渲染本按钮。 -->
-        <button
-          v-if="isWin"
-          ref="appMenuBtnRef"
-          class="btn-icon btn-icon-header app-menu-btn"
-          @click="openAppMenuFromButton"
-          :title="t('header.appMenu')"
-        >
-          <MenuIcon :size="18" />
-        </button>
-        <span class="app-title">
-          {{ appTitleText }}<span v-if="appVersion" class="app-version">v{{ appVersion }}</span>
-        </span>
-      </div>
-      <div class="header-center">
-        <TabBar @open-ssh="openHostSidebar" />
-      </div>
-      <div class="header-right">
-        <template v-if="canShowAssistantUi">
-          <button v-if="hasTerminalTab" class="btn-icon btn-icon-header" @click="toggleAiPanel" :title="t('header.aiAssistant')">
-            <Bot :size="18" />
-          </button>
-        </template>
-        <button
-          v-if="isWorkbenchAvailable('ssh') || isWorkbenchAvailable('local')"
-          class="btn-icon btn-icon-header"
-          @click="toggleSidebar"
-          :title="t('header.hostManager')"
-        >
-          <Monitor :size="18" />
-        </button>
-        <template v-if="canShowAwaken || canShowWatch || canShowAssistantUi">
-          <button
-            v-if="canShowAwaken"
-            class="btn-icon btn-icon-header"
-            :class="{ 'awakened-active': isAwakened }"
-            @click="showWatchPanel = false; showAwaken = true"
-            :title="t('awaken.title') + ' — ' + t('awaken.description')"
-          >
-            <Heart :size="18" fill="currentColor" />
-          </button>
-          <ConnectionStatusPopover v-if="canShowAssistantUi" @open-settings="openConnectionSettings" />
-        </template>
-        <button class="btn-icon btn-icon-header" @click="showSettings = true" :title="t('header.settings')">
-          <Settings :size="18" />
-        </button>
-        <template v-if="authStore.showSoftEntry">
-          <button
-            v-if="!authStore.isAuthenticated"
-            class="btn-icon btn-icon-header sso-soft-btn"
-            :disabled="authStore.loading"
-            :title="t('header.ssoLogin')"
-            @click="onSsoSoftLogin"
-          >
-            {{ t('header.ssoLogin') }}
-          </button>
-          <button
-            v-else
-            class="btn-icon btn-icon-header sso-soft-btn"
-            :title="authStore.user?.email || authStore.user?.name || t('header.ssoLogout')"
-            @click="onSsoSoftLogout"
-          >
-            {{ authStore.user?.name || authStore.user?.email || t('header.ssoLogout') }}
-          </button>
-        </template>
-        <!-- Windows 自绘标题栏按钮（最小化 / 最大化 / 关闭）：仅 Win 平台 + 非全屏时显示。
-             全屏模态打开时，模态全屏覆盖会自动遮住这三个按钮，模态自带的 X 是唯一可见关闭入口。 -->
-        <WindowControls v-if="isWin && !isFullScreen" />
-      </div>
-    </header>
-
-    <!-- 主体内容 -->
+    <!-- 主体内容：不再有全宽标题栏，侧栏与主区各有自己的顶条 -->
     <div class="app-body">
-      <!-- 左侧边栏 - 最近对话（Hub 视图常驻，可折叠） -->
+      <!-- 主导航侧栏：新对话 / 联络 / 终端 + 最近对话 + 秘书 -->
       <aside
-        v-show="showRecallSidebar"
-        class="sidebar sidebar--recall"
-        :class="{ 'sidebar--recall-collapsed': recallSidebarCollapsed }"
-        :style="recallSidebarCollapsed ? undefined : { width: `${recallSidebarWidth}px` }"
+        class="sidebar sidebar--recall sidebar--app"
+        :class="{ 'is-collapsed': !showRecallSidebar, 'is-resizing': isRecallSidebarResizing }"
+        :style="{ '--sidebar-panel-width': `${recallSidebarWidth}px`, width: showRecallSidebar ? `${recallSidebarWidth}px` : '0px' }"
+        :inert="showRecallSidebar ? undefined : true"
       >
+        <!-- 侧栏顶：macOS 红绿灯坐在这里，Windows 是汉堡菜单 + 开关 -->
+        <div class="shell-top shell-top--sidebar">
+          <!-- 侧栏收起后仍在 DOM 里（为了折叠动画），汉堡按钮必须与主区那个互斥渲染，否则 ref 会指向看不见的那个 -->
+          <button
+            v-if="isWin && showRecallSidebar"
+            ref="appMenuBtnRef"
+            class="btn-icon btn-icon-header app-menu-btn"
+            @click="openAppMenuFromButton"
+            :title="t('header.appMenu')"
+          >
+            <MenuIcon :size="18" />
+          </button>
+          <span class="shell-top-fill" />
+          <button
+            class="btn-icon sidebar-toggle-btn"
+            :title="t('shell.toggleSidebar')"
+            :aria-expanded="true"
+            @click="toggleRecallSidebarCollapsed"
+          >
+            <PanelLeftClose :size="17" :stroke-width="1.75" />
+          </button>
+        </div>
         <div class="sidebar-content sidebar-content--recall">
-          <RecentConversationsPanel
-            :collapsed="recallSidebarCollapsed"
-            @toggle-collapse="toggleRecallSidebarCollapsed"
+          <AppSidebar
+            :awakened="isAwakened"
+            @open-todos="terminalStore.openTodos()"
+            @open-watch="openWatchesFromWelcome"
+            @open-awaken="showWatchPanel = false; showAwaken = true"
+            @open-connection="openConnectionSettings"
+            @open-settings="showSettings = true"
+            @logout="onSsoSoftLogout"
           />
         </div>
         <div
-          v-if="!recallSidebarCollapsed"
           class="recall-sidebar-resize-handle"
           :class="{ resizing: isRecallSidebarResizing }"
           @mousedown="startRecallSidebarResize"
@@ -1547,10 +1550,14 @@ onUnmounted(() => {
 
       <!-- 左侧边栏 - 主机管理（欢迎页上为叠加层） -->
       <aside
-        v-show="showSidebar"
-        class="sidebar"
-        :class="{ 'sidebar--overlay': showRecallSidebar }"
-        :style="showRecallSidebar ? { width: `${recallSidebarWidth}px` } : undefined"
+        class="sidebar sidebar--hosts"
+        :class="{
+          'sidebar--overlay': showRecallSidebar,
+          'is-collapsed': !showSidebar,
+          'is-resizing': isRecallSidebarResizing,
+        }"
+        :style="{ '--sidebar-panel-width': hostSidebarWidth, width: showSidebar ? hostSidebarWidth : '0px' }"
+        :inert="showSidebar ? undefined : true"
       >
         <div class="sidebar-header">
           <span>{{ t('header.hostManager') }}</span>
@@ -1565,6 +1572,93 @@ onUnmounted(() => {
 
       <!-- 终端区域 / 欢迎页 / 智能巡检 -->
       <main class="terminal-area">
+        <!-- 主区顶条只在页面没有自己的第一排时出现（欢迎页 / 空终端 / 待办），
+             以及终端进来时用来装 Tab 条。其余页面（助手工作台、巡检）由它们自己的第一排顶到窗口上沿。 -->
+        <div
+          v-if="needsShellTop"
+          class="shell-top shell-top--main"
+          :class="{ 'shell-top--tabs': showTerminalTabStrip }"
+        >
+          <TabBar
+            v-if="showTerminalTabStrip"
+            variant="terminal"
+            class="terminal-tab-strip"
+            @open-ssh="openHostSidebar"
+          />
+          <span v-else class="shell-top-fill" />
+          <!-- AI 侧栏开关钉在这排最右：长在面板自己头上的话，收起后开关也跟着没了 -->
+          <button
+            v-if="showTerminalTabStrip && !isSteamBuild"
+            class="btn-icon ai-panel-toggle-btn"
+            :title="t('shell.toggleAiPanel')"
+            :aria-expanded="aiPanelVisible"
+            @click="toggleAiPanel"
+          >
+            <PanelRightClose v-if="aiPanelVisible" :size="17" :stroke-width="1.75" />
+            <PanelRightOpen v-else :size="17" :stroke-width="1.75" />
+          </button>
+        </div>
+
+        <!-- 窗口控件浮在主区第一排之上：侧栏收起时的开关在左，Windows 三按钮在右。
+             各第一排通过 --shell-inset-* 让出对应宽度，因此浮层不会压住功能按钮。 -->
+        <!-- 侧栏收起时这排控件才出现，淡入等侧栏滑到底，免得两件事同时抢眼 -->
+        <Transition name="float-in">
+          <div
+            v-if="!showRecallSidebar"
+            class="main-float main-float--left"
+            :class="{ 'main-float--traffic-inset': isMac && !isFullScreen && !showSidebar }"
+          >
+            <button
+              v-if="isWin"
+              ref="appMenuBtnRef"
+              class="btn-icon btn-icon-header app-menu-btn"
+              @click="openAppMenuFromButton"
+              :title="t('header.appMenu')"
+            >
+              <MenuIcon :size="18" />
+            </button>
+            <button
+              class="btn-icon sidebar-toggle-btn"
+              :class="{ 'has-attention': sidebarToggleAttention }"
+              :title="t('shell.expandSidebar')"
+              :aria-expanded="false"
+              @click="toggleRecallSidebarCollapsed"
+            >
+              <PanelLeftOpen :size="17" :stroke-width="1.75" />
+            </button>
+          </div>
+        </Transition>
+        <div class="main-float main-float--right">
+          <template v-if="authStore.showSoftEntry">
+            <button
+              v-if="!authStore.isAuthenticated"
+              class="btn-icon btn-icon-header sso-soft-btn"
+              :disabled="authStore.loading"
+              :title="t('header.ssoLogin')"
+              @click="onSsoSoftLogin"
+            >
+              {{ t('header.ssoLogin') }}
+            </button>
+            <button
+              v-else-if="recallSidebarCollapsed"
+              class="btn-icon btn-icon-header sso-soft-btn"
+              :title="authStore.user?.email || authStore.user?.name || t('header.ssoLogout')"
+              @click="onSsoSoftLogout"
+            >
+              {{ t('header.ssoLogout') }}
+            </button>
+          </template>
+          <!-- Windows 自绘标题栏按钮（最小化 / 最大化 / 关闭）：仅 Win 平台 + 非全屏时显示。
+               全屏模态打开时，模态全屏覆盖会自动遮住这三个按钮，模态自带的 X 是唯一可见关闭入口。 -->
+          <WindowControls v-if="isWin && !isFullScreen" />
+        </div>
+        <TerminalPlaceEmpty
+          v-if="showTerminalEmpty"
+          class="main-surface"
+          @open-local="openLocalFromWelcome"
+          @open-ssh="openSshFromWelcome"
+          @manage-hosts="openHostSidebar"
+        />
         <WelcomePage
           v-show="showWelcomePage"
           :active="showWelcomePage"
@@ -1706,72 +1800,242 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   background: var(--bg-primary);
+  /* 主区第一排要给浮在其上的窗口控件让出的宽度（见 main.css「第一排契约」） */
+  --shell-inset-left: 0px;
+  --shell-inset-right: 0px;
 }
 
-/* 顶部工具栏 */
-.app-header {
+/* 侧栏收起：开关浮到主区左上，第一排让出它的宽度 */
+.app-container.nav-collapsed {
+  --shell-inset-left: 38px;
+}
+
+/* Windows 收起态还多一个汉堡菜单 */
+.app-container.is-win.nav-collapsed {
+  --shell-inset-left: 68px;
+}
+
+/* macOS 主区自己贴着窗口左沿时，还要再让开红绿灯 */
+.app-container.is-mac.nav-collapsed.main-leftmost:not(.is-fullscreen) {
+  --shell-inset-left: calc(var(--mac-traffic-light-inset) + 38px);
+}
+
+/* Windows 自绘三按钮（46px × 3）浮在主区右上 */
+.app-container.is-win:not(.is-fullscreen) {
+  --shell-inset-right: 138px;
+}
+
+/* 浮层本身不吃鼠标，空白处的拖拽仍由下面的第一排接住；只有按钮接收点击 */
+.main-float {
+  position: absolute;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
-  height: var(--header-height);
-  padding: 0 12px;
-  background: var(--bg-secondary);
-  -webkit-app-region: drag;
-  position: relative;
-  z-index: 10;
+  gap: 4px;
+  height: var(--shell-top-height);
+  padding: 0 8px;
+  pointer-events: none;
 }
 
-/* macOS: hiddenInset 标题栏下红绿灯按钮浮在内容上，左侧留出空间避免遮挡；
-   使用 --mac-traffic-light-inset 统一管理，与 modal header 保持同一起点 */
-.app-container.is-mac .app-header {
+.main-float > * {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.main-float--left {
+  left: 0;
+}
+
+/* 出现在侧栏收完之后（延迟≈侧栏时长）。
+   消失必须是瞬间的：这排控件浮在主区上，展开时主区左边界立刻开始右移，
+   留着淡出就会一边变淡一边跟着往右滑，看着像有东西一闪而过。 */
+.float-in-enter-active {
+  transition: opacity 0.16s ease 0.18s;
+}
+
+.float-in-enter-from {
+  opacity: 0;
+}
+
+/* macOS 收起态下开关要落在红绿灯右边。
+   这段让位挂在浮层自己身上、判断里不含侧栏开合：若跟着「侧栏已收起」走，
+   一点展开状态先没、元素后移除，中间那帧按钮会跳回最左压在红绿灯上，一闪而过。 */
+.main-float--left.main-float--traffic-inset {
   padding-left: var(--mac-traffic-light-inset);
 }
 
-/* macOS 全屏：红绿灯按钮被系统隐藏，恢复左侧默认留白让应用标题贴最左 */
-.app-container.is-mac.is-fullscreen .app-header {
-  padding-left: 12px;
-}
-
-/* Windows: 自绘 WindowControls 紧贴右边缘 — 抵消 .app-header 默认的 12px padding-right，
-   让三按钮触达窗口最右像素，与 Win11 原生标题栏按钮位置一致。
-   全屏时 WindowControls 不渲染（v-if 控制），无需特殊处理 padding。 */
-.app-container.is-win .app-header {
+.main-float--right {
+  right: 0;
   padding-right: 0;
+  gap: 8px;
 }
 
-/* 深色主题：顶部渐变效果 */
-[data-color-scheme="dark"] .app-header {
+/* 侧栏顶 / 主区顶：两段各自的顶条，共用高度与拖拽行为，保证窗口上沿基线齐平 */
+.shell-top {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  height: var(--shell-top-height);
+  padding: 0 8px;
+  -webkit-app-region: drag;
+}
+
+/* 带底部分隔线的顶条要多留那 1px：边框吃进高度的话，这排图标的中心会比红绿灯
+   高半像素——红绿灯是系统按窗口坐标画的，不认我们的边框。
+   只能加在高度上，盒模型必须保持 border-box：侧栏给直接子元素定了展开宽度，
+   换成 content-box 会让左侧让位的 68px 顶出侧栏、右端按钮被裁掉。 */
+.shell-top--sidebar,
+.shell-top--main.shell-top--tabs {
+  height: calc(var(--shell-top-height) + 1px);
+}
+
+.shell-top > * {
+  -webkit-app-region: no-drag;
+}
+
+/* 撑开的空白仍要能拖窗口 */
+.shell-top-fill {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  -webkit-app-region: drag;
+}
+
+.shell-top--sidebar {
+  border-bottom: 1px solid transparent;
+}
+
+/* 主区顶默认是透明的一条：视觉上主区没有标题栏，但这块地方必须留着，
+   否则无边框窗口没有拖拽区（拖不动窗口），Windows 三按钮也无处安放 */
+.shell-top--main {
+  background: transparent;
+}
+
+/* 只有装着终端 Tab 条时才现出底板与分隔线 */
+.shell-top--main.shell-top--tabs {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* 壳层顶条同样是第一排，按 inset 给浮层让位。
+   让位宽度随侧栏开合改变，跟着侧栏用同一档节奏挪，才不会一边在滑一边在跳 */
+.shell-top--main {
+  padding-left: max(8px, var(--shell-inset-left));
+  padding-right: max(8px, var(--shell-inset-right));
+  transition: padding 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* macOS: 侧栏顶那条要给红绿灯让位 */
+.app-container.is-mac .shell-top--sidebar {
+  padding-left: var(--mac-traffic-light-inset);
+}
+
+/* macOS 全屏：红绿灯被系统隐藏，取消让位 */
+.app-container.is-mac.is-fullscreen .shell-top--sidebar {
+  padding-left: 8px;
+}
+
+/* 深色主题：Tab 条形态保持与原顶栏同一质感 */
+[data-color-scheme="dark"] .shell-top--main.shell-top--tabs {
   background: linear-gradient(180deg, var(--bg-secondary) 0%, rgba(var(--bg-secondary-rgb, 24, 24, 37), 0.95) 100%);
 }
 
-/* 浅色主题：简洁干净的顶部栏 */
-[data-color-scheme="light"] .app-header {
+[data-color-scheme="light"] .shell-top--main.shell-top--tabs {
   background: var(--bg-secondary);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-/* 深色主题：顶部底缘微光效果
-   纯装饰分隔线，走 --accent-decorative-*：深色下是柔和的中性白微光，与 header
-   的 "中性灰 + 蓝点缀" 基调对齐；其他主题装饰层 = 自己的 accent 色。 */
-[data-color-scheme="dark"] .app-header::after {
+/* header 按钮尺寸与 hover scale 统一由 main.css 的 .btn-icon-header 变体提供 */
+
+/* 侧栏开关：紧邻红绿灯的唯一常驻控件，做成"轻触感"而非工具栏图标——
+   静默时只是一枚淡淡的线条图标（不抢红绿灯的注意力），hover 才浮出底板。
+   图标随开合换向（收起时朝外推、展开时朝内收），点之前就知道会发生什么。 */
+.sidebar-toggle-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--text-tertiary, var(--text-secondary));
+  background: transparent;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+/* 与红绿灯之间留出一档呼吸，避免圆形彩色按钮紧挨着方形线框图标 */
+.app-container.is-mac .shell-top .sidebar-toggle-btn {
+  margin-left: 2px;
+}
+
+.sidebar-toggle-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.14));
+  /* 顶栏高度有限，这里不做放大，避免顶到 header 边界 */
+  transform: none;
+}
+
+.sidebar-toggle-btn:active {
+  background: var(--bg-active, rgba(127, 127, 127, 0.2));
+}
+
+/* 收起态：侧栏不在眼前，图标稍微提一点存在感，提示"这里还能展开" */
+.sidebar-toggle-btn.is-collapsed {
+  color: var(--text-secondary);
+}
+
+/* AI 侧栏开关：与左边那枚侧栏开关同一套轻触感，方向相反 */
+.ai-panel-toggle-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--text-tertiary, var(--text-secondary));
+  background: transparent;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.ai-panel-toggle-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.14));
+  transform: none;
+}
+
+/* 顶栏图标不发光：全局 btn-icon hover 会加投影，这排细线条图标会被糊成一团 */
+.ai-panel-toggle-btn:hover svg {
+  filter: none;
+}
+
+.ai-panel-toggle-btn:active {
+  background: var(--bg-active, rgba(127, 127, 127, 0.2));
+}
+
+/* header 图标不发光（与 btn-icon-header 同一取向），避免顶栏出现彩色光晕 */
+.sidebar-toggle-btn:hover svg {
+  filter: none;
+}
+
+/* 收起时侧栏里的动静打到这枚按钮上。描边取 header 底色，
+   让圆点浮在图标之上而不是和线条糊成一团。 */
+.sidebar-toggle-btn.has-attention::after {
   content: '';
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(var(--accent-decorative-rgb, 137, 180, 250), 0.2), transparent);
-  pointer-events: none;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent, #7aa2f7);
+  box-shadow: 0 0 0 2px var(--bg-secondary);
 }
-
-.header-left,
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  -webkit-app-region: no-drag;
-}
-
-/* header 按钮尺寸与 hover scale 统一由 main.css 的 .btn-icon-header 变体提供 */
 
 .sso-soft-btn {
   max-width: 140px;
@@ -1785,35 +2049,6 @@ onUnmounted(() => {
 
 .btn-icon.awakened-active {
   color: var(--brand-vital);
-}
-
-.header-center {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  overflow: hidden;
-  /* 继承 app-header 的 drag：TabBar 空白区支持按住拖动窗口、双击最大化等系统行为 */
-  margin: 0 12px;
-  min-width: 0;
-}
-
-.app-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-left: 4px;
-  letter-spacing: 0.3px;
-  /* line-height: 1 消除行盒额外空间，让文字与同行图标在 flex 垂直居中下严格对齐 */
-  line-height: 1;
-}
-
-.app-version {
-  margin-left: 6px;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--text-tertiary, var(--text-secondary));
-  opacity: 0.7;
-  letter-spacing: 0;
 }
 
 /* 主体 */
@@ -1834,18 +2069,28 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   position: relative;
-  animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes slideInLeft {
-  from {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+/* 侧栏的开合是「抽屉推拉」：收起时宽度归零、内容被裁掉，而不是整块凭空消失。
+   为此收起后元素仍留在 DOM 里（display:none 没法过渡），靠 inert 挡住键盘焦点。 */
+.sidebar {
+  overflow: hidden;
+  transition: width 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 内容按展开宽度定住，宽度收缩时才是被裁走，而不是跟着挤成一团。
+   拖宽手柄自己贴着右边缘，不参与这个定宽。 */
+.sidebar > :not(.recall-sidebar-resize-handle) {
+  width: var(--sidebar-panel-width, var(--sidebar-width));
+}
+
+.sidebar.is-collapsed {
+  border-right-color: transparent;
+}
+
+/* 拖宽时宽度每帧都在变，过渡会让它跟不上手 */
+.sidebar.is-resizing {
+  transition: none;
 }
 
 /* 侧边栏右边缘光效 */
@@ -1860,11 +2105,14 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+/* 主机管理侧栏的头现在也顶到窗口上沿：与两条顶条同高、同样能拖窗口 */
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--header-height);
+  flex-shrink: 0;
+  /* 同 .shell-top：多留 1px 给底部分隔线，否则内容中心与红绿灯差半像素 */
+  height: calc(var(--shell-top-height) + 1px);
   padding: 0 12px;
   font-size: 13px;
   font-weight: 700;
@@ -1872,6 +2120,22 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--border-color);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  -webkit-app-region: drag;
+}
+
+.sidebar-header > * {
+  -webkit-app-region: no-drag;
+}
+
+/* 主机管理侧栏总在最左（叠加态也是），macOS 下同样要给红绿灯让位。
+   让位量比标准值再多一档：这排放的是加粗大写标题，紧挨着红绿灯会像贴在上面，
+   而标准让位量只按图标控件留了呼吸 */
+.app-container.is-mac .sidebar-header {
+  padding-left: calc(var(--mac-traffic-light-inset) + 10px);
+}
+
+.app-container.is-mac.is-fullscreen .sidebar-header {
+  padding-left: 12px;
 }
 
 .sidebar-header .btn-icon {
@@ -1893,13 +2157,6 @@ onUnmounted(() => {
 .sidebar--recall {
   flex-shrink: 0;
   background: var(--bg-secondary);
-  /* 常驻侧栏，回首页时不重复 slideInLeft */
-  animation: none;
-}
-
-.sidebar--recall-collapsed {
-  width: 36px !important;
-  overflow: hidden;
 }
 
 .recall-sidebar-resize-handle {
@@ -1949,6 +2206,10 @@ onUnmounted(() => {
 
 .sidebar-content--recall {
   overflow-y: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 /* 欢迎页：主机管理叠加在最近对话侧栏之上，关掉后最近对话仍可见 */
@@ -1959,6 +2220,16 @@ onUnmounted(() => {
   bottom: 0;
   z-index: 20;
   box-shadow: 6px 0 28px rgba(0, 0, 0, 0.28);
+}
+
+/* Tab 条移进主区顶条后由顶条提供外框，自己只负责铺满可用空间。
+   它是块容器而非控件，得从上面那条「顶条子元素一律 no-drag」里豁免出来，
+   否则 Tab 右侧那片空白也拖不动窗口；条内的 tab 与按钮各自已标 no-drag。 */
+.shell-top > .terminal-tab-strip {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  -webkit-app-region: drag;
 }
 
 /* 终端区域 */

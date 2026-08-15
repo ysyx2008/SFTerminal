@@ -27,7 +27,7 @@ const menuI18n = {
     // 文件菜单
     file: '终端',
     newLocalTerminal: '新建本地终端',
-    newAssistantTab: '新建 AI 助手',
+    newAssistantTab: '新建（跟随当前位置）',
     newSshConnection: '新建 SSH 连接',
     batchCommand: '批量操作',
     openFileManager: '打开文件管理器',
@@ -101,7 +101,7 @@ const menuI18n = {
     // File menu
     file: 'Terminal',
     newLocalTerminal: 'New Local Terminal',
-    newAssistantTab: 'New AI Assistant',
+    newAssistantTab: 'New (follows current place)',
     newSshConnection: 'New SSH Connection',
     batchCommand: 'Batch Command',
     openFileManager: 'Open File Manager',

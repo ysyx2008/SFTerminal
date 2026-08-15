@@ -69,12 +69,13 @@ function onClose() {
 <style scoped>
 .window-controls {
   display: flex;
-  height: var(--header-height);
+  /* 铺满所在顶条，三按钮贴到窗口上沿，与 Win11 原生标题栏一致 */
+  align-self: stretch;
+  height: auto;
   /* 三按钮区不参与窗口拖动，避免 header 的 drag 区把点击吃掉 */
   -webkit-app-region: no-drag;
   flex-shrink: 0;
-  /* header-right 的 gap: 4px 会在前一个按钮和 WindowControls 之间产生 4px 间距，已经合适，
-     不需要额外 margin。.app-header 的 padding-right 在 Windows 下被特化为 0 让按钮贴右边。 */
+  /* 主区顶条的 gap 已提供与前一个按钮的间距；顶条在 Windows 下 padding-right 特化为 0，让按钮贴右边。 */
 }
 
 .wc-btn {

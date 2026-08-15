@@ -23,6 +23,7 @@ import {
   deriveTabAgentUiMeta,
   hasHubTasksAreaAttention,
   toHistoryConversationMeta,
+  type ConversationSurfaceState,
   type HistoryConversationMeta,
   type HistoryConversationTabStatus,
   type TabAgentUiMeta,
@@ -73,6 +74,7 @@ export type {
   TabAgentUiMeta,
   HistoryConversationTabStatus,
   HistoryConversationMeta,
+  ConversationSurfaceState,
 } from '../utils/agent-tab-ui-meta'
 
 export interface AgentState {
@@ -275,6 +277,11 @@ export interface AgentTerminalContextSplit {
 
 export type AgentTerminalContext = AgentTerminalContextSingle | AgentTerminalContextSplit
 
+/** 本机 / SSH 工作台（壳上「终端」地方里的 tab） */
+export function isLocalOrSshTab(tab: { type: string }): boolean {
+  return tab.type === 'local' || tab.type === 'ssh'
+}
+
 /** Tab 栏可见 tab：终端、已提升本地助手、远程助手，但不含联络常驻 tab（与 TabBar.displayedTabs 一致） */
 function isDisplayedInTabBar(tab: TerminalTab): boolean {
   if (tab.agentId === COMPANION_TAB_AGENT_ID) return false
@@ -285,16 +292,22 @@ function isDisplayedInTabBar(tab: TerminalTab): boolean {
  * 关闭 tab 后选择下一个激活 tab：优先右侧相邻，否则左侧（浏览器 / Chrome 标准行为）。
  * `closedIndex` 为 splice 前的索引；调用时 tab 已从数组移除。
  */
-function findAdjacentDisplayedTab(closedIndex: number, tabList: TerminalTab[]): TerminalTab | undefined {
+function findAdjacentMatching(
+  closedIndex: number,
+  tabList: TerminalTab[],
+  match: (t: TerminalTab) => boolean
+): TerminalTab | undefined {
   for (let i = closedIndex; i < tabList.length; i++) {
-    const t = tabList[i]
-    if (isDisplayedInTabBar(t)) return t
+    if (match(tabList[i])) return tabList[i]
   }
   for (let i = closedIndex - 1; i >= 0; i--) {
-    const t = tabList[i]
-    if (isDisplayedInTabBar(t)) return t
+    if (match(tabList[i])) return tabList[i]
   }
   return undefined
+}
+
+function findAdjacentDisplayedTab(closedIndex: number, tabList: TerminalTab[]): TerminalTab | undefined {
+  return findAdjacentMatching(closedIndex, tabList, isDisplayedInTabBar)
 }
 
 /** 联络常驻 tab 的 agentId，等同后端 `__companion__`（单一来源：@shared/types） */
@@ -320,6 +333,13 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 已提升为独立 tab（isPromoted）或远程助手不走此焦点。
    */
   const hubFocusedAssistantTabId = ref<string>('')
+  /** 上次激活的本机 / SSH tab，点侧栏「终端」时回到这里 */
+  const lastTerminalTabId = ref('')
+  /**
+   * 人在「终端」这个地方但没有本机 / SSH tab：点侧栏「终端」进来，
+   * 或关掉了最后一个终端 tab（仍留在终端，只是空了）。
+   */
+  const terminalPlaceActive = ref(false)
 
   // 终端计数器（用于生成唯一标题）
   const localTerminalCounter = ref(0)
@@ -340,6 +360,9 @@ export const useTerminalStore = defineStore('terminal', () => {
   /** 助手 composer 聚焦请求（tabId + 递增 seq，供 AiPanel 在打开/切换会话后聚焦输入框） */
   const assistantComposerFocusTabId = ref('')
   const assistantComposerFocusSeq = ref(0)
+  /** 终端 AI 侧栏展开请求（tabId + 递增 seq，供 App 层调工作台方法） */
+  const terminalAiPanelRevealTabId = ref('')
+  const terminalAiPanelRevealSeq = ref(0)
   // 定时任务待执行的 prompt（tabId -> prompt）
   const pendingSchedulerTasks = ref<Record<string, string>>({})
   // 欢迎页 composer → 助手 tab 的 handoff（含附件图片）
@@ -616,6 +639,8 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     tabs.value.push(tab)
     activeTabId.value = id
+    lastTerminalTabId.value = id
+    terminalPlaceActive.value = false
 
     if (pendingTask) {
       pendingSchedulerTasks.value[id] = pendingTask
@@ -739,10 +764,12 @@ export const useTerminalStore = defineStore('terminal', () => {
     tabs.value.push(tab)
     if (options?.activate !== false) {
       activeTabId.value = id
+      terminalPlaceActive.value = false
     } else if (tab.isRemote) {
       // 远程 tab（Gateway/IM）：无激活 tab 时才自动选中（让用户能看到频道入口）
       if (!activeTabId.value) {
         activeTabId.value = id
+        terminalPlaceActive.value = false
       }
     }
 
@@ -997,18 +1024,27 @@ export const useTerminalStore = defineStore('terminal', () => {
     // 如果关闭的是当前标签，切换到其他标签
     if (activeTabId.value === tabId) {
       // 未提升本地助手 tab 属于 Hub 内会话，关闭后回到 Hub 首页；
-      // 终端 / 远程助手 / 已提升本地助手 tab 都是 Tab 栏可见的「真实 tab」，
-      // 关闭后激活相邻可见 tab（右优先，否则左），与浏览器/Chrome 标准一致。
+      // 本机 / SSH 只在同类里找下一个，没有则留在终端地方的空页（人还在终端，只是空了）；
+      // 已提升 / 远程助手仍按可见 tab 相邻规则。
       const isHubInternalAssistant = tab.type === 'assistant' && !tab.isRemote && !tab.isPromoted
       if (isHubInternalAssistant) {
         activeTabId.value = ''
         hubFocusedAssistantTabId.value = ''
+      } else if (isLocalOrSshTab(tab)) {
+        const nextTerminal = findAdjacentMatching(index, tabs.value, isLocalOrSshTab)
+        if (nextTerminal) {
+          activeTabId.value = nextTerminal.id
+          lastTerminalTabId.value = nextTerminal.id
+        } else {
+          activeTabId.value = ''
+          terminalPlaceActive.value = true
+          hubFocusedAssistantTabId.value = ''
+        }
       } else {
         const nextDisplayed = findAdjacentDisplayedTab(index, tabs.value)
         if (nextDisplayed) {
           activeTabId.value = nextDisplayed.id
         } else {
-          // 没有真实 tab 了，回到 Hub 首页（侧栏重新出现）
           activeTabId.value = ''
           hubFocusedAssistantTabId.value = ''
         }
@@ -1066,10 +1102,14 @@ export const useTerminalStore = defineStore('terminal', () => {
     tabs.value.push(tab)
     if (shouldActivate) {
       activeTabId.value = id
+      if (isLocalOrSshTab(tab)) lastTerminalTabId.value = id
+      terminalPlaceActive.value = false
     } else {
       // 不抢焦点：仅当当前没有选中 tab 时才选中新 tab（例如首个 tab）
       if (!activeTabId.value) {
         activeTabId.value = id
+        if (isLocalOrSshTab(tab)) lastTerminalTabId.value = id
+        terminalPlaceActive.value = false
       }
     }
 
@@ -1299,6 +1339,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (!tab) return
     todosActive.value = false
     activeTabId.value = tabId
+    terminalPlaceActive.value = false
+    if (isLocalOrSshTab(tab)) lastTerminalTabId.value = tabId
     setAgentCompletedUnseen(tabId, false)
     if (tab.type === 'assistant') {
       requestAssistantComposerFocus(tabId)
@@ -1308,6 +1350,16 @@ export const useTerminalStore = defineStore('terminal', () => {
   function requestAssistantComposerFocus(tabId: string): void {
     assistantComposerFocusTabId.value = tabId
     assistantComposerFocusSeq.value += 1
+  }
+
+  /**
+   * 请求展开某个终端 tab 的 AI 侧栏。
+   * 从最近对话点开一条终端会话时用——面板收着的话，切过去看着就像没跳。
+   * 面板归工作台组件所有，这里只发信号，由 App 层执行。
+   */
+  function requestTerminalAiPanelReveal(tabId: string): void {
+    terminalAiPanelRevealTabId.value = tabId
+    terminalAiPanelRevealSeq.value += 1
   }
 
   /**
@@ -1361,6 +1413,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     hubFocusedAssistantTabId.value = tabId
     todosActive.value = false
     activeTabId.value = ''
+    terminalPlaceActive.value = false
     setAgentCompletedUnseen(tabId, false)
     evictHubSessionsIfNeeded(tabId)
     requestAssistantComposerFocus(tabId)
@@ -1391,11 +1444,14 @@ export const useTerminalStore = defineStore('terminal', () => {
     todosActive.value = false
     activeTabId.value = ''
     hubFocusedAssistantTabId.value = ''
+    terminalPlaceActive.value = false
   }
 
-  /** 切回任务区：仅退出 TabBar 可见 tab / 待办面，保留 Hub 焦点会话（侧栏「新建对话」等仍用 goToHome） */
+  /** 切回任务区：仅退出可见 tab / 待办 / 空终端页，保留 Hub 焦点会话（侧栏「新建对话」等仍用 goToHome） */
   function focusTaskArea(): void {
-    if (!activeTabId.value && !todosActive.value) return
+    const leavingTerminalPlace = terminalPlaceActive.value
+    terminalPlaceActive.value = false
+    if (!activeTabId.value && !todosActive.value && !leavingTerminalPlace) return
     todosActive.value = false
     activeTabId.value = ''
     const hubId = hubFocusedAssistantTabId.value
@@ -1413,6 +1469,51 @@ export const useTerminalStore = defineStore('terminal', () => {
   function openTodos(): void {
     todosActive.value = true
     activeTabId.value = ''
+    terminalPlaceActive.value = false
+  }
+
+  const terminalTabs = computed(() => tabs.value.filter(isLocalOrSshTab))
+
+  const shellPlace = computed<'tasks' | 'companion' | 'terminal' | 'todos'>(() => {
+    if (todosActive.value) return 'todos'
+    const tab = tabs.value.find(t => t.id === activeTabId.value)
+    if (tab?.agentId === COMPANION_TAB_AGENT_ID) return 'companion'
+    if (tab && isLocalOrSshTab(tab)) return 'terminal'
+    if (terminalPlaceActive.value && !activeTabId.value) return 'terminal'
+    return 'tasks'
+  })
+
+  /** 壳层落点快照：谁在眼前由这几个状态共同决定，别处不要各自拼 */
+  const conversationSurface = computed<ConversationSurfaceState>(() => ({
+    activeTabId: activeTabId.value,
+    hubFocusedAssistantTabId: hubFocusedAssistantTabId.value,
+    todosActive: todosActive.value,
+    terminalPlaceActive: terminalPlaceActive.value,
+  }))
+
+  /** 点侧栏「终端」：回到上次本机 / SSH 工作台；一个都没有才进空页 */
+  function focusTerminalPlace(): void {
+    todosActive.value = false
+    const last = lastTerminalTabId.value
+      ? tabs.value.find(t => t.id === lastTerminalTabId.value && isLocalOrSshTab(t))
+      : undefined
+    if (last) {
+      setActiveTab(last.id)
+      return
+    }
+    for (let i = tabs.value.length - 1; i >= 0; i--) {
+      if (isLocalOrSshTab(tabs.value[i])) {
+        setActiveTab(tabs.value[i].id)
+        return
+      }
+    }
+    activeTabId.value = ''
+    terminalPlaceActive.value = true
+  }
+
+  function focusCompanionPlace(): void {
+    const id = ensureCompanionTab()
+    if (id) setActiveTab(id)
   }
 
   /**
@@ -2152,6 +2253,44 @@ export const useTerminalStore = defineStore('terminal', () => {
       sessionId,
       sessionStartTime
     }
+
+    releaseConversationFromOtherTabs(tabId, sessionId)
+  }
+
+  /**
+   * 一条会话同一时刻只归属一个 tab。
+   *
+   * 会话漫游（在助手区回看过，之后换一个终端接着往下聊）会留下两个记着同一 sessionId 的
+   * tab，侧栏点击就可能落到那份不干活的回看副本上——终端那边在跑甚至在等确认，人却被送进
+   * 一个静止的页面。谁接着往下跑，会话就归谁，旧的回看副本让位。
+   *
+   * 只收只读副本：正在跑 / 等确认的一方不动（真出现两处都在跑，留着让问题暴露，别静默杀掉）。
+   */
+  function releaseConversationFromOtherTabs(ownerTabId: string, sessionId: string): void {
+    const strays = tabs.value.filter(t =>
+      t.id !== ownerTabId &&
+      t.agentState?.sessionId === sessionId &&
+      t.type === 'assistant' &&
+      !t.isRemote &&
+      t.agentId !== COMPANION_TAB_AGENT_ID
+    )
+
+    for (const stray of strays) {
+      const meta = deriveTabAgentUiMeta(stray.agentState)
+      if (meta.isRunning || meta.needsAttention) {
+        log.warn(`[conversation] session ${sessionId} 同时被 ${stray.id} 持有且未空闲，保留待查`)
+        continue
+      }
+      if (stray.agentId) {
+        window.electronAPI.agent.cleanup(stray.agentId).catch(() => {})
+      }
+      const idx = tabs.value.findIndex(t => t.id === stray.id)
+      if (idx >= 0) tabs.value.splice(idx, 1)
+      if (hubFocusedAssistantTabId.value === stray.id) {
+        hubFocusedAssistantTabId.value = ''
+      }
+      log.debug(`[conversation] session ${sessionId} 归 ${ownerTabId}，回收副本 tab ${stray.id}`)
+    }
   }
 
   /** 更新当前 tab 的会话侧栏标题（LLM 生成或用户重命名后同步 UI） */
@@ -2392,9 +2531,20 @@ export const useTerminalStore = defineStore('terminal', () => {
     tab.agentState.finalResult = result
   }
 
-  /** 根据历史记录 ID 查找已打开的 tab（agentState.sessionId 与 record.id 对应） */
+  /**
+   * 根据历史记录 ID 查找已打开的 tab（agentState.sessionId 与 record.id 对应）。
+   *
+   * 正常只会有一个持有者（见 releaseConversationFromOtherTabs）。万一还有残留副本，
+   * 落点必须是真身：先认在跑 / 等确认的，再认终端，只读副本永远排最后。
+   */
   function findTabByHistoryId(historyId: string): TerminalTab | undefined {
-    return tabs.value.find(t => t.agentState?.sessionId === historyId)
+    const holders = tabs.value.filter(t => t.agentState?.sessionId === historyId)
+    if (holders.length <= 1) return holders[0]
+    const busy = holders.find(t => {
+      const meta = deriveTabAgentUiMeta(t.agentState)
+      return meta.isRunning || meta.needsAttention
+    })
+    return busy ?? holders.find(isLocalOrSshTab) ?? holders[0]
   }
 
   /**
@@ -2491,6 +2641,9 @@ export const useTerminalStore = defineStore('terminal', () => {
   function warmHistoryConversation(record: AgentRecord): string | null {
     if (findTabByHistoryId(record.id)) return null
     if (record.agentKey === COMPANION_TAB_AGENT_ID) return null
+    // 终端会话不预热：预热只会建助手 tab，之后 findTabByHistoryId 反而先命中这个假 tab，
+    // 把本该切回终端的点击劫持到助手区
+    if (record.terminalType === 'local' || record.terminalType === 'ssh') return null
     if ((record.steps?.length ?? 0) > WARM_HISTORY_MAX_STEPS) return null
 
     const tabId = createAssistantTab({ activate: false })
@@ -3190,6 +3343,16 @@ export const useTerminalStore = defineStore('terminal', () => {
     hasHubTasksAreaAttention(tabs.value, activeTabId.value, COMPANION_TAB_AGENT_ID, todosActive.value)
   )
 
+  const hasTerminalPlaceAttention = computed(() =>
+    terminalTabs.value.some(t => t.id !== activeTabId.value && hasTabAgentAttention(t.id))
+  )
+
+  const hasCompanionAttention = computed(() => {
+    const companion = tabs.value.find(t => t.agentId === COMPANION_TAB_AGENT_ID)
+    if (!companion || companion.id === activeTabId.value) return false
+    return hasTabAgentAttention(companion.id)
+  })
+
   // Proactive 消息延迟投递：agent 忙时暂存，完成后再注入 tab
   const deferredProactiveTabs = ref(new Set<string>())
 
@@ -3295,6 +3458,12 @@ export const useTerminalStore = defineStore('terminal', () => {
     setActiveTab,
     goToHome,
     focusTaskArea,
+    focusTerminalPlace,
+    focusCompanionPlace,
+    shellPlace,
+    terminalTabs,
+    terminalPlaceActive,
+    conversationSurface,
     openTodos,
     hubFocusedAssistantTabId,
     hubFocusedTab,
@@ -3339,6 +3508,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     assistantComposerFocusTabId,
     assistantComposerFocusSeq,
     requestAssistantComposerFocus,
+    terminalAiPanelRevealTabId,
+    terminalAiPanelRevealSeq,
+    requestTerminalAiPanelReveal,
     // Agent 状态管理
     findTabIdByAgentId,
     findTabIdByPtyId,
@@ -3396,6 +3568,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     hasAgentCompletedUnseen,
     hasTabAgentAttention,
     hasTasksAreaAttention,
+    hasTerminalPlaceAttention,
+    hasCompanionAttention,
     setAgentCompletedUnseen,
     // Proactive 消息延迟投递
     markDeferredProactive,
