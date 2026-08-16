@@ -30,10 +30,12 @@ import {
 import {
   deleteSessionDir,
   listSessionIdsInDateDir,
+  applyRecordReadOptions,
   readSessionRecord,
   readSessionRecordAsync,
   saveSessionRecord,
   updateSessionTitle,
+  type ReadSessionOptions,
 } from './session-persistence'
 import { getDateString } from './date-util'
 import { throwIfAborted } from '../../utils/abort'
@@ -255,7 +257,13 @@ export class AgentRecordStore {
 
     for (const dateStr of listAgentDateDirs(store.dir)) {
       for (const recordId of listSessionIdsInDateDir(store.dir, dateStr)) {
-        const record = readSessionRecord(store.dir, dateStr, recordId, (p, e) => this.onCorruptRecord(p, e))
+        const record = readSessionRecord(
+          store.dir,
+          dateStr,
+          recordId,
+          (p, e) => this.onCorruptRecord(p, e),
+          { omitCanvasData: true }
+        )
         if (record) entries.push(this.toIndexEntry(record, dateStr, store.userTaskMaxLen))
       }
     }
@@ -268,6 +276,7 @@ export class AgentRecordStore {
         (p, e) => this.onCorruptRecord(p, e)
       )
       for (const r of records) {
+        applyRecordReadOptions(r, { omitCanvasData: true })
         entries.push(this.toIndexEntry(r, dateStr, store.userTaskMaxLen))
       }
     }
@@ -431,6 +440,16 @@ export class AgentRecordStore {
     })
   }
 
+  private finishLoadedRecord(
+    found: AgentRecord,
+    dateStr: string,
+    options?: ReadSessionOptions
+  ): AgentRecord {
+    // 裁过字段的记录绝不能回写，否则会把产出物快照从磁盘抹掉
+    if (options?.omitCanvasData) return found
+    return this.maybeExternalizeAndSaveRecord(found, dateStr)
+  }
+
   private maybeExternalizeAndSaveRecord(found: AgentRecord, dateStr: string): AgentRecord {
     const changed = this.externalizeStepImages(found)
     if (changed) {
@@ -519,31 +538,50 @@ export class AgentRecordStore {
     this.saveAgentRecord(record)
   }
 
-  private readAgentRecordFromDisk(dateStr: string, id: string): AgentRecord | undefined {
+  private readAgentRecordFromDisk(
+    dateStr: string,
+    id: string,
+    options?: ReadSessionOptions
+  ): AgentRecord | undefined {
     // 先查主 agent 树，再查 watch 树（watch 记录已拆分到独立目录）
     for (const dir of [this.agentDir, this.watchDir]) {
-      const record = readSessionRecord(dir, dateStr, id, (p, e) => this.onCorruptRecord(p, e))
+      const record = readSessionRecord(dir, dateStr, id, (p, e) => this.onCorruptRecord(p, e), options)
       if (record) return record
     }
 
-    const legacyRecords = readLegacyAgentDayRecords(
-      getLegacyAgentDayFilePath(this.agentDir, dateStr),
-      (p, e) => this.onCorruptRecord(p, e)
-    )
-    return legacyRecords.find(r => r.id === id)
+    return this.findLegacyRecord(dateStr, id, options)
   }
 
-  private async readAgentRecordFromDiskAsync(dateStr: string, id: string): Promise<AgentRecord | undefined> {
+  private async readAgentRecordFromDiskAsync(
+    dateStr: string,
+    id: string,
+    options?: ReadSessionOptions
+  ): Promise<AgentRecord | undefined> {
     for (const dir of [this.agentDir, this.watchDir]) {
-      const record = await readSessionRecordAsync(dir, dateStr, id, (p, e) => this.onCorruptRecord(p, e))
+      const record = await readSessionRecordAsync(
+        dir,
+        dateStr,
+        id,
+        (p, e) => this.onCorruptRecord(p, e),
+        options
+      )
       if (record) return record
     }
 
+    return this.findLegacyRecord(dateStr, id, options)
+  }
+
+  private findLegacyRecord(
+    dateStr: string,
+    id: string,
+    options?: ReadSessionOptions
+  ): AgentRecord | undefined {
     const legacyRecords = readLegacyAgentDayRecords(
       getLegacyAgentDayFilePath(this.agentDir, dateStr),
       (p, e) => this.onCorruptRecord(p, e)
     )
-    return legacyRecords.find(r => r.id === id)
+    const found = legacyRecords.find(r => r.id === id)
+    return applyRecordReadOptions(found ?? null, options) ?? undefined
   }
 
   /**
@@ -588,13 +626,13 @@ export class AgentRecordStore {
    * 对存量记录中内联的 base64 图片做 lazy 外化：首次访问时写到磁盘并回写 JSON，
    * 后续访问直接读 file:// 路径，IPC 传输体积从几十 MB 降到几百 KB。
    */
-  getAgentRecordById(id: string): AgentRecord | undefined {
+  getAgentRecordById(id: string, options?: ReadSessionOptions): AgentRecord | undefined {
     // 主索引优先，未命中再查 watch 索引（watch 记录在独立索引中）
     const entry = this.getIndex().find(e => e.id === id)
       ?? this.getIndexFor(this.watchStore).find(e => e.id === id)
     if (entry) {
-      const found = this.readAgentRecordFromDisk(entry.dateStr, id)
-      if (found) return this.maybeExternalizeAndSaveRecord(found, entry.dateStr)
+      const found = this.readAgentRecordFromDisk(entry.dateStr, id, options)
+      if (found) return this.finishLoadedRecord(found, entry.dateStr, options)
       // 索引有条目但正文不在 dateStr（陈旧/错位）→ 不直接失败，走全盘扫描
       log.warn(
         `Index hit for ${id} at ${entry.dateStr} but body missing; falling back to full scan`
@@ -607,14 +645,14 @@ export class AgentRecordStore {
       ...listAgentDateDirs(this.watchDir),
     ])
     for (const dateStr of [...dateDirs].sort().reverse()) {
-      const found = this.readAgentRecordFromDisk(dateStr, id)
-      if (found) return this.maybeExternalizeAndSaveRecord(found, dateStr)
+      const found = this.readAgentRecordFromDisk(dateStr, id, options)
+      if (found) return this.finishLoadedRecord(found, dateStr, options)
     }
 
     for (const file of [...listLegacyAgentDayFiles(this.agentDir)].reverse()) {
       const dateStr = file.replace('.json', '')
-      const found = this.readAgentRecordFromDisk(dateStr, id)
-      if (found) return this.maybeExternalizeAndSaveRecord(found, dateStr)
+      const found = this.readAgentRecordFromDisk(dateStr, id, options)
+      if (found) return this.finishLoadedRecord(found, dateStr, options)
     }
 
     return undefined
@@ -877,7 +915,7 @@ export class AgentRecordStore {
 
     for (const entry of candidates) {
       throwIfAborted(options.signal)
-      const r = await this.readAgentRecordFromDiskAsync(entry.dateStr, entry.id)
+      const r = await this.readAgentRecordFromDiskAsync(entry.dateStr, entry.id, { omitCanvasData: true })
       if (!r) continue
       const matchedByKeyword = !hasKeyword || Boolean(
         r.userTask?.toLowerCase().includes(lowerKeyword) ||
@@ -924,7 +962,7 @@ export class AgentRecordStore {
     for (const [dateStr, idSet] of idsByDate) {
       for (const id of idSet) {
         throwIfAborted(signal)
-        const record = await this.readAgentRecordFromDiskAsync(dateStr, id)
+        const record = await this.readAgentRecordFromDiskAsync(dateStr, id, { omitCanvasData: true })
         if (record) recordById.set(id, record)
       }
     }

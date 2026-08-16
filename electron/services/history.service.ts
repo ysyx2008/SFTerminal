@@ -5,6 +5,7 @@ import { createLogger } from '../utils/logger'
 import { writeFileAtomic } from '../utils/atomic-write'
 import { getDateString } from './history/date-util'
 import { AgentRecordStore, type SearchAgentRecordsOptions, type SearchAgentRecordsResult } from './history/agent-record-store'
+import type { ReadSessionOptions } from './history/session-persistence'
 
 const log = createLogger('History')
 
@@ -206,8 +207,8 @@ export class HistoryService {
   }
 
   /** 按 ID 查找 Agent 记录（委派 store）。 */
-  getAgentRecordById(id: string): AgentRecord | undefined {
-    return this.agentRecordStore.getAgentRecordById(id)
+  getAgentRecordById(id: string, options?: ReadSessionOptions): AgentRecord | undefined {
+    return this.agentRecordStore.getAgentRecordById(id, options)
   }
 
   /** 按 ID 删除单条 Agent 记录（委派 store）。 */

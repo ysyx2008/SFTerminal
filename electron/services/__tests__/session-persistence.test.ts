@@ -4,9 +4,11 @@ import * as path from 'path'
 import * as os from 'os'
 import type { AgentRecord, AgentStepRecord } from '@shared/types'
 import {
+  countJsonlLines,
   getSessionDirPath,
   listSessionIdsInDateDir,
   readSessionRecord,
+  readSessionRecordAsync,
   saveSessionRecord,
   updateSessionTitle,
 } from '../history/session-persistence'
@@ -247,5 +249,93 @@ describe('session-persistence incremental checkpoint', () => {
     const loaded = readSessionRecord(agentDir, dateStr, record.id)
     expect(loaded?.title).toBe('从旧文件恢复')
     expect(loaded?.steps[0].id).toBe('legacy')
+  })
+})
+
+describe('session-persistence bounded reads', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-session-bounded-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('countJsonlLines 空文件 / 无尾换行 / 空行 / 跨块中文 与旧语义一致', () => {
+    const empty = path.join(tmpDir, 'empty.jsonl')
+    fs.writeFileSync(empty, '')
+    expect(countJsonlLines(empty)).toBe(0)
+    expect(countJsonlLines(path.join(tmpDir, 'missing.jsonl'))).toBe(0)
+
+    const noNl = path.join(tmpDir, 'no-nl.jsonl')
+    fs.writeFileSync(noNl, '{"id":"a"}')
+    expect(countJsonlLines(noNl)).toBe(1)
+
+    const blanks = path.join(tmpDir, 'blanks.jsonl')
+    fs.writeFileSync(blanks, '{"id":"a"}\n\n  \n{"id":"b"}\n')
+    expect(countJsonlLines(blanks)).toBe(2)
+
+    // 64KB 块边界上放一个中文字，确认不会把 UTF-8 切坏后误计行
+    const cross = path.join(tmpDir, 'cross.jsonl')
+    const prefix = 'x'.repeat(64 * 1024 - 1)
+    fs.writeFileSync(cross, `${prefix}中\n{"id":"ok"}\n`)
+    expect(countJsonlLines(cross)).toBe(2)
+  })
+
+  it('检索模式丢掉 canvasData，展示模式完整保留；超长单行仍能解析', async () => {
+    const agentDir = path.join(tmpDir, 'agent')
+    fs.mkdirSync(agentDir, { recursive: true })
+    const huge = '篇'.repeat(80_000)
+    const record = makeRecord({
+      steps: [
+        {
+          ...makeStep('s1'),
+          type: 'tool_result',
+          toolName: 'word_replace',
+          canvasData: { action: 'update', renderer: 'document', content: huge },
+        } as AgentStepRecord,
+        makeStep('s2'),
+      ],
+      messages: [{ role: 'user', content: '改论文' }],
+    })
+    saveSessionRecord(agentDir, record)
+    const dateStr = '2026-07-13'
+
+    const full = readSessionRecord(agentDir, dateStr, record.id)
+    expect(full?.steps[0].canvasData?.content).toBe(huge)
+    expect(full?.steps[1].id).toBe('s2')
+
+    const slim = readSessionRecord(agentDir, dateStr, record.id, undefined, { omitCanvasData: true })
+    expect(slim?.steps[0].canvasData).toBeUndefined()
+    expect(slim?.steps[0].toolName).toBe('word_replace')
+    expect(slim?.steps[1].id).toBe('s2')
+
+    const slimAsync = await readSessionRecordAsync(
+      agentDir,
+      dateStr,
+      record.id,
+      undefined,
+      { omitCanvasData: true }
+    )
+    expect(slimAsync?.steps[0].canvasData).toBeUndefined()
+    expect(slimAsync?.steps[0].id).toBe('s1')
+    expect(slimAsync?.messages?.[0].content).toBe('改论文')
+  })
+
+  it('损坏行跳过，其余行仍可读', () => {
+    const agentDir = path.join(tmpDir, 'agent')
+    fs.mkdirSync(agentDir, { recursive: true })
+    const record = makeRecord({ steps: [makeStep('s1'), makeStep('s2')] })
+    saveSessionRecord(agentDir, record)
+    const dateStr = '2026-07-13'
+    const stepsFile = path.join(getSessionDirPath(agentDir, dateStr, record.id), 'steps.jsonl')
+    const lines = fs.readFileSync(stepsFile, 'utf-8').split('\n')
+    lines.splice(1, 0, '{not-json')
+    fs.writeFileSync(stepsFile, lines.join('\n'))
+
+    const loaded = readSessionRecord(agentDir, dateStr, record.id)
+    expect(loaded?.steps.map(s => s.id)).toEqual(['s1', 's2'])
   })
 })

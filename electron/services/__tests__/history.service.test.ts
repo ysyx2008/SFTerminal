@@ -478,6 +478,59 @@ describe('HistoryService - searchAgentRecordsAdvanced', () => {
       signal: ac.signal
     })).rejects.toMatchObject({ name: 'AbortError' })
   })
+
+  it('全文搜索不把 canvasData 装进结果，点开查看仍完整', async () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    svc.saveAgentRecord(makeRecord({
+      id: 'canvas-search',
+      timestamp: t,
+      duration: 1,
+      userTask: '改论文',
+      steps: [{
+        id: 's1',
+        type: 'tool_result',
+        content: '已替换',
+        timestamp: t,
+        toolName: 'word_replace',
+        canvasData: { action: 'update', renderer: 'document', content: '<p>整篇</p>' },
+      } as AgentRecord['steps'][number]],
+    }))
+
+    const res = await svc.searchAgentRecordsAdvanced({ keyword: '改论文', limit: 10 })
+    expect(res.records[0].steps[0].canvasData).toBeUndefined()
+
+    const viewed = svc.getAgentRecordById('canvas-search')
+    expect(viewed?.steps[0].canvasData?.content).toBe('<p>整篇</p>')
+
+    const slim = svc.getAgentRecordById('canvas-search', { omitCanvasData: true })
+    expect(slim?.steps[0].canvasData).toBeUndefined()
+    expect(svc.getAgentRecordById('canvas-search')?.steps[0].canvasData?.content).toBe('<p>整篇</p>')
+  })
+
+  it('旧日文件按 id 取记录时也能丢掉 canvasData', () => {
+    const agentDir = path.join(tmpDir, 'history', 'agent')
+    fs.mkdirSync(agentDir, { recursive: true })
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    const record = makeRecord({
+      id: 'legacy-canvas',
+      timestamp: t,
+      duration: 1,
+      userTask: '旧格式',
+      steps: [{
+        id: 's1',
+        type: 'tool_result',
+        content: 'ok',
+        timestamp: t,
+        canvasData: { action: 'update', renderer: 'document', content: '<p>大</p>' },
+      } as AgentRecord['steps'][number]],
+    })
+    fs.writeFileSync(path.join(agentDir, '2026-03-18.json'), JSON.stringify([record]))
+
+    const svc = new HistoryService()
+    expect(svc.getAgentRecordById('legacy-canvas')?.steps[0].canvasData?.content).toBe('<p>大</p>')
+    expect(svc.getAgentRecordById('legacy-canvas', { omitCanvasData: true })?.steps[0].canvasData).toBeUndefined()
+  })
 })
 
 describe('HistoryService - watch 历史隔离', () => {

@@ -16,6 +16,7 @@
  */
 import * as fs from 'fs'
 import * as path from 'path'
+import * as readline from 'readline'
 import type { AgentRecord, AgentStepRecord } from '@shared/types'
 import { writeFileAtomic } from '../../utils/atomic-write'
 import { normalizeAgentRecord } from '../../utils/normalize'
@@ -30,6 +31,13 @@ import {
 } from './agent-storage'
 
 const log = createLogger('SessionPersistence')
+
+/** 读会话时的场景选择。默认完整读回；检索时丢掉产出物快照，避免把整篇文档拉进内存。 */
+export interface ReadSessionOptions {
+  omitCanvasData?: boolean
+}
+
+const JSONL_READ_CHUNK = 64 * 1024
 
 export interface SessionMeta {
   id: string
@@ -111,53 +119,116 @@ function metaToRecord(meta: SessionMeta, steps: AgentStepRecord[], messages: Age
   })
 }
 
-/** 非空行数（用作 watermark；含可能损坏的行，防止 crash 后重复 append） */
-function countJsonlLines(filePath: string): number {
-  if (!fs.existsSync(filePath)) return 0
-  const text = fs.readFileSync(filePath, 'utf-8')
-  if (!text.trim()) return 0
-  let n = 0
-  for (const line of text.split('\n')) {
-    if (line.trim()) n++
+function applyReadOptions<T>(value: T, options?: ReadSessionOptions): T {
+  if (!options?.omitCanvasData || !value || typeof value !== 'object') return value
+  if (!('canvasData' in value) || (value as { canvasData?: unknown }).canvasData == null) {
+    return value
   }
-  return n
+  delete (value as { canvasData?: unknown }).canvasData
+  return value
 }
 
-function readJsonl<T>(filePath: string): T[] {
-  if (!fs.existsSync(filePath)) return []
-  const text = fs.readFileSync(filePath, 'utf-8')
-  if (!text.trim()) return []
-  const out: T[] = []
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    try {
-      out.push(JSON.parse(trimmed) as T)
-    } catch (e) {
-      log.warn(`Skip corrupt jsonl line in ${filePath}:`, e)
-    }
+function parseJsonlLine<T>(filePath: string, line: string, options?: ReadSessionOptions): T | undefined {
+  const trimmed = line.trim()
+  if (!trimmed) return undefined
+  try {
+    return applyReadOptions(JSON.parse(trimmed) as T, options)
+  } catch (e) {
+    log.warn(`Skip corrupt jsonl line in ${filePath}:`, e)
+    return undefined
   }
+}
+
+/**
+ * 非空行数（用作 watermark；含可能损坏的行，防止 crash 后重复 append）。
+ * 分块读，不把整文件装进字符串。
+ */
+export function countJsonlLines(filePath: string): number {
+  let fd: number
+  try {
+    fd = fs.openSync(filePath, 'r')
+  } catch (e: unknown) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return 0
+    throw e
+  }
+  try {
+    const buf = Buffer.alloc(JSONL_READ_CHUNK)
+    const decoder = new TextDecoder('utf-8')
+    let leftover = ''
+    let n = 0
+    for (;;) {
+      const bytes = fs.readSync(fd, buf, 0, buf.length, null)
+      leftover += bytes === 0 ? decoder.decode() : decoder.decode(buf.subarray(0, bytes), { stream: true })
+      let idx = leftover.indexOf('\n')
+      while (idx !== -1) {
+        if (leftover.slice(0, idx).trim()) n++
+        leftover = leftover.slice(idx + 1)
+        idx = leftover.indexOf('\n')
+      }
+      if (bytes === 0) break
+    }
+    if (leftover.trim()) n++
+    return n
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+function forEachJsonlLineSync(filePath: string, onLine: (line: string) => void): void {
+  const fd = fs.openSync(filePath, 'r')
+  try {
+    const buf = Buffer.alloc(JSONL_READ_CHUNK)
+    const decoder = new TextDecoder('utf-8')
+    let leftover = ''
+    for (;;) {
+      const bytes = fs.readSync(fd, buf, 0, buf.length, null)
+      leftover += bytes === 0 ? decoder.decode() : decoder.decode(buf.subarray(0, bytes), { stream: true })
+      let idx = leftover.indexOf('\n')
+      while (idx !== -1) {
+        onLine(leftover.slice(0, idx))
+        leftover = leftover.slice(idx + 1)
+        idx = leftover.indexOf('\n')
+      }
+      if (bytes === 0) break
+    }
+    if (leftover) onLine(leftover)
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+function readJsonl<T>(filePath: string, options?: ReadSessionOptions): T[] {
+  if (!fs.existsSync(filePath)) return []
+  const out: T[] = []
+  forEachJsonlLineSync(filePath, line => {
+    const parsed = parseJsonlLine<T>(filePath, line, options)
+    if (parsed !== undefined) out.push(parsed)
+  })
   return out
 }
 
-async function readJsonlAsync<T>(filePath: string): Promise<T[]> {
+async function readJsonlAsync<T>(filePath: string, options?: ReadSessionOptions): Promise<T[]> {
+  let stream: fs.ReadStream
   try {
-    const text = await fs.promises.readFile(filePath, 'utf-8')
-    if (!text.trim()) return []
-    const out: T[] = []
-    for (const line of text.split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      try {
-        out.push(JSON.parse(trimmed) as T)
-      } catch (e) {
-        log.warn(`Skip corrupt jsonl line in ${filePath}:`, e)
-      }
+    stream = fs.createReadStream(filePath, { encoding: 'utf-8' })
+  } catch (e: unknown) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return []
+    throw e
+  }
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity })
+  const out: T[] = []
+  try {
+    for await (const line of rl) {
+      const parsed = parseJsonlLine<T>(filePath, line, options)
+      if (parsed !== undefined) out.push(parsed)
     }
     return out
   } catch (e: unknown) {
     if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return []
     throw e
+  } finally {
+    rl.close()
+    stream.destroy()
   }
 }
 
@@ -210,13 +281,14 @@ function writeMeta(dir: string, meta: SessionMeta): void {
 /** 从目录组装完整 AgentRecord */
 export function readSessionDir(
   dir: string,
-  onCorrupt?: (corruptPath: string | null, error: unknown) => void
+  onCorrupt?: (corruptPath: string | null, error: unknown) => void,
+  options?: ReadSessionOptions
 ): AgentRecord | null {
   try {
     const meta = readMeta(dir)
     if (!meta) return null
-    const steps = readJsonl<AgentStepRecord>(stepsPath(dir))
-    const messages = readJsonl<NonNullable<AgentRecord['messages']>[number]>(messagesPath(dir))
+    const steps = readJsonl<AgentStepRecord>(stepsPath(dir), options)
+    const messages = readJsonl<NonNullable<AgentRecord['messages']>[number]>(messagesPath(dir), options)
     return metaToRecord(meta, steps, messages)
   } catch (e) {
     onCorrupt?.(dir, e)
@@ -226,14 +298,15 @@ export function readSessionDir(
 
 async function readSessionDirAsync(
   dir: string,
-  onCorrupt?: (corruptPath: string | null, error: unknown) => void
+  onCorrupt?: (corruptPath: string | null, error: unknown) => void,
+  options?: ReadSessionOptions
 ): Promise<AgentRecord | null> {
   try {
     const meta = await readMetaAsync(dir)
     if (!meta) return null
     const [steps, messages] = await Promise.all([
-      readJsonlAsync<AgentStepRecord>(stepsPath(dir)),
-      readJsonlAsync<NonNullable<AgentRecord['messages']>[number]>(messagesPath(dir)),
+      readJsonlAsync<AgentStepRecord>(stepsPath(dir), options),
+      readJsonlAsync<NonNullable<AgentRecord['messages']>[number]>(messagesPath(dir), options),
     ])
     return metaToRecord(meta, steps, messages)
   } catch (e) {
@@ -249,28 +322,33 @@ export function readSessionRecord(
   agentDir: string,
   dateStr: string,
   recordId: string,
-  onCorrupt?: (corruptPath: string | null, error: unknown) => void
+  onCorrupt?: (corruptPath: string | null, error: unknown) => void,
+  options?: ReadSessionOptions
 ): AgentRecord | null {
   const dir = sessionDir(agentDir, dateStr, recordId)
   if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
-    const fromDir = readSessionDir(dir, onCorrupt)
+    const fromDir = readSessionDir(dir, onCorrupt, options)
     if (fromDir) return fromDir
     // 目录损坏时回退旧单体文件（若仍存在）
   }
-  return readAgentRecordFile(getAgentRecordPath(agentDir, dateStr, recordId), onCorrupt)
+  return applyRecordReadOptions(
+    readAgentRecordFile(getAgentRecordPath(agentDir, dateStr, recordId), onCorrupt),
+    options
+  )
 }
 
 export async function readSessionRecordAsync(
   agentDir: string,
   dateStr: string,
   recordId: string,
-  onCorrupt?: (corruptPath: string | null, error: unknown) => void
+  onCorrupt?: (corruptPath: string | null, error: unknown) => void,
+  options?: ReadSessionOptions
 ): Promise<AgentRecord | null> {
   const dir = sessionDir(agentDir, dateStr, recordId)
   try {
     const st = await fs.promises.stat(dir)
     if (st.isDirectory()) {
-      const fromDir = await readSessionDirAsync(dir, onCorrupt)
+      const fromDir = await readSessionDirAsync(dir, onCorrupt, options)
       if (fromDir) return fromDir
     }
   } catch (e: unknown) {
@@ -278,7 +356,21 @@ export async function readSessionRecordAsync(
       onCorrupt?.(dir, e)
     }
   }
-  return readAgentRecordFileAsync(getAgentRecordPath(agentDir, dateStr, recordId), onCorrupt)
+  return applyRecordReadOptions(
+    await readAgentRecordFileAsync(getAgentRecordPath(agentDir, dateStr, recordId), onCorrupt),
+    options
+  )
+}
+
+export function applyRecordReadOptions(
+  record: AgentRecord | null,
+  options?: ReadSessionOptions
+): AgentRecord | null {
+  if (!record || !options?.omitCanvasData || !record.steps?.length) return record
+  for (const step of record.steps) {
+    if (step.canvasData) delete step.canvasData
+  }
+  return record
 }
 
 /** 会话目录绝对路径（不含 .json） */

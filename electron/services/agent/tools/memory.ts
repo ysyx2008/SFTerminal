@@ -412,14 +412,11 @@ async function searchHistorySemantic(
       ]
 
       if (detail === 'full' && executor.historyService) {
-        const fullRecord = (await executor.historyService.searchAgentRecordsAdvanced({
-          keyword: r.userRequest.slice(0, 50),
-          limit: 1,
-          signal: executor.getAbortSignal?.()
-        })).records[0]
-        if (fullRecord?.steps?.length > 0) {
+        const fullRecord = executor.historyService.getAgentRecordById(r.taskId, { omitCanvasData: true })
+        const steps = fullRecord?.steps
+        if (steps && steps.length > 0) {
           lines.push('', '**工具调用**:')
-          const toolSteps = fullRecord.steps.filter(s => s.type === 'tool_call' && s.toolName)
+          const toolSteps = steps.filter(s => s.type === 'tool_call' && s.toolName)
           for (const step of toolSteps) {
             let entry = `- \`${step.toolName}\``
             if (step.toolArgs?.command) {
