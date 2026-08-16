@@ -1,7 +1,7 @@
 /**
  * 本地秘书待办技能 - 执行器
  */
-import type { TodoItem, TodoPriority, TodoStatus } from '@sailfish/shared-types'
+import type { TodoItem, TodoJournalKind, TodoPriority, TodoSourceKind, TodoStatus } from '@sailfish/shared-types'
 import type { AgentConfig, ToolExecutorConfig, ToolResult } from '../../tools/types'
 import {
   applyTodoUpdate,
@@ -10,6 +10,8 @@ import {
   hasLegacyTodoMd,
   LEGACY_TODO_MD_HINT,
   mutateStore,
+  type TodoJournalInput,
+  type TodoSourceInput,
 } from './store'
 import { createLogger } from '../../../../utils/logger'
 
@@ -39,6 +41,12 @@ function formatItem(item: TodoItem): string {
   if (item.completedAt) parts.push(`  completed: ${item.completedAt}`)
   if (item.description) parts.push(`  desc: ${item.description}`)
   if (item.tags?.length) parts.push(`  tags: ${item.tags.join(', ')}`)
+  if (item.sources?.length) {
+    parts.push(`  sources: ${item.sources.map(s => s.kind + (s.label ? `(${s.label})` : '')).join(', ')}`)
+  }
+  if (item.journal?.length) {
+    parts.push(`  journal: ${item.journal.length}`)
+  }
   return parts.join('\n')
 }
 
@@ -141,6 +149,11 @@ async function todoCreate(
     riskLevel: 'safe',
   })
 
+  const sessionId = executor.getSessionId?.()
+  const sources = sessionId
+    ? [{ kind: 'conversation' as const, sessionId, agentKey: executor.agentId }]
+    : undefined
+
   const item = createTodoItem({
     title,
     description: typeof args.description === 'string' ? args.description : undefined,
@@ -148,6 +161,7 @@ async function todoCreate(
     dueDate: typeof args.due_date === 'string' ? args.due_date : undefined,
     tags: Array.isArray(args.tags) ? (args.tags as string[]) : undefined,
     status: args.status as TodoStatus | undefined,
+    sources,
   })
 
   await mutateStore(store => {
@@ -207,7 +221,12 @@ async function todoUpdate(
     else notes.push(`ignored invalid status: ${args.status}`)
   }
 
-  const updated = await mutateStore(store => {
+  const journalErr = journalInputError(args.journal)
+  if (journalErr) return { success: false, output: '', error: journalErr }
+  const sourceErr = sourceInputError(args.source)
+  if (sourceErr) return { success: false, output: '', error: sourceErr }
+
+  let updated = await mutateStore(store => {
     const idx = store.todos.findIndex(t => t.id === id)
     if (idx < 0) return null
     const next = applyTodoUpdate(store.todos[idx], patch)
@@ -215,6 +234,15 @@ async function todoUpdate(
     return next
   })
   if (!updated) return { success: false, output: '', error: `Todo not found: ${id}` }
+
+  const journal = parseJournalInput(args.journal, executor.getSessionId?.())
+  if (journal) {
+    updated = await getTodoService().appendJournal(id, journal) ?? updated
+  }
+  const source = parseSourceInput(args.source)
+  if (source) {
+    updated = await getTodoService().addSource(id, source) ?? updated
+  }
 
   let output = `已更新待办：\n${formatItem(updated)}`
   if (notes.length) output += `\n\n备注：${notes.join('; ')}`
@@ -299,6 +327,64 @@ async function todoDelete(
     toolResult: output,
   })
   return { success: true, output }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function journalInputError(raw: unknown): string | null {
+  if (raw == null) return null
+  const obj = asRecord(raw)
+  if (!obj) return 'journal must be an object'
+  const kind = obj.kind
+  if (kind !== 'scheduled' && kind !== 'progress') return 'journal.kind must be scheduled or progress'
+  if (kind === 'scheduled' && typeof obj.start !== 'string') return 'scheduled journal requires start'
+  if (kind === 'progress' && typeof obj.note !== 'string') return 'progress journal requires note'
+  return null
+}
+
+function sourceInputError(raw: unknown): string | null {
+  if (raw == null) return null
+  const obj = asRecord(raw)
+  if (!obj) return 'source must be an object'
+  const kind = obj.kind
+  if (kind !== 'email' && kind !== 'file' && kind !== 'url') return 'source.kind must be email, file, or url'
+  if (kind === 'file' && typeof obj.path !== 'string') return 'file source requires path'
+  if (kind === 'url' && typeof obj.url !== 'string') return 'url source requires url'
+  if (kind === 'email' && typeof obj.message_id !== 'string' && typeof obj.subject !== 'string' && typeof obj.from !== 'string') {
+    return 'email source requires message_id, subject, or from'
+  }
+  return null
+}
+
+function parseJournalInput(raw: unknown, sessionId?: string): TodoJournalInput | null {
+  const obj = asRecord(raw)
+  if (!obj) return null
+  const kind = obj.kind as TodoJournalKind
+  const input: TodoJournalInput = { kind }
+  if (typeof obj.start === 'string') input.start = obj.start
+  if (typeof obj.end === 'string') input.end = obj.end
+  if (typeof obj.calendar_id === 'string') input.calendarId = obj.calendar_id
+  if (typeof obj.event_id === 'string') input.eventId = obj.event_id
+  if (typeof obj.note === 'string') input.note = obj.note
+  if (sessionId) input.sessionId = sessionId
+  return input
+}
+
+function parseSourceInput(raw: unknown): TodoSourceInput | null {
+  const obj = asRecord(raw)
+  if (!obj) return null
+  const input: TodoSourceInput = { kind: obj.kind as TodoSourceKind }
+  if (typeof obj.label === 'string') input.label = obj.label
+  if (typeof obj.message_id === 'string') input.messageId = obj.message_id
+  if (typeof obj.subject === 'string') input.subject = obj.subject
+  if (typeof obj.from === 'string') input.from = obj.from
+  if (typeof obj.path === 'string') input.path = obj.path
+  if (typeof obj.url === 'string') input.url = obj.url
+  return input
 }
 
 /**

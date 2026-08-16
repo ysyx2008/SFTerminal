@@ -95,6 +95,31 @@ describe('todo store', () => {
     expect(hasLegacyTodoMd()).toBe(true)
   })
 
+  it('normalizeStore keeps journal and sources, drops invalid', () => {
+    const normalized = normalizeStore({
+      todos: [{
+        id: 'ok',
+        title: '有出处',
+        status: 'pending',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        journal: [
+          { kind: 'scheduled', start: '2026-08-18T14:00:00.000Z', end: '2026-08-18T15:00:00.000Z' },
+          { kind: 'progress' },
+          { kind: 'bogus', note: 'x' },
+        ],
+        sources: [
+          { kind: 'conversation', sessionId: 'sess-1' },
+          { kind: 'file' },
+          { kind: 'url', url: 'https://example.com' },
+        ],
+      }],
+    })
+    expect(normalized.todos[0].journal).toHaveLength(1)
+    expect(normalized.todos[0].journal?.[0].kind).toBe('scheduled')
+    expect(normalized.todos[0].sources).toHaveLength(2)
+    expect(normalized.todos[0].sources?.map(s => s.kind).sort()).toEqual(['conversation', 'url'])
+  })
+
   it('serializes concurrent saves', async () => {
     const a = emptyStore()
     a.todos.push(createTodoItem({ title: 'one' }))

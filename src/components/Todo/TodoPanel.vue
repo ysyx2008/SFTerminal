@@ -3,7 +3,7 @@
  * 本地待办面板 —— TabBar 固定面（联络右侧）
  * 列表紧凑单行；点击打开右侧详情（完整 TodoItem 字段）
  */
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Check,
@@ -15,13 +15,19 @@ import {
   MessagesSquare,
   X,
 } from 'lucide-vue-next'
-import type { TodoItem, TodoPriority, TodoStatus } from '@sailfish/shared-types'
+import type { TodoItem, TodoPriority, TodoSource, TodoStatus } from '@sailfish/shared-types'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../../stores/terminal'
 import { toast } from '../../composables/useToast'
 import TodoRowHoverTip from './TodoRowHoverTip.vue'
+import TodoMenu from './TodoMenu.vue'
 
 const { t, locale } = useI18n()
 const terminalStore = useTerminalStore()
+const openAppSettings = inject<(tab?: string, section?: string) => void>('openAppSettings')
+
+const contextMenu = ref<{ item: TodoItem; x: number; y: number } | null>(null)
+const sourceLabels = ref<Record<string, string>>({})
+const dispatching = ref(false)
 
 type FilterMode = 'active' | 'completed' | 'all'
 
@@ -269,6 +275,87 @@ function onRowPointerLeave() {
   hoverTipSuppressed.value = false
 }
 
+function onRowContextMenu(item: TodoItem, ev: MouseEvent) {
+  ev.preventDefault()
+  hoverTipSuppressed.value = true
+  hoverTipItem.value = null
+  contextMenu.value = { item, x: ev.clientX, y: ev.clientY }
+}
+
+function closeContextMenu() {
+  contextMenu.value = null
+}
+
+async function dispatchTodo(item: TodoItem, kind: 'handle' | 'schedule', minutes?: number) {
+  if (dispatching.value) return
+  closeContextMenu()
+  dispatching.value = true
+  try {
+    const prompt = await window.electronAPI.todo.buildHandoffPrompt(item.id, kind, minutes)
+    if (!prompt) {
+      toast.error(t('todoPanel.menu.dispatchFailed'))
+      return
+    }
+    const tabId = terminalStore.createAssistantTab({
+      activate: false,
+      title: item.title,
+      initialMessage: prompt,
+    })
+    terminalStore.markAssistantSkipOnboarding(tabId)
+    terminalStore.focusHubConversation(tabId)
+  } catch (e) {
+    console.error('Failed to dispatch todo:', e)
+    toast.error(t('todoPanel.menu.dispatchFailed'))
+  } finally {
+    dispatching.value = false
+  }
+}
+
+function openCalendarSettings() {
+  closeContextMenu()
+  openAppSettings?.('calendar')
+}
+
+function formatRange(start?: string, end?: string): string {
+  const a = start ? formatAbsolute(start) : ''
+  const b = end ? formatAbsolute(end) : ''
+  if (a && b) return `${a} – ${b}`
+  return a || b || '—'
+}
+
+function sourceKindLabel(kind: TodoSource['kind']): string {
+  return t(`todoPanel.sources.${kind}`)
+}
+
+function sourceDisplay(source: TodoSource): string {
+  if (source.label) return source.label
+  if (source.kind === 'conversation') {
+    return sourceLabels.value[source.sessionId || '']
+      || t('todoPanel.sources.conversation')
+  }
+  if (source.kind === 'email') {
+    return [source.from, source.subject].filter(Boolean).join(' · ') || t('todoPanel.sources.email')
+  }
+  if (source.kind === 'file') return source.path || t('todoPanel.sources.file')
+  return source.url || t('todoPanel.sources.url')
+}
+
+async function resolveSourceLabels(item: TodoItem | null) {
+  const next: Record<string, string> = {}
+  const sessions = (item?.sources ?? []).filter(s => s.kind === 'conversation' && s.sessionId)
+  await Promise.all(sessions.map(async s => {
+    const id = s.sessionId!
+    try {
+      const rec = await window.electronAPI.history.getAgentRecordById(id)
+      const title = (rec as { title?: string } | undefined)?.title || rec?.userTask
+      if (title) next[id] = title
+    } catch {
+      /* 失效无所谓 */
+    }
+  }))
+  sourceLabels.value = next
+}
+
 /** 面板分区内：只按重要度（同档按创建时间） */
 function priorityRank(p?: TodoPriority): number {
   if (p === 'urgent') return 0
@@ -324,6 +411,10 @@ const isEmpty = computed(() => {
 const selectedItem = computed(() =>
   selectedId.value ? todos.value.find(t => t.id === selectedId.value) ?? null : null
 )
+
+watch(selectedItem, (item) => {
+  void resolveSourceLabels(item)
+})
 
 const detailOpen = computed(() => !!selectedId.value && !!draft.value)
 
@@ -755,6 +846,7 @@ onUnmounted(() => {
                 @keydown="onRowKeydown(item, $event)"
                 @mousemove="onRowPointerMove(item, $event)"
                 @mouseleave="onRowPointerLeave"
+                @contextmenu.prevent="onRowContextMenu(item, $event)"
               >
                 <button
                   type="button"
@@ -805,6 +897,7 @@ onUnmounted(() => {
                 @keydown="onRowKeydown(item, $event)"
                 @mousemove="onRowPointerMove(item, $event)"
                 @mouseleave="onRowPointerLeave"
+                @contextmenu.prevent="onRowContextMenu(item, $event)"
               >
                 <button
                   type="button"
@@ -855,6 +948,7 @@ onUnmounted(() => {
                 @keydown="onRowKeydown(item, $event)"
                 @mousemove="onRowPointerMove(item, $event)"
                 @mouseleave="onRowPointerLeave"
+                @contextmenu.prevent="onRowContextMenu(item, $event)"
               >
                 <button
                   type="button"
@@ -905,6 +999,7 @@ onUnmounted(() => {
                 @keydown="onRowKeydown(item, $event)"
                 @mousemove="onRowPointerMove(item, $event)"
                 @mouseleave="onRowPointerLeave"
+                @contextmenu.prevent="onRowContextMenu(item, $event)"
               >
                 <button
                   type="button"
@@ -949,6 +1044,7 @@ onUnmounted(() => {
                 @keydown="onRowKeydown(item, $event)"
                 @mousemove="onRowPointerMove(item, $event)"
                 @mouseleave="onRowPointerLeave"
+                @contextmenu.prevent="onRowContextMenu(item, $event)"
               >
                 <button
                   type="button"
@@ -988,6 +1084,17 @@ onUnmounted(() => {
         :cursor-y="hoverTipPos.y"
       />
     </Teleport>
+
+    <TodoMenu
+      v-if="contextMenu"
+      :item="contextMenu.item"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      @handle="dispatchTodo(contextMenu.item, 'handle')"
+      @schedule="(minutes) => dispatchTodo(contextMenu.item, 'schedule', minutes)"
+      @open-calendar-settings="openCalendarSettings"
+      @close="closeContextMenu"
+    />
 
     <!-- 右侧详情 -->
     <aside v-if="detailOpen && draft && selectedItem" class="todo-detail">
@@ -1049,6 +1156,29 @@ onUnmounted(() => {
             :placeholder="t('todoPanel.tagsPlaceholder')"
           />
         </label>
+
+        <section v-if="selectedItem.journal?.length" class="readonly-block">
+          <h3>{{ t('todoPanel.journal.title') }}</h3>
+          <ul>
+            <li v-for="entry in [...selectedItem.journal].reverse()" :key="entry.id">
+              <template v-if="entry.kind === 'scheduled'">
+                {{ t('todoPanel.journal.scheduled') }} · {{ formatRange(entry.start, entry.end) }}
+              </template>
+              <template v-else>
+                {{ t('todoPanel.journal.progress') }} · {{ entry.note }}
+              </template>
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="selectedItem.sources?.length" class="readonly-block">
+          <h3>{{ t('todoPanel.sources.title') }}</h3>
+          <ul>
+            <li v-for="source in selectedItem.sources" :key="source.id">
+              {{ sourceKindLabel(source.kind) }} · {{ sourceDisplay(source) }}
+            </li>
+          </ul>
+        </section>
 
         <dl class="meta-grid">
           <div class="meta-cell">
@@ -1684,6 +1814,32 @@ onUnmounted(() => {
   min-height: 84px;
   line-height: 1.45;
   font-family: inherit;
+}
+
+.readonly-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.readonly-block h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.readonly-block ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.readonly-block li {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 .meta-grid {

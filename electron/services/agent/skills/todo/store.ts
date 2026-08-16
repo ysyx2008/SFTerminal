@@ -7,7 +7,16 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { randomUUID } from 'crypto'
-import type { TodoItem, TodoPriority, TodoStatus, TodoStoreData } from '@sailfish/shared-types'
+import type {
+  TodoItem,
+  TodoJournalEntry,
+  TodoJournalKind,
+  TodoPriority,
+  TodoSource,
+  TodoSourceKind,
+  TodoStatus,
+  TodoStoreData,
+} from '@sailfish/shared-types'
 import { getWorkspacePath } from '../../tools/file'
 import { createLogger } from '../../../../utils/logger'
 import { LEGACY_TODO_MD, TODO_FILENAME } from './migration-marker'
@@ -21,6 +30,11 @@ export const LEGACY_TODO_MD_HINT =
 
 const VALID_STATUSES: TodoStatus[] = ['pending', 'in_progress', 'completed', 'cancelled']
 const VALID_PRIORITIES: TodoPriority[] = ['low', 'normal', 'high', 'urgent']
+const VALID_JOURNAL_KINDS: TodoJournalKind[] = ['scheduled', 'progress']
+const VALID_SOURCE_KINDS: TodoSourceKind[] = ['conversation', 'email', 'file', 'url']
+
+export type TodoJournalInput = Omit<TodoJournalEntry, 'id' | 'at'>
+export type TodoSourceInput = Omit<TodoSource, 'id' | 'at'>
 
 const PRIORITY_RANK: Record<TodoPriority, number> = {
   urgent: 0,
@@ -44,6 +58,7 @@ export interface TodoCreateInput {
   priority?: TodoPriority
   dueDate?: string
   tags?: string[]
+  sources?: TodoSourceInput[]
 }
 
 export type TodoUpdatePatch = {
@@ -142,6 +157,10 @@ export class TodoService {
         const tags = t.tags.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
         if (tags.length > 0) todo.tags = tags
       }
+      const journal = normalizeJournalList(t.journal)
+      if (journal) todo.journal = journal
+      const sources = normalizeSourceList(t.sources)
+      if (sources) todo.sources = sources
       todos.push(todo)
     }
 
@@ -217,6 +236,7 @@ export class TodoService {
     priority?: TodoPriority
     dueDate?: string
     tags?: string[]
+    sources?: TodoSourceInput[]
   }): TodoItem {
     const now = new Date().toISOString()
     const status = input.status && VALID_STATUSES.includes(input.status) ? input.status : 'pending'
@@ -234,6 +254,8 @@ export class TodoService {
       item.tags = input.tags.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim())
     }
     if (status === 'completed') item.completedAt = now
+    const sources = stampSources(input.sources, now)
+    if (sources) item.sources = sources
     return item
   }
 
@@ -347,6 +369,7 @@ export class TodoService {
       priority: input.priority,
       dueDate: input.dueDate,
       tags: input.tags,
+      sources: input.sources,
     })
     await this.mutate(store => {
       store.todos.push(item)
@@ -375,6 +398,43 @@ export class TodoService {
       const before = store.todos.length
       store.todos = store.todos.filter(t => t.id !== id)
       return store.todos.length < before
+    })
+  }
+
+  async appendJournal(id: string, input: TodoJournalInput): Promise<TodoItem | null> {
+    if (!id) throw new Error('id is required')
+    const entry = stampJournal(input)
+    if (!entry) return null
+    if (!this.load().todos.some(t => t.id === id)) return null
+    return this.mutate(store => {
+      const idx = store.todos.findIndex(t => t.id === id)
+      if (idx < 0) return null
+      const item = store.todos[idx]
+      const journal = [...(item.journal ?? []), entry]
+      const next: TodoItem = { ...item, journal, updatedAt: new Date().toISOString() }
+      store.todos[idx] = next
+      return next
+    })
+  }
+
+  async addSource(id: string, input: TodoSourceInput): Promise<TodoItem | null> {
+    if (!id) throw new Error('id is required')
+    const source = stampSource(input)
+    if (!source) return null
+    if (!this.load().todos.some(t => t.id === id)) return null
+    return this.mutate(store => {
+      const idx = store.todos.findIndex(t => t.id === id)
+      if (idx < 0) return null
+      const item = store.todos[idx]
+      const existing = item.sources ?? []
+      const key = sourceLocatorKey(source)
+      if (key && existing.some(s => sourceLocatorKey(s) === key)) {
+        return item
+      }
+      const sources = [...existing, source]
+      const next: TodoItem = { ...item, sources, updatedAt: new Date().toISOString() }
+      store.todos[idx] = next
+      return next
     })
   }
 
@@ -443,6 +503,7 @@ export function createTodoItem(input: {
   priority?: TodoPriority
   dueDate?: string
   tags?: string[]
+  sources?: TodoSourceInput[]
 }): TodoItem {
   return getTodoService().createItem(input)
 }
@@ -463,4 +524,162 @@ export function applyTodoUpdate(
 
 export function resetWriteQueueForTest(): void {
   getTodoService().resetWriteQueueForTest()
+}
+
+function optionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed || undefined
+}
+
+function sourceHasLocator(source: Pick<TodoSource, 'kind' | 'sessionId' | 'messageId' | 'path' | 'url' | 'subject' | 'from'>): boolean {
+  switch (source.kind) {
+    case 'conversation':
+      return !!source.sessionId
+    case 'email':
+      return !!(source.messageId || source.subject || source.from)
+    case 'file':
+      return !!source.path
+    case 'url':
+      return !!source.url
+    default:
+      return false
+  }
+}
+
+/** 仅在定位字段足够唯一时去重；email 无 messageId 不去重（同主题两封不该互挤） */
+function sourceLocatorKey(source: Pick<TodoSource, 'kind' | 'sessionId' | 'messageId' | 'path' | 'url'>): string | null {
+  switch (source.kind) {
+    case 'conversation':
+      return source.sessionId ? `conversation:${source.sessionId}` : null
+    case 'email':
+      return source.messageId ? `email:${source.messageId}` : null
+    case 'file':
+      return source.path ? `file:${source.path}` : null
+    case 'url':
+      return source.url ? `url:${source.url}` : null
+    default:
+      return null
+  }
+}
+
+function stampJournal(raw: TodoJournalInput, at = new Date().toISOString()): TodoJournalEntry | null {
+  if (!VALID_JOURNAL_KINDS.includes(raw.kind)) return null
+  const start = optionalString(raw.start)
+  const note = optionalString(raw.note)
+  if (raw.kind === 'scheduled' && !start) return null
+  if (raw.kind === 'progress' && !note) return null
+  const entry: TodoJournalEntry = {
+    id: randomUUID(),
+    kind: raw.kind,
+    at,
+  }
+  if (start) entry.start = start
+  const end = optionalString(raw.end)
+  if (end) entry.end = end
+  const calendarId = optionalString(raw.calendarId)
+  if (calendarId) entry.calendarId = calendarId
+  const eventId = optionalString(raw.eventId)
+  if (eventId) entry.eventId = eventId
+  if (note) entry.note = note
+  const sessionId = optionalString(raw.sessionId)
+  if (sessionId) entry.sessionId = sessionId
+  return entry
+}
+
+function stampSource(raw: TodoSourceInput, at = new Date().toISOString()): TodoSource | null {
+  if (!VALID_SOURCE_KINDS.includes(raw.kind)) return null
+  const source: TodoSource = {
+    id: randomUUID(),
+    kind: raw.kind,
+    at,
+  }
+  const label = optionalString(raw.label)
+  if (label) source.label = label
+  const sessionId = optionalString(raw.sessionId)
+  if (sessionId) source.sessionId = sessionId
+  const agentKey = optionalString(raw.agentKey)
+  if (agentKey) source.agentKey = agentKey
+  const messageId = optionalString(raw.messageId)
+  if (messageId) source.messageId = messageId
+  const subject = optionalString(raw.subject)
+  if (subject) source.subject = subject
+  const from = optionalString(raw.from)
+  if (from) source.from = from
+  const filePath = optionalString(raw.path)
+  if (filePath) source.path = filePath
+  const url = optionalString(raw.url)
+  if (url) source.url = url
+  if (!sourceHasLocator(source)) return null
+  return source
+}
+
+function stampSources(raw: TodoSourceInput[] | undefined, at: string): TodoSource[] | undefined {
+  if (!raw?.length) return undefined
+  const seen = new Set<string>()
+  const sources: TodoSource[] = []
+  for (const item of raw) {
+    const source = stampSource(item, at)
+    if (!source) continue
+    const key = sourceLocatorKey(source)
+    if (key) {
+      if (seen.has(key)) continue
+      seen.add(key)
+    }
+    sources.push(source)
+  }
+  return sources.length ? sources : undefined
+}
+
+function normalizeJournalList(raw: unknown): TodoJournalEntry[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const list: TodoJournalEntry[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const t = item as Record<string, unknown>
+    const kind = t.kind as TodoJournalKind
+    const stamped = stampJournal({
+      kind,
+      start: optionalString(t.start),
+      end: optionalString(t.end),
+      calendarId: optionalString(t.calendarId),
+      eventId: optionalString(t.eventId),
+      note: optionalString(t.note),
+      sessionId: optionalString(t.sessionId),
+    }, optionalString(t.at) || new Date().toISOString())
+    if (!stamped) continue
+    if (typeof t.id === 'string' && t.id) stamped.id = t.id
+    list.push(stamped)
+  }
+  return list.length ? list : undefined
+}
+
+function normalizeSourceList(raw: unknown): TodoSource[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const seen = new Set<string>()
+  const list: TodoSource[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const t = item as Record<string, unknown>
+    const stamped = stampSource({
+      kind: t.kind as TodoSourceKind,
+      label: optionalString(t.label),
+      sessionId: optionalString(t.sessionId),
+      agentKey: optionalString(t.agentKey),
+      messageId: optionalString(t.messageId),
+      subject: optionalString(t.subject),
+      from: optionalString(t.from),
+      path: optionalString(t.path),
+      url: optionalString(t.url),
+    }, optionalString(t.at) || new Date().toISOString())
+    if (!stamped) continue
+    if (typeof t.id === 'string' && t.id) stamped.id = t.id
+    const key = sourceLocatorKey(stamped)
+    if (key) {
+      if (seen.has(key)) continue
+      seen.add(key)
+    }
+    list.push(stamped)
+  }
+  return list.length ? list : undefined
 }

@@ -122,6 +122,20 @@ const dueLine = computed(() => {
   return parts.join(' · ')
 })
 
+const scheduledHint = computed(() => {
+  const blocks = (props.item.journal ?? []).filter(j => j.kind === 'scheduled' && j.start)
+  if (!blocks.length) return ''
+  const last = blocks[blocks.length - 1]
+  const when = [formatShort(last.start), last.end ? formatShort(last.end) : '']
+    .filter(Boolean)
+    .join(' – ')
+  const head = t('todoPanel.journal.scheduledHint', { when })
+  if (blocks.length > 1) {
+    return `${head} · ${t('todoPanel.journal.scheduledMore', { n: blocks.length })}`
+  }
+  return head
+})
+
 const timeLine = computed(() => {
   if (props.item.completedAt) {
     return `${t('todoPanel.fieldCompleted')} ${formatShort(props.item.completedAt)}`
@@ -154,6 +168,8 @@ const timeLine = computed(() => {
       </div>
 
       <p v-if="item.tags?.length" class="tip-tags">{{ item.tags.join(' · ') }}</p>
+
+      <p v-if="scheduledHint" class="tip-scheduled">{{ scheduledHint }}</p>
 
       <p class="tip-time">{{ timeLine }}</p>
     </div>
@@ -275,6 +291,12 @@ const timeLine = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tip-scheduled {
+  margin: 0;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .tip-time {

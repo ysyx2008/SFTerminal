@@ -2405,6 +2405,9 @@ interface Window {
       complete: (id: string) => Promise<TodoItem | null>
       delete: (id: string) => Promise<boolean>
       countOverdue: () => Promise<number>
+      appendJournal: (id: string, entry: Omit<import('@shared/types').TodoJournalEntry, 'id' | 'at'>) => Promise<TodoItem | null>
+      addSource: (id: string, source: Omit<import('@shared/types').TodoSource, 'id' | 'at'>) => Promise<TodoItem | null>
+      buildHandoffPrompt: (id: string, kind: 'handle' | 'schedule', minutes?: number) => Promise<string | null>
       onChanged: (callback: () => void) => () => void
     }
 

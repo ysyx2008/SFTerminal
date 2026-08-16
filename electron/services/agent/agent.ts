@@ -3503,6 +3503,7 @@ export abstract class Agent {
   protected createToolExecutorConfig(run: AgentRun): ToolExecutorConfig {
     return {
       agentId: this._agentId || run.ptyId || undefined,
+      getSessionId: () => this.getSessionId(),
       terminalService: this.services.unifiedTerminalService || this.services.ptyService as any,
       hostProfileService: this.services.hostProfileService,
       mcpService: this.services.mcpService,

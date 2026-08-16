@@ -33,6 +33,8 @@ export const PATH_PARAM_NAMES = new Set([
 export interface ToolExecutorConfig {
   /** Agent 实例的逻辑 ID（用于 talk_to_user 等工具路由 proactive message） */
   agentId?: string
+  /** 当前会话 id（todo_create 自动记对话出处） */
+  getSessionId?: () => string | undefined
   /** 是否为子 Agent 执行上下文（dispatch_agents 派生的子任务）。true 时高危命令直接报错，不走用户确认 */
   isSubAgent?: boolean
   /** 统一终端服务（支持 PTY 和 SSH） */

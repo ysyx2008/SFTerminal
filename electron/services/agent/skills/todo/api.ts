@@ -5,11 +5,13 @@ import type { TodoItem } from '@sailfish/shared-types'
 import {
   getTodoService,
   type TodoCreateInput,
+  type TodoJournalInput,
   type TodoListFilter,
+  type TodoSourceInput,
   type TodoUpdatePatch,
 } from './store'
 
-export type { TodoCreateInput, TodoListFilter, TodoUpdatePatch }
+export type { TodoCreateInput, TodoJournalInput, TodoListFilter, TodoSourceInput, TodoUpdatePatch }
 
 export function listTodos(filter: TodoListFilter = {}): TodoItem[] {
   return getTodoService().list(filter)
@@ -33,4 +35,12 @@ export async function completeTodo(id: string): Promise<TodoItem | null> {
 
 export async function deleteTodo(id: string): Promise<boolean> {
   return getTodoService().delete(id)
+}
+
+export async function appendTodoJournal(id: string, entry: TodoJournalInput): Promise<TodoItem | null> {
+  return getTodoService().appendJournal(id, entry)
+}
+
+export async function addTodoSource(id: string, source: TodoSourceInput): Promise<TodoItem | null> {
+  return getTodoService().addSource(id, source)
 }

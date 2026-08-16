@@ -402,6 +402,8 @@ import { getMigrationRunner } from './migrations'
 import { runTodoMdAgentMigrationIfNeeded } from './services/agent/skills/todo/migrate-legacy'
 import { runMcpWhenToUseNoticeIfNeeded } from './services/agent/mcp-when-to-use-notice'
 import {
+  addTodoSource,
+  appendTodoJournal,
   completeTodo,
   countOverdueTodos,
   createTodo,
@@ -409,7 +411,9 @@ import {
   listTodos,
   updateTodo,
   type TodoCreateInput,
+  type TodoJournalInput,
   type TodoListFilter,
+  type TodoSourceInput,
   type TodoUpdatePatch,
 } from './services/agent/skills/todo/api'
 import { onTodoStoreChanged } from './services/agent/skills/todo/store'
@@ -3475,6 +3479,26 @@ ipcMain.handle('todo:delete', async (_event, id: string) => {
 
 ipcMain.handle('todo:countOverdue', async () => {
   return countOverdueTodos()
+})
+
+ipcMain.handle('todo:appendJournal', async (_event, id: string, entry: TodoJournalInput) => {
+  return appendTodoJournal(id, entry)
+})
+
+ipcMain.handle('todo:addSource', async (_event, id: string, source: TodoSourceInput) => {
+  return addTodoSource(id, source)
+})
+
+ipcMain.handle('todo:buildHandoffPrompt', async (_event, id: string, kind: 'handle' | 'schedule', minutes?: number) => {
+  const items = listTodos({ status: 'all', includeDone: true })
+  const item = items.find(t => t.id === id)
+  if (!item) return null
+  const { buildTodoHandoffPrompt } = await import('./services/agent/skills/todo/handoff')
+  const { getConfigService } = await import('./services/config.service')
+  return buildTodoHandoffPrompt(item, kind, {
+    minutes,
+    locale: getConfigService().getLanguage(),
+  })
 })
 
 // ==================== Watch & Sensor IPC ====================

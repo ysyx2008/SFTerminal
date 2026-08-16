@@ -15,6 +15,8 @@ vi.mock('electron', () => ({
 }))
 
 import {
+  addTodoSource,
+  appendTodoJournal,
   completeTodo,
   countOverdueTodos,
   createTodo,
@@ -72,6 +74,34 @@ describe('todo api', () => {
       createTodo({ title: 'c' }),
     ])
     expect(listTodos()).toHaveLength(3)
+  })
+
+  it('appendJournal and addSource persist without dropping history', async () => {
+    const item = await createTodo({
+      title: '带出处',
+      sources: [{ kind: 'conversation', sessionId: 'sess-a' }],
+    })
+    expect(item.sources).toHaveLength(1)
+
+    const withLog = await appendTodoJournal(item.id, {
+      kind: 'scheduled',
+      start: '2026-08-18T14:00:00.000Z',
+      end: '2026-08-18T15:00:00.000Z',
+    })
+    expect(withLog?.journal).toHaveLength(1)
+
+    const withProgress = await appendTodoJournal(item.id, {
+      kind: 'progress',
+      note: '草稿已写',
+    })
+    expect(withProgress?.journal).toHaveLength(2)
+    expect(withProgress?.sources).toHaveLength(1)
+
+    const dup = await addTodoSource(item.id, { kind: 'conversation', sessionId: 'sess-a' })
+    expect(dup?.sources).toHaveLength(1)
+
+    const extra = await addTodoSource(item.id, { kind: 'file', path: '/tmp/a.md' })
+    expect(extra?.sources).toHaveLength(2)
   })
 
   it('updateTodo can reopen completed', async () => {

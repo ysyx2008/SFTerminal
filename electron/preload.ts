@@ -3276,6 +3276,12 @@ const electronAPI = {
       ipcRenderer.invoke('todo:delete', id),
     countOverdue: () =>
       ipcRenderer.invoke('todo:countOverdue') as Promise<number>,
+    appendJournal: (id: string, entry: Record<string, unknown>) =>
+      ipcRenderer.invoke('todo:appendJournal', id, entry),
+    addSource: (id: string, source: Record<string, unknown>) =>
+      ipcRenderer.invoke('todo:addSource', id, source),
+    buildHandoffPrompt: (id: string, kind: 'handle' | 'schedule', minutes?: number) =>
+      ipcRenderer.invoke('todo:buildHandoffPrompt', id, kind, minutes) as Promise<string | null>,
     onChanged: (callback: () => void) => {
       const handler = () => { callback() }
       ipcRenderer.on('todo:changed', handler)

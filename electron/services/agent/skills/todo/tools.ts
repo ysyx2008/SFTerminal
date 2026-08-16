@@ -108,7 +108,8 @@ createdAt 不可由调用方指定。日历里的 VTODO 请用 calendar_todo_cre
     function: {
       name: 'todo_update',
       description: `更新本地待办。可改 title/description/priority/due_date/tags/status。
-进入 completed 自动写 completedAt；离开 completed 清空 completedAt。createdAt 不可改。`,
+进入 completed 自动写 completedAt；离开 completed 清空 completedAt。createdAt 不可改。
+也可追加一条事项日志（journal）或一条出处（source）；只追加，不覆盖已有记录。对话出处在 todo_create 时自动记录。`,
       parameters: {
         type: 'object',
         properties: {
@@ -149,6 +150,41 @@ createdAt 不可由调用方指定。日历里的 VTODO 请用 calendar_todo_cre
           clear_tags: {
             type: 'boolean',
             description: '为 true 时清空 tags'
+          },
+          journal: {
+            type: 'object',
+            description: '追加一条事项日志。scheduled 需 start；progress 需 note',
+            properties: {
+              kind: {
+                type: 'string',
+                enum: ['scheduled', 'progress'],
+                description: 'scheduled=安排时段；progress=进展'
+              },
+              start: { type: 'string', description: '开始时间（ISO 8601）' },
+              end: { type: 'string', description: '结束时间（ISO 8601）' },
+              calendar_id: { type: 'string', description: '日历 ID' },
+              event_id: { type: 'string', description: '日历事件 ID' },
+              note: { type: 'string', description: '进展说明' }
+            },
+            required: ['kind']
+          },
+          source: {
+            type: 'object',
+            description: '追加一条出处（email / file / url）',
+            properties: {
+              kind: {
+                type: 'string',
+                enum: ['email', 'file', 'url'],
+                description: '出处类型'
+              },
+              label: { type: 'string', description: '一句人话说明' },
+              message_id: { type: 'string', description: '邮件 ID' },
+              subject: { type: 'string', description: '邮件主题' },
+              from: { type: 'string', description: '发件人' },
+              path: { type: 'string', description: '文件路径（kind=file）' },
+              url: { type: 'string', description: '网址（kind=url）' }
+            },
+            required: ['kind']
           }
         },
         required: ['id']
@@ -206,4 +242,5 @@ export const todoSkillContent = `## 本地待办（todo 技能）
 
 - 与日历 CalDAV VTODO 不同：日历待办用 \`calendar_todo_*\`
 - 心跳会注入当前待办摘要；正式列表用 \`todo_list\`
-- 提醒用户做事 → \`todo_create\`；自己定期执行 → 用关切（watch）`
+- 提醒用户做事 → \`todo_create\`；自己定期执行 → 用关切（watch）
+- \`todo_update\` 可追加一条 journal（安排时段 / 进展）或一条 source（邮件 / 文件 / 网址）。对话出处在 \`todo_create\` 时自动记录`
