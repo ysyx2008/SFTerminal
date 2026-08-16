@@ -522,6 +522,21 @@ export default {
     logLevelDesc: '控制日志输出量。Debug 输出最多，Silent 完全静默，推荐使用 Warn。日志同时写入文件便于排查问题',
     openLogDir: '打开日志目录',
     openAiDebugLogDir: '打开 AI 对话日志目录',
+    // 崩溃诊断
+    crashReport: '崩溃诊断',
+    crashReportDesc: '软件崩溃时会自动留下现场。复制摘要就能直接粘贴给我们，摘要与诊断包都不含主机名、账号名与 AI 对话内容',
+    crashReportHealthy: '未发现崩溃记录',
+    crashReportLastCrash: '上次未正常退出（当时版本 {version}）',
+    crashReportConsecutive: '连续异常退出 {count} 次',
+    crashReportThisRun: '本次运行崩溃 {count} 次',
+    crashReportDumps: '崩溃转储 {count} 个',
+    copyCrashSummary: '复制崩溃摘要',
+    crashSummaryCopied: '已复制，可直接粘贴',
+    createDiagnosticsPackage: '生成完整诊断包',
+    creatingPackage: '生成中…',
+    packageCreated: '诊断包已生成（{size}）',
+    revealPackage: '打开所在文件夹',
+    packageFailed: '生成失败：{error}',
     // Steam 版：不提供任何 AI/API 配置入口
     steamNoAiConfig: 'Steam 版本不提供 AI 服务配置。您可正常使用终端、SSH 与文件管理功能。'
   },

@@ -522,6 +522,21 @@ export default {
     logLevelDesc: 'Controls log verbosity. Debug outputs the most, Silent suppresses all. Warn is recommended. Logs are also written to files for troubleshooting',
     openLogDir: 'Open Log Directory',
     openAiDebugLogDir: 'Open AI Conversation Log Directory',
+    // Crash diagnostics
+    crashReport: 'Crash Diagnostics',
+    crashReportDesc: 'Crashes are recorded automatically. Copy the summary and paste it to us directly — neither the summary nor the package contains your hostname, account name or AI conversations',
+    crashReportHealthy: 'No crashes recorded',
+    crashReportLastCrash: 'Last session did not exit normally (version {version})',
+    crashReportConsecutive: '{count} consecutive abnormal exits',
+    crashReportThisRun: '{count} crashes this session',
+    crashReportDumps: '{count} crash dumps',
+    copyCrashSummary: 'Copy Crash Summary',
+    crashSummaryCopied: 'Copied, ready to paste',
+    createDiagnosticsPackage: 'Create Full Package',
+    creatingPackage: 'Creating…',
+    packageCreated: 'Package created ({size})',
+    revealPackage: 'Show in Folder',
+    packageFailed: 'Failed: {error}',
     // Steam build: no AI/API config entry
     steamNoAiConfig: 'The Steam version does not offer AI service configuration. You can use terminal, SSH, and file management features as normal.'
   },

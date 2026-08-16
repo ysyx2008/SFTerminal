@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { CrashSummary, DiagnosticsPackageResult } from '@sailfish/shared-types'
 import { useConfigStore } from '../../stores/config'
 
 const { t } = useI18n()
@@ -16,10 +17,102 @@ const openAiDebugLogDir = async () => {
   const aiDebugLogDir = await window.electronAPI.aiDebugGetLogDir()
   await window.electronAPI.shell.openPath(aiDebugLogDir)
 }
+
+const crash = ref<CrashSummary | null>(null)
+const copied = ref(false)
+const creatingPackage = ref(false)
+const packageResult = ref<DiagnosticsPackageResult | null>(null)
+
+onMounted(async () => {
+  crash.value = await window.electronAPI.diagnostics.getCrashSummary()
+})
+
+const hasCrashRecord = computed(() => {
+  const c = crash.value
+  if (!c) return false
+  return c.lastExitWasCrash || c.crashesThisRun > 0 || (c.dumpCount ?? 0) > 0
+})
+
+const copySummary = async () => {
+  const text = await window.electronAPI.diagnostics.getCrashSummaryText()
+  await navigator.clipboard.writeText(text)
+  copied.value = true
+  setTimeout(() => { copied.value = false }, 2000)
+}
+
+const createPackage = async () => {
+  creatingPackage.value = true
+  packageResult.value = null
+  try {
+    const result = await window.electronAPI.diagnostics.createPackage({ chooseLocation: true })
+    // 用户自己放弃保存不算失败，不该在界面上留一条错误
+    packageResult.value = result.canceled ? null : result
+  } finally {
+    creatingPackage.value = false
+  }
+}
+
+const packageSizeText = computed(() => {
+  const bytes = packageResult.value?.sizeBytes
+  if (!bytes) return ''
+  return bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.round(bytes / 1024)} KB`
+})
+
+const revealPackage = () => {
+  const filePath = packageResult.value?.filePath
+  if (filePath) window.electronAPI.diagnostics.revealPackage(filePath)
+}
 </script>
 
 <template>
   <div class="diagnostics-settings">
+    <!-- 崩溃诊断 -->
+    <div class="settings-section">
+      <div class="section-header">
+        <h4>{{ t('aiSettings.crashReport') }}</h4>
+      </div>
+      <p class="section-desc">
+        {{ t('aiSettings.crashReportDesc') }}
+      </p>
+
+      <div v-if="crash" class="crash-status" :class="{ 'crash-status--alert': hasCrashRecord }">
+        <template v-if="hasCrashRecord">
+          <span v-if="crash.lastExitWasCrash">
+            {{ t('aiSettings.crashReportLastCrash', { version: crash.previousVersion || '?' }) }}
+          </span>
+          <span v-if="crash.consecutiveCrashCount > 1">
+            {{ t('aiSettings.crashReportConsecutive', { count: crash.consecutiveCrashCount }) }}
+          </span>
+          <span v-if="crash.crashesThisRun > 0">
+            {{ t('aiSettings.crashReportThisRun', { count: crash.crashesThisRun }) }}
+          </span>
+          <span v-if="crash.dumpCount">
+            {{ t('aiSettings.crashReportDumps', { count: crash.dumpCount }) }}
+          </span>
+        </template>
+        <span v-else>{{ t('aiSettings.crashReportHealthy') }}</span>
+      </div>
+
+      <div class="log-dir-actions">
+        <button class="open-log-dir-btn open-log-dir-btn--primary" @click="copySummary">
+          {{ copied ? t('aiSettings.crashSummaryCopied') : t('aiSettings.copyCrashSummary') }}
+        </button>
+        <button class="open-log-dir-btn" :disabled="creatingPackage" @click="createPackage">
+          {{ creatingPackage ? t('aiSettings.creatingPackage') : t('aiSettings.createDiagnosticsPackage') }}
+        </button>
+      </div>
+
+      <p v-if="packageResult?.success" class="package-result">
+        {{ t('aiSettings.packageCreated', { size: packageSizeText }) }}
+        <button class="link-btn" @click="revealPackage">{{ t('aiSettings.revealPackage') }}</button>
+      </p>
+      <p v-else-if="packageResult && !packageResult.success" class="package-result package-result--error">
+        {{ t('aiSettings.packageFailed', { error: packageResult.error || '' }) }}
+      </p>
+    </div>
+
     <!-- Agent 调试模式 -->
     <div class="settings-section">
       <div class="section-header">
@@ -187,5 +280,58 @@ const openAiDebugLogDir = async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.open-log-dir-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.open-log-dir-btn--primary {
+  border-color: var(--accent-primary);
+  color: var(--text-primary, #e0e0e0);
+}
+
+.crash-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  background: var(--bg-secondary, #2a2a2a);
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+}
+
+.crash-status--alert {
+  color: var(--text-primary, #e0e0e0);
+  border-left: 3px solid var(--color-warning, #e0a030);
+}
+
+.package-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+}
+
+.package-result--error {
+  color: var(--color-danger, #e05252);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
 }
 </style>

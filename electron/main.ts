@@ -13,6 +13,7 @@ import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, W
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 import { isOemFeatureEnabled } from '@shared/oem-features'
 import { initCrashDiagnostics, recordMainProcessError } from './services/diagnostics/collector'
+import { getDiagnosticsService } from './services/diagnostics/diagnostics.service'
 
 /**
  * 展开路径开头的 `~` 为用户 home 目录。支持 `~`、`~/...`、`~\...`（兼容 Windows）。
@@ -3397,6 +3398,36 @@ ipcMain.handle('config:openLogDir', async () => {
     const { shell } = require('electron')
     shell.openPath(logDir)
   }
+})
+
+// ==================== 崩溃诊断 ====================
+
+ipcMain.handle('diagnostics:getCrashSummary', async () => {
+  return getDiagnosticsService().getCrashSummary()
+})
+
+ipcMain.handle('diagnostics:getCrashSummaryText', async () => {
+  return getDiagnosticsService().getCrashSummaryText()
+})
+
+ipcMain.handle('diagnostics:createPackage', async (_event, options?: { chooseLocation?: boolean }) => {
+  let targetPath: string | undefined
+  if (options?.chooseLocation) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const result = await dialog.showSaveDialog({
+      defaultPath: `sailfish-diagnostics-${stamp}.zip`,
+      filters: [{ name: 'Zip', extensions: ['zip'] }],
+    })
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true }
+    }
+    targetPath = result.filePath
+  }
+  return getDiagnosticsService().createPackage(targetPath)
+})
+
+ipcMain.handle('diagnostics:revealPackage', async (_event, filePath: string) => {
+  shell.showItemInFolder(filePath)
 })
 
 // ==================== 定时任务调度相关 ====================

@@ -899,6 +899,15 @@ const electronAPI = {
     openLogDir: () => ipcRenderer.invoke('config:openLogDir') as Promise<void>
   },
 
+  // 崩溃诊断
+  diagnostics: {
+    getCrashSummary: () => ipcRenderer.invoke('diagnostics:getCrashSummary') as Promise<import('@sailfish/shared-types').CrashSummary>,
+    getCrashSummaryText: () => ipcRenderer.invoke('diagnostics:getCrashSummaryText') as Promise<string>,
+    createPackage: (options?: { chooseLocation?: boolean }) =>
+      ipcRenderer.invoke('diagnostics:createPackage', options) as Promise<import('@sailfish/shared-types').DiagnosticsPackageResult>,
+    revealPackage: (filePath: string) => ipcRenderer.invoke('diagnostics:revealPackage', filePath) as Promise<void>
+  },
+
   // Xshell 导入操作
   xshell: {
     selectFiles: () => ipcRenderer.invoke('xshell:selectFiles') as Promise<{ canceled: boolean; filePaths: string[] }>,

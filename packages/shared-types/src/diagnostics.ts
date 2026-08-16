@@ -55,5 +55,7 @@ export interface DiagnosticsPackageResult {
   success: boolean
   filePath?: string
   sizeBytes?: number
+  /** 用户在保存对话框里放弃了，不是失败，界面不该报错 */
+  canceled?: boolean
   error?: string
 }

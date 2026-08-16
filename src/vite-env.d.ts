@@ -603,6 +603,12 @@ interface Window {
       getLogDir: () => Promise<string | null>
       openLogDir: () => Promise<void>
     }
+    diagnostics: {
+      getCrashSummary: () => Promise<import('@sailfish/shared-types').CrashSummary>
+      getCrashSummaryText: () => Promise<string>
+      createPackage: (options?: { chooseLocation?: boolean }) => Promise<import('@sailfish/shared-types').DiagnosticsPackageResult>
+      revealPackage: (filePath: string) => Promise<void>
+    }
     xshell: {
       selectFiles: () => Promise<{ canceled: boolean; filePaths: string[] }>
       selectDirectory: () => Promise<{ canceled: boolean; dirPath: string }>
