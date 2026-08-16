@@ -68,6 +68,7 @@ import { createSkillSession, SkillSession } from './skills'
 import { McpToolSession } from './mcp-tool-session'
 import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
+import { isAbortError } from '../../utils/abort'
 import { toSendableVisionImageUrl } from '../../utils/vision-image'
 import { assembleUserMessageContent, formatSelectionScopeBody, wrapSystemContext } from './message-envelope'
 import { notifyFrontendConfigChanged } from './skills/config/executor'
@@ -192,6 +193,9 @@ export abstract class Agent {
 
   /** 「本次允许」工具白名单（Agent 实例内存，跨 Run；关 tab / 重启清空） */
   private allowedTools = new Set<string>()
+
+  /** 当前步骤的流式工具执行器；abort() 用来停掉排队中的工具 */
+  private currentStreamingExecutor?: StreamingToolExecutor
 
   /**
    * 上一次 API usage 写入时的拟用 profileId。
@@ -423,12 +427,17 @@ export abstract class Agent {
    * 中止当前运行
    */
   abort(): boolean {
-    if (!this.currentRun || !this.currentRun.isRunning) {
+    if (!this.currentRun) {
+      return false
+    }
+    if (!this.currentRun.isRunning && !this.currentStreamingExecutor) {
       return false
     }
     
     this.currentRun.aborted = true
     this.currentRun.isRunning = false
+    this.currentRun.abortController?.abort()
+    this.currentStreamingExecutor?.abort()
 
     // 释放待确认/安全输入等待，避免 abort 后 Promise 永久挂起、阻塞同实例下一次 run
     if (this.currentRun.pendingConfirmation) {
@@ -703,6 +712,7 @@ export abstract class Agent {
       steps: [],
       isRunning: true,
       aborted: false,
+      abortController: new AbortController(),
       pendingUserMessages: [],
       config,
       context,
@@ -1369,6 +1379,7 @@ export abstract class Agent {
     // 技能会话会在 Agent.cleanup() 中统一清理
     
     run.isRunning = false
+    this.currentStreamingExecutor = undefined
   }
   
   /**
@@ -1942,6 +1953,7 @@ export abstract class Agent {
         this.finalizeToolCallStep(run, toolCall.id, result.success)
       }
     })
+    this.currentStreamingExecutor = streamingExecutor
     
     // 调用 AI（传入流式执行器，使其在流式输出中提前执行工具）
     const response = await this.callAiWithStreaming(run, streamingExecutor)
@@ -3165,10 +3177,12 @@ export abstract class Agent {
         wrappedConfig
       )
     } catch (error) {
-      result = { 
-        success: false, 
-        output: '', 
-        error: error instanceof Error ? error.message : String(error) 
+      result = {
+        success: false,
+        output: '',
+        error: isAbortError(error) || run.aborted
+          ? t('error.operation_aborted')
+          : error instanceof Error ? error.message : String(error)
       }
     }
 
@@ -3512,6 +3526,7 @@ export abstract class Agent {
         return this.requestSecureInput(run, skillId, envName, prompt, isUpdate)
       },
       isAborted: () => run.aborted,
+      getAbortSignal: () => run.abortController?.signal,
       getHostId: () => run.context.hostId,
       hasPendingUserMessage: () => run.pendingUserMessages.length > 0,
       peekPendingUserMessage: () => run.pendingUserMessages[0]?.message,

@@ -98,6 +98,7 @@
 **搜索性能（searchAgentRecordsAdvanced，async）**：先用内存索引按「时间窗 + filter（cast 到索引条目，与 `getRecentAgentRecords` 同款）」筛候选，`titleOnly` 时关键字匹配也在索引层完成。
 - `titleOnly`：候选即命中集，仅为前 `limit` 条读回完整记录，零全量扫描；
 - full：关键字可能命中 `finalResult`/steps 正文，须读完整记录二次匹配，但仅读候选所在日期文件，且逐文件 `await`（`fs.promises`）让出事件循环，避免历史量大时同步遍历阻塞主进程导致界面冻结。
+- 被取消的搜索立刻停，不必扫完，也不再承诺总命中数；未取消时仍扫完全部候选再报总数。
 - 历史规模极大时的根治方案是迁移至 SQLite + FTS（当前未做）。
 
 **完整备份/恢复**：见 `electron/utils/data-backup.ts` / `bootstrap.ts`（整包 `userData` 为 `.zip`，不在本服务内）。

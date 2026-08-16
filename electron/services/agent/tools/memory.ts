@@ -6,6 +6,7 @@ import { t } from '../i18n'
 import { getKnowledgeService } from '../../knowledge'
 import { truncateFromEnd } from './utils'
 import type { ToolExecutorConfig, ToolResult } from './types'
+import { isAbortError } from '../../../utils/abort'
 
 /**
  * recall 工具统一入口：根据 detail 分发到 recallTask / deepRecall
@@ -335,6 +336,9 @@ export async function searchHistory(
   args: Record<string, unknown>,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
+  if (executor.isAborted()) {
+    return { success: false, output: '', error: t('error.operation_aborted') }
+  }
   const mode = args.mode === 'semantic' ? 'semantic' : 'keyword'
 
   if (mode === 'semantic') {
@@ -410,7 +414,8 @@ async function searchHistorySemantic(
       if (detail === 'full' && executor.historyService) {
         const fullRecord = (await executor.historyService.searchAgentRecordsAdvanced({
           keyword: r.userRequest.slice(0, 50),
-          limit: 1
+          limit: 1,
+          signal: executor.getAbortSignal?.()
         })).records[0]
         if (fullRecord?.steps?.length > 0) {
           lines.push('', '**工具调用**:')
@@ -444,6 +449,14 @@ async function searchHistorySemantic(
 
     return { success: true, output }
   } catch (error) {
+    if (isAbortError(error) || executor.isAborted()) {
+      executor.addStep({
+        type: 'tool_result',
+        content: `❌ ${t('error.operation_aborted')}`,
+        toolName: 'search_history'
+      })
+      return { success: false, output: '', error: t('error.operation_aborted') }
+    }
     const errorMsg = error instanceof Error ? error.message : '语义搜索失败'
     executor.addStep({
       type: 'tool_result',
@@ -505,7 +518,8 @@ async function searchHistoryKeyword(
       keyword,
       limit,
       startDate: startDate || undefined,
-      endDate: endDate || undefined
+      endDate: endDate || undefined,
+      signal: executor.getAbortSignal?.()
     })
     const records = searchResult.records
 
@@ -594,6 +608,14 @@ async function searchHistoryKeyword(
 
     return { success: true, output }
   } catch (error) {
+    if (isAbortError(error) || executor.isAborted()) {
+      executor.addStep({
+        type: 'tool_result',
+        content: `❌ ${t('error.operation_aborted')}`,
+        toolName: 'search_history'
+      })
+      return { success: false, output: '', error: t('error.operation_aborted') }
+    }
     const errorMsg = error instanceof Error ? error.message : '搜索失败'
     executor.addStep({
       type: 'tool_result',

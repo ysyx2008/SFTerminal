@@ -151,3 +151,44 @@ describe('StreamingToolExecutor parallelShare', () => {
     await executor.waitForAll()
   })
 })
+
+describe('StreamingToolExecutor abort', () => {
+  it('abort 把排队中的工具标为已中止，waitForAll 仍等正在执行的收尾', async () => {
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>(resolve => {
+      releaseFirst = resolve
+    })
+    const completed: string[] = []
+
+    const executor = new StreamingToolExecutor({
+      run: createRun(),
+      availableToolNames: new Set(['read_file']),
+      isConcurrencySafe: () => true,
+      maxConcurrency: 1,
+      executeFn: async (tc) => {
+        if (tc.id === 'tc1') await firstGate
+        return { result: { success: true, output: tc.id }, toolArgs: {} }
+      },
+      onToolCompleted: ({ toolCall }) => {
+        completed.push(toolCall.id)
+      },
+    })
+
+    executor.addTool(makeToolCall('tc1'))
+    executor.addTool(makeToolCall('tc2'))
+
+    await vi.waitFor(() => {
+      expect(completed.length).toBe(0)
+    })
+
+    executor.abort()
+    releaseFirst()
+    const results = await executor.waitForAll()
+
+    expect(results).toHaveLength(2)
+    expect(results[0].result.success).toBe(true)
+    expect(results[1].result.success).toBe(false)
+    expect(results[1].result.error).toMatch(/中止|abort/i)
+    expect(completed).toContain('tc2')
+  })
+})

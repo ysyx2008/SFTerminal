@@ -67,6 +67,8 @@ export interface ToolExecutorConfig {
     isUpdate?: boolean
   ) => Promise<boolean>
   isAborted: () => boolean
+  /** 本次 run 的中止信号；长工具（历史搜索、文件搜索等）据此打断进行中的工作 */
+  getAbortSignal?: () => AbortSignal | undefined
   getHostId: () => string | undefined
   hasPendingUserMessage: () => boolean
   peekPendingUserMessage: () => string | undefined

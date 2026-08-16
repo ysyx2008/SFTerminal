@@ -36,6 +36,7 @@ import {
   updateSessionTitle,
 } from './session-persistence'
 import { getDateString } from './date-util'
+import { throwIfAborted } from '../../utils/abort'
 import {
   isWatchAgentKey,
   WAKEUP_AGENT_KEY,
@@ -107,6 +108,8 @@ export interface SearchAgentRecordsOptions {
   filter?: (r: AgentRecord) => boolean
   /** 为 true 时仅匹配 userTask（列表标题），不扫 finalResult/steps，适合实时筛选 */
   titleOnly?: boolean
+  /** 用户点停止时中断全文扫描；未取消时仍扫完全部候选以给出总命中数 */
+  signal?: AbortSignal
 }
 
 export interface SearchAgentRecordsResult {
@@ -859,18 +862,21 @@ export class AgentRecordStore {
 
     // titleOnly：候选即命中集合，仅需为展示读回前 limit 条完整记录
     if (titleOnly) {
+      throwIfAborted(options.signal)
       const totalMatched = candidates.length
-      const records = await this.materializeRecords(candidates.slice(0, limit))
+      const records = await this.materializeRecords(candidates.slice(0, limit), options.signal)
       return { records, totalMatched, hasMore: totalMatched > records.length }
     }
 
     // full：候选已按时间倒序（最新优先），逐条异步读回完整记录做正文关键字匹配。
     // 每条单文件存储，按候选顺序逐个读即可；fs.promises 逐文件 await 让出事件循环，
     // 避免历史量大时同步遍历阻塞主进程导致界面冻结。
+    // 凑满 limit 后仍继续扫完，才能给出准确的总命中数；只有用户取消才中途停。
     const results: AgentRecord[] = []
     let totalMatched = 0
 
     for (const entry of candidates) {
+      throwIfAborted(options.signal)
       const r = await this.readAgentRecordFromDiskAsync(entry.dateStr, entry.id)
       if (!r) continue
       const matchedByKeyword = !hasKeyword || Boolean(
@@ -901,7 +907,7 @@ export class AgentRecordStore {
   /**
    * 把索引条目还原为完整 AgentRecord，按 dateStr 分组异步读取，保持入参顺序。
    */
-  private async materializeRecords(entries: AgentIndexEntry[]): Promise<AgentRecord[]> {
+  private async materializeRecords(entries: AgentIndexEntry[], signal?: AbortSignal): Promise<AgentRecord[]> {
     if (entries.length === 0) return []
 
     const idsByDate = new Map<string, Set<string>>()
@@ -917,6 +923,7 @@ export class AgentRecordStore {
     const recordById = new Map<string, AgentRecord>()
     for (const [dateStr, idSet] of idsByDate) {
       for (const id of idSet) {
+        throwIfAborted(signal)
         const record = await this.readAgentRecordFromDiskAsync(dateStr, id)
         if (record) recordById.set(id, record)
       }

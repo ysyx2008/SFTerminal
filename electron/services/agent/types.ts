@@ -135,6 +135,8 @@ export interface AgentRun {
   steps: AgentStep[]
   isRunning: boolean
   aborted: boolean
+  /** 本次 run 的中止信号；abort() 会 abort，长工具据此尽快退出 */
+  abortController?: AbortController
   pendingConfirmation?: PendingConfirmationInternal
   pendingSecureInput?: PendingSecureInputInternal
   pendingUserMessages: PendingUserMessage[]

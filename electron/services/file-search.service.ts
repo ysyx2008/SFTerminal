@@ -11,6 +11,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import { app } from 'electron'
 import { createLogger } from '../utils/logger'
+import { createAbortError, isAbortError, throwIfAborted } from '../utils/abort'
 
 const log = createLogger('FileSearch')
 
@@ -46,6 +47,8 @@ export interface FileSearchOptions {
   limit?: number
   /** 大小写敏感，默认 false */
   caseSensitive?: boolean
+  /** 用户点停止时杀掉正在跑的搜索子进程 */
+  signal?: AbortSignal
 }
 
 /**
@@ -107,7 +110,7 @@ export class FileSearchService {
   /**
    * 确保 Everything 正在运行
    */
-  private async ensureEverythingRunning(): Promise<boolean> {
+  private async ensureEverythingRunning(signal?: AbortSignal): Promise<boolean> {
     if (process.platform !== 'win32' || !this.everythingPath) {
       return false
     }
@@ -144,16 +147,18 @@ export class FileSearchService {
     const maxWait = 30000
     
     while (Date.now() - startTime < maxWait) {
+      throwIfAborted(signal)
       await new Promise(resolve => setTimeout(resolve, 1000))
       
       // 检查 es.exe 是否可以正常工作
       try {
         const esExe = path.join(this.everythingPath, 'es.exe')
-        await this.execCommand(esExe, ['-n', '1', 'test'])
+        await this.execCommand(esExe, ['-n', '1', 'test'], signal)
         this.everythingReady = true
         log.info('Everything 已就绪')
         return true
-      } catch {
+      } catch (error) {
+        if (isAbortError(error)) throw error
         // 继续等待
       }
     }
@@ -214,17 +219,42 @@ export class FileSearchService {
   }
 
   /**
-   * 执行命令并返回输出
+   * 执行命令并返回输出。传入 signal 时，中止会杀掉子进程。
    */
-  private execCommand(command: string, args: string[]): Promise<string> {
+  private execCommand(command: string, args: string[], signal?: AbortSignal): Promise<string> {
     return new Promise((resolve, reject) => {
-      execFile(command, args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, _stderr) => {
+      if (signal?.aborted) {
+        reject(createAbortError())
+        return
+      }
+
+      let settled = false
+      let onAbort: (() => void) | undefined
+      const finish = (fn: () => void) => {
+        if (settled) return
+        settled = true
+        if (onAbort) signal?.removeEventListener('abort', onAbort)
+        fn()
+      }
+
+      const child = execFile(command, args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, _stderr) => {
+        if (signal?.aborted) {
+          finish(() => reject(createAbortError()))
+          return
+        }
         if (error) {
-          reject(error)
+          finish(() => reject(error))
         } else {
-          resolve(stdout)
+          finish(() => resolve(stdout))
         }
       })
+
+      onAbort = () => {
+        child.kill()
+        finish(() => reject(createAbortError()))
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      if (signal?.aborted) onAbort()
     })
   }
 
@@ -232,11 +262,12 @@ export class FileSearchService {
    * 主搜索方法
    */
   async search(options: FileSearchOptions): Promise<FileSearchResult[]> {
-    const { query, searchPath, type = 'all', limit = 50 } = options
+    const { query, searchPath, type = 'all', limit = 50, signal } = options
 
     if (!query || query.trim() === '') {
       return []
     }
+    throwIfAborted(signal)
 
     // 根据平台选择搜索后端
     let backend: SearchBackend
@@ -245,24 +276,24 @@ export class FileSearchService {
     if (process.platform === 'darwin') {
       // macOS: 使用 Spotlight
       backend = 'spotlight'
-      results = await this.searchWithSpotlight(query, searchPath, type, limit)
+      results = await this.searchWithSpotlight(query, searchPath, type, limit, signal)
     } else if (process.platform === 'win32') {
       // Windows: 优先使用 Everything
       const everythingAvailable = await this.checkEverythingAvailable()
       if (everythingAvailable) {
-        const running = await this.ensureEverythingRunning()
+        const running = await this.ensureEverythingRunning(signal)
         if (running) {
           backend = 'everything'
-          results = await this.searchWithEverything(query, searchPath, type, limit)
+          results = await this.searchWithEverything(query, searchPath, type, limit, signal)
         } else {
           // Everything 未就绪，使用原生搜索
           backend = 'native'
-          results = await this.searchNative(query, searchPath || os.homedir(), type, limit)
+          results = await this.searchNative(query, searchPath || os.homedir(), type, limit, signal)
         }
       } else {
         // Everything 不可用，使用原生搜索
         backend = 'native'
-        results = await this.searchNative(query, searchPath || os.homedir(), type, limit)
+        results = await this.searchNative(query, searchPath || os.homedir(), type, limit, signal)
       }
     } else {
       // Linux: 优先使用 locate，其次 fd
@@ -270,12 +301,12 @@ export class FileSearchService {
       const locateAvailable = await this.checkLocateAvailable()
       if (locateAvailable) {
         backend = 'locate'
-        results = await this.searchWithLocate(query, searchPath, type, limit)
+        results = await this.searchWithLocate(query, searchPath, type, limit, signal)
       } else {
         const fdAvailable = await this.checkFdAvailable()
         if (fdAvailable) {
           backend = 'fd'
-          results = await this.searchWithFd(query, searchPath || os.homedir(), type, limit)
+          results = await this.searchWithFd(query, searchPath || os.homedir(), type, limit, signal)
         } else {
           // Linux 上没有 locate 或 fd，抛出错误
           // 不使用 native 搜索（深度限制且性能差，用户体验不佳）
@@ -399,12 +430,13 @@ export class FileSearchService {
     query: string,
     searchPath?: string,
     type?: 'file' | 'dir' | 'all',
-    limit?: number
+    limit?: number,
+    signal?: AbortSignal
   ): Promise<FileSearchResult[]> {
     const { args, typeFilteredInQuery } = this.buildSpotlightArgs(query, searchPath, type)
 
     try {
-      const output = await this.execCommand('mdfind', args)
+      const output = await this.execCommand('mdfind', args, signal)
       const paths = output.trim().split('\n').filter(p => p.length > 0)
       
       // 获取文件信息并过滤，直到达到 limit 数量
@@ -439,6 +471,7 @@ export class FileSearchService {
 
       return results
     } catch (error) {
+      if (isAbortError(error)) throw error
       log.error('Spotlight 搜索失败:', error)
       return []
     }
@@ -451,7 +484,8 @@ export class FileSearchService {
     query: string,
     searchPath?: string,
     type?: 'file' | 'dir' | 'all',
-    limit?: number
+    limit?: number,
+    signal?: AbortSignal
   ): Promise<FileSearchResult[]> {
     if (!this.everythingPath) {
       return []
@@ -479,7 +513,7 @@ export class FileSearchService {
     args.push(searchQuery)
 
     try {
-      const output = await this.execCommand(esExe, args)
+      const output = await this.execCommand(esExe, args, signal)
       const paths = output.trim().split('\n').filter(p => p.length > 0)
       
       // 获取文件信息
@@ -507,6 +541,7 @@ export class FileSearchService {
 
       return results
     } catch (error) {
+      if (isAbortError(error)) throw error
       log.error('Everything 搜索失败:', error)
       return []
     }
@@ -519,7 +554,8 @@ export class FileSearchService {
     query: string,
     searchPath?: string,
     type?: 'file' | 'dir' | 'all',
-    limit?: number
+    limit?: number,
+    signal?: AbortSignal
   ): Promise<FileSearchResult[]> {
     // 优先使用 plocate
     const locateCmd = await this.checkPlocateOrLocate()
@@ -543,7 +579,7 @@ export class FileSearchService {
     const args: string[] = ['-i', '-l', String(fetchLimit), primaryPattern]
 
     try {
-      const output = await this.execCommand(locateCmd, args)
+      const output = await this.execCommand(locateCmd, args, signal)
       let paths = output.trim().split('\n').filter(p => p.length > 0)
       
       // 路径过滤
@@ -584,6 +620,7 @@ export class FileSearchService {
 
       return results
     } catch (error) {
+      if (isAbortError(error)) throw error
       log.error('locate 搜索失败:', error)
       return []
     }
@@ -608,7 +645,8 @@ export class FileSearchService {
     query: string,
     searchPath: string,
     type?: 'file' | 'dir' | 'all',
-    limit?: number
+    limit?: number,
+    signal?: AbortSignal
   ): Promise<FileSearchResult[]> {
     // 检测 fd 命令名（有些系统叫 fdfind）
     let fdCmd = 'fd'
@@ -649,7 +687,7 @@ export class FileSearchService {
     args.push(searchPath)
 
     try {
-      const output = await this.execCommand(fdCmd, args)
+      const output = await this.execCommand(fdCmd, args, signal)
       const paths = output.trim().split('\n').filter(p => p.length > 0)
       
       // 获取文件信息
@@ -679,6 +717,7 @@ export class FileSearchService {
 
       return results
     } catch (error) {
+      if (isAbortError(error)) throw error
       log.error('fd 搜索失败:', error)
       return []
     }
@@ -692,7 +731,8 @@ export class FileSearchService {
     query: string,
     searchPath: string,
     type?: 'file' | 'dir' | 'all',
-    limit?: number
+    limit?: number,
+    signal?: AbortSignal
   ): Promise<FileSearchResult[]> {
     const results: FileSearchResult[] = []
     const maxResults = limit || 50
@@ -704,6 +744,7 @@ export class FileSearchService {
     const matches = (name: string) => patterns.every(re => re.test(name))
 
     const searchDir = async (dir: string, depth: number) => {
+      throwIfAborted(signal)
       if (depth > maxDepth || results.length >= maxResults) {
         return
       }
@@ -713,6 +754,7 @@ export class FileSearchService {
         let count = 0
 
         for (const entry of entries) {
+          throwIfAborted(signal)
           if (count >= maxDirEntries || results.length >= maxResults) {
             break
           }
@@ -764,7 +806,8 @@ export class FileSearchService {
             await searchDir(fullPath, depth + 1)
           }
         }
-      } catch {
+      } catch (error) {
+        if (isAbortError(error)) throw error
         // 无权限访问，跳过
       }
     }

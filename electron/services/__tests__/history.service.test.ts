@@ -460,6 +460,24 @@ describe('HistoryService - searchAgentRecordsAdvanced', () => {
     expect(res.totalMatched).toBe(5)
     expect(res.hasMore).toBe(true)
   })
+
+  it('已中止的 signal 立刻停，不扫完全部候选', async () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    for (let i = 0; i < 3; i++) {
+      svc.saveAgentRecord(makeRecord({
+        id: `r${i}`, timestamp: t + i * 1000, duration: 1, userTask: '可中止任务'
+      }))
+    }
+
+    const ac = new AbortController()
+    ac.abort()
+    await expect(svc.searchAgentRecordsAdvanced({
+      keyword: '可中止',
+      limit: 10,
+      signal: ac.signal
+    })).rejects.toMatchObject({ name: 'AbortError' })
+  })
 })
 
 describe('HistoryService - watch 历史隔离', () => {

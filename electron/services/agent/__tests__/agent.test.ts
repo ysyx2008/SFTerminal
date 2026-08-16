@@ -1708,6 +1708,7 @@ describe('Agent runtime state management', () => {
       // 中止
       const aborted = agent.abort()
       expect(aborted).toBe(true)
+      expect(agent.exposeCurrentRun()?.abortController?.signal.aborted).toBe(true)
       
       // 验证 AI 服务的 abort 被调用
       expect(mockAiService.abort).toHaveBeenCalled()

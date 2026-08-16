@@ -23,6 +23,7 @@ import { isHardBlocked, riskNeedsConfirm } from '../command-audit/confirm-policy
 import { getSystemPathSeverity, getWorkspaceZone } from '../command-audit/workspace-guard'
 import type { RiskLevel } from '@shared/types/agent'
 import { getWorkspacePath, getScratchPath } from '../workspace-paths'
+import { isAbortError } from '../../../utils/abort'
 import { externalizeToolOutput, externalizeFailedError } from '../tool-output-externalize'
 
 // 兼容 re-export：既有调用方从 tools/file 取路径不变；唯一定义在 workspace-paths.ts
@@ -603,7 +604,8 @@ export async function fileSearch(
       query,
       searchPath,
       type,
-      limit: limit || 50
+      limit: limit || 50,
+      signal: executor.getAbortSignal?.()
     })
 
     if (results.length === 0) {
@@ -641,6 +643,14 @@ export async function fileSearch(
 
     return { success: true, output }
   } catch (error) {
+    if (isAbortError(error) || executor.isAborted()) {
+      executor.addStep({
+        type: 'tool_result',
+        content: `❌ ${t('error.operation_aborted')}`,
+        toolName: 'file_search'
+      })
+      return { success: false, output: '', error: t('error.operation_aborted') }
+    }
     const errorMsg = error instanceof Error ? error.message : t('file.search_failed')
     executor.addStep({
       type: 'tool_result',

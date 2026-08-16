@@ -524,6 +524,23 @@ describe('FileSearchService', () => {
   // =========================================================================
   // getBackendInfo
   // =========================================================================
+  describe('abort', () => {
+    it('中止时杀掉挂起的子进程', async () => {
+      const kill = vi.fn()
+      mockExecFile.mockImplementation((_cmd, _args, _opts, _callback: any) => {
+        return { kill } as any
+      })
+
+      const ac = new AbortController()
+      const pending = service.search({ query: 'foo', searchPath: '/tmp', signal: ac.signal })
+      await Promise.resolve()
+      ac.abort()
+
+      await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+      expect(kill).toHaveBeenCalled()
+    })
+  })
+
   describe('getBackendInfo', () => {
     it('macOS 应返回 spotlight 后端', async () => {
       if (process.platform !== 'darwin') return

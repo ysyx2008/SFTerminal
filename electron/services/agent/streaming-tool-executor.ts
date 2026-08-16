@@ -16,6 +16,7 @@
 import type { ToolCall } from '../ai.service'
 import type { ToolResult, AgentRun } from './types'
 import { createLogger } from '../../utils/logger'
+import { t } from './i18n'
 
 const log = createLogger('StreamingToolExecutor')
 
@@ -146,20 +147,45 @@ export class StreamingToolExecutor {
    * 在 AI 流式输出结束后调用。
    */
   async waitForAll(): Promise<CompletedToolResult[]> {
-    // 等待所有 promise 完成
-    while (this.tools.some(t => t.status !== 'completed')) {
-      if (this.aborted) break
+    this.failQueuedIfAborted()
+    while (this.tools.some(t =>
+      t.status === 'executing' || (t.status === 'queued' && !this.aborted && !this.run.aborted)
+    )) {
       await this.waitForCompletion()
+      this.failQueuedIfAborted()
     }
+    this.failQueuedIfAborted()
     return this.getCompletedResults()
   }
 
   /**
-   * 标记为已中止。排队中的工具不再启动，正在执行的让其自然完成。
+   * 标记为已中止。排队中的立刻标成已中止；正在执行的应尽快因中止信号退出，
+   * waitForAll 仍等它们收尾，避免消息历史缺 tool 结果。
    */
   abort(): void {
     this.aborted = true
+    this.failQueuedIfAborted()
     this.wakeWaiters()
+  }
+
+  private failQueuedIfAborted(): void {
+    if (!this.aborted && !this.run.aborted) return
+    for (const tracked of this.tools) {
+      if (tracked.status !== 'queued') continue
+      tracked.status = 'completed'
+      tracked.result = { success: false, output: '', error: t('error.operation_aborted') }
+      if (this.onToolCompleted) {
+        try {
+          this.onToolCompleted({
+            toolCall: tracked.toolCall,
+            result: tracked.result,
+            toolArgs: tracked.toolArgs
+          })
+        } catch (err) {
+          log.warn(`onToolCompleted handler threw: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+    }
   }
 
   /**
@@ -268,7 +294,7 @@ export class StreamingToolExecutor {
     const { toolCall } = tracked
 
     if (this.run.aborted || this.aborted) {
-      tracked.result = { success: false, output: '', error: 'Operation aborted' }
+      tracked.result = { success: false, output: '', error: t('error.operation_aborted') }
       return
     }
 
