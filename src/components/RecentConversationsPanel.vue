@@ -68,9 +68,28 @@ const contextMenu = ref<{
   record: null,
 })
 
+/** 进行中 tab 上已生成的标题（磁盘摘要要等下次刷新才带上） */
+const liveTitleBySessionId = computed(() => {
+  const map = new Map<string, string>()
+  for (const tab of terminalStore.tabs) {
+    const sid = tab.agentState?.sessionId
+    const title = tab.agentState?.title?.trim()
+    if (sid && title) map.set(sid, title)
+  }
+  return map
+})
+
+const titledSummaries = computed(() => {
+  const titles = liveTitleBySessionId.value
+  return summaries.value.map(s => {
+    const liveTitle = titles.get(s.id)
+    return liveTitle && liveTitle !== s.title ? { ...s, title: liveTitle } : s
+  })
+})
+
 const summaryById = computed(() => {
   const map = new Map<string, AgentHistorySummary>()
-  for (const s of summaries.value) map.set(s.id, s)
+  for (const s of titledSummaries.value) map.set(s.id, s)
   return map
 })
 
@@ -112,7 +131,7 @@ const filteredSummaries = computed(() => {
   const liveSorted = kw
     ? liveSessionSummaries.value.filter(s => matchesSearch(s, kw))
     : [...liveSessionSummaries.value]
-  const sorted = [...summaries.value].sort(
+  const sorted = [...titledSummaries.value].sort(
     (a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration)
   )
   const histSorted = kw ? sorted.filter(s => matchesSearch(s, kw)) : sorted
