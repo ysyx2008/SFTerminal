@@ -427,12 +427,11 @@ export default {
     awaken: 'Awaken',
     settings: 'Control Panel',
     openLocal: 'Open local terminal',
-    openLocalHint: 'Start a command line on this computer',
     newRemote: 'Connect to a host',
-    newRemoteHint: 'Pick a server, or add a new connection',
     savedHosts: 'Saved hosts',
     manageHosts: 'Manage hosts',
     emptyTerminal: 'No terminal open',
     emptyTerminalHint: 'Open a local terminal, or connect to a host.',
+    emptyTerminalSecretary: 'Once it is open, just tell me: run commands, tail logs, chase errors.',
   }
 }

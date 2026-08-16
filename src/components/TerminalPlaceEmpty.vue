@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Monitor, SquareTerminal } from 'lucide-vue-next'
+import { ChevronRight, Monitor, Sparkles, SquareTerminal } from 'lucide-vue-next'
 import { isWorkbenchAvailable } from '../workbench/registry'
 import { useConfigStore, type SshSession } from '../stores/config'
 
@@ -32,65 +32,62 @@ function formatHost(session: SshSession): string {
 
 <template>
   <div class="terminal-empty">
+    <!-- 整块内容统一左对齐、共用一套网格边界；标题不再抢主角，让两个入口当锚点 -->
     <div class="terminal-empty-inner">
       <div class="hero">
-        <div class="hero-icon">
-          <SquareTerminal :size="30" :stroke-width="1.5" />
-        </div>
         <h2 class="hero-title">{{ t('shell.emptyTerminal') }}</h2>
         <p class="hero-hint">{{ t('shell.emptyTerminalHint') }}</p>
       </div>
 
       <div class="action-cards">
-        <div v-if="canOpenLocal" class="action-card" @click="emit('open-local')">
+        <button v-if="canOpenLocal" type="button" class="action-card" @click="emit('open-local')">
           <div class="card-icon local">
-            <SquareTerminal :size="24" :stroke-width="1.5" />
+            <SquareTerminal :size="21" :stroke-width="1.6" />
           </div>
-          <div class="card-content">
-            <div class="card-title">{{ t('shell.openLocal') }}</div>
-            <div class="card-desc">{{ t('shell.openLocalHint') }}</div>
-          </div>
-        </div>
+          <div class="card-title">{{ t('shell.openLocal') }}</div>
+        </button>
 
-        <div v-if="canOpenSsh" class="action-card" @click="emit('manage-hosts')">
+        <button v-if="canOpenSsh" type="button" class="action-card" @click="emit('manage-hosts')">
           <div class="card-icon ssh">
-            <Monitor :size="24" :stroke-width="1.5" />
+            <Monitor :size="21" :stroke-width="1.6" />
           </div>
-          <div class="card-content">
-            <div class="card-title">{{ t('shell.newRemote') }}</div>
-            <div class="card-desc">{{ t('shell.newRemoteHint') }}</div>
-          </div>
-        </div>
+          <div class="card-title">{{ t('shell.newRemote') }}</div>
+        </button>
       </div>
 
       <div v-if="canOpenSsh && hosts.length > 0" class="hosts">
         <div class="section-header">
           <h3 class="section-title">{{ t('shell.savedHosts') }}</h3>
-          <div
+          <button
             v-if="hosts.length > MAX_VISIBLE_HOSTS"
+            type="button"
             class="view-all"
             @click="emit('manage-hosts')"
           >
-            {{ t('shell.manageHosts') }} →
-          </div>
+            {{ t('shell.manageHosts') }}
+            <ChevronRight :size="13" :stroke-width="2" />
+          </button>
         </div>
         <div class="session-grid">
-          <div
+          <button
             v-for="session in visibleHosts"
             :key="session.id"
+            type="button"
             class="session-item"
             @click="emit('open-ssh', session)"
           >
-            <div class="session-icon">
-              <Monitor :size="16" />
-            </div>
             <div class="session-info">
               <div class="session-name">{{ session.name || session.host }}</div>
               <div class="session-host">{{ formatHost(session) }}</div>
             </div>
-          </div>
+          </button>
         </div>
       </div>
+
+      <p class="secretary-note">
+        <Sparkles :size="12" :stroke-width="1.75" />
+        {{ t('shell.emptyTerminalSecretary') }}
+      </p>
     </div>
   </div>
 </template>
@@ -102,55 +99,46 @@ function formatHost(session: SshSession): string {
   overflow-y: auto;
   display: flex;
   justify-content: center;
-  padding: clamp(32px, calc(50vh - 260px), 120px) 20px 32px;
+  /* 内容落在视觉上略高于正中的位置，底部留白是有意的呼吸区而不是"没排完" */
+  padding: clamp(44px, 15vh, 132px) 24px 56px;
+  background:
+    radial-gradient(ellipse 130% 55% at 50% -8%, rgba(var(--accent-decorative-rgb), 0.045) 0%, transparent 62%),
+    var(--bg-primary);
 }
 
 .terminal-empty-inner {
-  width: min(760px, 100%);
+  width: min(700px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 26px;
 }
 
-/* Hero */
+/* 标题从 26px 降到 20px：最大的字不该用来说"你什么都没有" */
 .hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  text-align: center;
-}
-
-.hero-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  background: linear-gradient(135deg, var(--brand-local), var(--brand-local-end));
-  box-shadow: 0 8px 24px rgba(var(--brand-local-rgb), 0.32);
+  margin-bottom: 22px;
+  animation: riseIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .hero-title {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 700;
+  margin: 0 0 5px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
 .hero-hint {
   margin: 0;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--text-muted, var(--text-secondary));
 }
 
-/* 与欢迎页「快速开始」同款卡片，两张并排 */
+/* 卡片与主机网格外边界完全对齐，gap 统一 12px，页面由一套网格统管 */
 .action-cards {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
+  gap: 12px;
+  animation: riseIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.06s both;
 }
 
 @media (max-width: 640px) {
@@ -161,23 +149,25 @@ function formatHost(session: SshSession): string {
 
 .action-card {
   --card-glow-rgb: var(--accent-decorative-rgb);
+  appearance: none;
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 150px;
-  padding: 16px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 16px;
-  background: var(--bg-secondary);
-  text-align: center;
+  gap: 13px;
+  min-height: 66px;
+  padding: 13px 16px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  border-radius: 14px;
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--text-primary) 4%, var(--bg-secondary)),
+    var(--bg-secondary)
+  );
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
-  overflow: hidden;
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.3s ease,
-              background 0.3s ease,
               box-shadow 0.3s ease;
 }
 
@@ -189,78 +179,76 @@ function formatHost(session: SshSession): string {
   --card-glow-rgb: var(--brand-ssh-rgb);
 }
 
-/* 绕卡片外延一圈的品牌色柔光，hover 时亮起（与欢迎页一致） */
-.action-card::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: 18px;
-  background: linear-gradient(135deg,
-    rgba(var(--card-glow-rgb), 1),
-    rgba(var(--card-glow-rgb), 0.55));
-  opacity: 0;
-  z-index: -1;
-  transition: opacity 0.3s ease;
-}
-
-.action-card:hover::before {
-  opacity: 0.55;
-}
-
 .action-card:hover {
-  transform: translateY(-3px);
-  border-color: rgba(var(--card-glow-rgb), 0.55);
-  background: var(--bg-tertiary, var(--bg-secondary));
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+  transform: translateY(-2px);
+  border-color: rgba(var(--card-glow-rgb), 0.42);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.2),
+    0 4px 14px rgba(var(--card-glow-rgb), 0.13);
 }
 
 .action-card:active {
-  transform: translateY(-1px);
+  transform: translateY(0);
 }
 
+.action-card:focus-visible,
+.session-item:focus-visible,
+.view-all:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* 全页仅剩这两枚饱和色图标，是唯一的品牌落点 */
 .card-icon {
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  box-shadow: 0 4px 15px rgba(var(--card-glow-rgb), 0.3);
-  transition: transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
+  background-image: linear-gradient(140deg, var(--card-grad-from), var(--card-grad-to));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 3px 10px rgba(var(--card-glow-rgb), 0.26);
+  transition: box-shadow 0.3s ease, filter 0.3s ease;
 }
 
 .action-card:hover .card-icon {
-  transform: scale(1.05) translateY(-2px);
-  filter: saturate(1.2) brightness(1.08);
+  filter: saturate(1.08) brightness(1.04);
   box-shadow:
-    0 12px 24px rgba(var(--card-glow-rgb), 0.5),
-    0 4px 10px rgba(0, 0, 0, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 6px 16px rgba(var(--card-glow-rgb), 0.38);
 }
 
 .card-icon.local {
-  background: linear-gradient(135deg, var(--brand-local), var(--brand-local-end));
+  --card-grad-from: var(--brand-local);
+  --card-grad-to: var(--brand-local-end);
 }
 
 .card-icon.ssh {
-  background: linear-gradient(135deg, var(--brand-ssh), var(--brand-ssh-end));
+  --card-grad-from: var(--brand-ssh);
+  --card-grad-to: var(--brand-ssh-end);
 }
 
 .card-title {
+  min-width: 0;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
-  margin-bottom: 2px;
-}
-
-.card-desc {
-  font-size: 11px;
-  color: var(--text-muted, var(--text-secondary));
-  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 已存主机 */
+.hosts {
+  margin-top: 26px;
+  animation: riseIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;
+}
+
 .section-header {
   display: flex;
   align-items: center;
@@ -270,85 +258,80 @@ function formatHost(session: SshSession): string {
 
 .section-title {
   margin: 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  opacity: 0.8;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted, var(--text-secondary));
 }
 
 .view-all {
-  padding: 4px 8px;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 4px 3px 7px;
+  border: none;
   border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted, var(--text-secondary));
   white-space: nowrap;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, background 0.2s ease;
 }
 
 .view-all:hover {
   color: var(--text-primary);
-  background: rgba(var(--accent-decorative-rgb), 0.1);
-  transform: translateX(4px);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
 .session-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
 }
 
+@media (max-width: 640px) {
+  .session-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 上一版把描边和底色都去掉，结果 6 组文字浮在空白里像没写样式。
+   这里给一层极淡的表面：静止时轻到几乎无形，但"可点"的边界是在的 */
 .session-item {
-  position: relative;
+  appearance: none;
   display: flex;
   align-items: center;
-  gap: 10px;
+  min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--border-color);
+  border: 1px solid transparent;
   border-radius: 10px;
-  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--text-primary) 3.5%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
-  overflow: hidden;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 .session-item:hover {
-  border-color: var(--accent-decorative-primary);
-  background: var(--bg-tertiary);
-  transform: translateX(4px);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  border-color: rgba(var(--brand-ssh-rgb), 0.35);
 }
 
-.session-icon {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary);
-  background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.2), rgba(var(--accent-decorative-rgb), 0.1));
-  transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
-}
-
-.session-item:hover .session-icon {
-  transform: scale(1.1);
-  background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.35), rgba(var(--accent-decorative-rgb), 0.2));
-  color: var(--text-primary);
+.session-item:active {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
 }
 
 .session-info {
-  flex: 1;
   min-width: 0;
 }
 
 .session-name {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -356,11 +339,56 @@ function formatHost(session: SshSession): string {
 }
 
 .session-host {
+  margin-top: 2px;
   font-size: 11px;
   color: var(--text-muted, var(--text-secondary));
   font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.session-item:hover .session-host {
+  color: var(--text-secondary);
+}
+
+/* 秘书的一句话：这页不只是"开终端"，开完还有人帮你干活 */
+.secretary-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 26px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted, var(--text-secondary));
+  opacity: 0.75;
+  animation: riseIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both;
+}
+
+.secretary-note svg {
+  flex-shrink: 0;
+}
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero,
+  .action-cards,
+  .hosts,
+  .secretary-note {
+    animation: none;
+  }
+
+  .action-card:hover {
+    transform: none;
+  }
 }
 </style>

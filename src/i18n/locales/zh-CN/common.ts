@@ -426,12 +426,11 @@ export default {
     awaken: '觉醒',
     settings: '控制面板',
     openLocal: '打开本机终端',
-    openLocalHint: '在本机开一个命令行工作台',
     newRemote: '连接远程主机',
-    newRemoteHint: '选一台服务器，或新建连接',
     savedHosts: '已存主机',
     manageHosts: '管理主机',
     emptyTerminal: '还没有打开的终端',
     emptyTerminalHint: '打开本机，或连一台远程主机。',
+    emptyTerminalSecretary: '开好之后直接吩咐我：跑命令、看日志、查报错。',
   }
 }
