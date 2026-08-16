@@ -920,6 +920,8 @@ html, body {
   padding: 2px;
   border-radius: 5px;
   color: var(--text-secondary);
+  /* 顶栏贴窗口上沿：macOS hiddenInset / 自绘 drag 区会吃掉未声明 no-drag 的点击 */
+  -webkit-app-region: no-drag;
 }
 
 .btn-icon.btn-icon-header:hover {
@@ -2024,13 +2026,17 @@ textarea:focus {
    面板内的交互元素统一 no-drag，否则点击会被拖拽区吃掉。 */
 .tab-view-workbench .system-info-bar,
 .tab-view-workbench .canvas-header,
-.tab-view-workbench .artifact-panel-rail-header {
+.tab-view-workbench .artifact-panel-rail-header,
+.settings-modal > .settings-header,
+.watch-panel > .panel-header {
   -webkit-app-region: drag;
 }
 
 .tab-view-workbench .system-info-bar > *,
 .tab-view-workbench .canvas-header > *,
-.tab-view-workbench .artifact-panel-rail-header > * {
+.tab-view-workbench .artifact-panel-rail-header > *,
+.settings-modal > .settings-header > *,
+.watch-panel > .panel-header > * {
   -webkit-app-region: no-drag;
 }
 
