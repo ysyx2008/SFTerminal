@@ -167,8 +167,9 @@ run(message, context, options)
 
 ## 会话与持久化
 
+- **何时进历史**（2026-08-16）：第一条用户消息确定后立即写入；不必等第一次任务跑完。之后每完成一轮工具调用再写检查点。中途崩溃最多丢掉没写完的那一轮，整段对话还在。只点了新对话、还没说话，不写盘。
 - **会话追踪**：`_sessionId`、`_sessionSteps`、`_sessionMessages` 跨多次 `run` 累积
-- **增量检查点**：每完成一轮工具调用自动写盘（`saveCheckpoint`）
+- **增量检查点**：第一条用户消息上墙后立即写盘，之后每完成一轮工具调用再写（`saveCheckpoint`）
 - **跨会话恢复**：通过 `sessionId` 从 HistoryService 加载，`restoreFromHistory()` 重建 TaskMemory
 - **生命周期**：
   - `cleanupAgent(agentKey)` 销毁实例，仅在用户关闭 tab 时由前端 `closeTab` 显式触发

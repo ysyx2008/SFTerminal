@@ -20,10 +20,12 @@
  *   ⑧ 两种 fork 中的「任务分支完整拷贝到 fork 点」：buildForkRecord 无 untilTaskCount=全拷贝、
  *      有则截断到第 N 个任务，源记录不被破坏（文档 §2.5）。createTaskFrom（跨 kind 种子起头）是
  *      全新操作、现无可观测行为可钉，留待其实现阶段 TDD（种子策略按 §2.5 延后）。
- *   ⑨ checkpoint 序列化字段完整性：每轮工具调用后 saveCheckpoint 写盘的 record 必须含 `kind`
- *      字段（非空）+ steps 的 `toolCallId`（精确配对 tool_call↔tool_result 的钥匙）。原 saveCheckpoint
- *      内联映射与 Conversation.stepToStepRecord 是两份平行实现，各自漏了 toolCallId、且前者漏了 kind；
- *      本次把 checkpoint 序列化收口到 Conversation.toCheckpointRecord 后，两份合一，此测试钉死该收敛。
+ *   ⑨ checkpoint 序列化字段完整性：第一条 user_task 上墙后及每轮工具调用后 saveCheckpoint
+ *      写盘的 record 必须含 `kind` 字段（非空）+ steps 的 `toolCallId`（精确配对
+ *      tool_call↔tool_result 的钥匙）。原 saveCheckpoint 内联映射与 Conversation.stepToStepRecord
+ *      是两份平行实现，各自漏了 toolCallId、且前者漏了 kind；本次把 checkpoint 序列化收口到
+ *      Conversation.toCheckpointRecord 后，两份合一，此测试钉死该收敛。
+ *   ⑩ 第一条用户消息确定即落盘：无工具的首轮任务在结束前已有历史记录（开跑那条尚无 final_result）。
  *
  * 联络（companion）跨重启回种、reset 抑制回种由 companion-restore.integration.test.ts 覆盖，
  * 此处不重复。
@@ -436,10 +438,9 @@ describe('会话/记忆特征测试网（characterization · 真实 HistoryServi
 
     await agent.run('触发一次工具调用', ctx({ sessionId: 'sess_ckpt', sessionStartTime: Date.now() - 1000 }))
 
-    // checkpoint 在工具循环中触发（至少 1 次），finalizeRun 结束时再触发 1 次。
-    // 用 >= 2 显式确认 checkpoint 路径确实被触发（而非只有 finalizeRun 写盘）——
-    // 若未来某次重构误删了 saveCheckpoint 调用，>= 1 不会报警，>= 2 会。
-    expect(savedRecords.length).toBeGreaterThanOrEqual(2)
+    // 开跑时（第一条 user_task）写 1 次，工具循环再写至少 1 次，finalizeRun 再写 1 次。
+    // 用 >= 3 确认「首条即落盘 + 工具检查点」都在，而不是只靠结束时那一笔。
+    expect(savedRecords.length).toBeGreaterThanOrEqual(3)
 
     // 红线 1：所有写盘的 record（含 checkpoint）必须含 kind 字段（非空）。
     // 原 saveCheckpoint 内联拼装的 record 漏了 kind，靠 normalize 读盘兜底；本次收敛到
@@ -466,5 +467,30 @@ describe('会话/记忆特征测试网（characterization · 真实 HistoryServi
       // 具体值校验：我们传的 call_ckpt_1 应该能找到
       expect(toolResultSteps.some(s => s.toolCallId === 'call_ckpt_1')).toBe(true)
     }
+  })
+
+  it('⑩ 第一条用户消息确定即落盘：无工具的首轮任务在结束前已有历史记录', async () => {
+    const history = new HistoryService()
+    const savedRecords: AgentRecord[] = []
+    const origSave = history.saveAgentRecord.bind(history)
+    vi.spyOn(history, 'saveAgentRecord').mockImplementation((record: AgentRecord) => {
+      savedRecords.push(record)
+      return origSave(record)
+    })
+
+    const agent = newTabAgent(history, 'tab-early-persist')
+    await agent.run('先记下来', ctx({ sessionId: 'sess_early', sessionStartTime: Date.now() - 1000 }))
+
+    // 开跑时一条（仅 user_task）+ 结束时一条
+    expect(savedRecords.length).toBeGreaterThanOrEqual(2)
+    const first = savedRecords[0]
+    expect(first.id).toBe('sess_early')
+    expect(first.userTask).toBe('先记下来')
+    expect(first.steps.some(s => s.type === 'user_task')).toBe(true)
+    expect(first.steps.some(s => s.type === 'final_result')).toBe(false)
+
+    const onDisk = history.getAgentRecordById('sess_early')
+    expect(onDisk).toBeTruthy()
+    expect(onDisk!.userTask).toBe('先记下来')
   })
 })

@@ -253,6 +253,7 @@ const ensureLoaded = () => {
 
 let cleanupAgentCompleteForHistory: (() => void) | null = null
 let cleanupAgentErrorForHistory: (() => void) | null = null
+let cleanupAgentRunningForHistory: (() => void) | null = null
 let silentRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
 const scheduleSilentRefresh = () => {
@@ -265,7 +266,10 @@ const scheduleSilentRefresh = () => {
 
 onMounted(() => {
   ensureLoaded()
-  // 新会话落盘后静默刷新侧栏，避免 isLoading 替换整表导致闪烁
+  // 第一条消息落盘（onRunning）以及任务结束时静默刷新侧栏，避免 isLoading 替换整表导致闪烁
+  cleanupAgentRunningForHistory = window.electronAPI.agent.onRunning(() => {
+    scheduleSilentRefresh()
+  })
   cleanupAgentCompleteForHistory = window.electronAPI.agent.onComplete(() => {
     scheduleSilentRefresh()
   })
@@ -276,6 +280,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (silentRefreshTimer) clearTimeout(silentRefreshTimer)
+  cleanupAgentRunningForHistory?.()
   cleanupAgentCompleteForHistory?.()
   cleanupAgentErrorForHistory?.()
 })

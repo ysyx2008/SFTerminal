@@ -1,6 +1,6 @@
 # 助手 Hub 交互模型 SPEC
 
-> Last verified: 2026-06-21  
+> Last verified: 2026-08-16  
 > 涵盖范围：`App.vue` / `TabBar.vue` / `RecentConversationsPanel.vue` / `terminal.ts` 中与助手 Hub 相关的所有交互规则。
 
 ---
@@ -12,6 +12,7 @@
 - 终端 Tab（local/ssh）保持独立全屏，不受影响
 - 会话不再能"提升"为独立 Tab（2026-08-15 取消，见第七节）
 - 外部渠道（IM/Watch 通知）统一汇集到**联络常驻 Tab**（`__companion__`）
+- **新对话进侧栏**：用户发出第一条消息后，这条对话立刻出现在最近对话侧栏，并且已经写入历史；不必等第一次任务跑完。只点了「新对话」、还没说话，不进侧栏。任务进行中持续记下进度，崩溃后能从已写下的部分恢复。
 
 ---
 
@@ -227,7 +228,7 @@ sessionId 不在 summaryById 中（未落盘）
 用户在 Composer 输入内容并提交
   └→ createAssistantTab({ activate: false })  // 不激活，不进 TabBar
       focusHubConversation(newTabId)           // Hub 焦点，侧栏保留
-      会话立即出现在侧栏（liveSessionSummaries）
+      第一条消息发出后立刻写入历史并出现在侧栏（不必等第一次任务跑完）
       Agent run 发起，AiPanel 展示进行中状态
 ```
 

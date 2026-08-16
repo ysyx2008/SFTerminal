@@ -809,6 +809,11 @@ export abstract class Agent {
       }
     }
 
+    // 历史恢复之后再落盘：第一条用户消息确定即进历史，侧栏立刻能看到，崩溃也不丢整段对话。
+    // 必须在 restore 之后写——否则会把自己刚写下的检查点再读回来（工作记忆重复），
+    // 续聊还会用只有新消息的残本盖掉旧记录。之后每轮工具调用仍会再写检查点。
+    this.saveCheckpoint(run)
+
     // 历史恢复后发布会话级上下文栏：上轮 API 确认的 token/cache + 本轮拟用 model/limit。
     // 与占位 step 解耦——流式接替 / 重试删 step 不会打空状态栏。用法仍只在 onDone 更新为确认值。
     this.publishPlannedContextBar()
@@ -1079,7 +1084,8 @@ export abstract class Agent {
   
   /**
    * 保存执行检查点：将「会话累积态 + 当前 run 进行态」合并写入 HistoryService。
-   * 每完成一轮工具调用后自动触发，确保程序意外退出时不丢失对话记录。
+   * 第一条 user_task 上墙后立即触发一次，之后每完成一轮工具调用再写，
+   * 确保程序意外退出时不丢失已开了头的对话。
    *
    * record 构建委托给 `Conversation.toCheckpointRecord`——字段映射（stepToStepRecord）、
    * token 合并、kind/形态/身份等全部由 Conversation 唯一负责，本方法只做薄转发。
