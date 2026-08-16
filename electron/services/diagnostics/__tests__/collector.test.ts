@@ -7,12 +7,19 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-collector-'))
 /** 采集器注册的 app 事件处理器，测试里手动触发以模拟平台崩溃信号 */
 const appHandlers = new Map<string, (...args: unknown[]) => void>()
 
+/** 约定 id=1 是窗口自己的 webContents，其余视为 webview guest */
+const WINDOW_WEB_CONTENTS_ID = 1
+
 vi.mock('electron', () => ({
   app: {
     getPath: (name: string) => (name === 'crashDumps' ? path.join(tmpDir, 'dumps') : tmpDir),
     getVersion: () => '11.6.0',
     getName: () => 'SailFish',
     on: (event: string, cb: (...args: unknown[]) => void) => { appHandlers.set(event, cb) },
+  },
+  BrowserWindow: {
+    fromWebContents: (wc: { id: number }) =>
+      wc.id === WINDOW_WEB_CONTENTS_ID ? { webContents: { id: WINDOW_WEB_CONTENTS_ID } } : null,
   },
   crashReporter: { start: vi.fn() },
 }))
@@ -79,17 +86,26 @@ describe('平台崩溃信号接入', () => {
 
   it('界面进程正常收摊不产生崩溃记录', () => {
     const before = readEvents().length
-    fire('render-process-gone', {}, {}, { reason: 'clean-exit', exitCode: 0 })
+    fire('render-process-gone', {}, { id: WINDOW_WEB_CONTENTS_ID }, { reason: 'clean-exit', exitCode: 0 })
     expect(readEvents().length).toBe(before)
   })
 
-  it('界面进程崩溃被记下，含退出码', () => {
-    fire('render-process-gone', {}, {}, { reason: 'crashed', exitCode: -1073741819 })
+  it('窗口自己崩溃被记下，含退出码与崩掉的界面', () => {
+    fire('render-process-gone', {}, { id: WINDOW_WEB_CONTENTS_ID }, { reason: 'crashed', exitCode: -1073741819 })
     const last = readEvents().at(-1)!
     expect(last.kind).toBe('renderer-gone')
-    expect(last.reason).toBe('crashed')
+    expect(last.processType).toBe('renderer')
+    expect(last.webContentsId).toBe(WINDOW_WEB_CONTENTS_ID)
     expect(last.exitCode).toBe(-1073741819)
     expect(last.appVersion).toBe('11.6.0')
+  })
+
+  it('嵌入内容崩溃单独标记——预览崩了不等于整个界面崩了', () => {
+    fire('render-process-gone', {}, { id: 42 }, { reason: 'crashed', exitCode: -1073741819 })
+    const last = readEvents().at(-1)!
+    expect(last.kind).toBe('renderer-gone')
+    expect(last.processType).toBe('webview')
+    expect(last.webContentsId).toBe(42)
   })
 
   it('子进程崩溃保留完整身份三元组，事后还能区分具体进程', () => {

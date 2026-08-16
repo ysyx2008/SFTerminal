@@ -28,7 +28,7 @@ export interface DiagnosticsEnv {
 export interface CrashSummaryTextInput {
   env: DiagnosticsEnv
   crash: CrashSummary
-  /** 崩溃前的少量日志行 */
+  /** 日志尾部的少量行 */
   recentLogLines?: string[]
   /** 最新的崩溃转储文件名 */
   latestDumpName?: string
@@ -86,7 +86,7 @@ export function buildCrashSummaryText(input: CrashSummaryTextInput, redact: Reda
   const lines: string[] = [
     'SailFish 崩溃报告',
     `版本: ${env.appVersion} (${env.platform} ${env.osRelease} ${env.arch})`,
-    `时间: ${new Date().toLocaleString('zh-CN')}`,
+    `生成时间: ${new Date().toISOString()}`,
   ]
 
   if (primary) {
@@ -126,7 +126,9 @@ export function buildCrashSummaryText(input: CrashSummaryTextInput, redact: Reda
 
   const logLines = input.recentLogLines ?? []
   if (logLines.length > 0) {
-    lines.push('', '崩溃前日志:')
+    // 取的是日志尾部，不保证正好是崩溃发生前那一段（崩完应用可能还跑了很久），
+    // 所以标题只说「最近」，不给出做不到的承诺
+    lines.push('', '最近日志:')
     for (const line of logLines) {
       lines.push(`  ${redact(line)}`)
     }

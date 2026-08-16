@@ -31,6 +31,12 @@ const MAX_LOG_FILES = 4
 const MAX_DUMPS = 5
 /** 转储总量上限 */
 const MAX_DUMP_BYTES = 40 * 1024 * 1024
+/** 本机保留的转储个数：只增不减会占满磁盘，反而加剧用户的「崩溃体验」 */
+const KEEP_DUMPS_ON_DISK = 10
+/** 脱敏是同步文本处理，按块切开并在块间让出，避免一次长任务卡住主线程 */
+const REDACT_CHUNK_BYTES = 256 * 1024
+/** 打包整体超时：卡住不返回会让界面上的按钮一直转 */
+const PACKAGE_TIMEOUT_MS = 120_000
 
 interface DumpFile {
   abs: string
@@ -42,6 +48,16 @@ interface DumpFile {
 /** 让出事件循环，避免连续的文本处理把主线程占死 */
 function yieldToEventLoop(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve))
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms)
+    }),
+  ])
 }
 
 /** 只读文件尾部：日志文件可能极大，且崩溃前的内容才有用 */
@@ -58,6 +74,27 @@ async function readTail(file: string, maxBytes: number): Promise<string> {
   } finally {
     await handle.close()
   }
+}
+
+/**
+ * 大文本分块脱敏。按行边界切——切在半行上会把敏感值拦腰截断，
+ * 两半都匹配不上规则，等于漏脱敏。
+ */
+async function redactLarge(text: string, redact: Redactor): Promise<string> {
+  if (text.length <= REDACT_CHUNK_BYTES) return redact(text)
+  const parts: string[] = []
+  let offset = 0
+  while (offset < text.length) {
+    let end = Math.min(text.length, offset + REDACT_CHUNK_BYTES)
+    if (end < text.length) {
+      const lineEnd = text.lastIndexOf('\n', end)
+      if (lineEnd > offset) end = lineEnd + 1
+    }
+    parts.push(redact(text.slice(offset, end)))
+    offset = end
+    await yieldToEventLoop()
+  }
+  return parts.join('')
 }
 
 export class DiagnosticsService {
@@ -126,12 +163,13 @@ export class DiagnosticsService {
   private async describeGpuDevice(): Promise<string | undefined> {
     try {
       // getGPUInfo 在个别驱动上可能迟迟不返回，超时就放弃这一项，不拖住整份摘要
-      const info = await Promise.race([
+      const info = await withTimeout(
         app.getGPUInfo('basic') as Promise<{
           gpuDevice?: Array<{ vendorId?: number; deviceId?: number; driverVersion?: string; active?: boolean }>
         }>,
-        new Promise<null>(resolve => setTimeout(() => resolve(null), 3000)),
-      ])
+        3000,
+        '获取显卡信息超时'
+      ).catch(() => null)
       const devices = info?.gpuDevice ?? []
       if (devices.length === 0) return undefined
       return devices
@@ -235,10 +273,12 @@ export class DiagnosticsService {
   }
 
   /**
-   * 生成完整诊断包。日志逐个脱敏后写入，转储原样收录（二进制里没有可读的
-   * 用户路径以外的东西，且它就是给我们还原崩溃栈用的）。
+   * 生成完整诊断包。日志分块脱敏后写入；崩溃转储原样收录——它是进程内存快照，
+   * 没法脱敏，也正是我们还原崩溃栈的唯一依据，所以界面上必须明说包里有它。
    */
   async createPackage(targetPath?: string): Promise<DiagnosticsPackageResult> {
+    let output: ReturnType<typeof createWriteStream> | null = null
+    let outPath = ''
     try {
       const redact = this.getRedactor()
       const [env, crash, dumps, logFiles] = await Promise.all([
@@ -250,18 +290,19 @@ export class DiagnosticsService {
 
       await fs.mkdir(this.outputDir, { recursive: true })
       const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-      const outPath = targetPath || path.join(this.outputDir, `sailfish-diagnostics-${stamp}.zip`)
+      outPath = targetPath || path.join(this.outputDir, `sailfish-diagnostics-${stamp}.zip`)
 
-      const output = createWriteStream(outPath)
-      const archive = new ZipArchive({ zlib: { level: 6 } })
-      const closed = new Promise<void>((resolve, reject) => {
-        output.on('close', () => resolve())
-        output.on('error', reject)
-      })
-      let failure: Error | null = null
-      archive.on('error', (err: Error) => { failure = err })
-      archive.on('warning', (err: NodeJS.ErrnoException) => {
-        if (err.code !== 'ENOENT') failure = err
+      output = createWriteStream(outPath)
+      // level 1：压缩比够用，而 CPU 开销远小于默认级别——打包跑在主进程上
+      const archive = new ZipArchive({ zlib: { level: 1 } })
+      const finished = new Promise<void>((resolve, reject) => {
+        output!.on('close', () => resolve())
+        output!.on('error', reject)
+        // 归档自身的错误也必须结算，否则出错时 close 不来，整个调用永久挂起
+        archive.on('error', reject)
+        archive.on('warning', (err: NodeJS.ErrnoException) => {
+          if (err.code !== 'ENOENT') reject(err)
+        })
       })
       archive.pipe(output)
 
@@ -276,34 +317,44 @@ export class DiagnosticsService {
       for (const name of logFiles) {
         try {
           const text = await readTail(path.join(this.logDir, name), LOG_TAIL_BYTES)
-          archive.append(redact(text), { name: `logs/${name}` })
+          archive.append(await redactLarge(text, redact), { name: `logs/${name}` })
         } catch (err) {
           log.warn(`日志 ${name} 收集失败:`, err)
         }
-        // 脱敏是同步文本处理，逐个文件让出事件循环，避免累积成一次长卡顿
-        await yieldToEventLoop()
       }
 
       let dumpBytes = 0
       let dumpCount = 0
       for (const dump of dumps) {
         if (dumpCount >= MAX_DUMPS || dumpBytes + dump.size > MAX_DUMP_BYTES) break
-        // 转储压缩率很高，压过再发比原样收录更容易发出去
         archive.file(dump.abs, { name: `dumps/${dump.name}` })
         dumpBytes += dump.size
         dumpCount += 1
       }
 
-      await archive.finalize()
-      await closed
-      if (failure) throw failure
+      await withTimeout(archive.finalize().then(() => finished), PACKAGE_TIMEOUT_MS, '生成诊断包超时')
 
       const { size } = await fs.stat(outPath)
       log.info(`诊断包已生成: ${outPath} (${Math.round(size / 1024)} KB，含 ${dumpCount} 个转储)`)
       return { success: true, filePath: outPath, sizeBytes: size }
     } catch (err) {
       log.error('生成诊断包失败:', err)
+      // 半成品不留在磁盘上，免得用户把一个坏包发出来
+      try { output?.destroy() } catch { /* ignore */ }
+      if (outPath) await fs.rm(outPath, { force: true }).catch(() => { /* ignore */ })
       return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  /** 清掉过旧的崩溃转储：日志有滚动策略，转储也不能只增不减 */
+  async pruneOldDumps(): Promise<void> {
+    try {
+      const dumps = await this.collectDumps()
+      for (const dump of dumps.slice(KEEP_DUMPS_ON_DISK)) {
+        await fs.rm(dump.abs, { force: true }).catch(() => { /* ignore */ })
+      }
+    } catch (err) {
+      log.warn('清理旧崩溃转储失败:', err)
     }
   }
 }

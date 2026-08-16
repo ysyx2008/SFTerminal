@@ -12,7 +12,7 @@ import { requestLocalNetworkAccess } from './utils/local-network-permission'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 import { isOemFeatureEnabled } from '@shared/oem-features'
-import { initCrashDiagnostics, recordMainProcessError, getCrashRecorder } from './services/diagnostics/collector'
+import { startCrashReporter, initCrashDiagnostics, recordMainProcessError, getCrashRecorder } from './services/diagnostics/collector'
 import { getDiagnosticsService } from './services/diagnostics/diagnostics.service'
 import { CrashNotifier } from './services/diagnostics/notifier'
 
@@ -46,9 +46,9 @@ function resolveOpenablePath(p: string): string {
   return unescapeShellPath(expandTildePath(p))
 }
 
-// 崩溃诊断：必须早于窗口创建（启动早期的崩溃也要收得住），且必须在 bootstrap 完成
-// userData 重定向之后（否则崩溃转储与崩溃记录会落到旧数据目录）
-initCrashDiagnostics()
+// 崩溃转储要尽早开（启动早期的原生崩溃也要留下现场），且必须在 bootstrap 完成
+// userData 重定向之后（否则转储落到旧数据目录）。崩溃记录另在单实例锁之后启动。
+startCrashReporter()
 
 // 开发模式下禁用硬件加速，避免热重载时 GPU 进程崩溃
 // 这个调用必须在 app.whenReady() 之前
@@ -80,6 +80,13 @@ const useSingleInstanceLock = app.isPackaged
 const gotTheLock = useSingleInstanceLock ? app.requestSingleInstanceLock() : true
 if (!gotTheLock) {
   app.quit()
+}
+
+// 崩溃记录必须等拿到单实例锁之后：重复启动时第二个实例马上就退出，若让它也走一遍
+// 启动/退出标记，就会把正在运行实例的「运行中」标记误读成上次崩溃，还会抹平真实的
+// 连续崩溃计数——统计从根上失真
+if (gotTheLock) {
+  initCrashDiagnostics()
 }
 
 registerGracefulShutdownSignals()
@@ -573,14 +580,21 @@ const crashNotifier = new CrashNotifier({
 })
 crashNotifier.start()
 
-let previousCrashNotified = false
-/** 上次崩溃只能等界面出来后补报——崩的那一刻主进程已经死了，什么也弹不出来 */
-function notifyPreviousCrashOnce(): void {
-  if (previousCrashNotified) return
-  previousCrashNotified = true
+let postStartupDiagnosticsDone = false
+/** 首屏之后的诊断收尾。都排在界面出来以后，不与首屏抢资源 */
+function runPostStartupDiagnostics(): void {
+  if (postStartupDiagnosticsDone) return
+  postStartupDiagnosticsDone = true
+
+  // 崩溃转储只增不减会占满磁盘，反倒加剧「崩溃体验」
+  setTimeout(() => {
+    void getDiagnosticsService().pruneOldDumps()
+  }, 10000)
+
+  // 上次崩溃只能等界面出来后补报——崩的那一刻主进程已经死了，什么也弹不出来。
+  // 再延后几秒，别让用户刚进来就被弹窗糊脸
   const verdict = getCrashRecorder()?.getSummary()
   if (!verdict?.lastExitWasCrash) return
-  // 让首屏先稳住，别一进来就糊用户一脸弹窗
   setTimeout(() => {
     void crashNotifier.notifyPreviousCrash(verdict)
   }, 4000)
@@ -1253,7 +1267,7 @@ function createWindow() {
   // 用 removeAllListeners + on 的组合（而不是 once）以支持窗口重建场景
   const onAppMounted = () => {
     showMainWindowOnce('vue-mounted')
-    notifyPreviousCrashOnce()
+    runPostStartupDiagnostics()
   }
   ipcMain.removeAllListeners('app:mounted')
   ipcMain.on('app:mounted', onAppMounted)

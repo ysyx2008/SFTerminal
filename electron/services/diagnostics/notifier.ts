@@ -12,7 +12,7 @@
  *
  * 设计目标见 SPEC.md。
  */
-import { BrowserWindow, clipboard, dialog } from 'electron'
+import { BrowserWindow, clipboard, dialog, webContents } from 'electron'
 import type { CrashEvent, CrashStartupVerdict } from '@sailfish/shared-types'
 import { t } from '../../i18n/main-i18n'
 import { createLogger } from '../../utils/logger'
@@ -37,7 +37,8 @@ interface PromptOptions {
   title: string
   message: string
   detail: string
-  allowReload: boolean
+  /** 要恢复的那个界面；给了才提供「重载界面」这个动作 */
+  reloadTargetId?: number
 }
 
 export class CrashNotifier {
@@ -68,18 +69,19 @@ export class CrashNotifier {
       detail: repeated
         ? t('crash.previousDetailRepeated', { count: verdict.consecutiveCrashCount })
         : t('crash.previousDetail'),
-      allowReload: false,
     })
   }
 
   private async onCrash(event: CrashEvent): Promise<void> {
-    if (event.kind !== 'renderer-gone') return
+    // 只有窗口本身崩了用户才真的动不了。嵌入内容（产出物预览的 webview）崩溃
+    // 在用户眼里是「预览坏了」，弹「界面已崩溃」既不准，重载还会白白清掉现场
+    if (event.kind !== 'renderer-gone' || event.processType !== 'renderer') return
     await this.prompt({
-      key: `${event.kind}:${event.serviceName ?? ''}`,
+      key: event.kind,
       title: t('crash.rendererTitle'),
       message: t('crash.rendererMessage'),
       detail: t('crash.rendererDetail'),
-      allowReload: true,
+      reloadTargetId: event.webContentsId,
     })
   }
 
@@ -95,8 +97,12 @@ export class CrashNotifier {
     this.promptCount += 1
     this.lastPromptAt.set(options.key, Date.now())
 
+    const target = options.reloadTargetId !== undefined
+      ? webContents.fromId(options.reloadTargetId)
+      : undefined
+
     const buttons = [t('crash.copySummary')]
-    const reloadIndex = options.allowReload ? buttons.push(t('crash.reloadWindow')) - 1 : -1
+    const reloadIndex = target ? buttons.push(t('crash.reloadWindow')) - 1 : -1
     const dismissIndex = buttons.push(t('crash.dismiss')) - 1
 
     const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
@@ -122,8 +128,8 @@ export class CrashNotifier {
       if (result.response === 0) {
         await this.copySummary(win)
       } else if (result.response === reloadIndex) {
-        // 界面进程崩了但窗口对象还在，重载即可恢复，不用重启整个应用
-        win?.webContents.reload()
+        // 渲染进程死了但 webContents 对象还在，重载它即可恢复，不用重启整个应用
+        target?.reload()
       }
     } catch (err) {
       log.error('崩溃提示弹出失败:', err)

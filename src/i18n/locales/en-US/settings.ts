@@ -524,7 +524,7 @@ export default {
     openAiDebugLogDir: 'Open AI Conversation Log Directory',
     // Crash diagnostics
     crashReport: 'Crash Diagnostics',
-    crashReportDesc: 'Crashes are recorded automatically. Copy the summary and paste it to us directly — neither the summary nor the package contains your hostname, account name or AI conversations',
+    crashReportDesc: 'Crashes are recorded automatically. "Copy Crash Summary" gives redacted plain text with no hostname, account name or conversations — paste it straight to us. "Create Full Package" also includes crash dumps (memory snapshots taken at crash time, which may contain local paths), so send that one only for hard-to-diagnose issues',
     crashReportHealthy: 'No crashes recorded',
     crashReportLastCrash: 'Last session did not exit normally (version {version})',
     crashReportConsecutive: '{count} consecutive abnormal exits',

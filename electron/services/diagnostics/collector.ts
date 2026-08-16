@@ -7,7 +7,7 @@
  *
  * 设计目标见 SPEC.md。
  */
-import { app, crashReporter } from 'electron'
+import { app, BrowserWindow, crashReporter } from 'electron'
 import * as path from 'path'
 import { CrashRecorder, type CrashEvent } from './crash-recorder'
 import { createLogger } from '../../utils/logger'
@@ -81,17 +81,35 @@ function recordCrash(input: Omit<CrashEvent, 'at' | 'appVersion' | 'platform'>):
   emit(event)
 }
 
-export function initCrashDiagnostics(): CrashRecorder {
-  if (recorder) return recorder
+let reporterStarted = false
 
-  // uploadToServer:false —— 本版不接服务端，转储留在本机由用户主动交出。
-  // 不 start 就完全没有 minidump，原生崩溃将无从追查。
+/**
+ * 只开崩溃转储，不产生任何状态副作用，所以可以在启动的最早期调用——
+ * 不开就完全没有 minidump，原生崩溃将无从追查。
+ *
+ * uploadToServer:false：本版不接服务端，转储留在本机由用户主动交出。
+ */
+export function startCrashReporter(): void {
+  if (reporterStarted) return
+  reporterStarted = true
   try {
     crashReporter.start({ uploadToServer: false, compress: true })
   } catch (err) {
-    log.warn('crashReporter 启动失败，将只有事件记录没有崩溃转储:', err)
+    log.warn('崩溃转储启动失败，将只有事件记录没有转储:', err)
   }
+}
 
+/**
+ * 崩溃记录与事件监听。
+ *
+ * 必须等确认拿到单实例锁之后再调用：抢不到锁的第二个实例马上就会退出，
+ * 若让它也走一遍启动/退出标记，就会读到正在运行实例的「运行中」标记而误判
+ * 上次崩溃，还会把真实实例的连续崩溃计数抹平——统计从根上就失真了。
+ */
+export function initCrashDiagnostics(): CrashRecorder {
+  if (recorder) return recorder
+
+  startCrashReporter()
   recorder = new CrashRecorder(path.join(app.getPath('userData'), 'diagnostics'), app.getVersion())
 
   const verdict = recorder.markStartup()
@@ -101,12 +119,17 @@ export function initCrashDiagnostics(): CrashRecorder {
     )
   }
 
-  // 界面进程消失：白屏/整个窗口失去内容，用户感受最强
-  app.on('render-process-gone', (_event, _webContents, details) => {
+  // 界面进程消失。崩的可能是窗口本身，也可能是产出物预览这类嵌入内容
+  // （webview 的 guest 有独立渲染进程）。后者在用户眼里只是「预览坏了」，
+  // 按整个界面崩溃处理会误伤——提示措辞不对，去重载主窗口更会白白清掉用户的现场。
+  app.on('render-process-gone', (_event, webContents, details) => {
     if (!isCrashReason(details.reason)) return
+    const owner = BrowserWindow.fromWebContents(webContents)
+    const isWindowItself = owner !== null && owner.webContents.id === webContents.id
     recordCrash({
       kind: 'renderer-gone',
-      processType: 'renderer',
+      processType: isWindowItself ? 'renderer' : 'webview',
+      webContentsId: webContents.id,
       reason: details.reason,
       exitCode: details.exitCode,
     })
@@ -131,7 +154,12 @@ export function initCrashDiagnostics(): CrashRecorder {
     recorder?.markCleanExit()
   })
 
-  log.info(`崩溃诊断已就绪（转储目录 ${getCrashDumpDir()}）`)
+  // 诊断绝不能挡住启动，连这行日志里的路径查询也一并防住
+  try {
+    log.info(`崩溃诊断已就绪（转储目录 ${getCrashDumpDir()}）`)
+  } catch {
+    /* ignore */
+  }
   return recorder
 }
 

@@ -132,3 +132,16 @@ describe('诊断包', () => {
     expect(dumps.length).toBe(5)
   })
 })
+
+describe('本机转储清理', () => {
+  it('转储不能只增不减，否则占满磁盘反倒加剧崩溃体验', async () => {
+    const reports = path.join(dumpDir, 'reports')
+    for (let i = 6; i < 20; i++) {
+      fs.writeFileSync(path.join(reports, `dump-${i}.dmp`), Buffer.alloc(512, i))
+    }
+    expect(fs.readdirSync(reports).length).toBe(20)
+
+    await service.pruneOldDumps()
+    expect(fs.readdirSync(reports).length).toBe(10)
+  })
+})

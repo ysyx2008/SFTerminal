@@ -3,11 +3,13 @@ import type { CrashEvent } from '@sailfish/shared-types'
 
 const showMessageBox = vi.fn()
 const writeText = vi.fn()
+const reload = vi.fn()
 
 vi.mock('electron', () => ({
   dialog: { showMessageBox: (...args: unknown[]) => showMessageBox(...args) },
   clipboard: { writeText: (text: string) => writeText(text) },
   BrowserWindow: { getAllWindows: () => [] },
+  webContents: { fromId: (id: number) => (id > 0 ? { id, reload } : null) },
 }))
 
 vi.mock('../../../i18n/main-i18n', () => ({ t: (key: string) => key }))
@@ -32,6 +34,8 @@ function makeEvent(overrides: Partial<CrashEvent> = {}): CrashEvent {
     appVersion: '11.6.0',
     platform: 'win32',
     kind: 'renderer-gone',
+    processType: 'renderer',
+    webContentsId: 1,
     reason: 'crashed',
     ...overrides,
   }
@@ -48,6 +52,7 @@ describe('CrashNotifier', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     showMessageBox.mockReset().mockResolvedValue({ response: 2, checkboxChecked: false })
     writeText.mockReset()
+    reload.mockReset()
     enabled = true
     notifier = new CrashNotifier({
       isEnabled: () => enabled,
@@ -75,6 +80,19 @@ describe('CrashNotifier', () => {
     expect(showMessageBox).not.toHaveBeenCalled()
   })
 
+  it('嵌入内容崩溃不弹窗——预览坏了不该按整个界面崩了处理', async () => {
+    crashListener!(makeEvent({ processType: 'webview', webContentsId: 42 }))
+    await flush()
+    expect(showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('选择重载只重载崩掉的那个界面', async () => {
+    showMessageBox.mockResolvedValue({ response: 1, checkboxChecked: false })
+    crashListener!(makeEvent({ webContentsId: 7 }))
+    await flush()
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
   it('同类问题短时间内只说一次', async () => {
     crashListener!(makeEvent())
     await flush()
@@ -93,9 +111,11 @@ describe('CrashNotifier', () => {
   })
 
   it('单次运行的提示有上限，崩溃循环不会变成弹窗轰炸', async () => {
+    // 每次都越过冷静期，只剩「单次运行上限」这一道闸
     for (let i = 0; i < 5; i++) {
-      crashListener!(makeEvent({ serviceName: `variant-${i}` }))
+      crashListener!(makeEvent())
       await flush()
+      vi.advanceTimersByTime(6 * 60 * 1000)
     }
     expect(showMessageBox.mock.calls.length).toBeLessThanOrEqual(2)
   })

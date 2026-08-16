@@ -27,6 +27,8 @@ export interface CrashEvent {
   processType?: string
   /** 子进程的具体身份，是定位模块的关键信息 */
   serviceName?: string
+  /** 崩掉的那个界面，用于精确恢复它而不是连带刷掉别的窗口 */
+  webContentsId?: number
   /** 崩溃原因（平台给出的枚举值） */
   reason?: string
   exitCode?: number

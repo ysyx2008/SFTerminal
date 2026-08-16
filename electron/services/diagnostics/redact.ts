@@ -33,8 +33,16 @@ function pathPattern(p: string): RegExp {
   return new RegExp(escapeRegExp(p).replace(/\\\\|\//g, '[\\\\/]'), 'gi')
 }
 
+/**
+ * 各家密钥的固定前缀 + 长串，形态无歧义。这不是覆盖一切的过滤器，
+ * 只是兜住日志里意外打印出的常见密钥。
+ */
 const SECRET_SHAPES: Array<[RegExp, string]> = [
   [/\bsk-[A-Za-z0-9_-]{16,}/g, '<REDACTED-KEY>'],
+  [/\bgh[pousr]_[A-Za-z0-9]{16,}/g, '<REDACTED-KEY>'],
+  [/\bAKIA[0-9A-Z]{12,}/g, '<REDACTED-KEY>'],
+  [/\bAIza[A-Za-z0-9_-]{30,}/g, '<REDACTED-KEY>'],
+  [/\bxox[baprs]-[A-Za-z0-9-]{10,}/g, '<REDACTED-KEY>'],
   [/\bBearer\s+[A-Za-z0-9._~+/=-]{20,}/gi, 'Bearer <REDACTED-KEY>'],
 ]
 
