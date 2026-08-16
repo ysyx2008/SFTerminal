@@ -11,53 +11,9 @@
  */
 import * as fs from 'fs'
 import * as path from 'path'
+import type { CrashEvent, CrashKind, CrashStartupVerdict, CrashSummary } from '@sailfish/shared-types'
 
-export type CrashKind =
-  /** 主进程未捕获异常 */
-  | 'main-uncaught'
-  /** 主进程未处理的 Promise 拒绝 */
-  | 'main-unhandled'
-  /** 渲染界面进程消失 */
-  | 'renderer-gone'
-  /** 子进程消失（工具进程 / GPU / 预览进程） */
-  | 'child-gone'
-  /** 上次运行异常终止，本次启动时补记 */
-  | 'previous-exit'
-
-export interface CrashEvent {
-  /** ISO 时间戳 */
-  at: string
-  /** 事件所描述的那次运行的应用版本（previous-exit 记的是上次运行的版本） */
-  appVersion: string
-  platform: string
-  kind: CrashKind
-  /** 进程类型（renderer / GPU / Utility 等，由采集方按平台原样透传） */
-  processType?: string
-  /** 子进程的具体身份（哪个工具进程崩的），是定位模块的关键信息 */
-  serviceName?: string
-  /** 崩溃原因（平台给出的枚举值） */
-  reason?: string
-  exitCode?: number
-  /** 人类可读补充（JS 异常的 message 等） */
-  message?: string
-}
-
-/** 启动时对上次运行的判定 */
-export interface StartupVerdict {
-  lastExitWasCrash: boolean
-  /** 连续异常退出次数；一次正常退出即归零 */
-  consecutiveCrashCount: number
-  /** 上次运行的版本（能区分「崩在旧版」和「崩在当前版」） */
-  previousVersion?: string
-}
-
-export interface CrashSummary extends StartupVerdict {
-  /** 本次运行期间记录到的崩溃数（不含 previous-exit 补记） */
-  crashesThisRun: number
-  recentEvents: CrashEvent[]
-  /** 已保存的崩溃转储数量（由采集方注入，未知时为 undefined） */
-  dumpCount?: number
-}
+export type { CrashEvent, CrashKind, CrashStartupVerdict, CrashSummary }
 
 interface RuntimeState {
   /** 上次是否走到了正常退出。启动时置 false，退出时置 true */
@@ -76,7 +32,7 @@ const MAX_EVENT_LINES = 200
 
 export class CrashRecorder {
   private crashesThisRun = 0
-  private verdict: StartupVerdict = { lastExitWasCrash: false, consecutiveCrashCount: 0 }
+  private verdict: CrashStartupVerdict = { lastExitWasCrash: false, consecutiveCrashCount: 0 }
 
   /**
    * @param dir 诊断数据目录（崩溃状态与事件都落在这里）
@@ -134,7 +90,7 @@ export class CrashRecorder {
    * 判定依据是上次退出有没有留下正常退出标记——主进程崩溃时没有任何 JS 能跑，
    * 这是唯一能事后知道「上次是崩的」的办法，也是崩溃后补报提示的前提。
    */
-  markStartup(): StartupVerdict {
+  markStartup(): CrashStartupVerdict {
     const prev = this.readState()
     const lastExitWasCrash = prev !== null && !prev.cleanExit
     const consecutiveCrashCount = lastExitWasCrash ? prev.consecutiveCrashes + 1 : 0
