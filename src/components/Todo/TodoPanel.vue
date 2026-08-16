@@ -311,6 +311,13 @@ async function dispatchTodo(item: TodoItem, kind: 'handle' | 'schedule', minutes
   }
 }
 
+/** 菜单里的动作走这里取当前项：回调执行时菜单可能已经关了，不能指望模板里的窄化 */
+function dispatchFromContextMenu(kind: 'handle' | 'schedule', minutes?: number) {
+  const target = contextMenu.value
+  if (!target) return
+  void dispatchTodo(target.item, kind, minutes)
+}
+
 function openCalendarSettings() {
   closeContextMenu()
   openAppSettings?.('calendar')
@@ -1090,8 +1097,8 @@ onUnmounted(() => {
       :item="contextMenu.item"
       :x="contextMenu.x"
       :y="contextMenu.y"
-      @handle="dispatchTodo(contextMenu.item, 'handle')"
-      @schedule="(minutes) => dispatchTodo(contextMenu.item, 'schedule', minutes)"
+      @handle="dispatchFromContextMenu('handle')"
+      @schedule="(minutes) => dispatchFromContextMenu('schedule', minutes)"
       @open-calendar-settings="openCalendarSettings"
       @close="closeContextMenu"
     />
