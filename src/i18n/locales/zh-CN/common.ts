@@ -418,6 +418,8 @@ export default {
     recent: '最近对话',
     toggleSidebar: '收起侧栏',
     expandSidebar: '展开侧栏',
+    navBack: '后退',
+    navForward: '前进',
     toggleAiPanel: '显示 / 隐藏 AI 面板',
     awakened: '已觉醒',
     notAwakened: '未觉醒',

@@ -19,6 +19,8 @@ const allActions: ShortcutAction[] = ([
   'newLocalTerminal',
   'newSshConnection',
   'toggleSidebar',
+  'navBack',
+  'navForward',
   'toggleAiPanel',
   'toggleKnowledge',
   'openFileManager',

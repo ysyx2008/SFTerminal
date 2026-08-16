@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Loader2, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-vue-next'
+import { X, Loader2, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from './stores/terminal'
 import { initSplitPaneHandler, disposeSplitPaneHandler } from './services/split-pane-handler'
 import { initWorkbenchHandler, disposeWorkbenchHandler } from './services/workbench-handler'
@@ -34,9 +34,10 @@ import { checkAudioDevicesGlobal, initSpeechGlobal, refreshSpeechPackAvailabilit
 import type { SftpConnectionConfig } from './composables/useSftp'
 import { uiThemes } from './themes/ui-themes'
 import { createLogger } from './utils/logger'
-import { matchAccelerator } from './utils/shortcut'
+import { matchAccelerator, formatAccelerator } from './utils/shortcut'
 import { isAssistantConversationSurfaceVisible } from './utils/agent-tab-ui-meta'
 import { useAppUpdaterPrompts } from './composables/useAppUpdaterPrompts'
+import { useShellNavigation } from './composables/useShellNavigation'
 import { installUpdateNotifyPreviewGlobal } from './composables/previewUpdateNotify'
 import {
   checkBondMilestonesOnStartup,
@@ -307,6 +308,17 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
     handleCloseShortcut()
   }
 
+  if (shortcuts.navBack && matchAccelerator(event, shortcuts.navBack) && !isFullScreenOverlayOpen.value) {
+    event.preventDefault()
+    goBack()
+    return
+  }
+  if (shortcuts.navForward && matchAccelerator(event, shortcuts.navForward) && !isFullScreenOverlayOpen.value) {
+    event.preventDefault()
+    goForward()
+    return
+  }
+
   // 分屏快捷键（默认值见 DEFAULT_KEYBOARD_SHORTCUTS，用户可在设置面板里改）
   // 默认 mac: ⌘D / ⌘⇧D / ⌘⇧W；默认 win/linux: Ctrl+Shift+D / E / W
   // 默认值用 Cmd / Ctrl 字面量（非 CmdOrCtrl）精确表达，避免 win 上 Ctrl+D 误吃 EOF
@@ -444,6 +456,7 @@ onMounted(async () => {
   // 注册全局快捷键
   document.addEventListener('keydown', handleGlobalKeydown)
   document.addEventListener('keyup', handleGlobalKeyup)
+  window.addEventListener('mouseup', handleMouseNav)
 
   // 注册分屏反向 IPC 处理器（响应主进程 Agent 工具的分屏调用）
   initSplitPaneHandler()
@@ -1238,6 +1251,21 @@ const openHostSidebar = () => {
   showSidebar.value = true
 }
 
+const { canGoBack, canGoForward, goBack, goForward } = useShellNavigation(showSmartPatrol)
+const navBackShortcut = computed(() => formatAccelerator(configStore.keyboardShortcuts.navBack))
+const navForwardShortcut = computed(() => formatAccelerator(configStore.keyboardShortcuts.navForward))
+
+function handleMouseNav(e: MouseEvent) {
+  if (isFullScreenOverlayOpen.value) return
+  if (e.button === 3) {
+    e.preventDefault()
+    goBack()
+  } else if (e.button === 4) {
+    e.preventDefault()
+    goForward()
+  }
+}
+
 const toggleRecallSidebarCollapsed = () => {
   recallSidebarCollapsed.value = !recallSidebarCollapsed.value
   try {
@@ -1449,6 +1477,7 @@ const handleMenuCommand = async (command: string) => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleGlobalKeydown)
   document.removeEventListener('keyup', handleGlobalKeyup)
+  window.removeEventListener('mouseup', handleMouseNav)
   disposeSplitPaneHandler()
   disposeWorkbenchHandler()
   // 清理监听器
@@ -1508,27 +1537,9 @@ onUnmounted(() => {
         :style="{ '--sidebar-panel-width': `${recallSidebarWidth}px`, width: showRecallSidebar ? `${recallSidebarWidth}px` : '0px' }"
         :inert="showRecallSidebar ? undefined : true"
       >
-        <!-- 侧栏顶：macOS 红绿灯坐在这里，Windows 是汉堡菜单 + 开关 -->
+        <!-- 侧栏顶只负责对齐与拖窗口；开关和前进后退钉在窗口左上，不跟侧栏一起跑 -->
         <div class="shell-top shell-top--sidebar">
-          <!-- 侧栏收起后仍在 DOM 里（为了折叠动画），汉堡按钮必须与主区那个互斥渲染，否则 ref 会指向看不见的那个 -->
-          <button
-            v-if="isWin && showRecallSidebar"
-            ref="appMenuBtnRef"
-            class="btn-icon btn-icon-header app-menu-btn"
-            @click="openAppMenuFromButton"
-            :title="t('header.appMenu')"
-          >
-            <MenuIcon :size="18" />
-          </button>
           <span class="shell-top-fill" />
-          <button
-            class="btn-icon sidebar-toggle-btn"
-            :title="t('shell.toggleSidebar')"
-            :aria-expanded="true"
-            @click="toggleRecallSidebarCollapsed"
-          >
-            <PanelLeftClose :size="17" :stroke-width="1.75" />
-          </button>
         </div>
         <div class="sidebar-content sidebar-content--recall">
           <AppSidebar
@@ -1599,35 +1610,6 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- 窗口控件浮在主区第一排之上：侧栏收起时的开关在左，Windows 三按钮在右。
-             各第一排通过 --shell-inset-* 让出对应宽度，因此浮层不会压住功能按钮。 -->
-        <!-- 侧栏收起时这排控件才出现，淡入等侧栏滑到底，免得两件事同时抢眼 -->
-        <Transition name="float-in">
-          <div
-            v-if="!showRecallSidebar"
-            class="main-float main-float--left"
-            :class="{ 'main-float--traffic-inset': isMac && !isFullScreen && !showSidebar }"
-          >
-            <button
-              v-if="isWin"
-              ref="appMenuBtnRef"
-              class="btn-icon btn-icon-header app-menu-btn"
-              @click="openAppMenuFromButton"
-              :title="t('header.appMenu')"
-            >
-              <MenuIcon :size="18" />
-            </button>
-            <button
-              class="btn-icon sidebar-toggle-btn"
-              :class="{ 'has-attention': sidebarToggleAttention }"
-              :title="t('shell.expandSidebar')"
-              :aria-expanded="false"
-              @click="toggleRecallSidebarCollapsed"
-            >
-              <PanelLeftOpen :size="17" :stroke-width="1.75" />
-            </button>
-          </div>
-        </Transition>
         <div class="main-float main-float--right">
           <template v-if="authStore.showSoftEntry">
             <button
@@ -1696,6 +1678,48 @@ onUnmounted(() => {
           />
         </div>
       </main>
+
+      <!-- 窗口左上常驻：侧栏开关 + 后退/前进。钉在窗口坐标上，不跟侧栏开合跑 -->
+      <div
+        class="shell-chrome"
+        :class="{ 'shell-chrome--traffic-inset': isMac && !isFullScreen }"
+      >
+        <button
+          v-if="isWin"
+          ref="appMenuBtnRef"
+          class="btn-icon btn-icon-header app-menu-btn"
+          @click="openAppMenuFromButton"
+          :title="t('header.appMenu')"
+        >
+          <MenuIcon :size="18" />
+        </button>
+        <button
+          class="btn-icon sidebar-toggle-btn"
+          :class="{ 'is-collapsed': !showRecallSidebar, 'has-attention': sidebarToggleAttention }"
+          :title="showRecallSidebar ? t('shell.toggleSidebar') : t('shell.expandSidebar')"
+          :aria-expanded="showRecallSidebar"
+          @click="toggleRecallSidebarCollapsed"
+        >
+          <PanelLeftClose v-if="showRecallSidebar" :size="17" :stroke-width="1.75" />
+          <PanelLeftOpen v-else :size="17" :stroke-width="1.75" />
+        </button>
+        <button
+          class="btn-icon shell-nav-btn"
+          :disabled="!canGoBack"
+          :title="navBackShortcut ? `${t('shell.navBack')} (${navBackShortcut})` : t('shell.navBack')"
+          @click="goBack"
+        >
+          <ChevronLeft :size="18" :stroke-width="1.75" />
+        </button>
+        <button
+          class="btn-icon shell-nav-btn"
+          :disabled="!canGoForward"
+          :title="navForwardShortcut ? `${t('shell.navForward')} (${navForwardShortcut})` : t('shell.navForward')"
+          @click="goForward"
+        >
+          <ChevronRight :size="18" :stroke-width="1.75" />
+        </button>
+      </div>
     </div>
 
     <!-- 启动 / 知识库 / 备份：共用一条底部状态栏（fixed overlay，不占 flex） -->
@@ -1805,19 +1829,20 @@ onUnmounted(() => {
   --shell-inset-right: 0px;
 }
 
-/* 侧栏收起：开关浮到主区左上，第一排让出它的宽度 */
-.app-container.nav-collapsed {
-  --shell-inset-left: 38px;
+/* 侧栏收起且主区贴着窗口左沿：第一排让出左上那排常驻控件
+   8 + 26+4+26+4+26 + 8 = 102（开关 + 后退 + 前进） */
+.app-container.nav-collapsed.main-leftmost {
+  --shell-inset-left: 102px;
 }
 
-/* Windows 收起态还多一个汉堡菜单 */
-.app-container.is-win.nav-collapsed {
-  --shell-inset-left: 68px;
+/* Windows 还多一个汉堡菜单：22px + 4px gap */
+.app-container.is-win.nav-collapsed.main-leftmost {
+  --shell-inset-left: 128px;
 }
 
 /* macOS 主区自己贴着窗口左沿时，还要再让开红绿灯 */
 .app-container.is-mac.nav-collapsed.main-leftmost:not(.is-fullscreen) {
-  --shell-inset-left: calc(var(--mac-traffic-light-inset) + 38px);
+  --shell-inset-left: calc(var(--mac-traffic-light-inset) + 94px);
 }
 
 /* Windows 自绘三按钮（46px × 3）浮在主区右上 */
@@ -1843,25 +1868,26 @@ onUnmounted(() => {
   -webkit-app-region: no-drag;
 }
 
-.main-float--left {
+/* 窗口左上常驻控件：位置按窗口坐标，不跟侧栏宽度走 */
+.shell-chrome {
+  position: absolute;
+  top: 0;
   left: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--shell-top-height);
+  padding: 0 8px;
+  pointer-events: none;
 }
 
-/* 出现在侧栏收完之后（延迟≈侧栏时长）。
-   消失必须是瞬间的：这排控件浮在主区上，展开时主区左边界立刻开始右移，
-   留着淡出就会一边变淡一边跟着往右滑，看着像有东西一闪而过。 */
-.float-in-enter-active {
-  transition: opacity 0.16s ease 0.18s;
+.shell-chrome > * {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
-.float-in-enter-from {
-  opacity: 0;
-}
-
-/* macOS 收起态下开关要落在红绿灯右边。
-   这段让位挂在浮层自己身上、判断里不含侧栏开合：若跟着「侧栏已收起」走，
-   一点展开状态先没、元素后移除，中间那帧按钮会跳回最左压在红绿灯上，一闪而过。 */
-.main-float--left.main-float--traffic-inset {
+.shell-chrome--traffic-inset {
   padding-left: var(--mac-traffic-light-inset);
 }
 
@@ -1927,14 +1953,21 @@ onUnmounted(() => {
   transition: padding 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* macOS: 侧栏顶那条要给红绿灯让位 */
-.app-container.is-mac .shell-top--sidebar {
-  padding-left: var(--mac-traffic-light-inset);
+/* 侧栏顶给左上常驻控件让位，拖拽区从按钮右侧开始 */
+.app-container .shell-top--sidebar {
+  padding-left: 102px;
 }
 
-/* macOS 全屏：红绿灯被系统隐藏，取消让位 */
+.app-container.is-win .shell-top--sidebar {
+  padding-left: 128px;
+}
+
+.app-container.is-mac .shell-top--sidebar {
+  padding-left: calc(var(--mac-traffic-light-inset) + 94px);
+}
+
 .app-container.is-mac.is-fullscreen .shell-top--sidebar {
-  padding-left: 8px;
+  padding-left: 102px;
 }
 
 /* 深色主题：Tab 条形态保持与原顶栏同一质感 */
@@ -1949,7 +1982,7 @@ onUnmounted(() => {
 
 /* header 按钮尺寸与 hover scale 统一由 main.css 的 .btn-icon-header 变体提供 */
 
-/* 侧栏开关：紧邻红绿灯的唯一常驻控件，做成"轻触感"而非工具栏图标——
+/* 侧栏开关：紧邻红绿灯，做成"轻触感"而非工具栏图标——
    静默时只是一枚淡淡的线条图标（不抢红绿灯的注意力），hover 才浮出底板。
    图标随开合换向（收起时朝外推、展开时朝内收），点之前就知道会发生什么。 */
 .sidebar-toggle-btn {
@@ -1967,8 +2000,41 @@ onUnmounted(() => {
 }
 
 /* 与红绿灯之间留出一档呼吸，避免圆形彩色按钮紧挨着方形线框图标 */
-.app-container.is-mac .shell-top .sidebar-toggle-btn {
+.app-container.is-mac .shell-chrome .sidebar-toggle-btn {
   margin-left: 2px;
+}
+
+.shell-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--text-tertiary, var(--text-secondary));
+  background: transparent;
+  transition: background 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+.shell-nav-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.14));
+  transform: none;
+}
+
+.shell-nav-btn:hover:not(:disabled) svg {
+  filter: none;
+}
+
+.shell-nav-btn:active:not(:disabled) {
+  background: var(--bg-active, rgba(127, 127, 127, 0.2));
+}
+
+.shell-nav-btn:disabled {
+  opacity: 0.32;
+  cursor: default;
 }
 
 .sidebar-toggle-btn:hover {
@@ -2131,11 +2197,15 @@ onUnmounted(() => {
    让位量比标准值再多一档：这排放的是加粗大写标题，紧挨着红绿灯会像贴在上面，
    而标准让位量只按图标控件留了呼吸 */
 .app-container.is-mac .sidebar-header {
-  padding-left: calc(var(--mac-traffic-light-inset) + 10px);
+  padding-left: calc(var(--mac-traffic-light-inset) + 96px);
 }
 
 .app-container.is-mac.is-fullscreen .sidebar-header {
-  padding-left: 12px;
+  padding-left: 102px;
+}
+
+.app-container.is-win .sidebar-header {
+  padding-left: 128px;
 }
 
 .sidebar-header .btn-icon {

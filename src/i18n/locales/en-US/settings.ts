@@ -927,6 +927,8 @@ export default {
       batchCommand: 'Batch Command',
       openFileManager: 'Open File Manager',
       toggleSidebar: 'Toggle Sidebar',
+      navBack: 'Go Back',
+      navForward: 'Go Forward',
       toggleAiPanel: 'Toggle AI Panel',
       toggleKnowledge: 'Memory & Knowledge',
       clearTerminal: 'Clear Terminal',

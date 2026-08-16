@@ -16,6 +16,8 @@ export interface KeyboardShortcuts {
   batchCommand: string
   openFileManager: string
   toggleSidebar: string
+  navBack: string
+  navForward: string
   toggleAiPanel: string
   toggleKnowledge: string
   clearTerminal: string
@@ -41,6 +43,8 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   batchCommand: 'CmdOrCtrl+Shift+B',
   openFileManager: 'CmdOrCtrl+F',
   toggleSidebar: 'CmdOrCtrl+B',
+  navBack: 'CmdOrCtrl+[',
+  navForward: 'CmdOrCtrl+]',
   toggleAiPanel: 'CmdOrCtrl+I',
   toggleKnowledge: 'CmdOrCtrl+Shift+K',
   clearTerminal: 'CmdOrCtrl+K',

@@ -927,6 +927,8 @@ export default {
       batchCommand: '批量操作',
       openFileManager: '打开文件管理器',
       toggleSidebar: '切换侧边栏',
+      navBack: '后退',
+      navForward: '前进',
       toggleAiPanel: '切换 AI 面板',
       toggleKnowledge: '记忆与知识库',
       clearTerminal: '清屏',

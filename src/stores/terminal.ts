@@ -1491,6 +1491,46 @@ export const useTerminalStore = defineStore('terminal', () => {
     terminalPlaceActive: terminalPlaceActive.value,
   }))
 
+  /**
+   * 按快照回到某个落点（后退 / 前进用）。
+   * 目标 tab 已经不在了就返回 false，调用方应跳过这条继续找更早的。
+   */
+  function restoreConversationSurface(surface: ConversationSurfaceState): boolean {
+    const nextActive = surface.activeTabId
+      ? tabs.value.find(t => t.id === surface.activeTabId)
+      : undefined
+    if (surface.activeTabId && !nextActive) return false
+
+    const nextHub = surface.hubFocusedAssistantTabId
+      ? tabs.value.find(t => t.id === surface.hubFocusedAssistantTabId)
+      : undefined
+    if (
+      surface.hubFocusedAssistantTabId &&
+      !nextHub &&
+      !surface.activeTabId &&
+      !surface.todosActive &&
+      !surface.terminalPlaceActive
+    ) {
+      return false
+    }
+
+    todosActive.value = !!surface.todosActive
+    terminalPlaceActive.value = !!surface.terminalPlaceActive && !nextActive
+    activeTabId.value = nextActive ? nextActive.id : ''
+    hubFocusedAssistantTabId.value = nextHub ? nextHub.id : ''
+
+    if (nextActive) {
+      if (isLocalOrSshTab(nextActive)) lastTerminalTabId.value = nextActive.id
+      setAgentCompletedUnseen(nextActive.id, false)
+      if (nextActive.type === 'assistant') requestAssistantComposerFocus(nextActive.id)
+    } else if (nextHub && !todosActive.value && !terminalPlaceActive.value) {
+      nextHub.lastFocusedAt = Date.now()
+      setAgentCompletedUnseen(nextHub.id, false)
+      requestAssistantComposerFocus(nextHub.id)
+    }
+    return true
+  }
+
   /** 点侧栏「终端」：回到上次本机 / SSH 工作台；一个都没有才进空页 */
   function focusTerminalPlace(): void {
     todosActive.value = false
@@ -3464,6 +3504,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     terminalTabs,
     terminalPlaceActive,
     conversationSurface,
+    restoreConversationSurface,
     openTodos,
     hubFocusedAssistantTabId,
     hubFocusedTab,

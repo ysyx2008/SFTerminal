@@ -419,6 +419,8 @@ export default {
     recent: 'Recent',
     toggleSidebar: 'Collapse sidebar',
     expandSidebar: 'Expand sidebar',
+    navBack: 'Go back',
+    navForward: 'Go forward',
     toggleAiPanel: 'Show / hide AI panel',
     awakened: 'Awake',
     notAwakened: 'Asleep',
