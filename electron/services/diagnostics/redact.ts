@@ -44,6 +44,8 @@ const SECRET_SHAPES: Array<[RegExp, string]> = [
   [/\bAIza[A-Za-z0-9_-]{30,}/g, '<REDACTED-KEY>'],
   [/\bxox[baprs]-[A-Za-z0-9-]{10,}/g, '<REDACTED-KEY>'],
   [/\bBearer\s+[A-Za-z0-9._~+/=-]{20,}/gi, 'Bearer <REDACTED-KEY>'],
+  // 网址查询串：参数名 + 长密钥，形态无歧义。不读凭据库。
+  [/([?&])(api[_-]?key|access[_-]?token|token|secret|password)=[^&\s"'<>]{16,}/gi, '$1$2=<REDACTED-KEY>'],
 ]
 
 export function buildRedactor(input: RedactionInput): Redactor {

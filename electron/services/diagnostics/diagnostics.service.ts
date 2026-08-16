@@ -13,18 +13,24 @@ import * as fs from 'fs/promises'
 import * as os from 'os'
 import * as path from 'path'
 import { ZipArchive } from 'archiver'
-import type { CrashSummary, DiagnosticsPackageResult } from '@sailfish/shared-types'
+import type { CrashEvent, CrashSummary, DiagnosticsPackageResult } from '@sailfish/shared-types'
 import { createLogger } from '../../utils/logger'
 import { getCrashRecorder, getCrashDumpDir } from './collector'
 import { buildRedactor, type Redactor } from './redact'
 import { buildCrashSummaryText, type DiagnosticsEnv } from './summary'
+import { selectLogLines, type LogTimeWindow } from './log-window'
+import { formatDumpHints, parseDumpHints } from './dump-hints'
 
 const log = createLogger('Diagnostics')
 
-/** 摘要里带的崩溃前日志行数：够看出崩在哪一步，又不至于让人粘不出去 */
-const SUMMARY_LOG_LINES = 30
 /** 单个日志文件只取尾部这么多字节——日志能长到几十 MB，全读会卡 */
 const LOG_TAIL_BYTES = 1_500_000
+/** 摘要当场崩溃：文件尾 64KB 就够 */
+const SUMMARY_LOG_TAIL_BYTES = 64 * 1024
+/** 补报上次退出：这次启动可能已经写了很多，按诊断包同级的尾部量来切窗口 */
+const SUMMARY_LOG_WINDOW_TAIL_BYTES = LOG_TAIL_BYTES
+/** 转储只读开头这么多来抽标注，避免把大文件整份读进主进程 */
+const DUMP_HINTS_MAX_BYTES = 8 * 1024 * 1024
 /** 诊断包最多收几个日志文件（按日期倒序） */
 const MAX_LOG_FILES = 4
 /** 诊断包最多收几个崩溃转储 */
@@ -234,15 +240,44 @@ export class DiagnosticsService {
     }
   }
 
-  /** 摘要里附的崩溃前日志：取最新一份日志的尾部若干行 */
-  private async readRecentLogLines(): Promise<string[]> {
-    const [latest] = await this.collectLogFiles()
-    if (!latest) return []
+  /**
+   * 摘要里附的崩溃前日志。
+   * 补报上次异常退出时按「上次启动 → 这次启动」切，不能取新进程写的文件尾。
+   */
+  private async readRecentLogLines(crash: CrashSummary): Promise<string[]> {
+    const window = previousExitLogWindow(crash.recentEvents)
+    const names = (await this.collectLogFiles()).slice(0, window ? 2 : 1)
+    if (names.length === 0) return []
+    const tailBytes = window ? SUMMARY_LOG_WINDOW_TAIL_BYTES : SUMMARY_LOG_TAIL_BYTES
+    const chunks: Array<{ text: string; fileDate?: string }> = []
+    for (const name of [...names].reverse()) {
+      try {
+        const text = await readTail(path.join(this.logDir, name), tailBytes)
+        chunks.push({ text, fileDate: name.replace(/\.log$/, '') })
+        await yieldToEventLoop()
+      } catch {
+        /* 单个日志读失败不挡摘要 */
+      }
+    }
+    return selectLogLines(chunks, { window })
+  }
+
+  /** 只解析最新一份转储：标注在文件前部，大文件整读会拖住界面 */
+  private async readLatestDumpHints(dump?: DumpFile): Promise<string | undefined> {
+    if (!dump) return undefined
     try {
-      const tail = await readTail(path.join(this.logDir, latest), 64 * 1024)
-      return tail.split('\n').filter(Boolean).slice(-SUMMARY_LOG_LINES)
+      const handle = await fs.open(dump.abs, 'r')
+      try {
+        const length = Math.min(dump.size, DUMP_HINTS_MAX_BYTES)
+        if (length < 32) return undefined
+        const buffer = Buffer.alloc(length)
+        await handle.read(buffer, 0, length, 0)
+        return formatDumpHints(parseDumpHints(buffer))
+      } finally {
+        await handle.close()
+      }
     } catch {
-      return []
+      return undefined
     }
   }
 
@@ -260,14 +295,17 @@ export class DiagnosticsService {
 
   /** 可直接粘贴的崩溃摘要 */
   async getCrashSummaryText(): Promise<string> {
-    const [env, crash, recentLogLines, dumps] = await Promise.all([
+    const [env, crash, dumps] = await Promise.all([
       this.collectEnv(),
       this.getCrashSummary(),
-      this.readRecentLogLines(),
       this.collectDumps(),
     ])
+    const [recentLogLines, dumpHints] = await Promise.all([
+      this.readRecentLogLines(crash),
+      this.readLatestDumpHints(dumps[0]),
+    ])
     return buildCrashSummaryText(
-      { env, crash, recentLogLines, latestDumpName: dumps[0]?.name },
+      { env, crash, recentLogLines, latestDumpName: dumps[0]?.name, dumpHints },
       this.getRedactor()
     )
   }
@@ -306,8 +344,12 @@ export class DiagnosticsService {
       })
       archive.pipe(output)
 
+      const [recentLogLines, dumpHints] = await Promise.all([
+        this.readRecentLogLines(crash),
+        this.readLatestDumpHints(dumps[0]),
+      ])
       const summaryText = buildCrashSummaryText(
-        { env, crash, recentLogLines: await this.readRecentLogLines(), latestDumpName: dumps[0]?.name },
+        { env, crash, recentLogLines, latestDumpName: dumps[0]?.name, dumpHints },
         redact
       )
       archive.append(summaryText, { name: 'summary.txt' })
@@ -364,4 +406,14 @@ let instance: DiagnosticsService | null = null
 export function getDiagnosticsService(): DiagnosticsService {
   if (!instance) instance = new DiagnosticsService()
   return instance
+}
+
+/** 只有摘要说的就是「上次异常退出」时才切时间窗；当场崩了仍取文件尾 */
+function previousExitLogWindow(events: CrashEvent[]): LogTimeWindow | undefined {
+  const latest = events.at(-1)
+  if (latest?.kind !== 'previous-exit') return undefined
+  const from = latest.previousStartedAt ?? latest.message?.match(
+    /启动于 (\d{4}-\d{2}-\d{2}T[0-9:.+-]+Z?)/
+  )?.[1]
+  return { from, to: latest.at }
 }

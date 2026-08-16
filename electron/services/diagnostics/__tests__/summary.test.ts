@@ -79,6 +79,28 @@ describe('崩溃摘要文本', () => {
     expect(text).toContain('~\\logs')
   })
 
+  it('补报上次退出时，日志标题标明来自上次运行', () => {
+    const text = buildCrashSummaryText({
+      env,
+      crash: {
+        lastExitWasCrash: true,
+        consecutiveCrashCount: 1,
+        crashesThisRun: 0,
+        recentEvents: [{
+          at: '2026-08-16T08:13:06.916Z', appVersion: '11.6.0', platform: 'darwin',
+          kind: 'previous-exit', previousStartedAt: '2026-08-16T08:11:48.000Z',
+          message: '上次运行（启动于 2026-08-16T08:11:48.000Z）未正常退出',
+        }],
+      },
+      recentLogLines: ['[16:12:58.135] [info]  (Agent) search_history'],
+      dumpHints: 'V8 堆内存耗尽（CALL_AND_RETRY_LAST）；EXC_BREAKPOINT（断点/主动中止，常见于内存耗尽） (0x6)',
+    }, redact)
+    expect(text).toContain('崩溃前日志（上次运行）')
+    expect(text).not.toContain('最近日志:')
+    expect(text).toContain('转储标注: V8 堆内存耗尽')
+    expect(text).toContain('search_history')
+  })
+
   it('没有崩溃事件时如实说明，不伪造一条', () => {
     const text = buildCrashSummaryText({
       env,

@@ -28,10 +28,12 @@ export interface DiagnosticsEnv {
 export interface CrashSummaryTextInput {
   env: DiagnosticsEnv
   crash: CrashSummary
-  /** 日志尾部的少量行 */
+  /** 崩溃前的少量日志（补报上次退出时必须是上次运行时间窗内的） */
   recentLogLines?: string[]
   /** 最新的崩溃转储文件名 */
   latestDumpName?: string
+  /** 从转储读出的崩溃性质（内存耗尽、异常码等） */
+  dumpHints?: string
 }
 
 /**
@@ -114,6 +116,9 @@ export function buildCrashSummaryText(input: CrashSummaryTextInput, redact: Reda
       (input.latestDumpName ? `，最新 ${input.latestDumpName}（保存在本机，可另行提供）` : '')
     )
   }
+  if (input.dumpHints) {
+    lines.push(`转储标注: ${input.dumpHints}`)
+  }
 
   // 同类事件反复出现是判断「是否普遍」的关键，逐条列出比只给一条有用
   const others = crash.recentEvents.slice(-6, -1)
@@ -126,9 +131,8 @@ export function buildCrashSummaryText(input: CrashSummaryTextInput, redact: Reda
 
   const logLines = input.recentLogLines ?? []
   if (logLines.length > 0) {
-    // 取的是日志尾部，不保证正好是崩溃发生前那一段（崩完应用可能还跑了很久），
-    // 所以标题只说「最近」，不给出做不到的承诺
-    lines.push('', '最近日志:')
+    const previousExit = crash.recentEvents.at(-1)?.kind === 'previous-exit'
+    lines.push('', previousExit ? '崩溃前日志（上次运行）:' : '最近日志:')
     for (const line of logLines) {
       lines.push(`  ${redact(line)}`)
     }

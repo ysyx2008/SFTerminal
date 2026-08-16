@@ -35,6 +35,8 @@ describe('脱敏', () => {
     expect(redact('key=sk-abcdefghijklmnopqrstuvwxyz123')).toBe('key=<REDACTED-KEY>')
     expect(redact('Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'))
       .toBe('Authorization: Bearer <REDACTED-KEY>')
+    expect(redact('https://vip.example.com/mcp?api_key=xn_4147eaf4d25e118cde1d9806cd5a44f4'))
+      .toBe('https://vip.example.com/mcp?api_key=<REDACTED-KEY>')
   })
 
   it('没有已知真实值时不动文本', () => {

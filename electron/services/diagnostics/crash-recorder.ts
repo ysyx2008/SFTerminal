@@ -108,6 +108,7 @@ export class CrashRecorder {
         appVersion: prev.version || this.appVersion,
         platform: this.platform,
         kind: 'previous-exit',
+        previousStartedAt: prev.startedAt || undefined,
         message: prev.startedAt
           ? `上次运行（启动于 ${prev.startedAt}）未正常退出`
           : '上次运行未正常退出',

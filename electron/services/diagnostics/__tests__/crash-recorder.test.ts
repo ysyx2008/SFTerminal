@@ -78,6 +78,8 @@ describe('CrashRecorder', () => {
       const events = make('11.6.0').getRecentEvents()
       const backfilled = events.find(e => e.kind === 'previous-exit')
       expect(backfilled?.appVersion).toBe('11.5.0')
+      expect(backfilled?.previousStartedAt).toBeTruthy()
+      expect(Date.parse(backfilled!.previousStartedAt!)).not.toBeNaN()
     })
 
     it('状态文件损坏 → 按首次启动处理，不抛错', () => {

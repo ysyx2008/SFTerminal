@@ -34,6 +34,8 @@ export interface CrashEvent {
   exitCode?: number
   /** 人类可读补充 */
   message?: string
+  /** 仅 previous-exit：上次那次运行的启动时间，用来切崩前日志 */
+  previousStartedAt?: string
 }
 
 /** 启动时对上次运行的判定 */
