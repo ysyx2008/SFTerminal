@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Pin, PinOff, Loader2, CircleDot, Monitor, SquareTerminal } from 'lucide-vue-next'
+import { Pin, PinOff, Loader2, CircleDot, SquareTerminal } from 'lucide-vue-next'
 import type { AgentHistorySummary } from '@shared/types'
 import type { HistoryConversationTabStatus } from '../stores/terminal'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
@@ -46,12 +46,16 @@ const handleContextMenu = (event: MouseEvent) => {
 
 const normalizeTitle = (text: string): string => text.trim().replace(/\s+/g, ' ')
 
+/** 没有标题的老记录会回退成任务原文，悬停提示不该跟着变成一整段 */
+const TOOLTIP_TITLE_MAX = 120
+
 const displayTitle = computed(() =>
   normalizeTitle(resolveConversationDisplayTitle(props.record))
 )
 
 /**
- * 终端会话与助手会话混在一条列表里，形态得能一眼看出。主机名太长，不占行宽，只进悬停提示。
+ * 终端会话与助手会话混在一条列表里，形态得能一眼看出。本机与远程共用一个终端图标，
+ * 认出「这条来自终端」就够了；是哪台机器交给悬停提示，主机名太长不占行宽。
  *
  * 只在记录拿得出终端编号时才标：早期助手会话被误存成了本地终端，而它们没有编号，
  * 老记录的索引里也从未存过这个字段——宁可不标，也不标错。
@@ -71,9 +75,16 @@ const originTooltip = computed(() => {
   return t('welcome.localTerminal')
 })
 
-const itemTooltip = computed(() =>
-  isTerminalConversation.value ? `${originTooltip.value}\n${props.record.userTask}` : props.record.userTask
-)
+/**
+ * 悬停提示不放任务原文：终端会话开头常是整段粘贴进来的终端输出，鼠标一停就糊住半个窗口。
+ * 终端会话给主机——行里看不到它，其余只把被行宽截掉的标题补全。
+ */
+const itemTooltip = computed(() => {
+  if (isTerminalConversation.value) return originTooltip.value
+  return displayTitle.value.length > TOOLTIP_TITLE_MAX
+    ? `${displayTitle.value.slice(0, TOOLTIP_TITLE_MAX)}…`
+    : displayTitle.value
+})
 
 const editInputRef = ref<HTMLInputElement | null>(null)
 
@@ -150,8 +161,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
         :aria-label="originTooltip"
         role="img"
       >
-        <Monitor v-if="isSshConversation" :size="11" :stroke-width="2" />
-        <SquareTerminal v-else :size="11" :stroke-width="2" />
+        <SquareTerminal :size="11" :stroke-width="2" />
       </span>
       <input
         v-if="isEditing"
@@ -167,7 +177,6 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
       <span
         v-else
         class="item-title"
-        :title="displayTitle"
       >{{ displayTitle }}</span>
       <span class="item-time">{{ formattedTime }}</span>
     </button>
@@ -176,6 +185,7 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
 
 <style scoped>
 .conversation-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0;
@@ -195,12 +205,18 @@ const handleRenameKeydown = (event: KeyboardEvent) => {
   background: color-mix(in srgb, var(--bg-surface) 75%, transparent);
 }
 
-.conversation-row.is-active {
-  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
-}
-
-.conversation-row.is-active:hover {
-  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+/* 当前这条只用一条竖条标住，不铺背景：侧栏上半的固定入口用整块背景表示「你在哪个地方」，
+   人在终端看着终端会话时两处会同时亮，语汇分开才不像两个选中项在打架 */
+.conversation-row.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 2px;
+  height: 14px;
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: var(--accent-primary);
 }
 
 .conversation-row.is-active .item-title,
