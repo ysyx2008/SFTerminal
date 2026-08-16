@@ -17,7 +17,7 @@ description: 生成或审计模块的 SPEC.md。使用场景：用户要求"给 
 
 ### 步骤
 
-1. **阅读目标模块源码**：了解模块对外提供什么能力、承担什么职责（结构查询用 `npx tsx scripts/code-query.ts` 或 CodeGraph）。
+1. **阅读目标模块源码**：了解模块对外提供什么能力、承担什么职责（结构查询用 CodeGraph）。
 2. **参考已有 SPEC 模板**：读取 `electron/services/agent/SPEC.md` 了解格式基准（注意其中实现细节内容属历史遗留，新 SPEC 不得模仿）。
 3. **撰写 SPEC.md**，包含以下章节（**设计目标优先**）：
 

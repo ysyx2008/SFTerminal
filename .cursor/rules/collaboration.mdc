@@ -35,8 +35,8 @@ alwaysApply: true
 
 - **SPEC 记录用户的设计要求，不是实现索引**：SPEC 只记录讨论中确认的功能要求、设计取舍、行为承诺；禁止出现类名/方法名/API 表等代码实现内容（检验标准：每句话都应是用户能说出口、能看懂、能验收的话）。详见 `spec-driven.mdc`
 - **改 service 前先读 SPEC.md**：改动任何 service 前，必须先读取对应的 `electron/services/XXX_SPEC.md`（或子目录 `SPEC.md`）。若不存在，先写设计目标再动手改代码
-- **SPEC 只在讨论确认新设计决策时更新**：没有"改代码就要同步 SPEC"的义务；查代码结构用 code-query / CodeGraph，不靠 SPEC
-- **探索必须用 code-query**：摸底类层次/方法/接口/引用一律用 `npx tsx scripts/code-query.ts`，**禁止直接 Read 整文件做"摸底"**
+- **SPEC 只在讨论确认新设计决策时更新**：没有"改代码就要同步 SPEC"的义务；查代码结构用 CodeGraph，不靠 SPEC
+- **探索必须用 CodeGraph**：摸底类层次/方法/接口/引用一律用 CodeGraph，**禁止直接 Read 整文件做"摸底"**
 - **新 service 必须带 SPEC**：完成新 service 后必须有对应 SPEC.md（含设计目标），否则 PR/commit 不能过
 
 ## 禁止事项
