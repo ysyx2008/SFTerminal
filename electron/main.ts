@@ -12,6 +12,7 @@ import { requestLocalNetworkAccess } from './utils/local-network-permission'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 import { isOemFeatureEnabled } from '@shared/oem-features'
+import { initCrashDiagnostics, recordMainProcessError } from './services/diagnostics/collector'
 
 /**
  * 展开路径开头的 `~` 为用户 home 目录。支持 `~`、`~/...`、`~\...`（兼容 Windows）。
@@ -42,6 +43,10 @@ function unescapeShellPath(p: string): string {
 function resolveOpenablePath(p: string): string {
   return unescapeShellPath(expandTildePath(p))
 }
+
+// 崩溃诊断：必须早于窗口创建（启动早期的崩溃也要收得住），且必须在 bootstrap 完成
+// userData 重定向之后（否则崩溃转储与崩溃记录会落到旧数据目录）
+initCrashDiagnostics()
 
 // 开发模式下禁用硬件加速，避免热重载时 GPU 进程崩溃
 // 这个调用必须在 app.whenReady() 之前
@@ -462,6 +467,8 @@ process.on('uncaughtException', (error) => {
     return
   }
   log.error('Uncaught exception:', error)
+  // 兼记崩溃事件：只写日志无法统计，用户也交不出可归类的证据
+  recordMainProcessError('main-uncaught', error.stack || error.message || String(error))
 })
 
 process.on('unhandledRejection', (reason) => {
@@ -470,6 +477,7 @@ process.on('unhandledRejection', (reason) => {
     return
   }
   log.error('Unhandled rejection:', reason)
+  recordMainProcessError('main-unhandled', String(reason))
 })
 
 const log = createLogger('Main')
