@@ -20,7 +20,7 @@ import type {
 import { getBM25Index, type BM25SearchResult } from './bm25'
 import { restoreBackup as doRestoreBackup } from './backup'
 import { createLogger } from '../../utils/logger'
-import { UtilityWorkerSession } from './worker-session'
+import { UtilityWorkerSession, type WorkerSessionOptions } from './worker-session'
 
 const log = createLogger('KnowledgeStorage')
 
@@ -108,7 +108,15 @@ export class VectorStorage extends EventEmitter {
   // ── Worker 模式（Electron） ─────────────────────────────────────
   /** 当前在用的 worker 会话；换代时整体替换，旧会话自行清算，不共享请求队列 */
   private session: UtilityWorkerSession | null = null
+  /** 当前会话是否已完成建库握手 */
   private workerReady: boolean = false
+  /**
+   * 本机是否采用 worker 模式。一旦确定就不再改变：worker 掉了要重新拉起，
+   * 而不是改用主进程加载向量库（那会把 UI 堵死，也违背隔离设计）。
+   */
+  private workerMode: boolean = false
+  /** 进行中的会话重建，供并发操作共享 */
+  private workerReadyPromise: Promise<void> | null = null
 
   // ── In-process 模式（CLI / worker 启动失败） ────────────────────
   private db: any = null
@@ -132,6 +140,19 @@ export class VectorStorage extends EventEmitter {
 
   // ────────────────────────── Worker 启停 / RPC ──────────────────────────
 
+  /**
+   * 建立 worker 会话的唯一出口。
+   * 独立成方法是为了让掉线重建的时序能在没有 Electron 的环境下被验证。
+   */
+  protected spawnSession(options: WorkerSessionOptions): UtilityWorkerSession {
+    return UtilityWorkerSession.spawn(options)
+  }
+
+  /** 本机是否具备 worker 模式（桌面端）；同样留出口供测试固定该判定 */
+  protected isWorkerModeAvailable(): boolean {
+    return detectUtilityProcessAvailable()
+  }
+
   private async startWorker(): Promise<void> {
     if (this.session?.isAlive) return
 
@@ -144,7 +165,7 @@ export class VectorStorage extends EventEmitter {
     // 清掉「进程已退出但引用还在」的上一代残留，避免它的未完成请求悬着
     this.killWorker()
 
-    const session = UtilityWorkerSession.spawn({
+    const session = this.spawnSession({
       scriptPath: getWorkerScriptPath(),
       env: workerEnv,
       label: 'LanceDB',
@@ -165,10 +186,19 @@ export class VectorStorage extends EventEmitter {
   }
 
   private killWorker(): void {
-    const session = this.session
+    this.discardSession(this.session)
+  }
+
+  /**
+   * 回收指定的那一代会话。只有它仍是当前会话时才清引用——
+   * 否则会误杀别人刚建好的 worker（重建与 forceReinitialize 可能交错）。
+   */
+  private discardSession(session: UtilityWorkerSession | null): void {
     if (!session) return
-    this.session = null
-    this.workerReady = false
+    if (this.session === session) {
+      this.session = null
+      this.workerReady = false
+    }
     session.kill()
   }
 
@@ -178,6 +208,68 @@ export class VectorStorage extends EventEmitter {
       return Promise.reject(new Error('LanceDB worker 未启动'))
     }
     return session.call<T>(type, data, timeoutMs)
+  }
+
+  /**
+   * 读写操作的路由判定：worker 模式下顺便确保会话可用。
+   *
+   * worker 崩溃或被系统回收后，若继续沿用「已初始化」的旧结论，所有读写会落到
+   * 没有数据库连接的进程内分支上——写报错、检索返回空，用户只看到「记忆突然搜
+   * 不到了」。这里按需重建，重建不成就抛错，绝不静默返回空结果。
+   */
+  private async useWorkerPath(): Promise<boolean> {
+    if (!this.workerMode) return false
+    await this.ensureWorkerReady()
+    return true
+  }
+
+  /** 确保当前有一个完成握手的 worker 会话；并发调用共享同一次重建 */
+  private async ensureWorkerReady(): Promise<void> {
+    if (this.workerReady && this.session?.isAlive) return
+
+    const inFlight = this.workerReadyPromise
+    if (inFlight) return inFlight
+
+    const task = this.rebuildWorkerSession()
+    this.workerReadyPromise = task
+    try {
+      await task
+    } finally {
+      if (this.workerReadyPromise === task) {
+        this.workerReadyPromise = null
+      }
+    }
+  }
+
+  private async rebuildWorkerSession(): Promise<void> {
+    log.warn('LanceDB worker 不可用，正在重新拉起...')
+    await this.startWorker()
+
+    // 记住自己这一代：清理只能针对它，期间可能有别人（如备份恢复）建起了新的
+    const session = this.session
+
+    try {
+      const result = await this.callWorker<{
+        ok: boolean
+        events: Array<{ name: string; args: any[] }>
+      }>('initialize', { storagePath: this.storagePath, dimensions: this.dimensions })
+
+      // 等待期间可能已 dispose：这次重建的成果没人要了，别留下进程
+      if (!this.workerMode) {
+        throw new Error('LanceDB 已释放，本次 worker 重建作废')
+      }
+
+      for (const evt of result.events || []) {
+        this.emit(evt.name, ...(evt.args || []))
+      }
+
+      this.workerReady = true
+      log.info('LanceDB worker 已重新就绪（维度=%d）', this.dimensions)
+    } catch (error) {
+      // 握手失败的进程还活着（worker 只回错误不退出），没有别的路径会回收它
+      this.discardSession(session)
+      throw error
+    }
   }
 
   // ────────────────────────── 初始化 ──────────────────────────
@@ -191,7 +283,7 @@ export class VectorStorage extends EventEmitter {
     // 恢复失败则保留原状，让 worker 的兜底逻辑（dropTable + dataCorrupted 事件）处理。
     await this.tryRestoreFromBackupBeforeInit()
 
-    if (detectUtilityProcessAvailable()) {
+    if (this.isWorkerModeAvailable()) {
       try {
         await this.startWorker()
         const result = await this.callWorker<{
@@ -204,6 +296,7 @@ export class VectorStorage extends EventEmitter {
           this.emit(evt.name, ...(evt.args || []))
         }
 
+        this.workerMode = true
         this.workerReady = true
         this.isInitialized = true
         this.emit('initialized')
@@ -430,7 +523,7 @@ export class VectorStorage extends EventEmitter {
   // ────────────────────────── 公开 API（写操作） ──────────────────────────
 
   async addRecord(record: VectorRecord): Promise<string> {
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       const { id } = await this.callWorker<{ id: string }>('addRecord', { record })
       this.emit('recordAdded', id)
       return id
@@ -444,7 +537,7 @@ export class VectorStorage extends EventEmitter {
 
   async addRecords(records: VectorRecord[]): Promise<string[]> {
     if (records.length === 0) return []
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       const { ids } = await this.callWorker<{ ids: string[] }>('addRecords', { records })
       this.emit('recordsAdded', ids)
       return ids
@@ -458,7 +551,7 @@ export class VectorStorage extends EventEmitter {
   }
 
   async removeRecord(id: string): Promise<boolean> {
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       const { removed } = await this.callWorker<{ removed: boolean }>('removeRecord', { id })
       if (removed) this.emit('recordRemoved', id)
       return removed
@@ -474,7 +567,7 @@ export class VectorStorage extends EventEmitter {
   }
 
   async removeDocumentChunks(docId: string, forceCompact: boolean = false): Promise<number> {
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       const { count } = await this.callWorker<{ count: number }>(
         'removeDocumentChunks', { docId, forceCompact }
       )
@@ -521,7 +614,7 @@ export class VectorStorage extends EventEmitter {
   }
 
   async compact(aggressive: boolean = false): Promise<void> {
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       await this.callWorker('compact', { aggressive })
       return
     }
@@ -529,13 +622,15 @@ export class VectorStorage extends EventEmitter {
   }
 
   async clear(): Promise<void> {
-    if (this.workerReady) {
-      await this.callWorker('dropTable')
-    } else {
-      if (this.table && this.db) {
-        await this.db.dropTable('knowledge_vectors')
-        this.table = null
+    // 清库不为了删除先把 worker 拉起来：进程不在时文件句柄已释放，直接删目录即可。
+    // （用户来清库往往正是因为库坏了、worker 起不来）
+    if (this.workerMode) {
+      if (this.workerReady && this.session?.isAlive) {
+        await this.callWorker('dropTable')
       }
+    } else if (this.table && this.db) {
+      await this.db.dropTable('knowledge_vectors')
+      this.table = null
     }
 
     // fs.rmSync 在主进程执行（worker 进程的文件句柄在 dropTable 后已释放）
@@ -545,7 +640,7 @@ export class VectorStorage extends EventEmitter {
       log.info('已删除 LanceDB 数据目录:', tablePath)
     }
 
-    if (!this.workerReady) this.deleteCount = 0
+    if (!this.workerMode) this.deleteCount = 0
     this.emit('cleared')
   }
 
@@ -557,7 +652,7 @@ export class VectorStorage extends EventEmitter {
   ): Promise<SearchResult[]> {
     const limit = options.limit || 10
 
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       const { hits } = await this.callWorker<{ hits: any[] }>(
         'vectorSearch', { embedding, limit: limit * 2 }
       )
@@ -598,10 +693,14 @@ export class VectorStorage extends EventEmitter {
     const limit = options.limit || 10
     const k = 60  // RRF 参数，经验最优值
 
+    // 路由判定留在 try 之外：worker 拉不起来必须报错传出去，
+    // 否则会被下面的兜底吞成空结果，用户看到的是「没搜到」而不是「库起不来了」
+    const useWorker = await this.useWorkerPath()
+
     try {
       // 1. 向量搜索（worker 或 in-process）
       let vectorResults: SearchResult[] = []
-      if (this.workerReady) {
+      if (useWorker) {
         const { hits } = await this.callWorker<{ hits: any[] }>(
           'vectorSearch', { embedding, limit: limit * 2 }
         )
@@ -629,7 +728,7 @@ export class VectorStorage extends EventEmitter {
       return this.rrfFusion(vectorResults, bm25Results, k).slice(0, limit)
     } catch (error) {
       log.error('Hybrid search failed:', error)
-      if (!this.workerReady && this.isLanceCorruptionError(error)) {
+      if (!this.workerMode && this.isLanceCorruptionError(error)) {
         this.markCorrupted(`hybridSearch: ${(error as Error).message}`)
       }
       return []
@@ -637,7 +736,7 @@ export class VectorStorage extends EventEmitter {
   }
 
   async getRecordsByDocId(docId: string): Promise<VectorRecord[]> {
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       const { records } = await this.callWorker<{ records: VectorRecord[] }>(
         'getRecordsByDocId', { docId }, WORKER_HEAVY_TIMEOUT_MS
       )
@@ -654,7 +753,7 @@ export class VectorStorage extends EventEmitter {
   }
 
   async getRecordsByDocIds(docIds: Set<string>): Promise<Map<string, VectorRecord>> {
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       const { records } = await this.callWorker<{ records: [string, VectorRecord][] }>(
         'getRecordsByDocIds', { docIds: Array.from(docIds) }, WORKER_HEAVY_TIMEOUT_MS
       )
@@ -677,7 +776,7 @@ export class VectorStorage extends EventEmitter {
   }
 
   async getStats(): Promise<KnowledgeStats> {
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       const { stats } = await this.callWorker<{ stats: KnowledgeStats }>('getStats')
       return stats
     }
@@ -698,7 +797,7 @@ export class VectorStorage extends EventEmitter {
   }
 
   async getValidRecords(validDocIds: Set<string>): Promise<VectorRecord[]> {
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       const { records } = await this.callWorker<{ records: VectorRecord[] }>(
         'getValidRecords', { docIds: Array.from(validDocIds) }, WORKER_HEAVY_TIMEOUT_MS
       )
@@ -727,7 +826,7 @@ export class VectorStorage extends EventEmitter {
   }
 
   async getChunkCount(): Promise<number> {
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       try {
         const { count } = await this.callWorker<{ count: number }>('getChunkCount')
         return count ?? 0
@@ -746,7 +845,7 @@ export class VectorStorage extends EventEmitter {
   }
 
   async getAllDocIds(): Promise<Set<string>> {
-    if (this.workerReady) {
+    if (await this.useWorkerPath()) {
       const { docIds } = await this.callWorker<{ docIds: string[] }>(
         'getAllDocIds', undefined, WORKER_HEAVY_TIMEOUT_MS
       )
@@ -772,7 +871,8 @@ export class VectorStorage extends EventEmitter {
   // ────────────────────────── 状态查询 ──────────────────────────
 
   isReady(): boolean {
-    return this.isInitialized && (this.workerReady || this.db !== null)
+    // worker 模式下即使当前进程掉了也算就绪：下一次读写会把它重新拉起来
+    return this.isInitialized && (this.workerMode || this.db !== null)
   }
 
   getStoragePath(): string {
@@ -791,6 +891,7 @@ export class VectorStorage extends EventEmitter {
     }
     this.isInitialized = false
     this.workerReady = false
+    this.workerMode = false
     this.db = null
     this.table = null
   }
@@ -801,7 +902,8 @@ export class VectorStorage extends EventEmitter {
    */
   async disposeAsync(timeoutMs: number = 500): Promise<void> {
     try {
-      if (this.workerReady) {
+      // 退出路径只跟活着的会话打交道，不为了收尾再把 worker 拉起来
+      if (this.workerReady && this.session?.isAlive) {
         await this.callWorker('compact', { aggressive: false }, timeoutMs).catch(err => {
           log.warn('LanceDB dispose compact 失败或超时:', err)
         })
@@ -811,6 +913,9 @@ export class VectorStorage extends EventEmitter {
     } finally {
       this.killWorker()
       this.isInitialized = false
+      // 释放之后不该再有人把 worker 拉起来；下次 initialize 会重新判定模式
+      this.workerMode = false
+      this.workerReadyPromise = null
     }
   }
 

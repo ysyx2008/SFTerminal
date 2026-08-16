@@ -450,9 +450,18 @@ export class EmbeddingService extends EventEmitter {
   }
 
   private killWorker(): void {
-    const session = this.session
+    this.discardSession(this.session)
+  }
+
+  /**
+   * 回收指定的那一代会话。只有它仍是当前会话时才清引用——
+   * 否则会误杀别人刚建好的 worker（重启与重新初始化可能交错）。
+   */
+  private discardSession(session: UtilityWorkerSession | null): void {
     if (!session) return
-    this.session = null
+    if (this.session === session) {
+      this.session = null
+    }
     session.kill()
   }
 
@@ -601,10 +610,6 @@ export class EmbeddingService extends EventEmitter {
     this.restartPromise = task
     try {
       await task
-    } catch (error) {
-      // 握手失败的 worker 已经 fork 出来且还活着，没有别的路径会回收它
-      this.killWorker()
-      throw error
     } finally {
       if (this.restartPromise === task) {
         this.restartPromise = null
@@ -627,19 +632,28 @@ export class EmbeddingService extends EventEmitter {
     const pipelineDevice = this.runtimePipelineDevice ?? resolvePipelineDevice(this.embeddingDevice)
 
     await this.startWorker()
-    await this.callWorker(
-      'initialize',
-      this.buildWorkerInitPayload(modelDir, modelName, pipelineDevice),
-    )
 
-    // 等待期间可能已 dispose 或换模型，这次重启的成果就作废了：
-    // 不能把服务标回 worker 模式，也不能留下这个没人要的进程。
-    if (this.currentModelId !== modelId) {
-      this.killWorker()
-      throw new Error('Embedding worker 重启期间模型已变更，本次重启作废')
+    // 记住自己这一代：清理只能针对它，期间可能有别人建起了新的
+    const session = this.session
+
+    try {
+      await this.callWorker(
+        'initialize',
+        this.buildWorkerInitPayload(modelDir, modelName, pipelineDevice),
+      )
+
+      // 等待期间可能已 dispose 或换模型，这次重启的成果就作废了：
+      // 不能把服务标回 worker 模式，也不能留下这个没人要的进程。
+      if (this.currentModelId !== modelId) {
+        throw new Error('Embedding worker 重启期间模型已变更，本次重启作废')
+      }
+
+      this.useWorker = true
+    } catch (error) {
+      // 握手失败的 worker 已经 fork 出来且还活着，没有别的路径会回收它
+      this.discardSession(session)
+      throw error
     }
-
-    this.useWorker = true
   }
 
   private async embedBatchInProc(texts: string[]): Promise<number[][]> {
