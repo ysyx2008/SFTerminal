@@ -64,6 +64,7 @@ SailFish/
 │       ├── auth/                 # 应用 SSO（OAuth2/OIDC 协议底座，features.sso 默认关；见 auth/SPEC.md）
 │       ├── credential/           # 凭证加密底层
 │       │   └── master-key.ts     # MasterKey 类：salt 文件 + PBKDF2 + AES-256-GCM（g1: 格式）
+│       ├── diagnostics/            # 崩溃诊断（转储 + 异常退出判定 + 可粘贴摘要 + 诊断包，见 diagnostics/SPEC.md）
 │       ├── document-parser.service.ts  # 文档解析（PDF/Word/Excel）
 │       ├── local-fs.service.ts  # 本地文件系统
 │       ├── bastion.service.ts   # 堡垒机/跳板机
@@ -266,6 +267,15 @@ Agent 的记忆分三层，模拟人类记忆的衰减梯度，三层协同在�
 - **接口**：`createLogger(tag)` 返回带 scope 的 Logger，启动时 `initLogging()` 初始化
 - **动态级别**：通过设置页或 `config:setLogLevel` IPC 调整
 - **源码**：`electron/utils/logger.ts`
+
+### 崩溃诊断（`electron/services/diagnostics/`）
+
+原生崩溃不经过日志——进程直接消失，日志最后一行只是崩溃前的正常记录。该模块补上这块盲区，也让崩溃率不再只能靠零星用户反馈猜测。详见 `diagnostics/SPEC.md`。
+- **转储最早开**：`startCrashReporter()` 在 bootstrap 之后、单实例锁之前调用（无状态副作用），保证启动早期的原生崩溃也留下 minidump
+- **记录在单实例锁之后**：`initCrashDiagnostics()` 必须等 `gotTheLock`，否则重复启动的第二个实例会误记假崩溃并抹平真实计数
+- **异常退出判定**：启动写「运行中」标记、`quit` 写「已退出」，下次启动据此补报——主进程崩溃时没有任何 JS 能跑，这是唯一出路
+- **只打断两种场景**：窗口自身崩溃（可精确重载崩掉的那个界面）、上次异常退出；子进程与 webview guest 崩溃只记录
+- **交出方式**：复制脱敏摘要为主（含退出码性质、显卡驱动），完整诊断包为次（含 minidump，界面明示）
 
 ### 数据迁移与兼容性
 
