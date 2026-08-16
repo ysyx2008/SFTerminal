@@ -20,6 +20,7 @@ import type {
 import { getBM25Index, type BM25SearchResult } from './bm25'
 import { restoreBackup as doRestoreBackup } from './backup'
 import { createLogger } from '../../utils/logger'
+import { UtilityWorkerSession } from './worker-session'
 
 const log = createLogger('KnowledgeStorage')
 
@@ -93,14 +94,6 @@ async function loadLanceDBInProc() {
   return inProcLancedb
 }
 
-// ────────────────────────── Worker RPC 类型 ──────────────────────────
-
-interface PendingCall {
-  resolve: (value: any) => void
-  reject: (reason: Error) => void
-  timer: NodeJS.Timeout
-}
-
 // 普通操作 2 分钟，全表扫描操作 5 分钟
 const WORKER_TIMEOUT_MS = 2 * 60 * 1000
 const WORKER_HEAVY_TIMEOUT_MS = 5 * 60 * 1000
@@ -113,10 +106,9 @@ export class VectorStorage extends EventEmitter {
   private dimensions: number = 384
 
   // ── Worker 模式（Electron） ─────────────────────────────────────
-  private worker: any = null
+  /** 当前在用的 worker 会话；换代时整体替换，旧会话自行清算，不共享请求队列 */
+  private session: UtilityWorkerSession | null = null
   private workerReady: boolean = false
-  private nextMessageId: number = 0
-  private pending: Map<number, PendingCall> = new Map()
 
   // ── In-process 模式（CLI / worker 启动失败） ────────────────────
   private db: any = null
@@ -141,15 +133,7 @@ export class VectorStorage extends EventEmitter {
   // ────────────────────────── Worker 启停 / RPC ──────────────────────────
 
   private async startWorker(): Promise<void> {
-    if (this.worker) return
-
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { utilityProcess } = require('electron')
-
-    const workerPath = getWorkerScriptPath()
-    if (!fs.existsSync(workerPath)) {
-      throw new Error(`LanceDB worker 脚本不存在：${workerPath}`)
-    }
+    if (this.session?.isAlive) return
 
     const unpackedNM = getUnpackedNodeModules()
     const workerEnv: NodeJS.ProcessEnv = { ...process.env }
@@ -157,84 +141,43 @@ export class VectorStorage extends EventEmitter {
       ? `${unpackedNM}${path.delimiter}${workerEnv.NODE_PATH}`
       : unpackedNM
 
-    const proc = utilityProcess.fork(workerPath, [], { env: workerEnv, stdio: 'pipe' })
-    if (!proc) {
-      throw new Error('utilityProcess.fork 返回 null（CLI/测试环境）')
-    }
+    // 清掉「进程已退出但引用还在」的上一代残留，避免它的未完成请求悬着
+    this.killWorker()
 
-    this.worker = proc
+    const session = UtilityWorkerSession.spawn({
+      scriptPath: getWorkerScriptPath(),
+      env: workerEnv,
+      label: 'LanceDB',
+      defaultTimeoutMs: WORKER_TIMEOUT_MS,
+      log
+    })
+    this.session = session
 
-    proc.on('message', (msg: any) => this.onWorkerMessage(msg))
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString().trim()
-      if (text) log.info('[worker]', text)
-    })
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString().trim()
-      if (text) log.warn('[worker]', text)
-    })
-    proc.on('exit', (code: number | null) => {
+    session.onExit((code: number | null) => {
       log.info('LanceDB worker 退出，code=%s', code)
-      this.worker = null
-      this.workerReady = false
-      for (const [, p] of this.pending) {
-        clearTimeout(p.timer)
-        p.reject(new Error(`LanceDB worker exited with code ${code}`))
+      // 只有退出的正是当前会话才清空引用：上一代的死讯不能抹掉新一代，
+      // 否则新 worker 活着却再无人持有它，killWorker 也够不到。
+      if (this.session === session) {
+        this.session = null
+        this.workerReady = false
       }
-      this.pending.clear()
     })
   }
 
   private killWorker(): void {
-    if (!this.worker) return
-    try { this.worker.kill() } catch (e) {
-      log.warn('kill LanceDB worker 失败：', e)
-    }
-    this.worker = null
+    const session = this.session
+    if (!session) return
+    this.session = null
     this.workerReady = false
-    for (const [, p] of this.pending) {
-      clearTimeout(p.timer)
-      p.reject(new Error('LanceDB worker terminated'))
-    }
-    this.pending.clear()
-  }
-
-  private onWorkerMessage(msg: any): void {
-    if (!msg || typeof msg.id !== 'number') return
-    const p = this.pending.get(msg.id)
-    if (!p) return
-    this.pending.delete(msg.id)
-    clearTimeout(p.timer)
-    if (msg.success) {
-      p.resolve(msg.result)
-    } else {
-      const err = new Error(msg.error || 'LanceDB worker error')
-      if (msg.stack) (err as any).workerStack = msg.stack
-      p.reject(err)
-    }
+    session.kill()
   }
 
   private callWorker<T = any>(type: string, data?: any, timeoutMs = WORKER_TIMEOUT_MS): Promise<T> {
-    if (!this.worker) {
+    const session = this.session
+    if (!session?.isAlive) {
       return Promise.reject(new Error('LanceDB worker 未启动'))
     }
-    const id = ++this.nextMessageId
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (this.pending.has(id)) {
-          this.pending.delete(id)
-          reject(new Error(`LanceDB worker 调用超时（type=${type}）`))
-        }
-      }, timeoutMs)
-      this.pending.set(id, { resolve, reject, timer })
-      try {
-        this.worker.postMessage({ id, type, data })
-      } catch (e) {
-        this.pending.delete(id)
-        clearTimeout(timer)
-        reject(e instanceof Error ? e : new Error(String(e)))
-      }
-    })
+    return session.call<T>(type, data, timeoutMs)
   }
 
   // ────────────────────────── 初始化 ──────────────────────────

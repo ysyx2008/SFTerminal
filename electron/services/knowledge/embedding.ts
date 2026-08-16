@@ -20,6 +20,7 @@ import {
   resolvePipelineDevice,
 } from './embedding-device'
 import { createLogger } from '../../utils/logger'
+import { UtilityWorkerSession, type WorkerSessionOptions } from './worker-session'
 
 const log = createLogger('Embedding')
 
@@ -107,12 +108,6 @@ function getUnpackedNodeModules(): string {
 
 // ────────────────────────── EmbeddingService ──────────────────────────
 
-interface PendingCall {
-  resolve: (value: any) => void
-  reject: (reason: Error) => void
-  timer: NodeJS.Timeout
-}
-
 const WORKER_CALL_TIMEOUT_MS = 5 * 60 * 1000 // 单次调用 5 分钟超时（embed 大批量在弱机上可能数十秒）
 
 export class EmbeddingService extends EventEmitter {
@@ -122,12 +117,16 @@ export class EmbeddingService extends EventEmitter {
   private loadPromise: Promise<void> | null = null
 
   // ── Worker 模式（utilityProcess） ─────────────────────────────
-  private worker: any = null // Electron UtilityProcess
+  /** 当前在用的 worker 会话；换代时整体替换，旧会话自行清算，不共享请求队列 */
+  private session: UtilityWorkerSession | null = null
   private useWorker: boolean = false
+  /**
+   * 进行中的重启。并发召回同时要求重启时共享同一次，
+   * 否则它们会各自 fork 并杀掉对方刚建好的 worker。
+   */
+  private restartPromise: Promise<void> | null = null
   /** 连续成功的 worker embed 批次数，达上限后主动重启 worker 释放 BFC arena */
   private successfulWorkerBatches = 0
-  private nextMessageId: number = 0
-  private pending: Map<number, PendingCall> = new Map()
   /**
    * disposeAsync 触发后，禁止新的 callWorker 进入。
    * 否则在 race timeout 之后还可能有调用者把请求塞进 pending，
@@ -232,7 +231,7 @@ export class EmbeddingService extends EventEmitter {
     if (next === this.embeddingDevice) return
     this.embeddingDevice = next
     this.clearPermanentInitError()
-    if (this.extractor || this.worker) {
+    if (this.extractor || this.hasLiveWorker) {
       this.dispose()
     }
   }
@@ -265,7 +264,7 @@ export class EmbeddingService extends EventEmitter {
     const pipelineOpts = buildEmbeddingPipelineOptions(pipelineDevice)
 
     // 桌面端 utilityProcess 可用：必须走 worker；失败直接抛出，禁止静默回退主进程
-    if (detectUtilityProcessAvailable()) {
+    if (this.isWorkerModeAvailable()) {
       try {
         await this.startWorker()
         const initPayload = this.buildWorkerInitPayload(modelDir, modelName, pipelineDevice)
@@ -320,7 +319,7 @@ export class EmbeddingService extends EventEmitter {
       throw new Error(`模型 ${targetModel.id} 不可用，请先下载`)
     }
 
-    if (this.currentModelId === targetModel.id && (this.extractor || this.worker)) {
+    if (this.currentModelId === targetModel.id && (this.extractor || this.hasLiveWorker)) {
       return
     }
 
@@ -393,16 +392,26 @@ export class EmbeddingService extends EventEmitter {
 
   // ────────────────────────── Worker 启停 / RPC ──────────────────────────
 
+  /** 当前是否有一个活着的 worker 进程可用 */
+  private get hasLiveWorker(): boolean {
+    return this.session?.isAlive === true
+  }
+
+  /**
+   * 建立 worker 会话的唯一出口。
+   * 独立成方法是为了让换代时序能在没有 Electron 的环境下被验证。
+   */
+  protected spawnSession(options: WorkerSessionOptions): UtilityWorkerSession {
+    return UtilityWorkerSession.spawn(options)
+  }
+
+  /** 本机是否具备 worker 模式（桌面端）；同样留出口供换代时序的测试固定该判定 */
+  protected isWorkerModeAvailable(): boolean {
+    return detectUtilityProcessAvailable()
+  }
+
   private async startWorker(): Promise<void> {
-    if (this.worker) return
-
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { utilityProcess } = require('electron')
-
-    const workerPath = getWorkerScriptPath()
-    if (!fs.existsSync(workerPath)) {
-      throw new Error(`Embedding worker 脚本不存在：${workerPath}`)
-    }
+    if (this.hasLiveWorker) return
 
     const unpackedNM = getUnpackedNodeModules()
     const workerEnv: NodeJS.ProcessEnv = { ...process.env }
@@ -412,79 +421,44 @@ export class EmbeddingService extends EventEmitter {
       ? `${unpackedNM}${path.delimiter}${workerEnv.NODE_PATH}`
       : unpackedNM
 
-    const proc = utilityProcess.fork(workerPath, [], {
+    // 清掉「进程已退出但引用还在」的上一代残留，避免它的未完成请求悬着
+    this.killWorker()
+
+    const session = this.spawnSession({
+      scriptPath: getWorkerScriptPath(),
       env: workerEnv,
-      stdio: 'pipe'
+      label: 'Embedding',
+      defaultTimeoutMs: WORKER_CALL_TIMEOUT_MS,
+      log
     })
+    this.session = session
 
-    if (!proc) {
-      // CLI shim 会返回 null
-      throw new Error('utilityProcess.fork 返回 null（可能运行在 CLI/测试环境）')
-    }
-
-    this.worker = proc
-
-    proc.on('message', (msg: any) => this.onWorkerMessage(msg))
-
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString().trim()
-      if (text) log.info('[worker]', text)
-    })
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString().trim()
-      if (text) log.warn('[worker]', text)
-    })
-
-    proc.on('exit', (code: number | null) => {
+    session.onExit((code) => {
       log.info('Embedding worker 退出，code=%s', code)
       const isUnexpected = code !== null && code !== 0 && code !== 15 // 15 = SIGTERM 主动 kill
       if (isUnexpected) {
         log.warn('Embedding worker 异常退出（code=%s），将在下次 embed 时重启 worker', code)
       }
+      // 只有退出的正是当前会话才清空引用：上一代的死讯不能抹掉新一代，
+      // 否则新 worker 活着却再无人持有它，killWorker 也够不到。
+      if (this.session === session) {
+        this.session = null
+      }
       // 保留 useWorker=true：下次 embedBatch 会 restartWorkerSession，
       // 切勿改成 false 后误走空的 in-process extractor（extractor 从未加载）。
-      this.worker = null
-      // 拒绝所有 pending
-      for (const [, p] of this.pending) {
-        clearTimeout(p.timer)
-        p.reject(new Error(`Embedding worker exited with code ${code}`))
-      }
-      this.pending.clear()
     })
   }
 
   private killWorker(): void {
-    if (!this.worker) return
-    try {
-      this.worker.kill()
-    } catch (e) {
-      log.warn('kill worker 失败：', e)
-    }
-    this.worker = null
-    for (const [, p] of this.pending) {
-      clearTimeout(p.timer)
-      p.reject(new Error('Embedding worker terminated'))
-    }
-    this.pending.clear()
-  }
-
-  private onWorkerMessage(msg: any): void {
-    if (!msg || typeof msg.id !== 'number') return
-    const p = this.pending.get(msg.id)
-    if (!p) return
-    this.pending.delete(msg.id)
-    clearTimeout(p.timer)
-    if (msg.success) {
-      p.resolve(msg.result)
-    } else {
-      const err = new Error(msg.error || 'Embedding worker error')
-      if (msg.stack) (err as any).workerStack = msg.stack
-      p.reject(err)
-    }
+    const session = this.session
+    if (!session) return
+    this.session = null
+    session.kill()
   }
 
   private callWorker<T = any>(type: string, data?: any): Promise<T> {
-    if (!this.worker) {
+    const session = this.session
+    if (!session?.isAlive) {
       return Promise.reject(new Error('Embedding worker 未启动'))
     }
     // disposeAsync 已经向 worker 发出 dispose 并准备 kill；
@@ -493,23 +467,7 @@ export class EmbeddingService extends EventEmitter {
     if (this.isDisposing && type !== 'dispose') {
       return Promise.reject(new Error('Embedding service is being disposed'))
     }
-    const id = ++this.nextMessageId
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (this.pending.has(id)) {
-          this.pending.delete(id)
-          reject(new Error(`Embedding worker 调用超时（type=${type}）`))
-        }
-      }, WORKER_CALL_TIMEOUT_MS)
-      this.pending.set(id, { resolve, reject, timer })
-      try {
-        this.worker.postMessage({ id, type, data })
-      } catch (e) {
-        this.pending.delete(id)
-        clearTimeout(timer)
-        reject(e instanceof Error ? e : new Error(String(e)))
-      }
-    })
+    return session.call<T>(type, data)
   }
 
   // ────────────────────────── embed 接口 ──────────────────────────
@@ -527,11 +485,11 @@ export class EmbeddingService extends EventEmitter {
       throw this.permanentInitError
     }
 
-    if (!this.extractor && !this.worker) {
+    if (!this.extractor && !this.hasLiveWorker) {
       await this.initialize()
     }
 
-    if (!this.extractor && !this.worker) {
+    if (!this.extractor && !this.hasLiveWorker) {
       throw new Error('Embedding 模型未加载')
     }
 
@@ -562,7 +520,7 @@ export class EmbeddingService extends EventEmitter {
   private async embedBatch(texts: string[]): Promise<number[][]> {
     // Worker 模式：worker 进程可能已退出但 useWorker 仍为 true；必须重启，禁止误调空 extractor
     if (this.useWorker) {
-      if (!this.worker) {
+      if (!this.hasLiveWorker) {
         await this.restartWorkerSession()
       }
       return this.embedBatchWorker(texts)
@@ -600,7 +558,7 @@ export class EmbeddingService extends EventEmitter {
   }
 
   private async embedBatchWorkerOnce(texts: string[]): Promise<number[][]> {
-    if (!this.worker || !this.useWorker) {
+    if (!this.hasLiveWorker) {
       await this.restartWorkerSession()
     }
 
@@ -631,10 +589,31 @@ export class EmbeddingService extends EventEmitter {
 
   /**
    * 杀掉并重新拉起 utilityProcess worker（保持当前模型，不走主进程推理）。
+   *
+   * 并发调用共享同一次重启：多路记忆召回若各自重启，会互相杀掉对方刚建好的
+   * worker，并让对方的初始化握手失败，进而滚成「重启失败 → 再重启」的雪崩。
    */
   private async restartWorkerSession(): Promise<void> {
+    const inFlight = this.restartPromise
+    if (inFlight) return inFlight
+
+    const task = this.doRestartWorkerSession()
+    this.restartPromise = task
+    try {
+      await task
+    } catch (error) {
+      // 握手失败的 worker 已经 fork 出来且还活着，没有别的路径会回收它
+      this.killWorker()
+      throw error
+    } finally {
+      if (this.restartPromise === task) {
+        this.restartPromise = null
+      }
+    }
+  }
+
+  private async doRestartWorkerSession(): Promise<void> {
     this.killWorker()
-    this.useWorker = false
 
     const modelId = this.currentModelId
     if (!modelId) {
@@ -652,6 +631,14 @@ export class EmbeddingService extends EventEmitter {
       'initialize',
       this.buildWorkerInitPayload(modelDir, modelName, pipelineDevice),
     )
+
+    // 等待期间可能已 dispose 或换模型，这次重启的成果就作废了：
+    // 不能把服务标回 worker 模式，也不能留下这个没人要的进程。
+    if (this.currentModelId !== modelId) {
+      this.killWorker()
+      throw new Error('Embedding worker 重启期间模型已变更，本次重启作废')
+    }
+
     this.useWorker = true
   }
 
@@ -729,7 +716,7 @@ export class EmbeddingService extends EventEmitter {
 
   /** 检查服务是否就绪 */
   isReady(): boolean {
-    return (this.extractor !== null || this.worker !== null) && !this.isLoading
+    return (this.extractor !== null || this.hasLiveWorker) && !this.isLoading
   }
 
   /** 检查是否正在加载 */
@@ -745,7 +732,7 @@ export class EmbeddingService extends EventEmitter {
    * 请使用 disposeAsync。
    */
   dispose(): void {
-    if (this.worker) {
+    if (this.hasLiveWorker) {
       this.callWorker('dispose').catch(() => {/* ignore */})
       this.killWorker()
     }
@@ -758,6 +745,8 @@ export class EmbeddingService extends EventEmitter {
     this.useWorker = false
     this.currentModelId = null
     this.runtimePipelineDevice = null
+    // 进行中的重启不再代表任何人的意图，别让后来的调用者复用它
+    this.restartPromise = null
     this.clearPermanentInitError()
     this.emit('disposed')
   }
@@ -769,7 +758,7 @@ export class EmbeddingService extends EventEmitter {
    */
   async disposeAsync(timeoutMs: number = 500): Promise<void> {
     this.isDisposing = true
-    if (this.worker) {
+    if (this.hasLiveWorker) {
       try {
         await Promise.race([
           this.callWorker('dispose'),
@@ -791,6 +780,7 @@ export class EmbeddingService extends EventEmitter {
     this.useWorker = false
     this.currentModelId = null
     this.runtimePipelineDevice = null
+    this.restartPromise = null
     this.clearPermanentInitError()
     this.emit('disposed')
   }
