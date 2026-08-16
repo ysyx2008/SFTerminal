@@ -111,6 +111,21 @@ const translations = {
     'error.emailSmtpFailed': '发信（SMTP）连接失败',
     'msg.calendarsConnectSuccess': '连接成功，找到 {count} 个日历',
     'msg.calendarsConnectOk': '连接正常，找到 {count} 个日历',
+
+    // 崩溃提示
+    'crash.previousTitle': '上次未能正常退出',
+    'crash.previousMessage': '上次运行意外中断了',
+    'crash.previousDetail': '已在本机保留崩溃现场。复制摘要发给我们，就能帮我们定位问题（不含主机名、账号名与对话内容）。',
+    'crash.previousDetailRepeated': '最近连续 {count} 次未能正常退出，已在本机保留崩溃现场。复制摘要发给我们，就能帮我们定位问题（不含主机名、账号名与对话内容）。',
+    'crash.rendererTitle': '界面已崩溃',
+    'crash.rendererMessage': '界面进程崩溃了，需要重新载入',
+    'crash.rendererDetail': '重载界面即可继续使用，正在进行的任务不受影响。顺手复制一份摘要发给我们，能帮我们定位问题。',
+    'crash.copySummary': '复制诊断摘要',
+    'crash.reloadWindow': '重载界面',
+    'crash.dismiss': '知道了',
+    'crash.stopNotifying': '不再提示崩溃',
+    'crash.copiedTitle': '已复制',
+    'crash.copiedMessage': '诊断摘要已复制到剪贴板，直接粘贴发给我们即可',
   },
   'en-US': {
     'window.fileManager': 'File Manager',
@@ -214,6 +229,20 @@ const translations = {
     'error.emailSmtpFailed': 'Outgoing mail (SMTP) connection failed',
     'msg.calendarsConnectSuccess': 'Connected successfully, found {count} calendar(s)',
     'msg.calendarsConnectOk': 'Connection is OK, found {count} calendar(s)',
+
+    'crash.previousTitle': 'Last Session Ended Unexpectedly',
+    'crash.previousMessage': 'The previous session was interrupted',
+    'crash.previousDetail': 'The crash details are kept on this machine. Copying the summary and sending it to us helps us pin down the cause (no hostname, account name or conversations included).',
+    'crash.previousDetailRepeated': 'The last {count} sessions ended unexpectedly and the crash details are kept on this machine. Copying the summary and sending it to us helps us pin down the cause (no hostname, account name or conversations included).',
+    'crash.rendererTitle': 'Interface Crashed',
+    'crash.rendererMessage': 'The interface process crashed and needs reloading',
+    'crash.rendererDetail': 'Reloading brings the interface back; running tasks are unaffected. Copying a summary for us helps pin down the cause.',
+    'crash.copySummary': 'Copy Diagnostic Summary',
+    'crash.reloadWindow': 'Reload Interface',
+    'crash.dismiss': 'Dismiss',
+    'crash.stopNotifying': 'Stop notifying me about crashes',
+    'crash.copiedTitle': 'Copied',
+    'crash.copiedMessage': 'The diagnostic summary is on your clipboard — just paste it to us',
   },
 } as const
 

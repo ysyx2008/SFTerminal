@@ -537,6 +537,7 @@ export default {
     packageCreated: '诊断包已生成（{size}）',
     revealPackage: '打开所在文件夹',
     packageFailed: '生成失败：{error}',
+    crashNotify: '崩溃后主动提示我',
     // Steam 版：不提供任何 AI/API 配置入口
     steamNoAiConfig: 'Steam 版本不提供 AI 服务配置。您可正常使用终端、SSH 与文件管理功能。'
   },

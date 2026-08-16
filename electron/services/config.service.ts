@@ -147,6 +147,8 @@ interface StoreSchema {
   mcpServers: McpServerConfig[]
   agentMbti: AgentMbtiType
   agentDebugMode: boolean
+  /** 崩溃后是否主动提示（用户可在提示里勾选永久关闭） */
+  crashNotifyEnabled: boolean
   knowledgeSettings: KnowledgeSettings
   setupCompleted: boolean
   agentOnboardingCompleted: boolean
@@ -269,6 +271,7 @@ const defaultConfig: StoreSchema = {
   mcpServers: [],
   agentMbti: null,
   agentDebugMode: false,
+  crashNotifyEnabled: true,
   knowledgeSettings: DEFAULT_KNOWLEDGE_SETTINGS,
   setupCompleted: false,
   agentOnboardingCompleted: false,
@@ -860,6 +863,17 @@ export class ConfigService {
    */
   setAgentDebugMode(enabled: boolean): void {
     this.store.set('agentDebugMode', enabled)
+  }
+
+  // ==================== 崩溃提示 ====================
+
+  /** 默认开启：不主动开口问，崩溃反馈就永远只有零星几个用户会说 */
+  getCrashNotifyEnabled(): boolean {
+    return this.store.get('crashNotifyEnabled') ?? true
+  }
+
+  setCrashNotifyEnabled(enabled: boolean): void {
+    this.store.set('crashNotifyEnabled', enabled)
   }
 
   // ==================== 命令风险策略 ====================

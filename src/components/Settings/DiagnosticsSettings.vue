@@ -22,10 +22,21 @@ const crash = ref<CrashSummary | null>(null)
 const copied = ref(false)
 const creatingPackage = ref(false)
 const packageResult = ref<DiagnosticsPackageResult | null>(null)
+const notifyEnabled = ref(true)
 
 onMounted(async () => {
-  crash.value = await window.electronAPI.diagnostics.getCrashSummary()
+  const [summary, enabled] = await Promise.all([
+    window.electronAPI.diagnostics.getCrashSummary(),
+    window.electronAPI.diagnostics.getNotifyEnabled(),
+  ])
+  crash.value = summary
+  notifyEnabled.value = enabled
 })
+
+const setNotifyEnabled = async (enabled: boolean) => {
+  notifyEnabled.value = enabled
+  await window.electronAPI.diagnostics.setNotifyEnabled(enabled)
+}
 
 const hasCrashRecord = computed(() => {
   const c = crash.value
@@ -111,6 +122,18 @@ const revealPackage = () => {
       <p v-else-if="packageResult && !packageResult.success" class="package-result package-result--error">
         {{ t('aiSettings.packageFailed', { error: packageResult.error || '' }) }}
       </p>
+
+      <div class="crash-notify-row">
+        <span>{{ t('aiSettings.crashNotify') }}</span>
+        <label class="toggle-switch">
+          <input
+            type="checkbox"
+            :checked="notifyEnabled"
+            @change="setNotifyEnabled(($event.target as HTMLInputElement).checked)"
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
     </div>
 
     <!-- Agent 调试模式 -->
@@ -333,5 +356,17 @@ const revealPackage = () => {
 
 .link-btn:hover {
   text-decoration: underline;
+}
+
+.crash-notify-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, #444);
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
 }
 </style>

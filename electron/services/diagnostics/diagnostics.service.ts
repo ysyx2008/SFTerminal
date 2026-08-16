@@ -288,7 +288,8 @@ export class DiagnosticsService {
       let dumpCount = 0
       for (const dump of dumps) {
         if (dumpCount >= MAX_DUMPS || dumpBytes + dump.size > MAX_DUMP_BYTES) break
-        archive.file(dump.abs, { name: `dumps/${dump.name}`, store: true })
+        // 转储压缩率很高，压过再发比原样收录更容易发出去
+        archive.file(dump.abs, { name: `dumps/${dump.name}` })
         dumpBytes += dump.size
         dumpCount += 1
       }

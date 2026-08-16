@@ -12,8 +12,9 @@ import { requestLocalNetworkAccess } from './utils/local-network-permission'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 import { isOemFeatureEnabled } from '@shared/oem-features'
-import { initCrashDiagnostics, recordMainProcessError } from './services/diagnostics/collector'
+import { initCrashDiagnostics, recordMainProcessError, getCrashRecorder } from './services/diagnostics/collector'
 import { getDiagnosticsService } from './services/diagnostics/diagnostics.service'
+import { CrashNotifier } from './services/diagnostics/notifier'
 
 /**
  * 展开路径开头的 `~` 为用户 home 目录。支持 `~`、`~/...`、`~\...`（兼容 Windows）。
@@ -563,6 +564,27 @@ aiService.onProfileFallback((notice) => {
 })
 setMainI18nConfig(configService)
 initLogging(configService.getLogLevel())
+
+// 崩溃提示：崩溃后主动找用户，而不是等他翻设置页（没人会去点）
+const crashNotifier = new CrashNotifier({
+  isEnabled: () => configService.getCrashNotifyEnabled(),
+  setEnabled: (enabled) => configService.setCrashNotifyEnabled(enabled),
+  getSummaryText: () => getDiagnosticsService().getCrashSummaryText(),
+})
+crashNotifier.start()
+
+let previousCrashNotified = false
+/** 上次崩溃只能等界面出来后补报——崩的那一刻主进程已经死了，什么也弹不出来 */
+function notifyPreviousCrashOnce(): void {
+  if (previousCrashNotified) return
+  previousCrashNotified = true
+  const verdict = getCrashRecorder()?.getSummary()
+  if (!verdict?.lastExitWasCrash) return
+  // 让首屏先稳住，别一进来就糊用户一脸弹窗
+  setTimeout(() => {
+    void crashNotifier.notifyPreviousCrash(verdict)
+  }, 4000)
+}
 // Early phase migrations（仅需 ConfigService）
 getMigrationRunner().run('early', {
   configService,
@@ -1229,7 +1251,10 @@ function createWindow() {
   // 'app:mounted' IPC 由 src/main.ts 在 Vue mount 完成后立即发出
   // 这是首选 show 时机：窗口出现 = 真实 UI 出现，不会有黑屏中转
   // 用 removeAllListeners + on 的组合（而不是 once）以支持窗口重建场景
-  const onAppMounted = () => showMainWindowOnce('vue-mounted')
+  const onAppMounted = () => {
+    showMainWindowOnce('vue-mounted')
+    notifyPreviousCrashOnce()
+  }
   ipcMain.removeAllListeners('app:mounted')
   ipcMain.on('app:mounted', onAppMounted)
   // 兜底：2s 后无论 'app:mounted' 是否到达都强制 show
@@ -3428,6 +3453,14 @@ ipcMain.handle('diagnostics:createPackage', async (_event, options?: { chooseLoc
 
 ipcMain.handle('diagnostics:revealPackage', async (_event, filePath: string) => {
   shell.showItemInFolder(filePath)
+})
+
+ipcMain.handle('diagnostics:getNotifyEnabled', async () => {
+  return configService.getCrashNotifyEnabled()
+})
+
+ipcMain.handle('diagnostics:setNotifyEnabled', async (_event, enabled: boolean) => {
+  configService.setCrashNotifyEnabled(enabled)
 })
 
 // ==================== 定时任务调度相关 ====================

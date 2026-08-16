@@ -905,7 +905,9 @@ const electronAPI = {
     getCrashSummaryText: () => ipcRenderer.invoke('diagnostics:getCrashSummaryText') as Promise<string>,
     createPackage: (options?: { chooseLocation?: boolean }) =>
       ipcRenderer.invoke('diagnostics:createPackage', options) as Promise<import('@sailfish/shared-types').DiagnosticsPackageResult>,
-    revealPackage: (filePath: string) => ipcRenderer.invoke('diagnostics:revealPackage', filePath) as Promise<void>
+    revealPackage: (filePath: string) => ipcRenderer.invoke('diagnostics:revealPackage', filePath) as Promise<void>,
+    getNotifyEnabled: () => ipcRenderer.invoke('diagnostics:getNotifyEnabled') as Promise<boolean>,
+    setNotifyEnabled: (enabled: boolean) => ipcRenderer.invoke('diagnostics:setNotifyEnabled', enabled) as Promise<void>
   },
 
   // Xshell 导入操作

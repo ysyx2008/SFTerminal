@@ -608,6 +608,8 @@ interface Window {
       getCrashSummaryText: () => Promise<string>
       createPackage: (options?: { chooseLocation?: boolean }) => Promise<import('@sailfish/shared-types').DiagnosticsPackageResult>
       revealPackage: (filePath: string) => Promise<void>
+      getNotifyEnabled: () => Promise<boolean>
+      setNotifyEnabled: (enabled: boolean) => Promise<void>
     }
     xshell: {
       selectFiles: () => Promise<{ canceled: boolean; filePaths: string[] }>

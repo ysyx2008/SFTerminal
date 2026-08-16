@@ -537,6 +537,7 @@ export default {
     packageCreated: 'Package created ({size})',
     revealPackage: 'Show in Folder',
     packageFailed: 'Failed: {error}',
+    crashNotify: 'Notify me after a crash',
     // Steam build: no AI/API config entry
     steamNoAiConfig: 'The Steam version does not offer AI service configuration. You can use terminal, SSH, and file management features as normal.'
   },
