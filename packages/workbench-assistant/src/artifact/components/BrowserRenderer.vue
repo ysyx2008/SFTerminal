@@ -36,7 +36,6 @@ const artifact = computed(() => artifactStore.getArtifactById(props.tabId, props
 const targetUrl = computed(() => artifact.value?.url ?? '')
 
 const webviewRef = ref<WebviewTag | null>(null)
-const webviewAttached = ref(false)
 const loadFailed = ref(false)
 /** 地址栏显示值（跟随导航事件更新；编辑中不打断） */
 const addressValue = ref('')
@@ -46,34 +45,55 @@ function isHttpUrl(url: string): boolean {
   return /^https?:\/\//i.test(url)
 }
 
-function attachWebview(url: string) {
+/**
+ * 「是否已加载过」的真相源是元素自身的 src，不另存标记：
+ * 元素由 v-if 控制，url 清空后再出现会销毁重建，独立标记会与新元素脱节，
+ * 导致对尚未设过 src 的新 guest 调 loadURL。
+ * 首次用 src 属性挂载，之后的地址变更走命令式导航（地址栏导航不改 src 属性）。
+ */
+function loadUrl(url: string) {
   const wv = webviewRef.value
   if (!wv || !url) return
-  webviewAttached.value = true
-  wv.setAttribute('src', url)
+  if (!wv.getAttribute('src')) {
+    wv.setAttribute('src', url)
+    return
+  }
+  try {
+    wv.loadURL(url).catch(() => { loadFailed.value = true })
+  } catch {
+    // guest 未 attach 时 loadURL 同步抛错：回落到 src 属性，attach 后自动加载
+    wv.setAttribute('src', url)
+  }
+}
+
+/** 销毁正在加载中的 guest 易触发渲染进程崩溃：元素卸载或被 v-if 摘除前都要先停 */
+function stopGuest() {
+  try {
+    webviewRef.value?.stop()
+  } catch {
+    /* webview 未 attach 时忽略 */
+  }
 }
 
 // artifact.url 变化（含首次出现）：加载新地址
 watch(targetUrl, (url) => {
   loadFailed.value = false
-  if (!url) return
-  if (!addressEditing.value) addressValue.value = url
-  if (!webviewAttached.value) {
-    // webview 元素由 v-if="targetUrl" 控制，等下一拍确保已挂载
-    void nextTick(() => attachWebview(url))
-  } else {
-    webviewRef.value?.loadURL(url).catch(() => { loadFailed.value = true })
+  if (!url) {
+    // 地址清空 → v-if 摘除元素，DOM 更新前先停 guest
+    stopGuest()
+    return
   }
+  if (!addressEditing.value) addressValue.value = url
+  // webview 元素由 v-if="targetUrl" 控制，等下一拍确保已挂载
+  void nextTick(() => loadUrl(url))
 }, { immediate: true })
 
 function navigateFromAddressBar() {
   const url = addressValue.value.trim()
   if (!url || !isHttpUrl(url)) return
   addressEditing.value = false
-  const wv = webviewRef.value
-  if (!wv) return
   loadFailed.value = false
-  wv.loadURL(url).catch(() => { loadFailed.value = true })
+  loadUrl(url)
 }
 
 function onNavigate(e: DidNavigateEvent) {
@@ -97,7 +117,7 @@ function onWebviewFailLoad(e: DidFailLoadEvent) {
 
 function refresh() {
   const wv = webviewRef.value
-  if (!wv || !webviewAttached.value) return
+  if (!wv?.getAttribute('src')) return
   loadFailed.value = false
   wv.reload()
 }
@@ -132,12 +152,7 @@ function captureFeedback() {
 }
 
 onBeforeUnmount(() => {
-  // 停止 guest 加载，加速 webview 进程回收
-  try {
-    webviewRef.value?.stop()
-  } catch {
-    /* webview 未 attach 时忽略 */
-  }
+  stopGuest()
 })
 </script>
 

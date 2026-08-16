@@ -136,11 +136,13 @@ const previewHtml = computed(() => {
 const previewUrl = computed(() => buildArtifactPreviewUrl(props.tabId, props.artifactId))
 
 const webviewRef = ref<WebviewTag | null>(null)
-/** webview 是否已完成首次 src 设置（之后内容更新走 reload） */
-const webviewAttached = ref(false)
 const loadFailed = ref(false)
 
-/** 推送内容到主进程缓存，确认就绪后加载/刷新 webview（await 消除与协议请求的竞态） */
+/**
+ * 「已加载哪个地址」的真相源是元素自身的 src，不另存标记：
+ * 预览元素由 v-if 控制，切换产出物会销毁重建，独立标记会与新元素脱节，
+ * 导致对尚未设过 src 的新 guest 调 reload（预览空白）。
+ */
 async function syncAndRender(html: string) {
   const api = window.electronAPI?.artifactPreview
   if (!api || !html) return
@@ -151,17 +153,30 @@ async function syncAndRender(html: string) {
   })
   const wv = webviewRef.value
   if (!wv) return
-  if (!webviewAttached.value) {
-    webviewAttached.value = true
-    wv.setAttribute('src', previewUrl.value)
+  const target = previewUrl.value
+  if (wv.getAttribute('src') !== target) {
+    wv.setAttribute('src', target)
   } else {
     wv.reload()
   }
 }
 
+/** 销毁正在加载中的预览进程易触发渲染进程崩溃：元素卸载或被 v-if 摘除前都要先停 guest */
+function stopGuest() {
+  try {
+    webviewRef.value?.stop()
+  } catch {
+    /* webview 未 attach 时忽略 */
+  }
+}
+
 watch(previewHtml, (html) => {
   loadFailed.value = false
-  if (!html) return
+  if (!html) {
+    // 内容清空 → v-if 摘除元素，DOM 更新前先停 guest
+    stopGuest()
+    return
+  }
   // webview 元素由 v-if="previewHtml" 控制，此处等下一拍确保元素已挂载
   void nextTick(() => syncAndRender(html))
 }, { immediate: true })
@@ -194,7 +209,7 @@ function onWebviewFailLoad(e: DidFailLoadEvent) {
 
 function refresh() {
   const wv = webviewRef.value
-  if (!wv || !webviewAttached.value) return
+  if (!wv?.getAttribute('src')) return
   loadFailed.value = false
   wv.reload()
 }
@@ -229,6 +244,7 @@ function captureFeedback() {
 }
 
 onBeforeUnmount(() => {
+  stopGuest()
   // 切换产出物/关闭面板时清掉自己的缓存条目（tab 关闭时由 store.cleanup 整 tab 清理）
   window.electronAPI?.artifactPreview?.clear(props.tabId, props.artifactId)
 })
