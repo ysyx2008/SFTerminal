@@ -309,24 +309,25 @@ onUnmounted(() => {
           </div>
         </div>
         <!-- 首次运行：先显示默认文案；3s 后 logo 原地左右摆，标题交叉淡入「初次见面」，
-             副标题位换成按钮行。header-text 定宽，避免文案长短变化带动 logo 位移。 -->
+             副标题位换成按钮行。默认文案始终留在流内撑宽度，「初次见面」态以浮层叠加，
+             这样文案长短变化不会把 logo 推离页面中线。 -->
         <div class="header-text">
           <div class="header-title-slot">
+            <h1 class="welcome-title" :class="{ 'is-faded': onboardingGreetActive }">
+              {{ t(isSteamBuild ? 'welcome.titleSteam' : 'welcome.title') }}
+            </h1>
             <Transition name="greet-fade">
-              <h1 v-if="!onboardingGreetActive" key="default" class="welcome-title">
-                {{ t(isSteamBuild ? 'welcome.titleSteam' : 'welcome.title') }}
-              </h1>
-              <h1 v-else key="greet" class="welcome-title">
+              <h1 v-if="onboardingGreetActive" class="welcome-title greet-overlay">
                 {{ t('welcome.onboardingInvite.title') }}
               </h1>
             </Transition>
           </div>
           <div class="header-sub-slot">
+            <p class="welcome-subtitle" :class="{ 'is-faded': onboardingGreetActive }">
+              {{ welcomeSubtitle }}
+            </p>
             <Transition name="greet-fade">
-              <p v-if="!onboardingGreetActive" key="default" class="welcome-subtitle">
-                {{ welcomeSubtitle }}
-              </p>
-              <div v-else key="greet" class="onboarding-invite-actions">
+              <div v-if="onboardingGreetActive" class="onboarding-invite-actions greet-overlay">
                 <button
                   type="button"
                   class="onboarding-invite-meet"
@@ -502,22 +503,45 @@ onUnmounted(() => {
   justify-content: center;
   gap: 16px;
   margin-bottom: 20px;
+  /* 光学配重：包围盒居中时，右侧粗体标题比左侧线稿 logo 显得更重，
+     整组读起来偏右。右侧多留 16px 让居中结果左移 8px 找回视觉平衡。
+     用 padding 而非 transform——入场动画收尾会把 transform 清成 none。 */
+  padding-right: 16px;
   animation: headerEnter 0.35s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
   opacity: 0;
 }
 
 /* 诞生引导邀请：logo 开始挥手时，标题换成「初次见面」、副标题位置换成按钮行。
-   header-text 定宽，避免「欢迎使用旗鱼」↔「初次见面」长短变化带动整块居中重排。 */
+   宽度随文案自然撑开，让 logo + 文案整体相对内容列真正视觉居中；
+   文案切换的稳定性由 .greet-overlay 浮层保证，不靠预留空白。 */
 .header-text {
   text-align: left;
-  /* 定宽：避免「欢迎使用旗鱼」↔「初次见面，认识一下？」长短变化带动整块居中重排，logo 跟着跳 */
-  width: 320px;
   flex-shrink: 0;
 }
 
 .header-title-slot,
 .header-sub-slot {
   position: relative;
+}
+
+/* 「初次见面」态叠在默认文案之上、不占布局宽度：
+   文案变长只向右溢出，不会把 logo 推离中线 */
+.greet-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+}
+
+/* 被浮层顶替的默认文案：淡出但继续占位撑宽度 */
+.welcome-title,
+.welcome-subtitle {
+  transition: opacity 0.35s ease;
+}
+
+.welcome-title.is-faded,
+.welcome-subtitle.is-faded {
+  opacity: 0;
 }
 
 .header-title-slot {
@@ -544,10 +568,6 @@ onUnmounted(() => {
 
 .greet-fade-leave-active {
   transition: opacity 0.35s ease;
-  position: absolute;
-  left: 0;
-  top: 0;
-  right: 0;
 }
 
 .greet-fade-enter-from {
