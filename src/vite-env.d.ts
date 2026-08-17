@@ -1719,6 +1719,11 @@ interface Window {
       }>>
       showInExplorer: (path: string) => Promise<void>
       openFile: (path: string) => Promise<void>
+      getFileIcon: (filePath: string) => Promise<{
+        success: boolean
+        dataUrl?: string
+        error?: string
+      }>
       openExternal: (url: string) => Promise<{ success: boolean; error?: string }>
       exists: (filePath: string) => Promise<{ success: boolean; data?: boolean; error?: string }>
     }

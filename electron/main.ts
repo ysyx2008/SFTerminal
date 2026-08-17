@@ -5507,6 +5507,26 @@ ipcMain.handle('localFs:openFile', async (_event, filePath: string) => {
   return localFsService.openFile(filePath)
 })
 
+const fileIconByExt = new Map<string, string>()
+
+ipcMain.handle('localFs:getFileIcon', async (_event, filePath: string) => {
+  if (!filePath || typeof filePath !== 'string') {
+    return { success: false, error: 'invalid path' }
+  }
+  const resolved = expandTildePath(filePath)
+  const ext = path.extname(resolved).toLowerCase()
+  const cached = ext ? fileIconByExt.get(ext) : undefined
+  if (cached) return { success: true, dataUrl: cached }
+  try {
+    const image = await app.getFileIcon(resolved, { size: 'normal' })
+    const dataUrl = image.toDataURL()
+    if (ext) fileIconByExt.set(ext, dataUrl)
+    return { success: true, dataUrl }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
 // ==================== 文件管理器窗口相关 ====================
 
 // 打开文件管理器窗口

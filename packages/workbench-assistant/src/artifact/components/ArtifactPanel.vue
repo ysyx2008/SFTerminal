@@ -31,7 +31,8 @@ import {
   provideArtifactSaveBridge,
   useAssistantArtifactStore
 } from '../index'
-import { getRendererComponent, getRendererIcon } from '../renderers/ui-registry'
+import { getRendererComponent } from '../renderers/ui-registry'
+import ArtifactFileIcon from './ArtifactFileIcon.vue'
 import { resolveSourceStepIdById } from '../domain/artifact-source'
 import { requireArtifactDesktopHost } from '../host'
 import { useToast } from '@sailfish/workbench-sdk/toast'
@@ -181,12 +182,7 @@ const ctxMenuFlags = computed(() => {
   })
 })
 
-function rendererIcon(type: CanvasRendererType | null) {
-  if (!type) return getRendererIcon('document')
-  return getRendererIcon(type)
-}
-
-function rendererTypeKey(type: CanvasRendererType | null): string {
+function rendererTypeKey(type: CanvasRendererType | null): CanvasRendererType {
   return type ?? 'document'
 }
 
@@ -795,6 +791,12 @@ defineExpose({ minimizePanel })
           @click="toggleArtifactPicker"
           @contextmenu="openCtxMenu($event, { kind: 'header' })"
         >
+          <ArtifactFileIcon
+            v-if="activeArtifact"
+            :file-path="activeArtifact.filePath"
+            :renderer="activeArtifact.renderer"
+            :size="14"
+          />
           <span class="artifact-file-select-label">{{ activeTitleLabel() }}</span>
           <ChevronDown :size="12" class="artifact-file-select-chevron" />
         </button>
@@ -803,6 +805,12 @@ defineExpose({ minimizePanel })
           class="artifact-file-select artifact-file-select-static"
           @contextmenu="openCtxMenu($event, { kind: 'header' })"
         >
+          <ArtifactFileIcon
+            v-if="activeArtifact"
+            :file-path="activeArtifact.filePath"
+            :renderer="activeArtifact.renderer"
+            :size="14"
+          />
           <span class="artifact-file-select-label">{{ activeTitleLabel() }}</span>
         </div>
       </div>
@@ -966,8 +974,12 @@ defineExpose({ minimizePanel })
               :title="artifactTabLabel(artifact)"
               @click="selectArtifact(artifact.id)"
             >
-              <span class="artifact-picker-icon-wrap" :data-type="rendererTypeKey(artifact.renderer)">
-                <component :is="rendererIcon(artifact.renderer)" :size="13" class="artifact-picker-icon" />
+              <span class="artifact-picker-icon-wrap">
+                <ArtifactFileIcon
+                  :file-path="artifact.filePath"
+                  :renderer="rendererTypeKey(artifact.renderer)"
+                  :size="16"
+                />
               </span>
               <span class="artifact-picker-label">{{ artifactTabLabel(artifact) }}</span>
               <Check v-if="artifact.id === activeArtifactId" :size="13" class="artifact-picker-check" />
@@ -1217,6 +1229,13 @@ defineExpose({ minimizePanel })
 }
 
 /* 触发器 typography 与 AiPanel model-select-sm 对齐，见 WorkbenchShell 非 scoped 样式 */
+.artifact-file-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .artifact-file-select-static {
   cursor: default;
   padding-right: 8px;
@@ -1314,7 +1333,6 @@ defineExpose({ minimizePanel })
   background: var(--hover-bg, rgba(255, 255, 255, 0.07));
 }
 
-/* icon wrap with type-based color accent */
 .artifact-picker-icon-wrap {
   flex-shrink: 0;
   display: flex;
@@ -1323,43 +1341,6 @@ defineExpose({ minimizePanel })
   width: 26px;
   height: 26px;
   margin-top: 1px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-secondary, #aaa);
-  transition: background 0.1s;
-}
-
-.artifact-picker-icon-wrap[data-type="markdown"] {
-  background: rgba(137, 180, 250, 0.14);
-  color: #89b4fa;
-}
-.artifact-picker-icon-wrap[data-type="html"] {
-  background: rgba(250, 179, 135, 0.14);
-  color: #fab387;
-}
-.artifact-picker-icon-wrap[data-type="spreadsheet"] {
-  background: rgba(166, 227, 161, 0.14);
-  color: #a6e3a1;
-}
-.artifact-picker-icon-wrap[data-type="document"] {
-  background: rgba(203, 166, 247, 0.14);
-  color: #cba6f7;
-}
-.artifact-picker-icon-wrap[data-type="pdf"] {
-  background: rgba(243, 139, 168, 0.14);
-  color: #f38ba8;
-}
-.artifact-picker-icon-wrap[data-type="image"] {
-  background: rgba(249, 226, 175, 0.14);
-  color: #f9e2af;
-}
-.artifact-picker-icon-wrap[data-type="browser"] {
-  background: rgba(148, 226, 213, 0.14);
-  color: #94e2d5;
-}
-
-.artifact-picker-icon {
-  flex-shrink: 0;
 }
 
 .artifact-picker-label {

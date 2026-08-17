@@ -337,6 +337,9 @@ onUnmounted(() => {
 /* 顶栏模型选择与产出物文件名触发器：同一套 metrics（scoped 子组件无法互引） */
 .workbench-shell select.model-select.model-select-sm,
 .workbench-shell .artifact-file-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   box-sizing: border-box;
   height: var(--workbench-header-select-height, 22px);
   padding: 2px 4px;

@@ -2882,6 +2882,13 @@ const electronAPI = {
     openFile: (filePath: string) =>
       ipcRenderer.invoke('localFs:openFile', filePath),
 
+    getFileIcon: (filePath: string) =>
+      ipcRenderer.invoke('localFs:getFileIcon', filePath) as Promise<{
+        success: boolean
+        dataUrl?: string
+        error?: string
+      }>,
+
     // 在系统浏览器打开外部 URL（仅 http/https）
     openExternal: (url: string) =>
       ipcRenderer.invoke('localFs:openExternal', url) as Promise<{

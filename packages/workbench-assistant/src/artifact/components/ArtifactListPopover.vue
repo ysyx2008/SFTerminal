@@ -6,7 +6,7 @@ import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { CanvasArtifact } from '@shared/types'
 import { artifactDisplayLabel, sortArtifactsByRecent } from '../index'
-import { getRendererIcon } from '../renderers/ui-registry'
+import ArtifactFileIcon from './ArtifactFileIcon.vue'
 
 const props = defineProps<{
   artifacts: readonly CanvasArtifact[]
@@ -66,8 +66,12 @@ onUnmounted(() => {
         :title="labelOf(artifact)"
         @click="onSelect(artifact.id)"
       >
-        <span class="artifact-list-pop-icon" :data-type="artifact.renderer">
-          <component :is="getRendererIcon(artifact.renderer)" :size="14" />
+        <span class="artifact-list-pop-icon">
+          <ArtifactFileIcon
+            :file-path="artifact.filePath"
+            :renderer="artifact.renderer"
+            :size="16"
+          />
         </span>
         <span class="artifact-list-pop-name">{{ labelOf(artifact) }}</span>
       </button>
@@ -146,18 +150,7 @@ onUnmounted(() => {
   flex-shrink: 0;
   width: 24px;
   height: 24px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-secondary, #aaa);
 }
-
-.artifact-list-pop-icon[data-type="markdown"] { background: rgba(137, 180, 250, 0.14); color: #89b4fa; }
-.artifact-list-pop-icon[data-type="html"] { background: rgba(250, 179, 135, 0.14); color: #fab387; }
-.artifact-list-pop-icon[data-type="spreadsheet"] { background: rgba(166, 227, 161, 0.14); color: #a6e3a1; }
-.artifact-list-pop-icon[data-type="document"] { background: rgba(203, 166, 247, 0.14); color: #cba6f7; }
-.artifact-list-pop-icon[data-type="pdf"] { background: rgba(243, 139, 168, 0.14); color: #f38ba8; }
-.artifact-list-pop-icon[data-type="image"] { background: rgba(249, 226, 175, 0.14); color: #f9e2af; }
-.artifact-list-pop-icon[data-type="browser"] { background: rgba(148, 226, 213, 0.14); color: #94e2d5; }
 
 .artifact-list-pop-name {
   min-width: 0;
