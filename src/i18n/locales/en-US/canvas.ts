@@ -79,6 +79,8 @@ export default {
     dismissEmptyPanel: 'Close panel',
     minimizePanel: 'Collapse panel',
     expandPanel: 'Expand artifacts panel',
+    artifactList: 'Artifact list',
+    artifactListTitle: 'Artifacts',
     expandPanelWithTitle: 'Expand artifacts: {title}',
     expandPanelWithCount: 'Expand artifacts: {title} ({count} total)',
     jumpToSource: 'Jump to source',

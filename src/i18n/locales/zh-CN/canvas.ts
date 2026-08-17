@@ -79,6 +79,8 @@ export default {
     dismissEmptyPanel: '关闭面板',
     minimizePanel: '收起面板',
     expandPanel: '展开产出物面板',
+    artifactList: '产出物清单',
+    artifactListTitle: '产出物',
     expandPanelWithTitle: '展开产出物：{title}',
     expandPanelWithCount: '展开产出物：{title}（共 {count} 个）',
     jumpToSource: '跳到生成处',

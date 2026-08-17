@@ -2033,15 +2033,33 @@ textarea:focus {
 
 .tab-view-workbench .system-info-bar > *,
 .tab-view-workbench .canvas-header > *,
-.tab-view-workbench .artifact-toggle-btn,
+.tab-view-workbench .artifact-fold-chrome,
+.tab-view-workbench .artifact-list-chrome,
 .settings-modal > .settings-header > *,
 .watch-panel > .panel-header > * {
   -webkit-app-region: no-drag;
 }
 
+/* 对话顶栏给清单按钮留位；产出物收起时还要给折叠开关让开 */
+.tab-view-workbench .assistant-chat .system-info-bar {
+  padding-right: 38px;
+}
+
+.tab-view-workbench .assistant-workbench:not(.is-panel-open) .system-info-bar {
+  padding-right: 64px;
+}
+
+.app-container:not(.is-win) .tab-view-workbench .assistant-workbench:not(.is-panel-open) .system-info-bar {
+  padding-right: calc(max(8px, var(--shell-inset-right)) + 56px);
+}
+
 /* Windows 下壳层顶条已托住右上控件，展开按钮在第二排，不必再让位 */
-.app-container:not(.is-win) .tab-view-workbench .artifact-toggle-btn {
+.app-container:not(.is-win) .tab-view-workbench .artifact-fold-chrome {
   right: max(8px, var(--shell-inset-right));
+}
+
+.app-container:not(.is-win) .tab-view-workbench .assistant-workbench:not(.is-panel-open) .artifact-list-chrome {
+  right: calc(max(8px, var(--shell-inset-right)) + 26px);
 }
 
 .app-container:not(.is-win) .tab-view-workbench .canvas-header {
