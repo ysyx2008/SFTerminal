@@ -34,6 +34,7 @@ export interface ConversationSearchOptions {
   excludeWakeup?: boolean
   titleOnly?: boolean
   onMatch?: (record: AgentRecord) => void
+  signal?: AbortSignal
 }
 
 const log = createLogger('ConversationManager')
@@ -188,7 +189,8 @@ export class ConversationManager {
       limit: options.limit ?? 50,
       titleOnly: options.titleOnly,
       filter: options.excludeWakeup ? this.taskScoped : undefined,
-      onMatch: options.onMatch
+      onMatch: options.onMatch,
+      signal: options.signal
     })
   }
 

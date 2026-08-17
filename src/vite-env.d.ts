@@ -894,6 +894,7 @@ interface Window {
         requestId: string
         summary: import('@shared/types').AgentHistorySummary
       }) => void) => () => void
+      abortSearchAgentRecords: () => Promise<void>
       getAgentRecordById: (id: string) => Promise<{
         id: string
         timestamp: number

@@ -485,6 +485,29 @@ describe('HistoryService - searchAgentRecordsAdvanced', () => {
     })).rejects.toMatchObject({ name: 'AbortError' })
   })
 
+  it('扫描中途 abort 不再继续读后续记录', async () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    for (let i = 0; i < 5; i++) {
+      svc.saveAgentRecord(makeRecord({
+        id: `abort-mid-${i}`, timestamp: t + i * 1000, duration: 1, userTask: '可中止任务'
+      }))
+    }
+
+    const ac = new AbortController()
+    const hits: string[] = []
+    await expect(svc.searchAgentRecordsAdvanced({
+      keyword: '可中止',
+      limit: 10,
+      signal: ac.signal,
+      onMatch: (r) => {
+        hits.push(r.id)
+        ac.abort()
+      }
+    })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(hits).toHaveLength(1)
+  })
+
   it('全文搜索不把 canvasData 装进结果，点开查看仍完整', async () => {
     const svc = new HistoryService()
     const t = new Date('2026-03-18T10:00:00').getTime()

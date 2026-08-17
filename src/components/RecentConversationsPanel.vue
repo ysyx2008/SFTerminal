@@ -17,6 +17,7 @@ import { toast } from '../composables/useToast'
 import { showConfirm } from '../composables/useConfirm'
 import { useConversationWarmup } from '../composables/useConversationWarmup'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
+import { applySearchMatch, isCurrentSearchRequest } from '../utils/history-search-stream'
 
 const props = defineProps<{
   collapsed?: boolean
@@ -67,11 +68,9 @@ const toHistorySummary = (record: AgentRecord): AgentHistorySummary => ({
 const sidebarSearchRequestId = (reqId: number) => `sidebar-${reqId}`
 
 const appendFullTextHit = (summary: AgentHistorySummary) => {
-  if (fullTextSummaries.value.some(s => s.id === summary.id)) return
-  fullTextSummaries.value = [...fullTextSummaries.value, summary]
-  if (fullTextTotalMatched.value < fullTextSummaries.value.length) {
-    fullTextTotalMatched.value = fullTextSummaries.value.length
-  }
+  const next = applySearchMatch(fullTextSummaries.value, fullTextTotalMatched.value, summary)
+  fullTextSummaries.value = next.hits
+  fullTextTotalMatched.value = next.liveCount
 }
 
 const clearFullTextSearchState = () => {
@@ -86,6 +85,7 @@ const resetFullTextSearch = () => {
   fullTextSearchActive.value = false
   isFullTextSearching.value = false
   clearFullTextSearchState()
+  void window.electronAPI.history.abortSearchAgentRecords()
 }
 
 /** 新建对话：回到欢迎页，右侧清空等待输入 */
@@ -372,7 +372,7 @@ onMounted(() => {
     scheduleSilentRefresh()
   })
   cleanupSearchMatch = window.electronAPI.history.onSearchMatch((payload) => {
-    if (payload.requestId !== sidebarSearchRequestId(fullTextRequestId.value)) return
+    if (!isCurrentSearchRequest(sidebarSearchRequestId(fullTextRequestId.value), payload.requestId)) return
     appendFullTextHit(payload.summary)
   })
   cleanupConversationTitle = window.electronAPI.history.onConversationTitle(({ sessionId, title }) => {
@@ -395,6 +395,7 @@ onUnmounted(() => {
   cleanupAgentErrorForHistory?.()
   cleanupSearchMatch?.()
   cleanupConversationTitle?.()
+  void window.electronAPI.history.abortSearchAgentRecords()
 })
 
 watch(searchText, () => {
@@ -960,7 +961,12 @@ const loadMore = () => {
 
       <div v-else class="empty-state">
         <template v-if="searchText.trim()">
-          <p>{{ t('welcome.conversations.noMatching') }}</p>
+          <p>{{
+            fullTextSearchActive
+              ? t('welcome.conversations.noFullTextMatch')
+              : t('welcome.conversations.noTitleMatch')
+          }}</p>
+          <p v-if="!fullTextSearchActive" class="tip">{{ t('welcome.conversations.noTitleMatchHint') }}</p>
         </template>
         <template v-else>
           <p>{{ t('ai.agentWelcome.noRecentHistory') }}</p>

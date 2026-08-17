@@ -110,7 +110,7 @@ export interface SearchAgentRecordsOptions {
   filter?: (r: AgentRecord) => boolean
   /** 为 true 时仅匹配 userTask（列表标题），不扫 finalResult/steps，适合实时筛选 */
   titleOnly?: boolean
-  /** 用户点停止时中断全文扫描；未取消时仍扫完全部候选以给出总命中数 */
+  /** 换词 / 再搜 / 关搜索时中断全文扫描；未取消时仍扫完全部候选以给出总命中数 */
   signal?: AbortSignal
   /** 每命中一条（且仍在 limit 内）立刻回调，供 UI 边搜边展示；顺序与结果一致（新→旧） */
   onMatch?: (record: AgentRecord) => void

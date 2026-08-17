@@ -1456,6 +1456,8 @@ const electronAPI = {
       ipcRenderer.on('history:searchMatch', handler)
       return () => { ipcRenderer.removeListener('history:searchMatch', handler) }
     },
+    abortSearchAgentRecords: () =>
+      ipcRenderer.invoke('history:abortSearchAgentRecords') as Promise<void>,
 
     // 按 ID 获取单条 Agent 记录
     getAgentRecordById: (id: string) =>

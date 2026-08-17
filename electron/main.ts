@@ -9,6 +9,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
 import { requestLocalNetworkAccess } from './utils/local-network-permission'
+import { isAbortError } from './utils/abort'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 import { isOemFeatureEnabled } from '@shared/oem-features'
@@ -4791,6 +4792,16 @@ ipcMain.handle(
   }
 )
 
+/** 每个渲染进程同时只跑一次全文扫描；换词 / 再搜 / 关搜索会停掉上一次。 */
+const historySearchAbortBySender = new Map<number, AbortController>()
+
+function abortHistorySearchForSender(senderId: number): void {
+  const prev = historySearchAbortBySender.get(senderId)
+  if (!prev) return
+  prev.abort()
+  historySearchAbortBySender.delete(senderId)
+}
+
 ipcMain.handle(
   'history:searchAgentRecords',
   async (
@@ -4805,38 +4816,67 @@ ipcMain.handle(
       requestId?: string
     }
   ) => {
+    abortHistorySearchForSender(event.sender.id)
+    const ac = new AbortController()
+    historySearchAbortBySender.set(event.sender.id, ac)
+    const onDestroyed = () => {
+      if (historySearchAbortBySender.get(event.sender.id) === ac) {
+        ac.abort()
+        historySearchAbortBySender.delete(event.sender.id)
+      }
+    }
+    event.sender.once('destroyed', onDestroyed)
     const requestId = options.requestId
-    return (await conv()).search({
-      keyword: options.keyword,
-      startDate: options.startDate,
-      endDate: options.endDate,
-      limit: options.limit,
-      excludeWakeup: options.excludeWakeup,
-      titleOnly: options.titleOnly,
-      onMatch: requestId
-        ? (record) => {
-            if (event.sender.isDestroyed()) return
-            event.sender.send('history:searchMatch', {
-              requestId,
-              summary: {
-                id: record.id,
-                timestamp: record.timestamp,
-                duration: record.duration,
-                userTask: record.userTask,
-                title: record.title,
-                terminalType: record.terminalType,
-                agentKey: record.agentKey,
-                kind: record.kind,
-                sshHost: record.sshHost,
-                terminalId: record.terminalId,
-                status: record.status,
-              },
-            })
-          }
-        : undefined,
-    })
+    try {
+      return await (await conv()).search({
+        keyword: options.keyword,
+        startDate: options.startDate,
+        endDate: options.endDate,
+        limit: options.limit,
+        excludeWakeup: options.excludeWakeup,
+        titleOnly: options.titleOnly,
+        signal: ac.signal,
+        onMatch: requestId
+          ? (record) => {
+              if (event.sender.isDestroyed()) return
+              event.sender.send('history:searchMatch', {
+                requestId,
+                summary: {
+                  id: record.id,
+                  timestamp: record.timestamp,
+                  duration: record.duration,
+                  userTask: record.userTask,
+                  title: record.title,
+                  terminalType: record.terminalType,
+                  agentKey: record.agentKey,
+                  kind: record.kind,
+                  sshHost: record.sshHost,
+                  terminalId: record.terminalId,
+                  status: record.status,
+                },
+              })
+            }
+          : undefined,
+      })
+    } catch (error) {
+      if (isAbortError(error)) {
+        return { records: [], totalMatched: 0, hasMore: false }
+      }
+      throw error
+    } finally {
+      if (!event.sender.isDestroyed()) {
+        event.sender.removeListener('destroyed', onDestroyed)
+      }
+      if (historySearchAbortBySender.get(event.sender.id) === ac) {
+        historySearchAbortBySender.delete(event.sender.id)
+      }
+    }
   }
 )
+
+ipcMain.handle('history:abortSearchAgentRecords', (event) => {
+  abortHistorySearchForSender(event.sender.id)
+})
 
 ipcMain.handle('history:getAgentRecordById', async (_event, id: string) => {
   return (await conv()).getRecord(id)

@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
+import { applySearchMatch, isCurrentSearchRequest } from '../utils/history-search-stream'
 import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
 import type { MessageScrollerHandle } from '../types/message-scroller'
@@ -1801,12 +1802,14 @@ export function useAgentMode(
 
   const historyModalSearchRequestId = (reqId: number) => `history-modal-${reqId}`
 
+  const abortInFlightHistorySearch = () => {
+    void window.electronAPI.history.abortSearchAgentRecords()
+  }
+
   const appendHistorySearchHit = (hit: AgentHistorySummary | AgentRecord) => {
-    if (historySearchResults.value.some(r => r.id === hit.id)) return
-    historySearchResults.value = [...historySearchResults.value, hit as AgentRecord]
-    if (historySearchTotalMatched.value < historySearchResults.value.length) {
-      historySearchTotalMatched.value = historySearchResults.value.length
-    }
+    const next = applySearchMatch(historySearchResults.value, historySearchTotalMatched.value, hit as AgentRecord)
+    historySearchResults.value = next.hits
+    historySearchTotalMatched.value = next.liveCount
   }
 
   let cleanupHistorySearchMatch: (() => void) | null = null
@@ -1896,6 +1899,10 @@ export function useAgentMode(
   }
 
   const setHistorySearchKeyword = (value: string) => {
+    if (historyFullTextSearchActive.value) {
+      historySearchRequestId.value += 1
+      abortInFlightHistorySearch()
+    }
     historySearchKeyword.value = value
     historyFullTextSearchActive.value = false
     historyModalDisplayCount.value = HISTORY_PAGE_SIZE
@@ -1905,9 +1912,11 @@ export function useAgentMode(
   const flushHistorySearch = () => {
     const kw = historySearchKeyword.value.trim()
     if (!kw) {
+      historySearchRequestId.value += 1
       historyFullTextSearchActive.value = false
       historyModalDisplayCount.value = HISTORY_PAGE_SIZE
       clearHistorySearchState()
+      abortInFlightHistorySearch()
       return
     }
     historySearchRequestId.value += 1
@@ -1929,6 +1938,7 @@ export function useAgentMode(
     historyFullTextSearchActive.value = false
     clearHistorySearchState()
     isHistorySearchLoading.value = false
+    abortInFlightHistorySearch()
   }
 
   // 打开历史弹窗：单次 IPC 读全量摘要（来自 agent-index.json）
@@ -1940,6 +1950,7 @@ export function useAgentMode(
     historyFullTextSearchActive.value = false
     clearHistorySearchState()
     isHistorySearchLoading.value = false
+    abortInFlightHistorySearch()
     isLoadingAllHistory.value = true
     try {
       historyModalSummaries.value = await window.electronAPI.history.listAgentSummaries(true)
@@ -1961,6 +1972,7 @@ export function useAgentMode(
     historyFullTextSearchActive.value = false
     clearHistorySearchState()
     isHistorySearchLoading.value = false
+    abortInFlightHistorySearch()
   }
 
   // 加载历史记录到当前会话
@@ -2037,7 +2049,7 @@ export function useAgentMode(
     loadRemoteExecutionMode()
     void restoreCompanionHistoryIfNeeded()
     cleanupHistorySearchMatch = window.electronAPI.history.onSearchMatch((payload) => {
-      if (payload.requestId !== historyModalSearchRequestId(historySearchRequestId.value)) return
+      if (!isCurrentSearchRequest(historyModalSearchRequestId(historySearchRequestId.value), payload.requestId)) return
       appendHistorySearchHit(payload.summary)
     })
   })
@@ -2048,6 +2060,7 @@ export function useAgentMode(
     uninstallContainerWidthObserver()
     cancelPendingReveal()
     cleanupHistorySearchMatch?.()
+    abortInFlightHistorySearch()
   })
 
   return {

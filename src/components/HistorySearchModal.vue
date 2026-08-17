@@ -141,11 +141,19 @@ const highlightHistoryTaskHtml = (text: string, keyword: string, maxLen: number)
           class="history-search-wait-area"
         ></div>
         <div v-else-if="allHistory.length === 0" class="history-empty">
-          {{
-            historySearchKeyword.trim()
-              ? t('ai.agentWelcome.noSearchResult')
-              : t('ai.agentWelcome.noRecentHistory')
-          }}
+          <template v-if="historySearchKeyword.trim()">
+            <p>{{
+              historyFullTextSearchActive
+                ? t('ai.agentWelcome.noFullTextMatch')
+                : t('ai.agentWelcome.noTitleMatch')
+            }}</p>
+            <p v-if="!historyFullTextSearchActive" class="history-empty-hint">
+              {{ t('ai.agentWelcome.noTitleMatchHint') }}
+            </p>
+          </template>
+          <template v-else>
+            {{ t('ai.agentWelcome.noRecentHistory') }}
+          </template>
         </div>
         <div v-else class="history-modal-list">
           <div
@@ -416,6 +424,17 @@ const highlightHistoryTaskHtml = (text: string, keyword: string, maxLen: number)
   background: var(--bg-surface);
   border-radius: 8px;
   border: 1px dashed var(--border-color);
+}
+
+.history-empty p {
+  margin: 0;
+}
+
+.history-empty-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: 0.7;
+  line-height: 1.5;
 }
 
 .history-card {
