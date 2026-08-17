@@ -2026,7 +2026,6 @@ textarea:focus {
    面板内的交互元素统一 no-drag，否则点击会被拖拽区吃掉。 */
 .tab-view-workbench .system-info-bar,
 .tab-view-workbench .canvas-header,
-.tab-view-workbench .artifact-panel-rail-header,
 .settings-modal > .settings-header,
 .watch-panel > .panel-header {
   -webkit-app-region: drag;
@@ -2034,10 +2033,19 @@ textarea:focus {
 
 .tab-view-workbench .system-info-bar > *,
 .tab-view-workbench .canvas-header > *,
-.tab-view-workbench .artifact-panel-rail-header > *,
+.tab-view-workbench .artifact-toggle-btn,
 .settings-modal > .settings-header > *,
 .watch-panel > .panel-header > * {
   -webkit-app-region: no-drag;
+}
+
+/* Windows 下壳层顶条已托住右上控件，展开按钮在第二排，不必再让位 */
+.app-container:not(.is-win) .tab-view-workbench .artifact-toggle-btn {
+  right: max(8px, var(--shell-inset-right));
+}
+
+.app-container:not(.is-win) .tab-view-workbench .canvas-header {
+  padding-right: calc(max(8px, var(--shell-inset-right)) + 30px);
 }
 
 /* 聊天区是主区最左那一栏，让开侧栏开关与 macOS 红绿灯。

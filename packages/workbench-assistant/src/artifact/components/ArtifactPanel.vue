@@ -11,7 +11,6 @@ import {
   ChevronDown,
   Download,
   Check,
-  PanelRightClose,
   X
 } from 'lucide-vue-next'
 import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
@@ -775,6 +774,8 @@ onUnmounted(() => {
   window.removeEventListener('scroll', syncSendMenuPosition, true)
   offImConnectionChange?.()
 })
+
+defineExpose({ minimizePanel })
 </script>
 
 <template>
@@ -883,16 +884,6 @@ onUnmounted(() => {
             {{ t('canvas.sendToPhone') }}
           </button>
         </div>
-        <button
-          type="button"
-          class="canvas-icon-btn"
-          :aria-label="t('canvas.minimizePanel')"
-          @mouseenter="showTip($event, t('canvas.minimizePanel'))"
-          @mouseleave="hideTip"
-          @click="minimizePanel"
-        >
-          <PanelRightClose :size="14" />
-        </button>
       </div>
     </div>
 
@@ -1208,7 +1199,7 @@ onUnmounted(() => {
   box-sizing: border-box;
   height: var(--workbench-panel-header-height, 38px);
   min-height: var(--workbench-panel-header-height, 38px);
-  padding: 0 12px;
+  padding: 0 38px 0 12px;
   background: var(--bg-tertiary, var(--bg-secondary, #252525));
   border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
   flex-shrink: 0;
@@ -1454,27 +1445,6 @@ onUnmounted(() => {
   gap: 4px;
   flex-shrink: 0;
   margin-left: auto;
-}
-
-.canvas-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary, #aaa);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-  flex-shrink: 0;
-}
-
-.canvas-icon-btn:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.08));
-  color: var(--text-primary, #eee);
 }
 
 .canvas-text-btn {

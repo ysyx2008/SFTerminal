@@ -1117,8 +1117,9 @@ const showWelcomePage = computed(() =>
  * 欢迎页 / 空终端 / 待办这三个页面自己没有第一排，需要一条透明区兜住窗口拖拽；
  * 助手工作台与巡检有自己的第一排，让它们直接顶到窗口上沿。
  *
- * Windows 例外——三个自绘窗口按钮宽 138px，而产出物面板收窄后只剩 40px，
- * 浮上去必然压住它的展开按钮，所以 Windows 一律保留这条顶条来托住按钮。
+ * Windows 例外——三个自绘窗口按钮宽 138px，浮在主区右上；
+ * 助手工作台自己的第一排若顶到窗口上沿，会被这三颗按钮压住，
+ * 所以 Windows 一律保留这条顶条来托住按钮。
  */
 const needsShellTop = computed(() =>
   isWin ||
@@ -1848,6 +1849,11 @@ onUnmounted(() => {
 /* Windows 自绘三按钮（46px × 3）浮在主区右上 */
 .app-container.is-win:not(.is-fullscreen) {
   --shell-inset-right: 138px;
+}
+
+/* 非 Windows：SSO 软登录也浮在主区右上，第一排（含产出物展开按钮）要让开 */
+.app-container:not(.is-win):has(.sso-soft-btn) {
+  --shell-inset-right: 148px;
 }
 
 /* 浮层本身不吃鼠标，空白处的拖拽仍由下面的第一排接住；只有按钮接收点击 */

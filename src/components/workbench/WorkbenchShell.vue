@@ -10,7 +10,7 @@
  * 行为对齐原 App.vue 的 assistant-split 实现（拖拽比例、过渡、热区均一致）。
  * 终端工作台因有 Terminal Teleport 保命池而走自定义渲染器逃生口，不使用本组件。
  */
-import { ref, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   /** 辅助区是否可见 */
@@ -41,9 +41,34 @@ const emit = defineEmits<{
 
 const shellRef = ref<HTMLElement | null>(null)
 const isResizing = ref(false)
+/** 仅开合时开过渡，避免拖宽/侧栏改宽时宽度动画跟手 */
+const isAnimating = ref(false)
+/** 辅助区展开时的像素宽：内容按这个宽度定住，开合时被裁而不是挤扁 */
+const regionWidthPx = ref(0)
 
 // 当前拖拽的清理函数
 let activeCleanup: (() => void) | null = null
+let resizeObserver: ResizeObserver | null = null
+let animTimer: ReturnType<typeof setTimeout> | null = null
+
+const REGION_ANIM_MS = 280
+
+function startRegionAnimation() {
+  isAnimating.value = true
+  if (animTimer) clearTimeout(animTimer)
+  animTimer = setTimeout(() => {
+    isAnimating.value = false
+    animTimer = null
+  }, REGION_ANIM_MS)
+}
+
+function syncRegionWidth() {
+  const el = shellRef.value
+  if (!el) return
+  const w = el.getBoundingClientRect().width
+  if (w <= 0) return
+  regionWidthPx.value = Math.round(w * props.toggleRatio)
+}
 
 /**
  * 用 Pointer Events + setPointerCapture 拖拽。
@@ -51,7 +76,7 @@ let activeCleanup: (() => void) | null = null
  * 指针滑入 iframe 后释放事件进子文档，父页面永远收不到 → 光标/拖拽卡住。
  */
 function startResize(e: PointerEvent) {
-  if (props.toggleCollapsed) return
+  if (!props.toggleVisible || props.toggleCollapsed) return
   if (e.button !== 0) return
   e.preventDefault()
 
@@ -124,15 +149,41 @@ function startResize(e: PointerEvent) {
   window.addEventListener('blur', onWindowBlur)
 }
 
-onUnmounted(() => activeCleanup?.())
+watch(() => props.toggleRatio, syncRegionWidth)
+
+watch(
+  () => [props.toggleVisible, props.toggleCollapsed] as const,
+  (next, prev) => {
+    if (next[0] === prev[0] && next[1] === prev[1]) return
+    startRegionAnimation()
+  }
+)
+
+onMounted(() => {
+  syncRegionWidth()
+  if (shellRef.value) {
+    resizeObserver = new ResizeObserver(() => syncRegionWidth())
+    resizeObserver.observe(shellRef.value)
+  }
+})
+
+onUnmounted(() => {
+  if (animTimer) clearTimeout(animTimer)
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  activeCleanup?.()
+})
 </script>
 
 <template>
   <div
     ref="shellRef"
     class="workbench-shell"
-    :class="[`toggle-${toggleSide}`, { 'is-resizing': isResizing }]"
-    :style="{ '--workbench-collapsed-width': `${collapsedWidth}px` }"
+    :class="[`toggle-${toggleSide}`, { 'is-resizing': isResizing, 'is-animating': isAnimating }]"
+    :style="{
+      '--workbench-collapsed-width': `${collapsedWidth}px`,
+      '--workbench-region-width': `${regionWidthPx}px`,
+    }"
   >
     <div
       class="workbench-anchor"
@@ -140,8 +191,8 @@ onUnmounted(() => activeCleanup?.())
       <slot name="anchor" />
     </div>
     <div
-      v-show="toggleVisible && !toggleCollapsed"
       class="workbench-divider"
+      :class="{ 'is-disabled': !toggleVisible || toggleCollapsed }"
       @pointerdown="startResize"
     ></div>
     <div
@@ -150,9 +201,11 @@ onUnmounted(() => activeCleanup?.())
         'region-open': toggleVisible && !toggleCollapsed,
         'region-collapsed': toggleVisible && toggleCollapsed
       }"
-      :style="toggleVisible ? { flex: `0 0 ${toggleRatio * 100}%` } : undefined"
+      :inert="toggleVisible && !toggleCollapsed ? undefined : true"
     >
-      <slot name="toggle" />
+      <div class="workbench-region-inner">
+        <slot name="toggle" />
+      </div>
     </div>
   </div>
 </template>
@@ -205,6 +258,10 @@ onUnmounted(() => activeCleanup?.())
   transition: background 0.25s ease;
 }
 
+.workbench-divider.is-disabled {
+  pointer-events: none;
+}
+
 .workbench-divider:hover::before,
 .workbench-shell.is-resizing .workbench-divider::before {
   background: linear-gradient(
@@ -225,24 +282,37 @@ onUnmounted(() => activeCleanup?.())
   display: flex;
   flex-direction: column;
   align-self: stretch;
-  flex-basis: 0;
-  /* max-width 是唯一的动画属性；flex-basis 始终等于目标比例，不参与过渡 */
-  max-width: 0;
+  flex: 0 0 auto;
+  width: 0;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  opacity: 0;
-  transition: max-width 0.3s ease, opacity 0.25s ease;
+}
+
+.workbench-shell.is-animating .workbench-region {
+  /* 与历史侧栏同一套抽屉推拉：宽度收、内容被裁，不整块淡出 */
+  transition: width 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .workbench-region.region-open {
-  max-width: 100%;
-  opacity: 1;
+  width: var(--workbench-region-width, 0px);
 }
 
 .workbench-region.region-collapsed {
-  max-width: var(--workbench-collapsed-width, 40px);
-  opacity: 1;
+  width: var(--workbench-collapsed-width, 40px);
+}
+
+.workbench-region-inner {
+  display: flex;
+  flex-direction: column;
+  width: var(--workbench-region-width, 0px);
+  min-width: var(--workbench-region-width, 0px);
+  height: 100%;
+  min-height: 0;
+}
+
+.workbench-shell.is-resizing .workbench-region {
+  transition: none;
 }
 </style>
 
