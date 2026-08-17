@@ -50,8 +50,18 @@ const regionWidthPx = ref(0)
 let activeCleanup: (() => void) | null = null
 let resizeObserver: ResizeObserver | null = null
 let animTimer: ReturnType<typeof setTimeout> | null = null
+let resizeSettleTimer: ReturnType<typeof setTimeout> | null = null
+const RESIZE_SETTLE_MS = 80
 
-const REGION_ANIM_MS = 280
+function scheduleSyncRegionWidth() {
+  if (resizeSettleTimer) clearTimeout(resizeSettleTimer)
+  resizeSettleTimer = setTimeout(() => {
+    resizeSettleTimer = null
+    syncRegionWidth()
+  }, RESIZE_SETTLE_MS)
+}
+
+const REGION_ANIM_MS = 400
 
 function startRegionAnimation() {
   isAnimating.value = true
@@ -162,13 +172,20 @@ watch(
 onMounted(() => {
   syncRegionWidth()
   if (shellRef.value) {
-    resizeObserver = new ResizeObserver(() => syncRegionWidth())
+    resizeObserver = new ResizeObserver(() => {
+      if (isResizing.value) {
+        syncRegionWidth()
+        return
+      }
+      scheduleSyncRegionWidth()
+    })
     resizeObserver.observe(shellRef.value)
   }
 })
 
 onUnmounted(() => {
   if (animTimer) clearTimeout(animTimer)
+  if (resizeSettleTimer) clearTimeout(resizeSettleTimer)
   resizeObserver?.disconnect()
   resizeObserver = null
   activeCleanup?.()
@@ -291,7 +308,7 @@ onUnmounted(() => {
 
 .workbench-shell.is-animating .workbench-region {
   /* 与历史侧栏同一套抽屉推拉：宽度收、内容被裁，不整块淡出 */
-  transition: width 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: width var(--shell-drawer-duration, 0.36s) var(--shell-drawer-ease, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .workbench-region.region-open {

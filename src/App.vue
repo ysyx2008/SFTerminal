@@ -166,6 +166,17 @@ const isRecallSidebarResizing = ref(false)
 const recallSidebarCollapsed = ref(
   (() => { try { return localStorage.getItem('appSidebarCollapsed') === '1' || localStorage.getItem('recallSidebarCollapsed') === '1' } catch { return false } })()
 )
+const isRecallSidebarAnimating = ref(false)
+let recallSidebarAnimTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(recallSidebarCollapsed, () => {
+  isRecallSidebarAnimating.value = true
+  if (recallSidebarAnimTimer) clearTimeout(recallSidebarAnimTimer)
+  recallSidebarAnimTimer = setTimeout(() => {
+    isRecallSidebarAnimating.value = false
+    recallSidebarAnimTimer = null
+  }, 400)
+})
 
 const showSettings = ref(false)
 const showSmartPatrol = ref(false)
@@ -1510,6 +1521,7 @@ onUnmounted(() => {
   cleanupAgentNeedConfirmGlobal?.()
   cleanupAgentErrorForTabAttention?.()
   cleanupFullScreenChange?.()
+  if (recallSidebarAnimTimer) clearTimeout(recallSidebarAnimTimer)
   stopRecallSidebarResize()
   stopUpdaterPrompts()
 })
@@ -1534,7 +1546,7 @@ onUnmounted(() => {
       <!-- 主导航侧栏：新对话 / 联络 / 终端 + 最近对话 + 秘书 -->
       <aside
         class="sidebar sidebar--recall sidebar--app"
-        :class="{ 'is-collapsed': !showRecallSidebar, 'is-resizing': isRecallSidebarResizing }"
+        :class="{ 'is-collapsed': !showRecallSidebar, 'is-resizing': isRecallSidebarResizing, 'is-animating': isRecallSidebarAnimating }"
         :style="{ '--sidebar-panel-width': `${recallSidebarWidth}px`, width: showRecallSidebar ? `${recallSidebarWidth}px` : '0px' }"
         :inert="showRecallSidebar ? undefined : true"
       >
@@ -1956,7 +1968,7 @@ onUnmounted(() => {
 .shell-top--main {
   padding-left: max(8px, var(--shell-inset-left));
   padding-right: max(8px, var(--shell-inset-right));
-  transition: padding 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: padding var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
 
 /* 侧栏顶给左上常驻控件让位，拖拽区从按钮右侧开始 */
@@ -2136,6 +2148,8 @@ onUnmounted(() => {
 /* 侧边栏 */
 .sidebar {
   width: var(--sidebar-width);
+  min-width: 0;
+  flex: 0 0 auto;
   background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
   border-right: 1px solid var(--border-color);
   display: flex;
@@ -2147,7 +2161,7 @@ onUnmounted(() => {
    为此收起后元素仍留在 DOM 里（display:none 没法过渡），靠 inert 挡住键盘焦点。 */
 .sidebar {
   overflow: hidden;
-  transition: width 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: width var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
 
 /* 内容按展开宽度定住，宽度收缩时才是被裁走，而不是跟着挤成一团。
@@ -2163,6 +2177,10 @@ onUnmounted(() => {
 /* 拖宽时宽度每帧都在变，过渡会让它跟不上手 */
 .sidebar.is-resizing {
   transition: none;
+}
+
+.sidebar.is-animating {
+  will-change: width;
 }
 
 /* 侧边栏右边缘光效 */
@@ -2286,6 +2304,7 @@ onUnmounted(() => {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  contain: paint;
 }
 
 /* 欢迎页：主机管理叠加在最近对话侧栏之上，关掉后最近对话仍可见 */

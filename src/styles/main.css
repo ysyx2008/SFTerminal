@@ -38,6 +38,9 @@
   --shell-top-height: 34px;
   --sidebar-width: 320px;
   --tab-height: 28px;
+  /* 历史侧栏 / 产出物面板开合：变速滑入滑出，无过冲；让位内边距必须跟这条走 */
+  --shell-drawer-duration: 0.36s;
+  --shell-drawer-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* macOS hiddenInset 下红绿灯按钮需要的左侧让位宽度（含视觉呼吸量）；
      所有浮在窗口顶层的 header（主 header、全屏 modal 的 header）都应使用它，
@@ -2071,13 +2074,13 @@ textarea:focus {
    让位宽度随侧栏开合改变，与侧栏用同一档节奏挪动，避免一边在滑一边在跳。 */
 .app-container:not(.is-win) .tab-view-workbench .system-info-bar {
   padding-left: max(12px, var(--shell-inset-left));
-  transition: padding-left 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: padding-left var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
 
 /* 巡检页自带全宽页头，左侧同样让位 */
 .app-container:not(.is-win) .smart-patrol-page > .patrol-header {
   padding-left: max(20px, var(--shell-inset-left));
-  transition: padding-left 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: padding-left var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
 
 /* Windows 改为完全自绘标题栏（WindowControls.vue）后，三个按钮是普通 DOM 元素。
