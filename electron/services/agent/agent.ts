@@ -37,6 +37,7 @@ import type {
 import { DEFAULT_AGENT_CONFIG } from './types'
 import { TaskMemoryStore } from './task-memory'
 import { Conversation, conversationPolicy } from '../conversation'
+import { generateConversationTitle, shouldRefreshConversationTitle } from '../conversation/title-generator'
 import { ContextWindowManager } from './context-window'
 import { formatMessagesForSummary, capSummaryInput, SUMMARY_OUTPUT_BUDGET_CHARS } from './compression-summary'
 import { resolveBudgetProfileId, shouldSkipCachePathForVision } from './vision-routing'
@@ -1031,6 +1032,7 @@ export abstract class Agent {
       imagesStripped: run.imagesStripped,
     })
     this.saveSessionToHistory()
+    this.scheduleTitleRefreshIfDue()
 
     // 诞生引导完成判定：调用了任何被标注 lifecycle.marksOnboardingComplete 的工具
     // 即视为引导完成（基类不知道具体是哪个工具，由 ToolDefinition._meta.lifecycle 声明）
@@ -1124,9 +1126,49 @@ export abstract class Agent {
    * 设置当前会话展示标题。同步到 Conversation 内存；是否落盘由调用方经 History 决定。
    * @returns 是否实际变更（未变化返回 false）
    */
-  setConversationTitle(title: string): boolean {
+  setConversationTitle(title: string, opts?: { locked?: boolean }): boolean {
     if (!this._conversation) return false
-    return this._conversation.setTitle(title)
+    return this._conversation.setTitle(title, opts)
+  }
+
+  /**
+   * 任务会话每完整三轮后，复用刚结束的前缀异步重写侧栏标题。
+   * 不阻塞 run；手改过的 / 无前缀的跳过。
+   */
+  private scheduleTitleRefreshIfDue(): void {
+    const conv = this._conversation
+    const historyService = this.services.historyService
+    const configService = this.services.configService
+    if (!conv || !historyService || !configService) return
+    if (conv.kind !== 'task' || conv.titleLocked) return
+    if (!shouldRefreshConversationTitle(conv.userTaskCount)) return
+
+    const cachePrefix = conv.getCachePrefix()
+    if (!cachePrefix?.length) return
+
+    const sessionId = conv.id
+    void generateConversationTitle(
+      {
+        aiService: this.services.aiService,
+        configService,
+        historyService,
+        agentService: {
+          setConversationTitleBySessionId: (id, title) => {
+            if (id === conv.id) conv.setTitle(title)
+            return historyService.updateConversationTitle(id, title)
+          },
+        },
+      },
+      {
+        sessionId,
+        mode: 'refresh',
+        cachePrefix,
+        tools: this.getAvailableTools(),
+        profileId: this.profileId,
+      }
+    ).catch(err => {
+      log.warn('Refresh conversation title failed:', err)
+    })
   }
 
   /**
@@ -1444,6 +1486,7 @@ export abstract class Agent {
       imagesStripped: run.imagesStripped
     })
     this.saveSessionToHistory()
+    this.scheduleTitleRefreshIfDue()
 
     // L3: 异步索引失败的对话（失败经验同样有检索价值）
     this.indexConversationAsync(run, 'failed', errorMessage).catch(err => {

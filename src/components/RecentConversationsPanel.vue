@@ -273,6 +273,7 @@ const ensureLoaded = () => {
 let cleanupAgentCompleteForHistory: (() => void) | null = null
 let cleanupAgentErrorForHistory: (() => void) | null = null
 let cleanupAgentRunningForHistory: (() => void) | null = null
+let cleanupConversationTitle: (() => void) | null = null
 let silentRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
 const scheduleSilentRefresh = () => {
@@ -295,6 +296,17 @@ onMounted(() => {
   cleanupAgentErrorForHistory = window.electronAPI.agent.onError(() => {
     scheduleSilentRefresh()
   })
+  cleanupConversationTitle = window.electronAPI.history.onConversationTitle(({ sessionId, title }) => {
+    const idx = summaries.value.findIndex(s => s.id === sessionId)
+    if (idx >= 0) {
+      summaries.value[idx] = { ...summaries.value[idx], title }
+    }
+    const tab = terminalStore.findTabByHistoryId(sessionId)
+    if (tab) {
+      terminalStore.setAgentSessionTitle(tab.id, title)
+    }
+    scheduleSilentRefresh()
+  })
 })
 
 onUnmounted(() => {
@@ -302,6 +314,7 @@ onUnmounted(() => {
   cleanupAgentRunningForHistory?.()
   cleanupAgentCompleteForHistory?.()
   cleanupAgentErrorForHistory?.()
+  cleanupConversationTitle?.()
 })
 
 watch(searchText, () => {
@@ -615,7 +628,7 @@ const commitRename = async () => {
     return
   }
   try {
-    const ok = await window.electronAPI.history.setConversationTitle(id, next)
+    const ok = await window.electronAPI.history.setConversationTitle(id, next, { locked: true })
     if (!ok) {
       toast.error(t('common.operationFailed'))
       return

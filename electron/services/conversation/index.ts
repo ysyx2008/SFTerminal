@@ -30,8 +30,11 @@ export type { TaskIdFactory, MessageTask, StepTask } from './messages'
 export {
   generateConversationTitle,
   sanitizeConversationTitle,
+  shouldRefreshConversationTitle,
+  titlesEquivalent,
 } from './title-generator'
 export type {
   GenerateConversationTitleDeps,
   GenerateConversationTitleInput,
+  ConversationTitleWriter,
 } from './title-generator'

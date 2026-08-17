@@ -49,6 +49,7 @@ export interface SessionMeta {
   sshHost?: string
   userTask: string
   title?: string
+  titleLocked?: boolean
   finalResult?: string
   duration: number
   status: AgentRecord['status']
@@ -76,6 +77,11 @@ function messagesPath(dir: string): string {
   return path.join(dir, 'messages.jsonl')
 }
 
+function mergeTitleLock(meta: SessionMeta, existing: SessionMeta | null): SessionMeta {
+  if (existing?.titleLocked) meta.titleLocked = true
+  return meta
+}
+
 function recordToMeta(record: AgentRecord, stepCount: number, messageCount: number): SessionMeta {
   const meta: SessionMeta = {
     id: record.id,
@@ -93,6 +99,7 @@ function recordToMeta(record: AgentRecord, stepCount: number, messageCount: numb
     messageCount,
   }
   if (record.title?.trim()) meta.title = record.title.trim()
+  if (record.titleLocked) meta.titleLocked = true
   if (record.tokenUsage) meta.tokenUsage = record.tokenUsage
   if (record.artifacts) meta.artifacts = record.artifacts
   return meta
@@ -109,6 +116,7 @@ function metaToRecord(meta: SessionMeta, steps: AgentStepRecord[], messages: Age
     sshHost: meta.sshHost,
     userTask: meta.userTask,
     title: meta.title,
+    titleLocked: meta.titleLocked,
     steps,
     messages,
     finalResult: meta.finalResult,
@@ -424,13 +432,13 @@ export function saveSessionRecord(
     const newMessages = messages.slice(baseMessages)
     appendJsonl(stepsPath(dir), newSteps)
     appendJsonl(messagesPath(dir), newMessages)
-    writeMeta(dir, recordToMeta(record, steps.length, messages.length))
+    writeMeta(dir, mergeTitleLock(recordToMeta(record, steps.length, messages.length), existingMeta))
   } else {
     // 全量重写目录（首次 / forceRewrite / 回退 / 从 legacy 迁入）
     fs.mkdirSync(dir, { recursive: true })
     writeJsonl(stepsPath(dir), steps)
     writeJsonl(messagesPath(dir), messages)
-    writeMeta(dir, recordToMeta(record, steps.length, messages.length))
+    writeMeta(dir, mergeTitleLock(recordToMeta(record, steps.length, messages.length), existingMeta))
   }
 
   // 清理旧单体文件
@@ -450,7 +458,8 @@ export function updateSessionTitle(
   agentDir: string,
   dateStr: string,
   recordId: string,
-  title: string
+  title: string,
+  titleLocked?: boolean
 ): boolean {
   const trimmed = title.trim()
   if (!trimmed) return false
@@ -458,8 +467,10 @@ export function updateSessionTitle(
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return false
   const meta = readMeta(dir)
   if (!meta) return false
-  if (meta.title === trimmed) return true
+  const lock = titleLocked === true
+  if (meta.title === trimmed && (!lock || meta.titleLocked)) return true
   meta.title = trimmed
+  if (lock) meta.titleLocked = true
   writeMeta(dir, meta)
   return true
 }

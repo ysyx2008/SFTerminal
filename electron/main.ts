@@ -4785,9 +4785,9 @@ ipcMain.handle(
 /** 手动 / 程序设置会话展示标题（写入会话自身，非 config 旁路） */
 ipcMain.handle(
   'history:setConversationTitle',
-  async (_event, sessionId: string, title: string) => {
+  async (_event, sessionId: string, title: string, options?: { locked?: boolean }) => {
     const { agentService } = await rt()
-    return agentService.setConversationTitleBySessionId(sessionId, title)
+    return agentService.setConversationTitleBySessionId(sessionId, title, options)
   }
 )
 

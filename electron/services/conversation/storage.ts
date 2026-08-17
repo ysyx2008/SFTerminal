@@ -33,8 +33,8 @@ export class ConversationStore {
   /**
    * 仅更新展示标题（未变化不写盘；未落盘则 pending）。
    */
-  updateTitle(id: string, title: string): boolean {
-    return this.store.updateTitle(id, title)
+  updateTitle(id: string, title: string, opts?: { locked?: boolean }): boolean {
+    return this.store.updateTitle(id, title, opts)
   }
 
   /** 按 id（sessionId）精确读取一条会话；不存在返回 undefined。 */

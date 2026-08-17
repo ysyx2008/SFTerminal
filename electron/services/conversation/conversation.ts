@@ -105,6 +105,8 @@ export class Conversation {
 
   /** 侧栏展示标题（LLM / 手动）；缺省则 UI 用 userTask */
   private _title?: string
+  /** 用户亲手改过标题后为 true，自动生成不再覆盖 */
+  private _titleLocked = false
 
   // ===== token 账 =====
   private _tokenUsage?: TokenUsage
@@ -206,6 +208,7 @@ export class Conversation {
     this.setRestoredTranscript(record.messages as AiMessage[] | undefined, record.steps)
     const title = record.title?.trim()
     if (title) this._title = title
+    if (record.titleLocked) this._titleLocked = true
   }
 
   /**
@@ -254,6 +257,7 @@ export class Conversation {
       sshHost: this.sshHost,
       userTask: firstUserTask.content,
       ...(this._title ? { title: this._title } : {}),
+      ...(this._titleLocked ? { titleLocked: true } : {}),
       steps: serializableSteps,
       messages: this._messages.map(m => JSON.parse(JSON.stringify(m))),
       finalResult: lastFinalResult?.content,
@@ -301,6 +305,7 @@ export class Conversation {
       sshHost: this.sshHost,
       userTask: firstUserTask.content,
       ...(this._title ? { title: this._title } : {}),
+      ...(this._titleLocked ? { titleLocked: true } : {}),
       steps: mergedSteps.map(s => Conversation.stepToStepRecord(s)),
       messages: mergedMessages.map(m => JSON.parse(JSON.stringify(m))),
       duration: Date.now() - this.createdAt,
@@ -458,6 +463,8 @@ export class Conversation {
       terminalType: 'assistant',
       sshHost: undefined,
       userTask: anchorTitle + (opts?.titleSuffix ?? ''),
+      title: undefined,
+      titleLocked: undefined,
       steps: stepsForRecord.map(s => Conversation.stepToStepRecord(s)),
       messages: selectedMessages,
       finalResult: lastFinalResult?.content,
@@ -878,15 +885,30 @@ export class Conversation {
     return this._title
   }
 
+  /** 用户亲手改过标题后为 true */
+  get titleLocked(): boolean {
+    return this._titleLocked
+  }
+
+  /** 会话内用户完整轮次（user_task，不含中途追加） */
+  get userTaskCount(): number {
+    return this._steps.filter(s => s.type === 'user_task').length
+  }
+
   /**
    * 设置展示标题。未变化时返回 false（调用方据此跳过写盘）。
-   * 空串视为清除。
+   * 空串视为清除。`locked: true` 表示用户手改，之后自动生成不再覆盖。
    */
-  setTitle(title: string): boolean {
+  setTitle(title: string, opts?: { locked?: boolean }): boolean {
     const trimmed = title.trim()
     const next = trimmed || undefined
-    if (this._title === next) return false
-    this._title = next
+    const lock = opts?.locked === true
+    if (this._titleLocked && !lock) return false
+    const titleChanged = this._title !== next
+    const lockChanged = lock && !this._titleLocked
+    if (!titleChanged && !lockChanged) return false
+    if (titleChanged) this._title = next
+    if (lockChanged) this._titleLocked = true
     this._dirty = true
     return true
   }

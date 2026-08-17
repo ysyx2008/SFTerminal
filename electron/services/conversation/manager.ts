@@ -226,8 +226,8 @@ export class ConversationManager {
   /**
    * 更新会话展示标题（领域入口）。未变化不写盘。
    */
-  updateTitle(id: string, title: string): boolean {
-    return this.store.updateTitle(id, title)
+  updateTitle(id: string, title: string, opts?: { locked?: boolean }): boolean {
+    return this.store.updateTitle(id, title, opts)
   }
 }
 

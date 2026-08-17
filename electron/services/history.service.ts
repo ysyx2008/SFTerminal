@@ -197,8 +197,8 @@ export class HistoryService {
    * 仅更新会话展示标题（标题未变不写盘；记录未落盘时进 pending）。
    * 委派 AgentRecordStore.updateTitle。
    */
-  updateConversationTitle(id: string, title: string): boolean {
-    return this.agentRecordStore.updateTitle(id, title)
+  updateConversationTitle(id: string, title: string, opts?: { locked?: boolean }): boolean {
+    return this.agentRecordStore.updateTitle(id, title, opts)
   }
 
   /** 保存（或更新）产出物面板清单到指定记录（委派 store）。 */

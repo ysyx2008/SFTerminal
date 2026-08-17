@@ -468,29 +468,37 @@ export class AgentRecordStore {
    * 尚未落盘的会话标题暂存：LLM/手动改名可能早于首次 checkpoint。
    * 下次 saveAgentRecord 时并入正文并清除。
    */
-  private pendingTitles = new Map<string, string>()
+  private pendingTitles = new Map<string, { title: string; locked?: boolean }>()
 
   /**
-   * 仅更新会话展示标题。标题未变化时不写盘。
+   * 仅更新会话展示标题。标题未变化时不写盘（锁定状态变化除外）。
    * 记录尚不存在时写入 pending，等首次 save 并入。
    * @returns 是否已生效（含 pending / 已是目标值）
    */
-  updateTitle(id: string, title: string): boolean {
+  updateTitle(id: string, title: string, opts?: { locked?: boolean }): boolean {
     const trimmed = title.trim()
     if (!id || !trimmed) return false
+    const lock = opts?.locked === true
 
     const record = this.getAgentRecordById(id)
     if (!record) {
-      this.pendingTitles.set(id, trimmed)
+      const prev = this.pendingTitles.get(id)
+      if (prev?.locked) {
+        this.pendingTitles.set(id, prev)
+        return false
+      }
+      this.pendingTitles.set(id, { title: trimmed, locked: lock || prev?.locked })
       return true
     }
-    if (record.title?.trim() === trimmed) return true
+    if (record.titleLocked && !lock) return false
+    if (record.title?.trim() === trimmed && (!lock || record.titleLocked)) return true
 
     record.title = trimmed
+    if (lock) record.titleLocked = true
     const store = this.storeForRecord(record)
     const dateStr = getDateString(record.timestamp)
     // 目录格式：只改 meta.json；旧 .json 则走 save 并迁入目录格式
-    if (!updateSessionTitle(store.dir, dateStr, id, trimmed)) {
+    if (!updateSessionTitle(store.dir, dateStr, id, trimmed, record.titleLocked)) {
       saveSessionRecord(store.dir, record)
     }
     this.updateIndexEntryFor(store, record)
@@ -504,7 +512,12 @@ export class AgentRecordStore {
     // pending 标题优先（生成早于首次 checkpoint）
     const pending = this.pendingTitles.get(record.id)
     if (pending) {
-      if (!record.title?.trim()) record.title = pending
+      if (pending.locked) {
+        record.title = pending.title
+        record.titleLocked = true
+      } else if (!record.title?.trim()) {
+        record.title = pending.title
+      }
       this.pendingTitles.delete(record.id)
     }
     // checkpoint 未带 title 时保留磁盘/索引上已有标题，避免覆盖丢失

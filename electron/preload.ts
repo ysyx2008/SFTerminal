@@ -1399,8 +1399,17 @@ const electronAPI = {
       ipcRenderer.invoke('history:generateConversationTitle', sessionId, userMessage, profileId) as Promise<string | null>,
 
     /** 设置会话展示标题（写入会话记录，非 config overlay） */
-    setConversationTitle: (sessionId: string, title: string) =>
-      ipcRenderer.invoke('history:setConversationTitle', sessionId, title) as Promise<boolean>,
+    setConversationTitle: (sessionId: string, title: string, options?: { locked?: boolean }) =>
+      ipcRenderer.invoke('history:setConversationTitle', sessionId, title, options) as Promise<boolean>,
+
+    onConversationTitle: (callback: (payload: { sessionId: string; title: string }) => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        payload: { sessionId: string; title: string }
+      ) => callback(payload)
+      ipcRenderer.on('history:conversationTitle', handler)
+      return () => { ipcRenderer.removeListener('history:conversationTitle', handler) }
+    },
 
     searchAgentRecords: (options: {
       keyword?: string

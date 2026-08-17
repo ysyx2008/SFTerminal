@@ -54,6 +54,11 @@ export interface AgentRecord {
    * 缺省时 UI 回退到 userTask。属于会话自身，随记录删除；勿再旁路存 config。
    */
   title?: string
+  /**
+   * 用户亲手改过标题。为 true 后自动生成不再覆盖。
+   * 缺省（老记录）视为未手改，仍可自动更新。
+   */
+  titleLocked?: boolean
   steps: AgentStepRecord[]
   messages?: Array<{ role: string; content: string; tool_calls?: unknown[]; tool_call_id?: string }>
   finalResult?: string

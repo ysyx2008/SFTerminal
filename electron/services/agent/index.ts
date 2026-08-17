@@ -236,19 +236,23 @@ export class AgentService {
    * 按 sessionId 设置展示标题：同步所有匹配的 in-memory Conversation，并轻量落盘。
    * 标题未变化时不写盘。
    */
-  setConversationTitleBySessionId(sessionId: string, title: string): boolean {
+  setConversationTitleBySessionId(
+    sessionId: string,
+    title: string,
+    opts?: { locked?: boolean }
+  ): boolean {
     const trimmed = title.trim()
     if (!sessionId || !trimmed) return false
 
     for (const agent of this.agents.values()) {
       if (agent.getSessionId() === sessionId) {
-        agent.setConversationTitle(trimmed)
+        agent.setConversationTitle(trimmed, opts)
       }
     }
 
     const history = this.services.historyService
     if (history) {
-      return history.updateConversationTitle(sessionId, trimmed)
+      return history.updateConversationTitle(sessionId, trimmed, opts)
     }
     return true
   }
