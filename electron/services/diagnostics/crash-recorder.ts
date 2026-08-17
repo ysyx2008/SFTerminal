@@ -23,7 +23,8 @@ interface RuntimeState {
   consecutiveCrashes: number
 }
 
-const STATE_FILE = 'runtime-state.json'
+export const PACKAGED_STATE_FILE = 'runtime-state.json'
+export const DEV_STATE_FILE = 'runtime-state.dev.json'
 const EVENTS_FILE = 'crash-events.jsonl'
 
 /** 超过此体积就裁剪到 MAX_EVENT_LINES 行——正常不会触发，崩溃循环时兜住无限增长 */
@@ -37,15 +38,18 @@ export class CrashRecorder {
   /**
    * @param dir 诊断数据目录（崩溃状态与事件都落在这里）
    * @param appVersion 当前应用版本
+   * @param platform 运行平台
+   * @param stateFile 退出标记文件名。未打包与正式版必须分开，否则一边还在跑会被另一边读成崩溃
    */
   constructor(
     private readonly dir: string,
     private readonly appVersion: string,
-    private readonly platform: string = process.platform
+    private readonly platform: string = process.platform,
+    private readonly stateFile: string = PACKAGED_STATE_FILE,
   ) {}
 
   private get statePath(): string {
-    return path.join(this.dir, STATE_FILE)
+    return path.join(this.dir, this.stateFile)
   }
 
   private get eventsPath(): string {
@@ -195,5 +199,16 @@ export class CrashRecorder {
       crashesThisRun: this.crashesThisRun,
       recentEvents: this.getRecentEvents(limit),
     }
+  }
+}
+
+/** 给数据搬家用：目标目录里的退出标记也改成正常退出，避免把搬家本身报成崩溃 */
+export function markCleanExitInDir(
+  dir: string,
+  appVersion: string,
+  platform: string = process.platform,
+): void {
+  for (const stateFile of [PACKAGED_STATE_FILE, DEV_STATE_FILE]) {
+    new CrashRecorder(dir, appVersion, platform, stateFile).markCleanExit()
   }
 }

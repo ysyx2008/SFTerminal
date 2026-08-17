@@ -9,7 +9,7 @@
  */
 import { app, BrowserWindow, crashReporter } from 'electron'
 import * as path from 'path'
-import { CrashRecorder, type CrashEvent } from './crash-recorder'
+import { CrashRecorder, DEV_STATE_FILE, PACKAGED_STATE_FILE, type CrashEvent } from './crash-recorder'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('Diagnostics')
@@ -65,6 +65,11 @@ export function getCrashRecorder(): CrashRecorder | null {
   return recorder
 }
 
+/** 主动结束进程（热重载、app.exit）走不到 quit 时，先留下正常退出标记 */
+export function markCleanExit(): void {
+  recorder?.markCleanExit()
+}
+
 /** 崩溃转储目录（Crashpad 落 minidump 的地方，事后可用它还原崩溃栈） */
 export function getCrashDumpDir(): string {
   return app.getPath('crashDumps')
@@ -110,7 +115,12 @@ export function initCrashDiagnostics(): CrashRecorder {
   if (recorder) return recorder
 
   startCrashReporter()
-  recorder = new CrashRecorder(path.join(app.getPath('userData'), 'diagnostics'), app.getVersion())
+  recorder = new CrashRecorder(
+    path.join(app.getPath('userData'), 'diagnostics'),
+    app.getVersion(),
+    process.platform,
+    app.isPackaged ? PACKAGED_STATE_FILE : DEV_STATE_FILE,
+  )
 
   const verdict = recorder.markStartup()
   if (verdict.lastExitWasCrash) {

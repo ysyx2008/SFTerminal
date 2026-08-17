@@ -12,7 +12,7 @@ import { requestLocalNetworkAccess } from './utils/local-network-permission'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 import { isOemFeatureEnabled } from '@shared/oem-features'
-import { startCrashReporter, initCrashDiagnostics, recordMainProcessError, getCrashRecorder } from './services/diagnostics/collector'
+import { startCrashReporter, initCrashDiagnostics, recordMainProcessError, getCrashRecorder, markCleanExit } from './services/diagnostics/collector'
 import { getDiagnosticsService } from './services/diagnostics/diagnostics.service'
 import { CrashNotifier } from './services/diagnostics/notifier'
 
@@ -1160,6 +1160,7 @@ function registerGracefulShutdownSignals(): void {
         if (app.isReady()) {
           app.quit()
         } else {
+          markCleanExit()
           process.exit(0)
         }
       })
@@ -1186,7 +1187,10 @@ function registerDevHotReloadGracefulShutdown(): void {
     log.info('dev 热重载：收到 graceful-shutdown，正在释放知识库 worker...')
     cleanupAllServices()
       .catch(err => log.warn('dev graceful-shutdown 失败:', err))
-      .finally(() => process.exit(0))
+      .finally(() => {
+        markCleanExit()
+        process.exit(0)
+      })
   })
 }
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { CrashRecorder } from '../crash-recorder'
+import { CrashRecorder, markCleanExitInDir } from '../crash-recorder'
 
 /**
  * 崩溃记录内核测试。
@@ -80,6 +80,32 @@ describe('CrashRecorder', () => {
       expect(backfilled?.appVersion).toBe('11.5.0')
       expect(backfilled?.previousStartedAt).toBeTruthy()
       expect(Date.parse(backfilled!.previousStartedAt!)).not.toBeNaN()
+    })
+
+    it('未打包与正式版各自判定，一边还在跑不会被另一边读成崩溃', () => {
+      const packaged = new CrashRecorder(dir, '11.6.0', 'win32', 'runtime-state.json')
+      const dev = new CrashRecorder(dir, '11.6.0', 'win32', 'runtime-state.dev.json')
+      packaged.markStartup()
+
+      const verdict = dev.markStartup()
+      expect(verdict.lastExitWasCrash).toBe(false)
+      expect(verdict.consecutiveCrashCount).toBe(0)
+    })
+
+    it('数据搬家后目标目录带上正常退出标记，下次启动不报崩溃', () => {
+      const source = make()
+      source.markStartup()
+
+      const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-crash-moved-'))
+      try {
+        fs.cpSync(dir, targetDir, { recursive: true })
+        markCleanExitInDir(targetDir, '11.6.0', 'win32')
+
+        const verdict = new CrashRecorder(targetDir, '11.6.0', 'win32').markStartup()
+        expect(verdict.lastExitWasCrash).toBe(false)
+      } finally {
+        fs.rmSync(targetDir, { recursive: true, force: true })
+      }
     })
 
     it('状态文件损坏 → 按首次启动处理，不抛错', () => {

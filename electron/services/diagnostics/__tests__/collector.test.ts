@@ -15,6 +15,7 @@ vi.mock('electron', () => ({
     getPath: (name: string) => (name === 'crashDumps' ? path.join(tmpDir, 'dumps') : tmpDir),
     getVersion: () => '11.6.0',
     getName: () => 'SailFish',
+    isPackaged: true,
     on: (event: string, cb: (...args: unknown[]) => void) => { appHandlers.set(event, cb) },
   },
   BrowserWindow: {

@@ -33,6 +33,7 @@ import {
   replaceUserDataFromStaging,
   validateBackupArchive,
 } from './data-backup'
+import { CrashRecorder, DEV_STATE_FILE, PACKAGED_STATE_FILE, markCleanExitInDir } from '../services/diagnostics/crash-recorder'
 
 /** 指针文件名 */
 const POINTER_FILENAME = 'data-location.json'
@@ -473,7 +474,19 @@ async function copyWithProgress(
   })
 }
 
-function relaunchApp(): void {
+function relaunchApp(copiedUserDataDir?: string): void {
+  // app.exit 走不到 quit，必须先留下正常退出标记，否则下次启动会当成崩溃。
+  // 只写当前这一边的标记，避免开发态和正式版同时开着时把另一边抹成「正常退出」。
+  const stateFile = app.isPackaged ? PACKAGED_STATE_FILE : DEV_STATE_FILE
+  new CrashRecorder(
+    path.join(app.getPath('userData'), 'diagnostics'),
+    app.getVersion(),
+    process.platform,
+    stateFile,
+  ).markCleanExit()
+  if (copiedUserDataDir) {
+    markCleanExitInDir(path.join(copiedUserDataDir, 'diagnostics'), app.getVersion())
+  }
   app.relaunch()
   app.exit(0)
 }
@@ -622,7 +635,7 @@ export async function runStartupMigrationIfNeeded(): Promise<boolean> {
     })
 
     if (win && !win.isDestroyed()) win.destroy()
-    relaunchApp()
+    relaunchApp(target)
     return true
   } catch (e) {
     console.error('[bootstrap] 数据迁移失败:', e)
