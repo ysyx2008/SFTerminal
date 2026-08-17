@@ -1418,6 +1418,7 @@ const electronAPI = {
       limit?: number
       excludeWakeup?: boolean
       titleOnly?: boolean
+      requestId?: string
     }) =>
       ipcRenderer.invoke('history:searchAgentRecords', options) as Promise<{
         records: Array<{
@@ -1444,6 +1445,17 @@ const electronAPI = {
         totalMatched: number
         hasMore: boolean
       }>,
+    onSearchMatch: (callback: (payload: {
+      requestId: string
+      summary: import('@shared/types').AgentHistorySummary
+    }) => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        payload: { requestId: string; summary: import('@shared/types').AgentHistorySummary }
+      ) => callback(payload)
+      ipcRenderer.on('history:searchMatch', handler)
+      return () => { ipcRenderer.removeListener('history:searchMatch', handler) }
+    },
 
     // 按 ID 获取单条 Agent 记录
     getAgentRecordById: (id: string) =>

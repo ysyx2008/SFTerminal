@@ -112,6 +112,8 @@ export interface SearchAgentRecordsOptions {
   titleOnly?: boolean
   /** 用户点停止时中断全文扫描；未取消时仍扫完全部候选以给出总命中数 */
   signal?: AbortSignal
+  /** 每命中一条（且仍在 limit 内）立刻回调，供 UI 边搜边展示；顺序与结果一致（新→旧） */
+  onMatch?: (record: AgentRecord) => void
 }
 
 export interface SearchAgentRecordsResult {
@@ -944,6 +946,7 @@ export class AgentRecordStore {
         totalMatched++
         if (results.length < limit) {
           results.push(r)
+          options.onMatch?.(r)
         }
       }
     }

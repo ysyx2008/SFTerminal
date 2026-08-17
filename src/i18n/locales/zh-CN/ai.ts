@@ -305,6 +305,7 @@ export default {
       historySearchSubmit: '立即搜索',
       historySearchClear: '清除搜索',
       historySearchLoading: '正在全文搜索，请稍候…',
+      historySearchFoundSoFar: '已找到 {count} 条',
       historySearchMatchedCount: '共 {count} 条匹配',
       historyRecordMissing: '未找到该条历史，可能已被清理',
       continueConversation: '继续对话',

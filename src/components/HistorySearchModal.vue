@@ -112,7 +112,11 @@ const highlightHistoryTaskHtml = (text: string, keyword: string, maxLen: number)
         aria-live="polite"
       >
         <Loader2 class="history-search-loader-icon" :size="16" aria-hidden="true" />
-        <span>{{ t('ai.agentWelcome.historySearchLoading') }}</span>
+        <span>{{
+          allHistory.length
+            ? t('ai.agentWelcome.historySearchFoundSoFar', { count: allHistory.length })
+            : t('ai.agentWelcome.historySearchLoading')
+        }}</span>
       </div>
       <p
         v-else-if="

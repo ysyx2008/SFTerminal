@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, Pin, Plus, Search, X } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Loader2, Pin, Plus, Search, X } from 'lucide-vue-next'
 import type { AgentHistorySummary, AgentRecord } from '@shared/types'
 import type { HistoryConversationTabStatus, TerminalTab } from '../stores/terminal'
 import {
@@ -39,6 +39,54 @@ const summaries = ref<AgentHistorySummary[]>([])
 const isLoading = ref(false)
 const openingId = ref<string | null>(null)
 const hasLoaded = ref(false)
+
+/** 与历史弹窗一致：输入只筛标题；回车 / 搜索按钮才走全文 */
+const FULL_TEXT_PAGE_SIZE = 20
+const fullTextSearchActive = ref(false)
+const fullTextSummaries = ref<AgentHistorySummary[]>([])
+const fullTextTotalMatched = ref(0)
+const fullTextHasMore = ref(false)
+const isFullTextSearching = ref(false)
+const fullTextFetchLimit = ref(FULL_TEXT_PAGE_SIZE)
+const fullTextRequestId = ref(0)
+
+const toHistorySummary = (record: AgentRecord): AgentHistorySummary => ({
+  id: record.id,
+  timestamp: record.timestamp,
+  duration: record.duration,
+  userTask: record.userTask,
+  title: record.title,
+  terminalType: record.terminalType,
+  agentKey: record.agentKey,
+  kind: record.kind,
+  sshHost: record.sshHost,
+  terminalId: record.terminalId,
+  status: record.status,
+})
+
+const sidebarSearchRequestId = (reqId: number) => `sidebar-${reqId}`
+
+const appendFullTextHit = (summary: AgentHistorySummary) => {
+  if (fullTextSummaries.value.some(s => s.id === summary.id)) return
+  fullTextSummaries.value = [...fullTextSummaries.value, summary]
+  if (fullTextTotalMatched.value < fullTextSummaries.value.length) {
+    fullTextTotalMatched.value = fullTextSummaries.value.length
+  }
+}
+
+const clearFullTextSearchState = () => {
+  fullTextSummaries.value = []
+  fullTextTotalMatched.value = 0
+  fullTextHasMore.value = false
+  fullTextFetchLimit.value = FULL_TEXT_PAGE_SIZE
+}
+
+const resetFullTextSearch = () => {
+  fullTextRequestId.value += 1
+  fullTextSearchActive.value = false
+  isFullTextSearching.value = false
+  clearFullTextSearchState()
+}
 
 /** 新建对话：回到欢迎页，右侧清空等待输入 */
 const handleNewConversation = () => {
@@ -127,6 +175,18 @@ const matchesSearch = (record: AgentHistorySummary, kw: string): boolean => {
 
 const filteredSummaries = computed(() => {
   const kw = searchText.value.trim().toLowerCase()
+  if (fullTextSearchActive.value) {
+    const titles = liveTitleBySessionId.value
+    const hist = fullTextSummaries.value.map(s => {
+      const liveTitle = titles.get(s.id)
+      return liveTitle && liveTitle !== s.title ? { ...s, title: liveTitle } : s
+    })
+    const histIds = new Set(hist.map(s => s.id))
+    const liveSorted = liveSessionSummaries.value.filter(
+      s => !histIds.has(s.id) && matchesSearch(s, kw)
+    )
+    return [...liveSorted, ...hist]
+  }
   // 实时会话放最前面，已完成历史按时间倒序排在后面
   const liveSorted = kw
     ? liveSessionSummaries.value.filter(s => matchesSearch(s, kw))
@@ -140,6 +200,12 @@ const filteredSummaries = computed(() => {
 
 const pinnedItems = computed(() => {
   const kw = searchText.value.trim().toLowerCase()
+  if (fullTextSearchActive.value) {
+    const hitIds = new Set(filteredSummaries.value.map(s => s.id))
+    return configStore.pinnedConversationIds
+      .map(id => summaryById.value.get(id))
+      .filter((s): s is AgentHistorySummary => !!s && hitIds.has(s.id))
+  }
   return configStore.pinnedConversationIds
     .map(id => summaryById.value.get(id))
     .filter((s): s is AgentHistorySummary => !!s && matchesSearch(s, kw))
@@ -150,8 +216,16 @@ const unpinnedForGrouping = computed(() => {
   return filteredSummaries.value.filter(s => !pinnedSet.has(s.id))
 })
 
-const visibleUnpinned = computed(() => unpinnedForGrouping.value.slice(0, displayCount.value))
-const hasMore = computed(() => displayCount.value < unpinnedForGrouping.value.length)
+const visibleUnpinned = computed(() =>
+  fullTextSearchActive.value
+    ? unpinnedForGrouping.value
+    : unpinnedForGrouping.value.slice(0, displayCount.value)
+)
+const hasMore = computed(() =>
+  fullTextSearchActive.value
+    ? fullTextHasMore.value
+    : displayCount.value < unpinnedForGrouping.value.length
+)
 
 interface DateGroup {
   key: string
@@ -273,6 +347,7 @@ const ensureLoaded = () => {
 let cleanupAgentCompleteForHistory: (() => void) | null = null
 let cleanupAgentErrorForHistory: (() => void) | null = null
 let cleanupAgentRunningForHistory: (() => void) | null = null
+let cleanupSearchMatch: (() => void) | null = null
 let cleanupConversationTitle: (() => void) | null = null
 let silentRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -296,6 +371,10 @@ onMounted(() => {
   cleanupAgentErrorForHistory = window.electronAPI.agent.onError(() => {
     scheduleSilentRefresh()
   })
+  cleanupSearchMatch = window.electronAPI.history.onSearchMatch((payload) => {
+    if (payload.requestId !== sidebarSearchRequestId(fullTextRequestId.value)) return
+    appendFullTextHit(payload.summary)
+  })
   cleanupConversationTitle = window.electronAPI.history.onConversationTitle(({ sessionId, title }) => {
     const idx = summaries.value.findIndex(s => s.id === sessionId)
     if (idx >= 0) {
@@ -314,12 +393,75 @@ onUnmounted(() => {
   cleanupAgentRunningForHistory?.()
   cleanupAgentCompleteForHistory?.()
   cleanupAgentErrorForHistory?.()
+  cleanupSearchMatch?.()
   cleanupConversationTitle?.()
 })
 
 watch(searchText, () => {
   displayCount.value = DISPLAY_LIMIT
+  if (fullTextSearchActive.value) {
+    resetFullTextSearch()
+  }
 })
+
+const executeFullTextSearch = async (reqId: number) => {
+  const kw = searchText.value.trim()
+  if (!kw) {
+    if (reqId === fullTextRequestId.value) {
+      isFullTextSearching.value = false
+    }
+    return
+  }
+  try {
+    const res = await window.electronAPI.history.searchAgentRecords({
+      keyword: kw,
+      limit: fullTextFetchLimit.value,
+      excludeWakeup: true,
+      requestId: sidebarSearchRequestId(reqId),
+    })
+    if (reqId !== fullTextRequestId.value) return
+    for (const record of res.records as AgentRecord[]) {
+      appendFullTextHit(toHistorySummary(record))
+    }
+    fullTextTotalMatched.value = res.totalMatched
+    fullTextHasMore.value = res.hasMore
+  } catch (e) {
+    console.error('Failed to search conversations:', e)
+    if (reqId !== fullTextRequestId.value) return
+    if (fullTextSummaries.value.length === 0) {
+      fullTextTotalMatched.value = 0
+      fullTextHasMore.value = false
+    }
+  } finally {
+    if (reqId === fullTextRequestId.value) {
+      isFullTextSearching.value = false
+    }
+  }
+}
+
+const onSearchEnter = (event: KeyboardEvent) => {
+  if (event.isComposing || event.keyCode === 229) return
+  flushFullTextSearch()
+}
+
+/** Enter / 搜索按钮：后端全文检索（非输入实时） */
+const flushFullTextSearch = () => {
+  const kw = searchText.value.trim()
+  if (!kw) {
+    resetFullTextSearch()
+    displayCount.value = DISPLAY_LIMIT
+    return
+  }
+  fullTextRequestId.value += 1
+  const reqId = fullTextRequestId.value
+  fullTextFetchLimit.value = FULL_TEXT_PAGE_SIZE
+  fullTextSearchActive.value = true
+  fullTextSummaries.value = []
+  fullTextTotalMatched.value = 0
+  fullTextHasMore.value = false
+  isFullTextSearching.value = true
+  void executeFullTextSearch(reqId)
+}
 
 const openSearch = async () => {
   searchExpanded.value = true
@@ -330,12 +472,14 @@ const openSearch = async () => {
 const closeSearch = () => {
   searchExpanded.value = false
   searchText.value = ''
+  resetFullTextSearch()
 }
 
 const toggleSearch = () => {
   if (searchExpanded.value) {
     if (searchText.value.trim()) {
       searchText.value = ''
+      resetFullTextSearch()
       searchInputRef.value?.focus()
     } else {
       closeSearch()
@@ -608,6 +752,13 @@ const onMenuDelete = async () => {
       await terminalStore.closeTab(existingTab.id, true)
     }
     summaries.value = summaries.value.filter(s => s.id !== record.id)
+    if (fullTextSearchActive.value) {
+      const before = fullTextSummaries.value.length
+      fullTextSummaries.value = fullTextSummaries.value.filter(s => s.id !== record.id)
+      if (fullTextSummaries.value.length < before && fullTextTotalMatched.value > 0) {
+        fullTextTotalMatched.value -= 1
+      }
+    }
     // 只清被删会话的元数据；勿用剩余 summaries 做白名单 prune（会误伤 live session 标题）
     await configStore.removeConversationMetadata(record.id)
     if (editingId.value === record.id) {
@@ -654,6 +805,12 @@ const cancelRename = () => {
 }
 
 const loadMore = () => {
+  if (fullTextSearchActive.value) {
+    fullTextFetchLimit.value += FULL_TEXT_PAGE_SIZE
+    isFullTextSearching.value = true
+    void executeFullTextSearch(fullTextRequestId.value)
+    return
+  }
   displayCount.value += LOAD_MORE_STEP
 }
 </script>
@@ -675,7 +832,7 @@ const loadMore = () => {
     <!-- 展开态：正常 header -->
     <template v-else>
       <div class="panel-header" :class="{ 'is-search-open': searchExpanded }">
-        <!-- 搜索展开时只显示输入框和关闭搜索按钮 -->
+        <!-- 搜索展开：输入框 + 全文搜索 + 关闭 -->
         <template v-if="searchExpanded">
           <input
             ref="searchInputRef"
@@ -684,8 +841,18 @@ const loadMore = () => {
             class="input search-input"
             :placeholder="t('welcome.conversations.searchPlaceholder')"
             @blur="handleSearchBlur"
+            @keydown.enter.prevent="onSearchEnter"
             @keydown.escape.prevent="closeSearch()"
           />
+          <button
+            type="button"
+            class="search-toggle search-submit"
+            :title="t('welcome.conversations.searchSubmit')"
+            :disabled="isFullTextSearching || !searchText.trim()"
+            @click="flushFullTextSearch"
+          >
+            <Search :size="14" />
+          </button>
           <button type="button" class="search-toggle" :title="t('welcome.conversations.searchClose')" @click="toggleSearch">
             <X :size="14" />
           </button>
@@ -718,9 +885,33 @@ const loadMore = () => {
         </template>
       </div>
 
+    <div
+      v-if="searchExpanded && fullTextSearchActive && searchText.trim()"
+      class="search-status"
+      role="status"
+      aria-live="polite"
+    >
+      <template v-if="isFullTextSearching">
+        <Loader2 class="search-status-loader" :size="12" aria-hidden="true" />
+        <span>{{
+          fullTextSummaries.length
+            ? t('welcome.conversations.searchFoundSoFar', { count: fullTextSummaries.length })
+            : t('welcome.conversations.searchLoading')
+        }}</span>
+      </template>
+      <span v-else>{{ t('welcome.conversations.searchMatchedCount', { count: fullTextTotalMatched }) }}</span>
+    </div>
+
     <div class="conversation-list">
       <div v-if="isLoading && summaries.length === 0" class="empty-state">
         {{ t('ai.agentWelcome.historyLoading') }}
+      </div>
+
+      <div
+        v-else-if="fullTextSearchActive && isFullTextSearching && !hasListContent"
+        class="empty-state"
+      >
+        {{ t('welcome.conversations.searchLoading') }}
       </div>
 
       <template v-else-if="hasListContent">
@@ -756,7 +947,13 @@ const loadMore = () => {
           </div>
         </div>
 
-        <button v-if="hasMore" type="button" class="load-more-btn" @click="loadMore">
+        <button
+          v-if="hasMore"
+          type="button"
+          class="load-more-btn"
+          :disabled="isFullTextSearching"
+          @click="loadMore"
+        >
           {{ t('welcome.conversations.loadMore') }}
         </button>
       </template>
@@ -950,6 +1147,36 @@ const loadMore = () => {
   background: color-mix(in srgb, var(--bg-surface) 75%, transparent);
 }
 
+.search-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.search-submit:not(:disabled) {
+  color: var(--text-secondary);
+}
+
+.search-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+
+.search-status-loader {
+  flex-shrink: 0;
+  animation: search-spin 0.9s linear infinite;
+}
+
+@keyframes search-spin {
+  to { transform: rotate(360deg); }
+}
+
 .conversation-list {
   flex: 1;
   overflow-y: auto;
@@ -1028,8 +1255,13 @@ const loadMore = () => {
   cursor: pointer;
 }
 
-.load-more-btn:hover {
+.load-more-btn:hover:not(:disabled) {
   opacity: 1;
+}
+
+.load-more-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .empty-state {

@@ -4794,7 +4794,7 @@ ipcMain.handle(
 ipcMain.handle(
   'history:searchAgentRecords',
   async (
-    _event,
+    event,
     options: {
       keyword?: string
       startDate?: string
@@ -4802,9 +4802,39 @@ ipcMain.handle(
       limit?: number
       excludeWakeup?: boolean
       titleOnly?: boolean
+      requestId?: string
     }
   ) => {
-    return (await conv()).search(options)
+    const requestId = options.requestId
+    return (await conv()).search({
+      keyword: options.keyword,
+      startDate: options.startDate,
+      endDate: options.endDate,
+      limit: options.limit,
+      excludeWakeup: options.excludeWakeup,
+      titleOnly: options.titleOnly,
+      onMatch: requestId
+        ? (record) => {
+            if (event.sender.isDestroyed()) return
+            event.sender.send('history:searchMatch', {
+              requestId,
+              summary: {
+                id: record.id,
+                timestamp: record.timestamp,
+                duration: record.duration,
+                userTask: record.userTask,
+                title: record.title,
+                terminalType: record.terminalType,
+                agentKey: record.agentKey,
+                kind: record.kind,
+                sshHost: record.sshHost,
+                terminalId: record.terminalId,
+                status: record.status,
+              },
+            })
+          }
+        : undefined,
+    })
   }
 )
 

@@ -304,6 +304,7 @@ export default {
       historySearchSubmit: 'Search now',
       historySearchClear: 'Clear search',
       historySearchLoading: 'Searching history, please wait…',
+      historySearchFoundSoFar: '{count} found so far',
       historySearchMatchedCount: '{count} conversations matched',
       historyRecordMissing: 'History record not found; it may have been removed',
       continueConversation: 'Continue',

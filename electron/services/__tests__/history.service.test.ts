@@ -400,8 +400,14 @@ describe('HistoryService - searchAgentRecordsAdvanced', () => {
     svc.saveAgentRecord(makeRecord({ id: 'mid', timestamp: t + 1000, duration: 1, userTask: '任务 x' }))
     svc.saveAgentRecord(makeRecord({ id: 'new', timestamp: t + 2000, duration: 1, userTask: '任务 x' }))
 
-    const res = await svc.searchAgentRecordsAdvanced({ keyword: '任务', limit: 10 })
+    const hits: string[] = []
+    const res = await svc.searchAgentRecordsAdvanced({
+      keyword: '任务',
+      limit: 10,
+      onMatch: (r) => hits.push(r.id),
+    })
     expect(res.records.map(r => r.id)).toEqual(['new', 'mid', 'old'])
+    expect(hits).toEqual(['new', 'mid', 'old'])
   })
 
   it('跨天命中不遗漏', async () => {

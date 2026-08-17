@@ -873,6 +873,7 @@ interface Window {
         limit?: number
         excludeWakeup?: boolean
         titleOnly?: boolean
+        requestId?: string
       }) => Promise<{
         records: Array<{
           id: string
@@ -889,6 +890,10 @@ interface Window {
         totalMatched: number
         hasMore: boolean
       }>
+      onSearchMatch: (callback: (payload: {
+        requestId: string
+        summary: import('@shared/types').AgentHistorySummary
+      }) => void) => () => void
       getAgentRecordById: (id: string) => Promise<{
         id: string
         timestamp: number

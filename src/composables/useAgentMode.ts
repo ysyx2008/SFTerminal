@@ -1799,6 +1799,18 @@ export function useAgentMode(
     historySearchFetchLimit.value = HISTORY_PAGE_SIZE
   }
 
+  const historyModalSearchRequestId = (reqId: number) => `history-modal-${reqId}`
+
+  const appendHistorySearchHit = (hit: AgentHistorySummary | AgentRecord) => {
+    if (historySearchResults.value.some(r => r.id === hit.id)) return
+    historySearchResults.value = [...historySearchResults.value, hit as AgentRecord]
+    if (historySearchTotalMatched.value < historySearchResults.value.length) {
+      historySearchTotalMatched.value = historySearchResults.value.length
+    }
+  }
+
+  let cleanupHistorySearchMatch: (() => void) | null = null
+
   const executeHistorySearch = async (reqId: number) => {
     const kw = historySearchKeyword.value.trim()
     if (!kw) {
@@ -1812,17 +1824,21 @@ export function useAgentMode(
         keyword: kw,
         limit: historySearchFetchLimit.value,
         excludeWakeup: true,
+        requestId: historyModalSearchRequestId(reqId),
       })
       if (reqId !== historySearchRequestId.value) return
-      historySearchResults.value = res.records as AgentRecord[]
+      for (const record of res.records as AgentRecord[]) {
+        appendHistorySearchHit(record)
+      }
       historySearchTotalMatched.value = res.totalMatched
       historySearchHasMore.value = res.hasMore
     } catch (e) {
       log.error('搜索历史记录失败:', e)
       if (reqId !== historySearchRequestId.value) return
-      historySearchResults.value = []
-      historySearchTotalMatched.value = 0
-      historySearchHasMore.value = false
+      if (historySearchResults.value.length === 0) {
+        historySearchTotalMatched.value = 0
+        historySearchHasMore.value = false
+      }
     } finally {
       if (reqId === historySearchRequestId.value) {
         isHistorySearchLoading.value = false
@@ -2020,6 +2036,10 @@ export function useAgentMode(
     loadRecentHistory()
     loadRemoteExecutionMode()
     void restoreCompanionHistoryIfNeeded()
+    cleanupHistorySearchMatch = window.electronAPI.history.onSearchMatch((payload) => {
+      if (payload.requestId !== historyModalSearchRequestId(historySearchRequestId.value)) return
+      appendHistorySearchHit(payload.summary)
+    })
   })
 
   onUnmounted(() => {
@@ -2027,6 +2047,7 @@ export function useAgentMode(
     uninstallFollowResizeObserver()
     uninstallContainerWidthObserver()
     cancelPendingReveal()
+    cleanupHistorySearchMatch?.()
   })
 
   return {
