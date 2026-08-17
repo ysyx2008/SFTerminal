@@ -1550,7 +1550,7 @@ onUnmounted(() => {
         :style="{ '--sidebar-panel-width': `${recallSidebarWidth}px`, width: showRecallSidebar ? `${recallSidebarWidth}px` : '0px' }"
         :inert="showRecallSidebar ? undefined : true"
       >
-        <!-- 侧栏顶只负责对齐与拖窗口；开关和前进后退钉在窗口左上，不跟侧栏一起跑 -->
+        <!-- 侧栏顶只负责对齐与拖窗口；前进后退浮在窗口上，视觉上钉在这一排右侧 -->
         <div class="shell-top shell-top--sidebar">
           <span class="shell-top-fill" />
         </div>
@@ -1692,7 +1692,7 @@ onUnmounted(() => {
         </div>
       </main>
 
-      <!-- 窗口左上常驻：侧栏开关 + 后退/前进。钉在窗口坐标上，不跟侧栏开合跑 -->
+      <!-- 窗口左上常驻：侧栏开关。钉在窗口坐标上，不跟侧栏开合跑 -->
       <div
         class="shell-chrome"
         :class="{ 'shell-chrome--traffic-inset': isMac && !isFullScreen }"
@@ -1716,22 +1716,35 @@ onUnmounted(() => {
           <PanelLeftClose v-if="showRecallSidebar" :size="17" :stroke-width="1.75" />
           <PanelLeftOpen v-else :size="17" :stroke-width="1.75" />
         </button>
-        <button
-          class="btn-icon shell-nav-btn"
-          :disabled="!canGoBack"
-          :title="navBackShortcut ? `${t('shell.navBack')} (${navBackShortcut})` : t('shell.navBack')"
-          @click="goBack"
-        >
-          <ChevronLeft :size="18" :stroke-width="1.75" />
-        </button>
-        <button
-          class="btn-icon shell-nav-btn"
-          :disabled="!canGoForward"
-          :title="navForwardShortcut ? `${t('shell.navForward')} (${navForwardShortcut})` : t('shell.navForward')"
-          @click="goForward"
-        >
-          <ChevronRight :size="18" :stroke-width="1.75" />
-        </button>
+      </div>
+      <div
+        class="shell-nav-chrome"
+        :class="{
+          'is-resizing': isRecallSidebarResizing,
+          'is-animating': isRecallSidebarAnimating,
+        }"
+        :style="{ width: showRecallSidebar ? `${recallSidebarWidth}px` : '0px' }"
+      >
+        <div class="shell-nav-chrome-inner" :style="{ width: `${recallSidebarWidth}px` }">
+          <button
+            type="button"
+            class="btn-icon shell-nav-btn"
+            :disabled="!canGoBack"
+            :title="navBackShortcut ? `${t('shell.navBack')} (${navBackShortcut})` : t('shell.navBack')"
+            @click="goBack"
+          >
+            <ChevronLeft :size="18" :stroke-width="1.75" />
+          </button>
+          <button
+            type="button"
+            class="btn-icon shell-nav-btn"
+            :disabled="!canGoForward"
+            :title="navForwardShortcut ? `${t('shell.navForward')} (${navForwardShortcut})` : t('shell.navForward')"
+            @click="goForward"
+          >
+            <ChevronRight :size="18" :stroke-width="1.75" />
+          </button>
+        </div>
       </div>
     </div>
 
@@ -1843,19 +1856,19 @@ onUnmounted(() => {
 }
 
 /* 侧栏收起且主区贴着窗口左沿：第一排让出左上那排常驻控件
-   8 + 26+4+26+4+26 + 8 = 102（开关 + 后退 + 前进） */
+   8 + 26 + 8 = 42（只剩开关；后退/前进已跟侧栏走） */
 .app-container.nav-collapsed.main-leftmost {
-  --shell-inset-left: 102px;
+  --shell-inset-left: 42px;
 }
 
 /* Windows 还多一个汉堡菜单：22px + 4px gap */
 .app-container.is-win.nav-collapsed.main-leftmost {
-  --shell-inset-left: 128px;
+  --shell-inset-left: 68px;
 }
 
 /* macOS 主区自己贴着窗口左沿时，还要再让开红绿灯 */
 .app-container.is-mac.nav-collapsed.main-leftmost:not(.is-fullscreen) {
-  --shell-inset-left: calc(var(--mac-traffic-light-inset) + 94px);
+  --shell-inset-left: calc(var(--mac-traffic-light-inset) + 34px);
 }
 
 /* Windows 自绘三按钮（46px × 3）浮在主区右上 */
@@ -1907,6 +1920,42 @@ onUnmounted(() => {
 
 .shell-chrome--traffic-inset {
   padding-left: var(--mac-traffic-light-inset);
+}
+
+/* 前进后退：浮在窗口上，不进侧栏拖窗口层。外层跟侧栏同宽被裁，内层定住，开合时按钮不跟着跑。 */
+.shell-nav-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 41;
+  height: var(--shell-top-height);
+  overflow: hidden;
+  pointer-events: none;
+  transition: width var(--shell-drawer-duration) var(--shell-drawer-ease);
+}
+
+.shell-nav-chrome-inner {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  height: 100%;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+.shell-nav-chrome-inner > * {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.shell-nav-chrome.is-resizing {
+  transition: none;
+}
+
+.shell-nav-chrome.is-animating {
+  will-change: width;
+  contain: paint;
 }
 
 .main-float--right {
@@ -1971,21 +2020,21 @@ onUnmounted(() => {
   transition: padding var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
 
-/* 侧栏顶给左上常驻控件让位，拖拽区从按钮右侧开始 */
+/* 侧栏顶给左上开关让位，拖拽区从按钮右侧开始；后退/前进在本排右侧 */
 .app-container .shell-top--sidebar {
-  padding-left: 102px;
+  padding-left: 42px;
 }
 
 .app-container.is-win .shell-top--sidebar {
-  padding-left: 128px;
+  padding-left: 68px;
 }
 
 .app-container.is-mac .shell-top--sidebar {
-  padding-left: calc(var(--mac-traffic-light-inset) + 94px);
+  padding-left: calc(var(--mac-traffic-light-inset) + 34px);
 }
 
 .app-container.is-mac.is-fullscreen .shell-top--sidebar {
-  padding-left: 102px;
+  padding-left: 42px;
 }
 
 /* 深色主题：Tab 条形态保持与原顶栏同一质感 */
@@ -2040,6 +2089,13 @@ onUnmounted(() => {
   color: var(--text-primary);
   background: var(--bg-hover, rgba(127, 127, 127, 0.14));
   transform: none;
+}
+
+.btn-icon.shell-nav-btn:disabled:hover,
+.btn-icon.shell-nav-btn:disabled:hover svg {
+  background: transparent;
+  transform: none;
+  filter: none;
 }
 
 .shell-nav-btn:hover:not(:disabled) svg {
@@ -2221,15 +2277,15 @@ onUnmounted(() => {
    让位量比标准值再多一档：这排放的是加粗大写标题，紧挨着红绿灯会像贴在上面，
    而标准让位量只按图标控件留了呼吸 */
 .app-container.is-mac .sidebar-header {
-  padding-left: calc(var(--mac-traffic-light-inset) + 96px);
+  padding-left: calc(var(--mac-traffic-light-inset) + 42px);
 }
 
 .app-container.is-mac.is-fullscreen .sidebar-header {
-  padding-left: 102px;
+  padding-left: 48px;
 }
 
 .app-container.is-win .sidebar-header {
-  padding-left: 128px;
+  padding-left: 68px;
 }
 
 .sidebar-header .btn-icon {
@@ -2255,7 +2311,7 @@ onUnmounted(() => {
 
 .recall-sidebar-resize-handle {
   position: absolute;
-  top: 0;
+  top: calc(var(--shell-top-height) + 1px);
   right: 0;
   bottom: 0;
   width: 5px;
