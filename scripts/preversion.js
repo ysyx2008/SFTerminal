@@ -8,10 +8,11 @@
  * 此处不再重复运行，避免浪费时间。
  * 
  * 流程:
- * 1. 检查是否在 develop 或 main 分支
- * 2. 确保工作区干净
- * 3. 拉取最新代码
- * 4. 保存当前分支状态供 postversion 使用
+ * 1. 检查是否在 develop / main / hotfix/* 分支
+ * 2. 热修支必须从已发布的 vX.Y.Z tag 拉出（防止把 develop 上的新功能打进热修包）
+ * 3. 确保工作区干净
+ * 4. 拉取最新代码（无上游则跳过 pull）
+ * 5. 保存当前分支状态供 postversion 使用
  */
 
 const { execSync } = require('child_process');
@@ -57,6 +58,73 @@ function exec(command) {
 
 function getCurrentBranch() {
   return execSilent('git rev-parse --abbrev-ref HEAD');
+}
+
+function isHotfixBranch(branch) {
+  return typeof branch === 'string' && branch.startsWith('hotfix/');
+}
+
+function isAllowedReleaseBranch(branch) {
+  return branch === 'develop' || branch === 'main' || isHotfixBranch(branch);
+}
+
+function hasUpstream() {
+  return Boolean(execSilent('git rev-parse --abbrev-ref @{upstream}'));
+}
+
+function resolveRef(name) {
+  return execSilent(`git rev-parse --verify ${name}`) ? name : null;
+}
+
+function isAncestor(maybeAncestor, rev) {
+  try {
+    execSync(`git merge-base --is-ancestor ${maybeAncestor} ${rev}`, { stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function pickNewerRef(localName, remoteName) {
+  const local = resolveRef(localName);
+  const remote = resolveRef(remoteName);
+  if (local && remote) {
+    if (isAncestor(remote, local)) return local;
+    if (isAncestor(local, remote)) return remote;
+    return local;
+  }
+  return local || remote;
+}
+
+function versionTagsAt(commit) {
+  return (execSilent(`git tag --points-at ${commit}`) || '')
+    .split('\n')
+    .map((t) => t.trim())
+    .filter((t) => /^v\d+\.\d+\.\d+$/.test(t));
+}
+
+function assertHotfixStartsFromReleaseTag() {
+  const developRef = pickNewerRef('develop', 'origin/develop');
+  if (!developRef) {
+    error('找不到 develop，无法校验热修起点。请先 git fetch origin develop');
+    process.exit(1);
+  }
+
+  const base = execSilent(`git merge-base HEAD ${developRef}`);
+  if (!base) {
+    error('无法计算与 develop 的分叉点。热修必须从已发布的 tag 拉出，例如:');
+    log('  git checkout -b hotfix/11.6.1 v11.6.0', 'yellow');
+    process.exit(1);
+  }
+
+  const versionTags = versionTagsAt(base);
+  if (versionTags.length === 0) {
+    error('热修必须从已发布的版本 tag 拉出，不能从 develop 或已经超前的 main 拉。');
+    log(`  当前与 develop 的分叉点 ${base.slice(0, 8)} 上没有 vX.Y.Z tag。`, 'yellow');
+    log('  正确做法: git fetch --tags && git checkout -b hotfix/11.6.1 v11.6.0', 'yellow');
+    process.exit(1);
+  }
+  success(`热修起点是已发布版本（${versionTags.join(', ')}）`);
 }
 
 function hasUncommittedChanges() {
@@ -119,8 +187,8 @@ async function main() {
   log(`当前分支: ${currentBranch}`);
   log(`当前版本: ${currentVersion}`);
 
-  if (currentBranch !== 'develop' && currentBranch !== 'main') {
-    error(`必须在 develop 或 main 分支执行 npm version (当前: ${currentBranch})`);
+  if (!isAllowedReleaseBranch(currentBranch)) {
+    error(`必须在 develop、main 或 hotfix/* 分支执行 npm version (当前: ${currentBranch})`);
     process.exit(1);
   }
 
@@ -137,6 +205,10 @@ async function main() {
     log('  3. 合并 develop 到 main');
     log('  4. 推送 main 和 tag');
     log('  5. 推送 develop');
+  } else if (isHotfixBranch(currentBranch)) {
+    log('  3. 推送热修分支和 tag');
+    log('  4. 将热修合回 develop（修复和版本号一起带走）');
+    log('  5. 若 main 仍停在旧版点则快进，否则跳过');
   } else {
     log('  3. 推送 main 和 tag');
   }
@@ -151,9 +223,17 @@ async function main() {
 
   try {
     log('\n拉取最新代码...', 'cyan');
-    exec('git pull --ff-only');
-    exec('git fetch --tags');
+    exec('git fetch origin --tags');
+    if (hasUpstream()) {
+      exec('git pull --ff-only');
+    } else {
+      log('当前分支无上游，跳过 pull（新建热修支常见）', 'yellow');
+    }
     success('代码已更新');
+
+    if (isHotfixBranch(currentBranch)) {
+      assertHotfixStartsFromReleaseTag();
+    }
 
     saveState({ originalBranch: currentBranch });
 

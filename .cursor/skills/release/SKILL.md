@@ -1,6 +1,6 @@
 ---
 name: release
-description: Automates SailFish release workflow: fix build/type errors, update CHANGELOG (EN + CN), run npm version with pre/post hooks. Use when the user asks to release, 发版, 发布, bump version, or update changelog.
+description: Automates SailFish release workflow: fix build/type errors, update CHANGELOG (EN + CN), run npm version with pre/post hooks. Use when the user asks to release, 发版, 发布, bump version, update changelog, hotfix, or 热修.
 ---
 
 # SailFish 发版技能
@@ -9,7 +9,7 @@ description: Automates SailFish release workflow: fix build/type errors, update 
 
 ## 前置条件
 
-- 必须在 **develop** 或 **main** 分支执行。
+- 常规发版在 **develop**（或 **main**）；热修在 **hotfix/**\*。
 - 执行 `npm version` 前工作区必须干净（无未提交更改）。
 
 ---
@@ -28,6 +28,31 @@ description: Automates SailFish release workflow: fix build/type errors, update 
 1. 读上一版 tag 的提交日期（如 `git log -1 --format=%ci v<当前版本>`）。
 2. 若距今 **不足约 7 天**，且本次**不是**上述热修：提醒「距上次发版仅 X 天，按周更节奏建议先攒着；若坚持发可确认后继续」。
 3. 若同一自然周内已发过正式版：额外提一句「本周已发过版，连发会加重更新打扰」。
+
+---
+
+## 热修（已发出的版本有严重问题）
+
+develop 已经在做新功能时，**不要在 develop 上直接发正式版**，否则会把没做完的东西一起推给用户。走热修：
+
+1. **从该版 tag 拉分支**（不要从 develop，也不要从已经超前的 main）:
+
+   ```bash
+   git fetch origin --tags
+   git checkout -b hotfix/11.6.1 v11.6.0
+   ```
+
+   分支名用即将打出的版本号。只带这次要修的问题；已经在 develop 上修好的，把那几笔挑过来。
+
+2. 按下方常规流程写变更日志、跑 `npm run verify`，然后 **`npm_config_yes=true npm version patch`**（热修只用 patch）。
+
+3. postversion 会自动：推热修支 → **先把热修合回 develop**（修复和版本号一起带走）→ 再推 tag → 若 main 还停在旧版点则快进，否则跳过（正式包以 tag 为准）。合回有冲突时不会先发 tag，解决后按终端提示做完即可。
+
+4. **功能分支 rebase 到最新 develop**，热修就带上了。不要 rebase develop 本身。
+
+合回 develop 若有冲突（两边改了同一处，变更日志常见）：先解决再推。脚本失败时终端会打印手工命令，热修**必须**回到 develop，不要只打 tag。
+
+preversion 会检查热修支是不是从已发布的 `vX.Y.Z` 拉的；从 develop / 超前的 main 拉会直接拒绝。
 
 ---
 
@@ -149,8 +174,8 @@ git log v<当前版本>..HEAD --oneline
 
 **preversion**（`scripts/preversion.js`）会：
 
-1. 检查分支为 develop 或 main、工作区干净。
-2. `git pull --ff-only`、`git fetch --tags`。
+1. 检查分支为 develop / main / hotfix/*、工作区干净；热修还会检查起点是已发布的版本 tag。
+2. `git fetch origin --tags`；有上游则 `git pull --ff-only`（新建热修支无上游会跳过 pull）。
 3. 保存当前分支状态（不切换分支，避免 npm 在错误分支上重复 bump）。
 
 > 注意：preversion 不再重复运行验证。完整的代码验证（`npm run verify`）在发版流程步骤 2 已执行，之后只改文档不改代码，无需再跑。
@@ -158,7 +183,8 @@ git log v<当前版本>..HEAD --oneline
 **postversion**（`scripts/postversion.js`）会：
 
 1. 若从 develop 发版：先推送 develop（含版本 commit），再切到 main、合并 develop、推送 main 和 tag，最后切回 develop。
-2. 若从 main 发版：直接推送 main 和 tag。
+2. 若从 hotfix/* 发版：推送热修支，先合回 develop，再推 tag；main 能快进才更新。
+3. 若从 main 发版：直接推送 main 和 tag。
 
 发版前务必已**先提交 CHANGELOG 的修改**，再执行 `npm version`，否则 preversion 会因"工作区不干净"失败。
 
@@ -172,8 +198,9 @@ git log v<当前版本>..HEAD --oneline
 - [ ] `CHANGELOG.md` 与 `CHANGELOG_CN.md` 已更新且版本号、日期、条目一致
 - [ ] （minor/major）检查 `README.md`、`README_CN.md` 和 `website/src/i18n/translations.ts` 是否需要同步更新
 - [ ] 更新日志及文档变更已提交
-- [ ] 当前在 develop 或 main，无未提交更改
-- [ ] 执行 `npm_config_yes=true npm version <patch|minor|major>` 完成发版（AI / 脚本场景必加前缀）
+- [ ] 当前在 develop、main 或 hotfix/*，无未提交更改；热修须从已发布 tag 拉出
+- [ ] 执行 `npm_config_yes=true npm version <patch|minor|major>` 完成发版（热修用 patch；AI / 脚本场景必加前缀）
+- [ ] （热修）发完确认 develop 已含本次修复和版本号；功能分支 rebase 到最新 develop
 
 ---
 

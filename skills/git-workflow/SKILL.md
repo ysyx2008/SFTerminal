@@ -13,9 +13,12 @@ version: "1.0"
 | 类型 | 示例 |
 |------|------|
 | 功能 | `feature/user-login`、`feat/api-v2` |
-| 修复 | `fix/payment-bug`、`hotfix/security-patch` |
+| 修复 | `fix/payment-bug`（未发布的问题，在 develop 上修） |
+| 热修 | `hotfix/11.6.1`（已发出的版本有严重问题；**从该版 tag 拉**，不要从 develop） |
 | 发布 | `release/1.2.0` |
 | 个人开发 | `dev/username`、`yushen/xxx` |
+
+热修发完会自动合回 develop。你自己的功能分支再 rebase 到最新 develop，修就带上了；**不要 rebase develop 本身**。完整步骤见发版技能。
 
 ## Merge 与 Rebase
 
