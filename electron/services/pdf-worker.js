@@ -2,7 +2,7 @@
  * PDF Worker — runs in Electron utilityProcess to isolate pdfjs-dist
  * from the main process, avoiding a V8/NAPI GC crash (Electron 37).
  *
- * Handles: text extraction, image detection, page rendering.
+ * Handles: text extraction, page rendering.
  * In CLI mode this file is NOT used; the service falls back to direct parsing.
  *
  * IMPORTANT: Browser polyfills (DOMMatrix etc.) must be loaded at module scope
@@ -129,36 +129,6 @@ async function parsePdf({ filePath, maxTextLength }, sendProgress) {
   })
 }
 
-async function pdfHasImages({ filePath, pageCount }, sendProgress) {
-  const progress = makeThrottledProgress(sendProgress)
-  const pdfjs = await loadPdfjs()
-  const OPS = pdfjs.OPS
-  const IMAGE_OPS = new Set([OPS.paintImageXObject, OPS.paintImageMaskXObject, OPS.paintInlineImageXObject])
-
-  const data = new Uint8Array(fs.readFileSync(filePath))
-  const buildPdfDocumentInit = await getBuildPdfDocumentInit()
-  const doc = await pdfjs.getDocument(buildPdfDocumentInit(data)).promise
-
-  try {
-    for (let i = 1; i <= pageCount; i++) {
-      const page = await doc.getPage(i)
-      const ops = await page.getOperatorList()
-      progress({
-        phase: 'detecting-images',
-        current: i,
-        total: pageCount,
-        percent: Math.round((i / Math.max(pageCount, 1)) * 100),
-      })
-      for (const fn of ops.fnArray) {
-        if (IMAGE_OPS.has(fn)) return true
-      }
-    }
-    return false
-  } finally {
-    doc.destroy()
-  }
-}
-
 async function renderPdfPages({ filePath, pageNumbers, dpi = 200, quality = 85 }, progress) {
   const pdfjs = await loadPdfjs()
   const canvas = await loadCanvas()
@@ -236,9 +206,6 @@ process.parentPort.on('message', async (e) => {
     switch (type) {
       case 'parsePdf':
         result = await parsePdf(data, progress)
-        break
-      case 'pdfHasImages':
-        result = await pdfHasImages(data, progress)
         break
       case 'renderPdfPages':
         result = await renderPdfPages(data, progress)

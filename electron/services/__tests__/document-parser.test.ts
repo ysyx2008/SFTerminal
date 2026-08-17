@@ -18,7 +18,16 @@ vi.mock('electron', () => ({
   }
 }))
 
+vi.mock('../pdf-text-extract.mjs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../pdf-text-extract.mjs')>()
+  return {
+    ...actual,
+    extractPdfText: vi.fn(actual.extractPdfText),
+  }
+})
+
 import { DocumentParserService } from '../document-parser.service'
+import { extractPdfText } from '../pdf-text-extract.mjs'
 
 describe('DocumentParserService', () => {
   let service: DocumentParserService
@@ -859,43 +868,103 @@ describe('DocumentParserService', () => {
 
   describe('parseDocument - PDF', () => {
     it('文字 PDF 应抽出正文且不报错', async () => {
-      const stream = 'BT /F1 24 Tf 72 720 Td (Hello SailFish) Tj ET\n'
-      const parts = [
-        '%PDF-1.4\n',
-        '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n',
-        '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n',
-        '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n',
-        `4 0 obj << /Length ${Buffer.byteLength(stream)} >> stream\n${stream}endstream endobj\n`,
-        '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n',
-      ]
-      const offsets: number[] = []
-      let cursor = 0
-      for (const part of parts) {
-        offsets.push(cursor)
-        cursor += Buffer.byteLength(part)
-      }
-      let xref = 'xref\n0 6\n0000000000 65535 f \n'
-      for (let i = 1; i <= 5; i++) {
-        xref += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
-      }
-      const pdf = Buffer.concat([
-        Buffer.from(parts.join('')),
-        Buffer.from(`${xref}trailer << /Size 6 /Root 1 0 R >>\nstartxref\n${cursor}\n%%EOF\n`),
-      ])
-      const tempFile = path.join(os.tmpdir(), `parse-pdf-${crypto.randomUUID()}.pdf`)
-      fs.writeFileSync(tempFile, pdf)
+      const { filePath, size, cleanup } = writeTempPdf(makeTextPdf('Hello SailFish'))
       try {
         const result = await service.parseDocument({
           name: 'hello.pdf',
-          path: tempFile,
-          size: pdf.length
+          path: filePath,
+          size
         })
         expect(result.fileType).toBe('pdf')
         expect(result.error).toBeUndefined()
         expect(result.content).toMatch(/Hello SailFish/)
       } finally {
-        fs.unlinkSync(tempFile)
+        cleanup()
+      }
+    })
+
+    it('有文字层时即使页里有图也不整页渲预览', async () => {
+      const { filePath, size, cleanup } = writeTempPdf(makeTextPdfWithTinyImage('Hello SailFish'))
+      vi.mocked(extractPdfText).mockResolvedValueOnce({
+        content: 'Hello SailFish\n发票号码：123',
+        pageCount: 1,
+        totalPages: 1,
+        pdfType: 'TextBased',
+        pagesNeedingOcr: [],
+        extractor: 'inspector',
+      })
+      const renderSpy = vi.spyOn(service as unknown as { renderPdfPages: (...args: unknown[]) => Promise<unknown> }, 'renderPdfPages')
+      try {
+        const result = await service.parseDocument(
+          { name: 'invoice-like.pdf', path: filePath, size },
+          { extractImages: true }
+        )
+        expect(result.fileType).toBe('pdf')
+        expect(result.error).toBeUndefined()
+        expect(result.content).toMatch(/发票号码/)
+        expect(result.images).toBeUndefined()
+        expect(result.metadata?.pdfType).toBe('TextBased')
+        expect(renderSpy).not.toHaveBeenCalled()
+      } finally {
+        renderSpy.mockRestore()
+        cleanup()
       }
     })
   })
 })
+
+function writeTempPdf(pdf: Buffer): { filePath: string; size: number; cleanup: () => void } {
+  const filePath = path.join(os.tmpdir(), `parse-pdf-${crypto.randomUUID()}.pdf`)
+  fs.writeFileSync(filePath, pdf)
+  return { filePath, size: pdf.length, cleanup: () => { try { fs.unlinkSync(filePath) } catch { /* ignore */ } } }
+}
+
+function makeTextPdf(text: string): Buffer {
+  const escaped = text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+  const stream = `BT /F1 24 Tf 72 720 Td (${escaped}) Tj ET\n`
+  return assemblePdf([
+    '%PDF-1.4\n',
+    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n',
+    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n',
+    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n',
+    `4 0 obj << /Length ${Buffer.byteLength(stream)} >> stream\n${stream}endstream endobj\n`,
+    '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n',
+  ])
+}
+
+/** 文字层 + 1×1 图：旧逻辑会因「页里有图」整页渲预览，本次改动后不应再渲。 */
+function makeTextPdfWithTinyImage(text: string): Buffer {
+  const escaped = text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+  const stream = `BT /F1 24 Tf 72 720 Td (${escaped}) Tj ET\nq 10 0 0 10 72 700 cm /Im1 Do Q\n`
+  const imageBytes = Buffer.from([255, 0, 0])
+  return assemblePdf([
+    '%PDF-1.4\n',
+    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n',
+    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n',
+    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> /XObject << /Im1 6 0 R >> >> >> endobj\n',
+    `4 0 obj << /Length ${Buffer.byteLength(stream)} >> stream\n${stream}endstream endobj\n`,
+    '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n',
+    Buffer.concat([
+      Buffer.from(`6 0 obj << /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length ${imageBytes.length} >> stream\n`),
+      imageBytes,
+      Buffer.from('\nendstream endobj\n'),
+    ]),
+  ])
+}
+
+function assemblePdf(objects: Array<string | Buffer>): Buffer {
+  const parts = objects.map((o) => (typeof o === 'string' ? Buffer.from(o) : o))
+  const offsets: number[] = []
+  let cursor = 0
+  for (const part of parts) {
+    offsets.push(cursor)
+    cursor += part.length
+  }
+  const objectCount = parts.length - 1
+  let xref = `xref\n0 ${objectCount + 1}\n0000000000 65535 f \n`
+  for (let i = 1; i <= objectCount; i++) {
+    xref += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
+  }
+  const trailer = `trailer << /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${cursor}\n%%EOF\n`
+  return Buffer.concat([...parts, Buffer.from(xref + trailer)])
+}

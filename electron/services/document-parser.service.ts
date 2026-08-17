@@ -87,7 +87,7 @@ export interface ParseOptions {
   maxTextLength?: number
   /** 是否提取元数据，默认 true */
   extractMetadata?: boolean
-  /** 是否提取文档中的嵌入图片（需要视觉模型支持），默认 false */
+  /** 是否提取 Word 等文档的嵌入图片（需要视觉模型支持），默认 false。PDF 是否渲页只看分类，不看此项。 */
   extractImages?: boolean
   /** 本次解析请求 ID（用于前端进度事件关联） */
   requestId?: string
@@ -578,44 +578,8 @@ export class DocumentParserService {
       return
     }
 
-    if (result.images?.length) return
-
-    if (hasText && opts.extractImages && parsed.totalPages > 0) {
-      try {
-        const hasImages = await this.pdfHasImages(filePath, parsed.totalPages, (current, total) => {
-          this.reportProgress(report, 'detecting-images', 70 + (current / Math.max(total, 1)) * 12, current, total)
-        })
-        if (hasImages) {
-          const pagesToRender = Array.from({ length: Math.min(parsed.totalPages, PREVIEW_PAGES) }, (_, i) => i + 1)
-          const renderResult = await this.renderPdfPages(filePath, pagesToRender, undefined, (current, total) => {
-            this.reportProgress(report, 'rendering-preview', 82 + (current / Math.max(total, 1)) * 14, current, total)
-          })
-          result.images = renderResult.images
-          result.totalPages = renderResult.totalPages
-          log.info(`Mixed PDF detected: ${parsed.totalPages} pages, has images, rendered ${renderResult.images.length} preview pages`)
-        } else {
-          log.info(`Pure text PDF: ${parsed.totalPages} pages, no images detected`)
-        }
-      } catch (detectErr) {
-        log.warn('Failed to detect/render PDF images, using text only:', detectErr)
-      }
-    }
-
     if (parsed.pageCount < parsed.totalPages) {
       log.info(`PDF parsed: ${parsed.pageCount}/${parsed.totalPages} pages extracted`)
-    }
-  }
-
-  private async pdfHasImages(filePath: string, pageCount: number, onPage?: (current: number, total: number) => void): Promise<boolean> {
-    try {
-      return await this.sendToPdfWorker<boolean>('pdfHasImages', { filePath, pageCount }, (progress) => {
-        if (progress.current && progress.total) onPage?.(progress.current, progress.total)
-      })
-    } catch (err: any) {
-      if (err?.message === '__NO_WORKER__') {
-        return this.pdfHasImagesDirect(filePath, pageCount, onPage)
-      }
-      throw err
     }
   }
 
@@ -627,27 +591,6 @@ export class DocumentParserService {
     onPage?: (current: number, total: number) => void
   ): Promise<PdfExtractResult> {
     return extractPdfText(filePath, { maxTextLength, onProgress: onPage })
-  }
-
-  private async pdfHasImagesDirect(filePath: string, pageCount: number, onPage?: (current: number, total: number) => void): Promise<boolean> {
-    const pdfjs = await this.loadPdfjs()
-    const OPS = pdfjs.OPS
-    const IMAGE_OPS = new Set([OPS.paintImageXObject, OPS.paintImageMaskXObject, OPS.paintInlineImageXObject])
-    const data = new Uint8Array(fs.readFileSync(filePath))
-    const doc = await pdfjs.getDocument(buildPdfDocumentInit(data)).promise
-    try {
-      for (let i = 1; i <= pageCount; i++) {
-        const page = await doc.getPage(i)
-        const ops = await page.getOperatorList()
-        onPage?.(i, pageCount)
-        for (const fn of ops.fnArray) {
-          if (IMAGE_OPS.has(fn)) return true
-        }
-      }
-      return false
-    } finally {
-      doc.destroy()
-    }
   }
 
   /**
