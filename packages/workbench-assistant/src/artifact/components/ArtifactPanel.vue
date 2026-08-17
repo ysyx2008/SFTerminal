@@ -2,27 +2,23 @@
 /**
  * 助手工作台产出物面板
  *
- * 单产出物预览；≥2 个时通过标题下拉切换。无产出物时由工作台自动隐藏面板。
+ * 单产出物预览；换文件走对话区清单。无产出物时由工作台自动隐藏面板。
  */
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   FolderOpen,
   ChevronDown,
-  Download,
-  Check,
-  X
+  Download
 } from 'lucide-vue-next'
-import type { CanvasArtifact, CanvasRendererType } from '@shared/types'
+import type { CanvasArtifact } from '@shared/types'
 import {
   artifactDisplayLabel,
   canSaveAsArtifact,
   defaultSaveFileName,
-  filterArtifactsByQuery,
   isArtifactEditable,
   saveArtifact,
   saveArtifactAs,
-  sortArtifactsByRecent,
   refreshFilePathExistsMap,
   type ArtifactSaveDeps,
   getArtifactContextMenuFlags,
@@ -132,12 +128,7 @@ const showFileActions = computed(() => showOpenButton.value || showFileOverflowM
 
 const fileMenuRef = ref<HTMLElement | null>(null)
 const showFileMenuDropdown = ref(false)
-const artifactPickerRef = ref<HTMLElement | null>(null)
-const artifactPickerDropdownRef = ref<HTMLElement | null>(null)
 const ctxMenuRef = ref<HTMLElement | null>(null)
-const showArtifactPicker = ref(false)
-const artifactPickerQuery = ref('')
-const artifactPickerPos = ref({ top: 0, left: 0, width: 300 })
 const saving = ref(false)
 
 type ContextTarget =
@@ -156,16 +147,6 @@ const ctxMenu = ref<{
   y: 0,
   target: null
 })
-/** 产出物列表仍打开时弹出的右键菜单（需保持列表可见且菜单置于列表之上） */
-const ctxMenuFromPicker = ref(false)
-
-const showArtifactSwitcher = computed(() => artifacts.value.length >= 1)
-const allArtifactsSorted = computed(() => sortArtifactsByRecent(artifacts.value))
-const pickerArtifacts = computed(() =>
-  filterArtifactsByQuery(allArtifactsSorted.value, artifactPickerQuery.value)
-)
-const showPickerSearch = computed(() => artifacts.value.length >= 5)
-
 const ctxArtifact = computed(() => {
   if (ctxMenu.value.target?.kind !== 'tab') return null
   return artifactStore.getArtifactById(props.tabId, ctxMenu.value.target.artifactId)
@@ -181,10 +162,6 @@ const ctxMenuFlags = computed(() => {
     fileExists
   })
 })
-
-function rendererTypeKey(type: CanvasRendererType | null): CanvasRendererType {
-  return type ?? 'document'
-}
 
 function activeTitleLabel() {
   return activeArtifact.value
@@ -208,7 +185,6 @@ function toggleFileMenu() {
   const next = !showFileMenuDropdown.value
   showFileMenuDropdown.value = next
   if (next) {
-    closeArtifactPicker()
     closeCtxMenu()
     closeSendMenu()
   }
@@ -269,7 +245,6 @@ async function toggleSendMenu() {
   }
   showSendMenu.value = true
   closeFileMenu()
-  closeArtifactPicker()
   closeCtxMenu()
   void nextTick(syncSendMenuPosition)
   void refreshSendTargets()
@@ -344,47 +319,6 @@ function flushActiveDraft() {
   if (activeArtifactId.value) {
     saveBridge.flush(activeArtifactId.value)
   }
-}
-
-function selectArtifact(id: string) {
-  if (id !== activeArtifactId.value) {
-    flushActiveDraft()
-  }
-  artifactStore.setActiveArtifact(props.tabId, id)
-  closeArtifactPicker()
-  void refreshFileStatus()
-}
-
-function syncArtifactPickerPosition() {
-  if (!showArtifactPicker.value) return
-  const anchor = artifactPickerRef.value
-  if (!anchor) return
-  const rect = anchor.getBoundingClientRect()
-  // 长文件名常见：加宽下拉，配合两行 clamp + title 悬停看全名
-  const width = Math.min(480, Math.max(300, window.innerWidth - 16))
-  let left = rect.left
-  left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
-  artifactPickerPos.value = {
-    top: rect.bottom + 4,
-    left,
-    width
-  }
-}
-
-function toggleArtifactPicker() {
-  showArtifactPicker.value = !showArtifactPicker.value
-  if (showArtifactPicker.value) {
-    closeFileMenu()
-    closeCtxMenu()
-    void nextTick(syncArtifactPickerPosition)
-  } else {
-    artifactPickerQuery.value = ''
-  }
-}
-
-function closeArtifactPicker() {
-  showArtifactPicker.value = false
-  artifactPickerQuery.value = ''
 }
 
 function closeArtifact(id: string, e?: Event) {
@@ -598,13 +532,10 @@ async function runSaveAll() {
   }
 }
 
-function closeOverlayMenus(options?: { keepArtifactPicker?: boolean }) {
+function closeOverlayMenus() {
   closeFileMenu()
   closeSendMenu()
   closeCtxMenu()
-  if (!options?.keepArtifactPicker) {
-    closeArtifactPicker()
-  }
 }
 
 function closeAllMenus() {
@@ -613,22 +544,14 @@ function closeAllMenus() {
 
 /** 任意浮层菜单打开时屏蔽 canvas-body 的指针事件，防止 iframe 合成层吞掉点击，导致菜单无法关闭 */
 const anyMenuOpen = computed(() =>
-  ctxMenu.value.show || showArtifactPicker.value || showFileMenuDropdown.value || showSendMenu.value
+  ctxMenu.value.show || showFileMenuDropdown.value || showSendMenu.value
 )
 
-function openCtxMenu(
-  e: MouseEvent,
-  target: ContextTarget,
-  options?: { keepArtifactPicker?: boolean }
-) {
+function openCtxMenu(e: MouseEvent, target: ContextTarget) {
   e.preventDefault()
   e.stopPropagation()
   closeFileMenu()
   closeCtxMenu()
-  if (!options?.keepArtifactPicker) {
-    closeArtifactPicker()
-  }
-  ctxMenuFromPicker.value = options?.keepArtifactPicker ?? false
   ctxMenu.value = {
     show: true,
     x: e.clientX,
@@ -637,14 +560,17 @@ function openCtxMenu(
   }
 }
 
-function openArtifactPickerCtxMenu(e: MouseEvent, artifactId: string) {
-  openCtxMenu(e, { kind: 'tab', artifactId }, { keepArtifactPicker: true })
+function openHeaderCtxMenu(e: MouseEvent) {
+  if (activeArtifactId.value) {
+    openCtxMenu(e, { kind: 'tab', artifactId: activeArtifactId.value })
+    return
+  }
+  openCtxMenu(e, { kind: 'header' })
 }
 
 function closeCtxMenu() {
   ctxMenu.value.show = false
   ctxMenu.value.target = null
-  ctxMenuFromPicker.value = false
 }
 
 function onDocumentMouseDown(e: MouseEvent) {
@@ -663,16 +589,6 @@ function onDocumentMouseDown(e: MouseEvent) {
       closeSendMenu()
     }
   }
-  if (showArtifactPicker.value) {
-    const anchor = artifactPickerRef.value
-    const dropdown = artifactPickerDropdownRef.value
-    if (
-      anchor && !anchor.contains(target) &&
-      dropdown && !dropdown.contains(target)
-    ) {
-      closeArtifactPicker()
-    }
-  }
   if (ctxMenu.value.show) {
     const menu = ctxMenuRef.value
     if (menu && !menu.contains(target)) {
@@ -687,10 +603,6 @@ function onDocumentKeyDown(e: KeyboardEvent) {
     closeCtxMenu()
     return
   }
-  if (showArtifactPicker.value) {
-    closeArtifactPicker()
-    return
-  }
   if (showSendMenu.value) {
     closeSendMenu()
     return
@@ -700,15 +612,11 @@ function onDocumentKeyDown(e: KeyboardEvent) {
   }
 }
 
-watch(showArtifactPicker, (open) => {
-  if (open) {
-    void nextTick(syncArtifactPickerPosition)
-    window.addEventListener('resize', syncArtifactPickerPosition)
-    window.addEventListener('scroll', syncArtifactPickerPosition, true)
-  } else {
-    window.removeEventListener('resize', syncArtifactPickerPosition)
-    window.removeEventListener('scroll', syncArtifactPickerPosition, true)
+watch(activeArtifactId, (next, prev) => {
+  if (prev && prev !== next) {
+    saveBridge.flush(prev)
   }
+  void refreshFileStatus()
 })
 
 watch(showSendMenu, (open) => {
@@ -764,8 +672,6 @@ onUnmounted(() => {
   document.removeEventListener('keydown', onDocumentKeyDown, true)
   window.removeEventListener('focus', onWindowFocus)
   window.removeEventListener('visibilitychange', onVisibilityChange)
-  window.removeEventListener('resize', syncArtifactPickerPosition)
-  window.removeEventListener('scroll', syncArtifactPickerPosition, true)
   window.removeEventListener('resize', syncSendMenuPosition)
   window.removeEventListener('scroll', syncSendMenuPosition, true)
   offImConnectionChange?.()
@@ -778,32 +684,13 @@ defineExpose({ minimizePanel })
   <div class="canvas-panel">
     <div
       class="canvas-header"
-      @contextmenu="openCtxMenu($event, { kind: 'header' })"
+      @contextmenu="openHeaderCtxMenu"
     >
-      <div ref="artifactPickerRef" class="artifact-header-title">
-        <button
-          v-if="showArtifactSwitcher"
-          type="button"
-          class="artifact-file-select"
-          :class="{ active: showArtifactPicker }"
-          :title="t('canvas.artifactPickerTitle')"
-          :aria-expanded="showArtifactPicker"
-          @click="toggleArtifactPicker"
-          @contextmenu="openCtxMenu($event, { kind: 'header' })"
-        >
-          <ArtifactFileIcon
-            v-if="activeArtifact"
-            :file-path="activeArtifact.filePath"
-            :renderer="activeArtifact.renderer"
-            :size="18"
-          />
-          <span class="artifact-file-select-label">{{ activeTitleLabel() }}</span>
-          <ChevronDown :size="12" class="artifact-file-select-chevron" />
-        </button>
+      <div class="artifact-header-title">
         <div
-          v-else
           class="artifact-file-select artifact-file-select-static"
-          @contextmenu="openCtxMenu($event, { kind: 'header' })"
+          :title="activeTitleLabel()"
+          @contextmenu="openHeaderCtxMenu"
         >
           <ArtifactFileIcon
             v-if="activeArtifact"
@@ -939,70 +826,7 @@ defineExpose({ minimizePanel })
 
     <Teleport to="body">
       <div
-        v-if="showArtifactPicker"
-        ref="artifactPickerDropdownRef"
-        class="artifact-picker artifact-picker--floating"
-        :style="{
-          top: `${artifactPickerPos.top}px`,
-          left: `${artifactPickerPos.left}px`,
-          width: `${artifactPickerPos.width}px`
-        }"
-        @click.stop
-      >
-        <div v-if="showPickerSearch" class="artifact-picker-search">
-          <input
-            v-model="artifactPickerQuery"
-            type="search"
-            class="artifact-picker-input"
-            :placeholder="t('canvas.artifactPickerSearch')"
-            @keydown.stop
-          />
-        </div>
-        <div class="artifact-picker-list" role="listbox">
-          <div
-            v-for="artifact in pickerArtifacts"
-            :key="artifact.id"
-            role="option"
-            class="artifact-picker-row"
-            :class="{ active: artifact.id === activeArtifactId }"
-            :aria-selected="artifact.id === activeArtifactId"
-            @contextmenu="openArtifactPickerCtxMenu($event, artifact.id)"
-          >
-            <button
-              type="button"
-              class="artifact-picker-item"
-              :title="artifactTabLabel(artifact)"
-              @click="selectArtifact(artifact.id)"
-            >
-              <span class="artifact-picker-icon-wrap">
-                <ArtifactFileIcon
-                  :file-path="artifact.filePath"
-                  :renderer="rendererTypeKey(artifact.renderer)"
-                  :size="20"
-                />
-              </span>
-              <span class="artifact-picker-label">{{ artifactTabLabel(artifact) }}</span>
-              <Check v-if="artifact.id === activeArtifactId" :size="13" class="artifact-picker-check" />
-            </button>
-            <button
-              type="button"
-              class="artifact-picker-close"
-              :title="t('canvas.closeArtifact')"
-              @click.stop="closeArtifact(artifact.id)"
-            >
-              <X :size="12" />
-            </button>
-          </div>
-          <div v-if="pickerArtifacts.length === 0" class="artifact-picker-empty">
-            {{ t('canvas.artifactPickerEmpty') }}
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <Teleport to="body">
-      <div
-        v-if="ctxMenu.show && !ctxMenuFromPicker"
+        v-if="ctxMenu.show"
         class="canvas-ctx-overlay"
         @mousedown="closeCtxMenu"
         @contextmenu.prevent="closeCtxMenu"
@@ -1011,7 +835,6 @@ defineExpose({ minimizePanel })
         v-if="ctxMenu.show"
         ref="ctxMenuRef"
         class="canvas-ctx-menu"
-        :class="{ 'canvas-ctx-menu--elevated': ctxMenuFromPicker }"
         :style="{ left: `${ctxMenu.x}px`, top: `${ctxMenu.y}px` }"
         @click.stop
         @contextmenu.prevent
@@ -1062,6 +885,15 @@ defineExpose({ minimizePanel })
           @click="runSaveAs(ctxArtifact); closeCtxMenu()"
         >
           {{ t('canvas.saveAs') }}
+        </button>
+        <button
+          v-if="canSaveAll"
+          type="button"
+          class="canvas-ctx-item"
+          :disabled="saving"
+          @click="runSaveAll(); closeCtxMenu()"
+        >
+          {{ t('canvas.saveAll') }}
         </button>
         <div class="canvas-ctx-separator" />
         <button
@@ -1247,152 +1079,6 @@ defineExpose({ minimizePanel })
   }
 }
 
-.artifact-picker {
-  padding: 6px;
-  background: var(--bg-secondary, #252525);
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
-  border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
-}
-
-.artifact-picker--floating {
-  position: fixed;
-  z-index: 10000;
-  max-width: calc(100vw - 16px);
-  max-height: calc(100vh - 120px);
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.artifact-picker-search {
-  padding: 2px 2px 6px;
-}
-
-.artifact-picker-input {
-  width: 100%;
-  box-sizing: border-box;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
-  border-radius: 4px;
-  background: var(--bg-primary, #1e1e1e);
-  color: var(--text-primary, #eee);
-  font-size: 13px;
-  outline: none;
-}
-
-.artifact-picker-input:focus {
-  border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.45);
-}
-
-.artifact-picker-list {
-  flex: 1;
-  min-height: 0;
-  max-height: 480px;
-  overflow-y: auto;
-}
-
-.artifact-picker-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 2px;
-  border-radius: 6px;
-  padding: 1px 2px;
-}
-
-.artifact-picker-row.active {
-  background: rgba(var(--accent-rgb, 137, 180, 250), 0.1);
-}
-
-.artifact-picker-row.active .artifact-picker-item {
-  color: var(--accent-primary, #89b4fa);
-}
-
-.artifact-picker-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  flex: 1;
-  min-width: 0;
-  min-height: 38px;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-primary, #eee);
-  font-size: 13px;
-  line-height: 1.35;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.artifact-picker-item:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.07));
-}
-
-.artifact-picker-icon-wrap {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-top: 1px;
-}
-
-.artifact-picker-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.35;
-}
-
-.artifact-picker-check {
-  flex-shrink: 0;
-  margin-top: 4px;
-  color: var(--accent-primary, #89b4fa);
-  opacity: 0.85;
-}
-
-.artifact-picker-close {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-top: 4px;
-  margin-right: 4px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary, #aaa);
-  cursor: pointer;
-  opacity: 0;
-  transition: background 0.1s, color 0.1s, opacity 0.1s;
-}
-
-.artifact-picker-row:hover .artifact-picker-close {
-  opacity: 1;
-}
-
-.artifact-picker-close:hover {
-  background: rgba(244, 63, 94, 0.12);
-  color: #f87171;
-}
-
-
 .canvas-ctx-header {
   padding: 6px 14px 2px;
   font-size: 12px;
@@ -1411,13 +1097,6 @@ defineExpose({ minimizePanel })
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 280px;
-}
-
-.artifact-picker-empty {
-  padding: 10px 8px;
-  color: var(--text-secondary, #888);
-  font-size: 12px;
-  text-align: center;
 }
 
 .canvas-header-actions {
@@ -1617,10 +1296,6 @@ defineExpose({ minimizePanel })
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
-}
-
-.canvas-ctx-menu--elevated {
-  z-index: 10001;
 }
 
 .canvas-ctx-item {

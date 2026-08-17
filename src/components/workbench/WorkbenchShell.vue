@@ -334,7 +334,7 @@ onUnmounted(() => {
 </style>
 
 <style>
-/* 顶栏模型选择与产出物文件名触发器：同一套 metrics（scoped 子组件无法互引） */
+/* 顶栏模型选择与产出物文件名：同一套 metrics（scoped 子组件无法互引） */
 .workbench-shell select.model-select.model-select-sm,
 .workbench-shell .artifact-file-select {
   display: inline-flex;
@@ -380,14 +380,8 @@ onUnmounted(() => {
   gap: 4px;
   max-width: min(240px, 100%);
   min-width: 0;
-  cursor: pointer;
+  cursor: default;
   text-align: left;
-}
-
-.workbench-shell .artifact-file-select:hover,
-.workbench-shell .artifact-file-select.active {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.06));
-  color: var(--text-primary);
 }
 
 .workbench-shell .artifact-file-select-label {
@@ -398,11 +392,6 @@ onUnmounted(() => {
   flex: 1;
   font-size: inherit;
   line-height: inherit;
-}
-
-.workbench-shell .artifact-file-select-chevron {
-  flex-shrink: 0;
-  opacity: 0.65;
 }
 
 /* 与 AiPanel system-info-bar 内 btn-icon-sm 一致（仅图标按钮，不含文字按钮） */
