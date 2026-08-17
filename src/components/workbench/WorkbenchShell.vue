@@ -82,11 +82,14 @@ function startResize(e: PointerEvent) {
 
   const handle = e.currentTarget as HTMLElement
   const startX = e.clientX
-  const startRatio = props.toggleRatio
   const container = shellRef.value
   if (!container) return
   const containerWidth = container.getBoundingClientRect().width
   if (containerWidth <= 0) return
+  // 窗体改过大小后，比例可能和眼前的像素宽对不上。以当前看到的宽度为起点，避免一拖就跳。
+  const startRatio = regionWidthPx.value > 0
+    ? regionWidthPx.value / containerWidth
+    : props.toggleRatio
 
   // 右侧辅助区：分隔条右移（delta>0）应缩小辅助区比例；左侧辅助区方向相反
   const dir = props.toggleSide === 'left' ? -1 : 1
@@ -165,7 +168,8 @@ onMounted(() => {
     // 只在尚未量到宽度时补一次（首帧 layout）。历史侧栏开合、窗口缩放
     // 不再按比例重算产出物宽——保持用户当时看到的宽度。
     resizeObserver = new ResizeObserver(() => {
-      if (isResizing.value || regionWidthPx.value <= 0) {
+      if (isResizing.value) return
+      if (regionWidthPx.value <= 0) {
         syncRegionWidth()
       }
     })
