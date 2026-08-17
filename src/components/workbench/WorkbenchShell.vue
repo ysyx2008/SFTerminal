@@ -50,16 +50,6 @@ const regionWidthPx = ref(0)
 let activeCleanup: (() => void) | null = null
 let resizeObserver: ResizeObserver | null = null
 let animTimer: ReturnType<typeof setTimeout> | null = null
-let resizeSettleTimer: ReturnType<typeof setTimeout> | null = null
-const RESIZE_SETTLE_MS = 80
-
-function scheduleSyncRegionWidth() {
-  if (resizeSettleTimer) clearTimeout(resizeSettleTimer)
-  resizeSettleTimer = setTimeout(() => {
-    resizeSettleTimer = null
-    syncRegionWidth()
-  }, RESIZE_SETTLE_MS)
-}
 
 const REGION_ANIM_MS = 400
 
@@ -172,12 +162,12 @@ watch(
 onMounted(() => {
   syncRegionWidth()
   if (shellRef.value) {
+    // 只在尚未量到宽度时补一次（首帧 layout）。历史侧栏开合、窗口缩放
+    // 不再按比例重算产出物宽——保持用户当时看到的宽度。
     resizeObserver = new ResizeObserver(() => {
-      if (isResizing.value) {
+      if (isResizing.value || regionWidthPx.value <= 0) {
         syncRegionWidth()
-        return
       }
-      scheduleSyncRegionWidth()
     })
     resizeObserver.observe(shellRef.value)
   }
@@ -185,7 +175,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (animTimer) clearTimeout(animTimer)
-  if (resizeSettleTimer) clearTimeout(resizeSettleTimer)
   resizeObserver?.disconnect()
   resizeObserver = null
   activeCleanup?.()
