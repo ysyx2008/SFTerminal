@@ -493,7 +493,7 @@ export default {
     templates: {
       openai: 'OpenAI 官方 API，默认使用 GPT-5.5',
       qwen: '阿里云通义千问，默认使用 Qwen3.5 Plus',
-      deepseek: 'DeepSeek V4 Pro，适合代码与长任务 Agent',
+      deepseek: 'DeepSeek V4 Flash，适合日常对话与高频任务',
       doubao: '字节跳动豆包大模型，火山引擎提供服务',
       zhipu: '智谱 GLM 大模型，支持 GLM-5 及 GLM-4 系列',
       kimi: 'Moonshot Kimi，默认使用 Kimi K2.6',

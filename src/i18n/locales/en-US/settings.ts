@@ -493,7 +493,7 @@ export default {
     templates: {
       openai: 'OpenAI official API, defaults to GPT-5.5',
       qwen: 'Alibaba Qwen, defaults to Qwen3.5 Plus',
-      deepseek: 'DeepSeek V4 Pro, suitable for coding and long-running agent tasks',
+      deepseek: 'DeepSeek V4 Flash, suitable for everyday chat and high-volume tasks',
       doubao: 'ByteDance Doubao, powered by Volcengine',
       zhipu: 'Zhipu GLM, supports GLM-5 and GLM-4 series',
       kimi: 'Moonshot Kimi, defaults to Kimi K2.6',
