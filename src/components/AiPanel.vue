@@ -4498,6 +4498,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   background: rgba(var(--accent-rgb), 0.08);
   border-left: 3px solid var(--accent-primary);
   padding-left: 10px;
+  padding-bottom: 8px;
   margin-left: -2px;
   border-radius: 4px;
   color: var(--text-primary);
