@@ -422,7 +422,7 @@ interface Window {
       abort: (requestId?: string) => Promise<void>
       testApiKey: (profile: Partial<import('@shared/types').AiProfile>) => Promise<{ success: boolean; message: string; latencyMs?: number }>
       fetchModels: (profile: Partial<import('@shared/types').AiProfile>) => Promise<{
-        models: Array<{ id: string; supportsVision: boolean; contextLength?: number }>
+        models: Array<import('@shared/types').FetchedAiModel>
         error?: string
       }>
       onProfileFallback: (callback: (notice: {

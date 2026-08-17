@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { AiProfile, BondMetrics, DocumentParseProgress, JumpHostConfig, PtyOptions, SftpConfig, SshConfig } from '@shared/types'
+import type { AiProfile, BondMetrics, DocumentParseProgress, FetchedAiModel, JumpHostConfig, PtyOptions, SftpConfig, SshConfig } from '@shared/types'
 
 // ── 启动进度缓冲 ──────────────────────────────────────────────────────────────
 // preload 加载后立即开始监听，将最新 stage 缓存下来。
@@ -763,7 +763,7 @@ const electronAPI = {
       ipcRenderer.invoke('ai:testApiKey', profile) as Promise<{ success: boolean; message: string; latencyMs?: number }>,
     fetchModels: (profile: Partial<AiProfile>) =>
       ipcRenderer.invoke('ai:fetchModels', profile) as Promise<{
-        models: Array<{ id: string; supportsVision: boolean; contextLength?: number }>
+        models: FetchedAiModel[]
         error?: string
       }>,
     /** 指定 AI 配置失效并已回退到其它配置时通知前端（toast） */

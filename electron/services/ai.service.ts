@@ -491,8 +491,86 @@ export interface ChatWithToolsResult {
   imagesStripped?: boolean
 }
 
-import type { AiModelType, AiProfile } from '@shared/types'
-export type { AiModelType, AiProfile }
+import type { AiModelType, AiProfile, FetchedAiModel } from '@shared/types'
+export type { AiModelType, AiProfile, FetchedAiModel }
+
+/** 用户未指定时的单次输出上限。主流云端模型均不低于此数。 */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 32_768
+
+function asPositiveInt(value: unknown): number | undefined {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  if (!Number.isFinite(n) || n <= 0) return undefined
+  return Math.floor(n)
+}
+
+/** 厂商模型列表条目上可能出现的能力字段（只读结构化字段，不按模型名猜测） */
+export interface ModelListEntry {
+  id?: unknown
+  input_modalities?: unknown
+  capabilities?: { vision?: unknown; image_input?: unknown }
+  type?: unknown
+  modalities?: unknown
+  context_length?: unknown
+  context_window?: unknown
+  max_input_tokens?: unknown
+  max_output_tokens?: unknown
+  max_completion_tokens?: unknown
+  output_token_limit?: unknown
+  outputTokenLimit?: unknown
+  max_output?: unknown
+  max_tokens?: unknown
+  top_provider?: { max_completion_tokens?: unknown }
+}
+
+/**
+ * 从 /models 单条记录解析 id、视觉能力、上下文长度和输出上限。
+ * 输出上限只认明确的输出字段；`max_tokens` 仅在小于上下文长度时视为输出上限
+ * （Anthropic 列表的写法），以免把上下文窗口误当成输出。
+ */
+export function parseModelListEntry(raw: ModelListEntry): FetchedAiModel | null {
+  const id = typeof raw.id === 'string' ? raw.id.trim() : ''
+  if (!id) return null
+
+  const inputModalities = Array.isArray(raw.input_modalities)
+    ? raw.input_modalities
+    : Array.isArray(raw.modalities)
+      ? raw.modalities
+      : []
+  const supportsVision =
+    inputModalities.includes('image') ||
+    raw.capabilities?.vision === true ||
+    raw.capabilities?.image_input === true ||
+    raw.type === 'multimodal'
+
+  const contextLength =
+    asPositiveInt(raw.context_length) ??
+    asPositiveInt(raw.context_window) ??
+    asPositiveInt(raw.max_input_tokens)
+
+  const explicitOutput =
+    asPositiveInt(raw.max_output_tokens) ??
+    asPositiveInt(raw.max_completion_tokens) ??
+    asPositiveInt(raw.output_token_limit) ??
+    asPositiveInt(raw.outputTokenLimit) ??
+    asPositiveInt(raw.max_output) ??
+    asPositiveInt(raw.top_provider?.max_completion_tokens)
+
+  const listedMaxTokens = asPositiveInt(raw.max_tokens)
+  // max_tokens 单独出现时含义不清（有的厂商拿它表示上下文），
+  // 只在同时有上下文、且明显更小的时候当作输出上限（Anthropic 列表）。
+  const maxOutputTokens = explicitOutput ?? (
+    listedMaxTokens && contextLength && listedMaxTokens < contextLength
+      ? listedMaxTokens
+      : undefined
+  )
+
+  return {
+    id,
+    supportsVision,
+    ...(contextLength ? { contextLength } : {}),
+    ...(maxOutputTokens ? { maxOutputTokens } : {}),
+  }
+}
 
 /** 指定 profileId 失效时回退到其它配置的通知 */
 export interface AiProfileFallbackNotice {
@@ -1331,7 +1409,7 @@ export class AiService {
    * 同时尝试解析非标准能力字段以自动识别视觉模型
    */
   async fetchModels(profile: Partial<AiProfile>): Promise<{
-    models: Array<{ id: string; supportsVision: boolean; contextLength?: number }>
+    models: FetchedAiModel[]
     error?: string
   }> {
     if (!profile.apiUrl) {
@@ -1386,18 +1464,6 @@ export class AiService {
           agent: proxyAgent ?? (isHttps ? this.httpsAgent : this.httpAgent),
         }
 
-        type ModelEntry = {
-          id: string
-          input_modalities?: string[]
-          output_modalities?: string[]
-          capabilities?: { vision?: boolean; image_input?: boolean }
-          type?: string
-          modalities?: string[]
-          context_length?: number
-          context_window?: number
-          max_input_tokens?: number
-        }
-
         const req = httpModule.request(options, (res) => {
           let data = ''
           res.on('data', (chunk) => { data += chunk })
@@ -1419,8 +1485,8 @@ export class AiService {
 
             try {
               const json = JSON.parse(data) as {
-                data?: ModelEntry[]
-                models?: ModelEntry[]
+                data?: ModelListEntry[]
+                models?: ModelListEntry[]
                 error?: { message?: string }
               }
 
@@ -1434,19 +1500,9 @@ export class AiService {
 
               // 兼容标准格式（data[]）和部分厂商格式（models[]）
               const rawList = json.data ?? json.models ?? []
-              const models = rawList.map((m) => {
-                // 视觉能力检测：仅依赖结构化能力字段，不做名称匹配
-                const inputModalities = m.input_modalities ?? m.modalities ?? []
-                const supportsVision =
-                  inputModalities.includes('image') ||
-                  m.capabilities?.vision === true ||
-                  m.capabilities?.image_input === true ||
-                  m.type === 'multimodal'
-
-                const contextLength = m.context_length ?? m.context_window ?? m.max_input_tokens
-
-                return { id: m.id, supportsVision, contextLength }
-              })
+              const models = rawList
+                .map((m) => parseModelListEntry(m))
+                .filter((m): m is FetchedAiModel => m !== null)
 
               resolve({ models })
             } catch {
@@ -1977,7 +2033,7 @@ export class AiService {
         tools: tools.length > 0 ? tools : undefined,
         tool_choice: tools.length > 0 ? 'auto' : undefined,
         temperature: resolveTemperature(profile),
-        max_tokens: profile.maxOutputTokens || 8192
+        max_tokens: profile.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS
       }
 
       let data: {
@@ -2235,7 +2291,7 @@ export class AiService {
         tools: tools.length > 0 ? tools : undefined,
         tool_choice: tools.length > 0 ? 'auto' : undefined,
         temperature: resolveTemperature(profile),
-        max_tokens: profile.maxOutputTokens || 8192,
+        max_tokens: profile.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS,
         stream: true
       }
       if (!isAnthropic) {

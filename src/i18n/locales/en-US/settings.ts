@@ -440,7 +440,7 @@ export default {
     contextLengthHint: 'tokens',
     maxOutputTokens: 'Max Output Tokens',
     maxOutputTokensHint: 'leave empty',
-    maxOutputTokensTip: 'Usually no need to set. Only increase if Agent output is frequently truncated',
+    maxOutputTokensTip: 'Leave empty for 32768. Selecting a model from the list fills this in when the provider reports a max output',
     temperatureHint: 'auto if empty',
     temperatureTip: 'Default 0.7. Some models require a fixed value (e.g. Kimi K2.5 requires 1)',
     saveProfile: 'Save Profile',

@@ -22,7 +22,7 @@ export interface AiProfile {
   proxy?: string
   /** 模型上下文长度（tokens），默认 128000 */
   contextLength?: number
-  /** 单次回复最大输出 token 数，默认 8192 */
+  /** 单次回复最大输出 token 数；未填时按 32768 */
   maxOutputTokens?: number
   /** 采样温度，留空则自动选择（默认 0.7，部分模型如 Kimi K2.5 强制为 1） */
   temperature?: number
@@ -32,6 +32,14 @@ export interface AiProfile {
   visionProfileId?: string
   /** API 协议格式，默认 auto（自动检测） */
   apiFormat?: ApiFormat
+}
+
+/** 从供应商模型列表解析出的条目（选模型时回填上下文 / 输出上限） */
+export interface FetchedAiModel {
+  id: string
+  supportsVision: boolean
+  contextLength?: number
+  maxOutputTokens?: number
 }
 
 /** 等待模型首 token 文案的 i18n 键前缀（后端 flat key，camelCase） */

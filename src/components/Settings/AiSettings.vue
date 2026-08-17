@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Pencil, Trash2, X, ExternalLink, Eye, Copy, GripVertical, RefreshCw, ChevronDown, Camera } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from '../../stores/config'
+import type { FetchedAiModel } from '@shared/types'
 import { AI_TEMPLATES } from '../../config/ai-templates'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -146,8 +147,7 @@ watch(
 )
 
 // ==================== 模型列表拉取 ====================
-interface FetchedModel { id: string; supportsVision: boolean; contextLength?: number }
-const fetchedModels = ref<FetchedModel[]>([])
+const fetchedModels = ref<FetchedAiModel[]>([])
 const isFetchingModels = ref(false)
 const fetchModelsError = ref('')
 const showModelDropdown = ref(false)
@@ -177,13 +177,16 @@ const fetchModels = async () => {
   }
 }
 
-const selectModel = (model: FetchedModel) => {
+const selectModel = (model: FetchedAiModel) => {
   formData.value.model = model.id
   if (model.supportsVision) {
     formData.value.modelType = 'vision'
   }
   if (model.contextLength) {
     formData.value.contextLength = model.contextLength
+  }
+  if (model.maxOutputTokens) {
+    formData.value.maxOutputTokens = model.maxOutputTokens
   }
   showModelDropdown.value = false
 }
@@ -507,7 +510,7 @@ const openKeyUrl = (url: string) => {
                 </div>
                 <div class="form-group flex-1">
                   <label class="form-label">{{ t('aiSettings.maxOutputTokens') }}（{{ t('aiSettings.maxOutputTokensHint') }}）</label>
-                  <input v-model.number="formData.maxOutputTokens" type="number" class="input" placeholder="8192" min="1" max="128000" />
+                  <input v-model.number="formData.maxOutputTokens" type="number" class="input" placeholder="32768" min="1" max="1000000" />
                   <span class="form-hint">{{ t('aiSettings.maxOutputTokensTip') }}</span>
                 </div>
                 <div class="form-group flex-1">
