@@ -13,7 +13,7 @@ const props = withDefaults(defineProps<{
   renderer: CanvasRendererType
   size?: number
 }>(), {
-  size: 16,
+  size: 18,
 })
 
 const dataUrl = ref<string | null>(null)

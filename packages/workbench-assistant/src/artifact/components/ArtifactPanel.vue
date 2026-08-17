@@ -795,7 +795,7 @@ defineExpose({ minimizePanel })
             v-if="activeArtifact"
             :file-path="activeArtifact.filePath"
             :renderer="activeArtifact.renderer"
-            :size="14"
+            :size="18"
           />
           <span class="artifact-file-select-label">{{ activeTitleLabel() }}</span>
           <ChevronDown :size="12" class="artifact-file-select-chevron" />
@@ -809,7 +809,7 @@ defineExpose({ minimizePanel })
             v-if="activeArtifact"
             :file-path="activeArtifact.filePath"
             :renderer="activeArtifact.renderer"
-            :size="14"
+            :size="18"
           />
           <span class="artifact-file-select-label">{{ activeTitleLabel() }}</span>
         </div>
@@ -978,7 +978,7 @@ defineExpose({ minimizePanel })
                 <ArtifactFileIcon
                   :file-path="artifact.filePath"
                   :renderer="rendererTypeKey(artifact.renderer)"
-                  :size="16"
+                  :size="20"
                 />
               </span>
               <span class="artifact-picker-label">{{ artifactTabLabel(artifact) }}</span>
@@ -1338,8 +1338,8 @@ defineExpose({ minimizePanel })
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   margin-top: 1px;
 }
 

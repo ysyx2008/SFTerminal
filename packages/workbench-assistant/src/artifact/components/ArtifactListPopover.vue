@@ -70,7 +70,7 @@ onUnmounted(() => {
           <ArtifactFileIcon
             :file-path="artifact.filePath"
             :renderer="artifact.renderer"
-            :size="16"
+            :size="20"
           />
         </span>
         <span class="artifact-list-pop-name">{{ labelOf(artifact) }}</span>
@@ -148,8 +148,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
 }
 
 .artifact-list-pop-name {
