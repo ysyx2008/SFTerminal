@@ -1089,6 +1089,15 @@ button:focus-visible {
   cursor: not-allowed;
 }
 
+/* 浅色主题分块：--bg-tertiary 与面板底同色，卡片必须改用抬起色 + 边框才能分层。
+   特异性需压过各 Settings 子页 scoped 的 .settings-section { background: var(--bg-tertiary) }。
+   tips-section 自带强调色渐变，排除以免被盖掉。 */
+[data-ui-theme="light"] .settings-scope .settings-section:not(.tips-section),
+[data-ui-theme="light"] .settings-scope .section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+}
+
 /* 输入框样式 */
 .input {
   width: 100%;
