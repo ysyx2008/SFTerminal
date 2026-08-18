@@ -649,6 +649,8 @@ const {
   flattenedItems,
   runAgent,
   abortAgent,
+  followUpQueueView,
+  removeFollowUp,
   confirmToolCall,
   confirmTrustCommandAndAllow,
   submitSecureInput,
@@ -1147,7 +1149,7 @@ const clearTabError = () => {
 
 const handleComposerSubmit = async (
   message: string,
-  options?: { workbenchContext?: import('@shared/types').WorkbenchContext }
+  options?: { workbenchContext?: import('@shared/types').WorkbenchContext; enqueue?: boolean }
 ) => {
   if (!(await guardVisionBeforeSend())) return
   await runAgent(message, options)
@@ -2716,6 +2718,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :tts-stop="ttsStop"
         :submit-message="handleComposerSubmit"
         :submit-empty-message="handleComposerEmptySubmit"
+        :follow-up-queue="followUpQueueView"
+        :remove-follow-up="removeFollowUp"
         :clear-tab-error="clearTabError"
         :consume-workbench-context="props.consumeWorkbenchContext"
       >

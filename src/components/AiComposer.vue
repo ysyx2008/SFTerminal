@@ -71,8 +71,10 @@ const props = defineProps<{
   abortAgent: () => void
   ttsIsSpeaking: boolean
   ttsStop: () => void
-  submitMessage: (message: string, options?: { workbenchContext?: import('@shared/types').WorkbenchContext }) => void | Promise<void>
+  submitMessage: (message: string, options?: { workbenchContext?: import('@shared/types').WorkbenchContext; enqueue?: boolean }) => void | Promise<void>
   submitEmptyMessage: () => void | Promise<void>
+  followUpQueue?: { id: string; message: string }[]
+  removeFollowUp?: (id: string) => void
   clearTabError: () => void
   /**
    * 发送时取出的旁路工作台上下文（不上聊天气泡）。
@@ -310,13 +312,18 @@ const { value: randomPlaceholder, pick: pickRandomPlaceholder } = useRandomPlace
   () => props.placeholderFallbackKey ?? 'ai.inputPlaceholderAgent'
 )
 
+const isMacShortcut = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
+const queueShortcut = isMacShortcut ? '⌘↵' : 'Ctrl+Enter'
+
 const composerPlaceholder = computed(
   () =>
     props.placeholder ??
     (props.isAgentRunning
-      ? t('ai.inputPlaceholderSupplement')
+      ? t('ai.inputPlaceholderSupplement', { shortcut: queueShortcut })
       : randomPlaceholder.value || t(props.placeholderFallbackKey ?? 'ai.inputPlaceholderAgent'))
 )
+
+const followUpItems = computed(() => props.followUpQueue ?? [])
 
 /** embedded 模式：有附件时才显示外层统一容器，避免空态双层边框 */
 const hasComposerAttachments = computed(
@@ -324,7 +331,8 @@ const hasComposerAttachments = computed(
     props.parsingDocs.length > 0 ||
     props.uploadedDocs.length > 0 ||
     quoteSnippets.value.length > 0 ||
-    props.pendingImages.length > 0
+    props.pendingImages.length > 0 ||
+    followUpItems.value.length > 0
 )
 
 let textareaResizeObserver: ResizeObserver | null = null
@@ -600,13 +608,26 @@ const handleInputKeyDown = (event: KeyboardEvent) => {
     if (handled) return
   }
 
-  if (event.key === 'Enter' && !event.shiftKey && !isComposing.value) {
+  if (event.key !== 'Enter' || isComposing.value) return
+
+  // 只认宣传出去的那个组合键：mac 是 ⌘、其它是 Ctrl，且不带 Shift/Alt
+  const isQueueChord =
+    !event.shiftKey &&
+    !event.altKey &&
+    (isMacShortcut ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
+  if (isQueueChord) {
+    event.preventDefault()
+    void handleSend({ enqueue: props.isAgentRunning })
+    return
+  }
+
+  if (!event.shiftKey) {
     event.preventDefault()
     void handleSend()
   }
 }
 
-const handleSend = async () => {
+const handleSend = async (opts?: { enqueue?: boolean }) => {
   if (isComposing.value) return
   if (props.isAttaching) {
     toast.warning(t('ai.parsingPleaseWait'))
@@ -619,6 +640,7 @@ const handleSend = async () => {
   const hasSelectionScope = Boolean(workbenchContext?.selectionScope?.excerpt?.trim())
 
   if (
+    !opts?.enqueue &&
     !inputText.value.trim() &&
     !props.hasImages &&
     quotesSnapshot.length === 0 &&
@@ -670,7 +692,10 @@ const handleSend = async () => {
   quoteStore.clearSnippets(props.currentTabId)
 
   await new Promise(resolve => setTimeout(resolve, 0))
-  await props.submitMessage(finalMessage, workbenchContext ? { workbenchContext } : undefined)
+  await props.submitMessage(finalMessage, {
+    ...(workbenchContext ? { workbenchContext } : {}),
+    ...(opts?.enqueue ? { enqueue: true } : {})
+  })
 }
 
 const parsingSummary = computed(() => {
@@ -822,6 +847,23 @@ const handleSendClick = (event: MouseEvent) => {
           <X :size="10" />
         </button>
       </div>
+    </div>
+  </div>
+
+  <div v-if="followUpItems.length > 0" class="follow-up-queue">
+    <div class="follow-up-queue-header">
+      {{ t('ai.followUpQueueHeader', { count: followUpItems.length }) }}
+    </div>
+    <div v-for="item in followUpItems" :key="item.id" class="follow-up-row">
+      <span class="follow-up-row-text" :title="item.message">{{ item.message }}</span>
+      <button
+        type="button"
+        class="follow-up-row-remove"
+        :title="t('ai.followUpQueueRemove')"
+        @click="removeFollowUp?.(item.id)"
+      >
+        <X :size="12" />
+      </button>
     </div>
   </div>
 
@@ -1048,7 +1090,13 @@ const handleSendClick = (event: MouseEvent) => {
           <button v-if="isLoading && !isAgentRunning" class="stop-btn" @click="stopGeneration" :title="t('ai.stopGeneration')">
             <Square :size="16" fill="currentColor" />
           </button>
-          <button v-else-if="isAgentRunning && canSubmitMessage" class="send-btn send-btn-supplement" :disabled="isAttaching" :title="t('ai.sendSupplement')" @click="handleSendClick">
+          <button
+            v-else-if="isAgentRunning && canSubmitMessage"
+            class="send-btn send-btn-supplement"
+            :disabled="isAttaching"
+            :title="t('ai.sendSupplementWithQueue', { shortcut: queueShortcut })"
+            @click="handleSendClick"
+          >
             <ArrowUp :size="18" />
           </button>
           <button v-else-if="isAgentRunning && canSendEmpty" class="send-btn send-btn-default" :disabled="isAttaching" :title="t('ai.useDefault')" @click="handleSendClick">
@@ -1101,7 +1149,7 @@ const handleSendClick = (event: MouseEvent) => {
           v-else-if="isAgentRunning && canSubmitMessage"
           class="send-btn send-btn-supplement"
           :disabled="isAttaching"
-          :title="t('ai.sendSupplement')"
+          :title="t('ai.sendSupplementWithQueue', { shortcut: queueShortcut })"
           @click="handleSendClick"
         >
           <ArrowUp :size="18" />
@@ -1620,6 +1668,74 @@ const handleSendClick = (event: MouseEvent) => {
   color: var(--color-error);
 }
 
+.follow-up-queue {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+}
+
+.follow-up-queue-header {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.follow-up-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.follow-up-row:hover {
+  background: var(--bg-secondary);
+}
+
+.follow-up-row-text {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* × 只在指到那一条时露出来，多条排队时不铺一列叉 */
+.follow-up-row-remove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.follow-up-row:hover .follow-up-row-remove,
+.follow-up-row-remove:focus-visible {
+  opacity: 0.7;
+}
+
+.follow-up-row-remove:hover {
+  opacity: 1;
+  background: rgba(var(--color-error-rgb), 0.12);
+  color: var(--color-error);
+}
+
 .ai-input {
   position: relative;
   display: flex;
@@ -1644,7 +1760,8 @@ const handleSendClick = (event: MouseEvent) => {
 
 .composer-root-embedded-filled .parsing-docs,
 .composer-root-embedded-filled .uploaded-docs,
-.composer-root-embedded-filled .composer-quote-snips {
+.composer-root-embedded-filled .composer-quote-snips,
+.composer-root-embedded-filled .follow-up-queue {
   border-top: none;
   background: transparent;
   padding: 11px 11px 0;
@@ -1653,19 +1770,24 @@ const handleSendClick = (event: MouseEvent) => {
 /* 附件区与下方分割线之间留足间距（文档列表不要紧贴分隔线） */
 .composer-root-embedded-filled .parsing-docs:has(~ .ai-input-embedded),
 .composer-root-embedded-filled .uploaded-docs:has(~ .ai-input-embedded),
-.composer-root-embedded-filled .composer-quote-snips:has(~ .ai-input-embedded) {
+.composer-root-embedded-filled .composer-quote-snips:has(~ .ai-input-embedded),
+.composer-root-embedded-filled .follow-up-queue:has(~ .ai-input-embedded) {
   padding-bottom: 11px;
 }
 
 .composer-root-embedded-filled .parsing-docs + .uploaded-docs,
 .composer-root-embedded-filled .parsing-docs + .composer-quote-snips,
-.composer-root-embedded-filled .uploaded-docs + .composer-quote-snips {
+.composer-root-embedded-filled .uploaded-docs + .composer-quote-snips,
+.composer-root-embedded-filled .follow-up-queue + .composer-quote-snips,
+.composer-root-embedded-filled .uploaded-docs + .follow-up-queue,
+.composer-root-embedded-filled .parsing-docs + .follow-up-queue {
   padding-top: 8px;
 }
 
 .composer-root-embedded-filled .parsing-docs ~ .ai-input-embedded,
 .composer-root-embedded-filled .uploaded-docs ~ .ai-input-embedded,
-.composer-root-embedded-filled .composer-quote-snips ~ .ai-input-embedded {
+.composer-root-embedded-filled .composer-quote-snips ~ .ai-input-embedded,
+.composer-root-embedded-filled .follow-up-queue ~ .ai-input-embedded {
   border-top: 1px solid var(--border-color);
 }
 

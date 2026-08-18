@@ -9,7 +9,7 @@ import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
 import { applySearchMatch, isCurrentSearchRequest } from '../utils/history-search-stream'
-import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary } from '@shared/types'
+import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary, WorkbenchContext } from '@shared/types'
 import type { AgentStep, AgentState } from '../stores/terminal'
 import type { MessageScrollerHandle } from '../types/message-scroller'
 import { createLogger } from '../utils/logger'
@@ -49,6 +49,21 @@ export interface AgentTaskGroup {
   isCurrentTask: boolean
   isProactive?: boolean
   isOnboarding?: boolean
+}
+
+export interface FollowUpQueueItem {
+  id: string
+  message: string
+  images?: string[]
+  previewImages?: string[]
+  attachments?: AttachmentInfo[]
+  documentContext?: string
+  workbenchContext?: WorkbenchContext
+}
+
+export interface FollowUpQueueViewItem {
+  id: string
+  message: string
 }
 
 export interface VirtualItem {
@@ -107,6 +122,12 @@ export function useAgentMode(
 
   // 队列化的 proactive 回复：agent 忙且有延迟 proactive 消息时暂存，任务完成后作为新任务启动
   const queuedProactiveReply = ref<string | null>(null)
+
+  /** 运行中 ⌘/Ctrl+Enter：等当前任务结束后作为下一件新任务，不插入当前执行 */
+  const followUpQueue = ref<FollowUpQueueItem[]>([])
+  const followUpQueueView = computed<FollowUpQueueViewItem[]>(() =>
+    followUpQueue.value.map(({ id, message }) => ({ id, message }))
+  )
   
   // 是否有新消息（用户不在底部时显示提示）
   const hasNewMessage = ref(false)
@@ -1134,9 +1155,16 @@ export function useAgentMode(
   // 运行 Agent 或发送补充消息
   const runAgent = async (
     overrideMessage?: string,
-    options?: { workbenchContext?: import('@shared/types').WorkbenchContext }
+    options?: {
+      workbenchContext?: WorkbenchContext
+      enqueue?: boolean
+      queuedPayload?: FollowUpQueueItem
+    }
   ) => {
-    const hasImageData = (imageCallbacks?.getImages()?.length ?? 0) > 0
+    const queued = options?.queuedPayload
+    const hasImageData = (
+      queued ? (queued.images?.length ?? 0) : (imageCallbacks?.getImages()?.length ?? 0)
+    ) > 0
     const message = overrideMessage ?? inputText.value
     if ((!message.trim() && !hasImageData && !options?.workbenchContext?.selectionScope?.excerpt?.trim()) || !currentTabId.value) return
 
@@ -1147,7 +1175,32 @@ export function useAgentMode(
     // 如果 Agent 正在运行，发送补充消息而不是启动新任务
     // 用 getAgentKey() 拿 Agent 启动时绑定的稳定 key（不随激活窗格变化）
     const agentKey = getAgentKey()
-    if (isAgentRunning.value && agentKey) {
+    if (isAgentRunning.value) {
+      if (options?.enqueue) {
+        const attachments = attachmentCallbacks?.getAttachments() || []
+        const documentContext = await getDocumentContext()
+        const images = imageCallbacks?.getImages() || []
+        const previewImages = imageCallbacks?.getPreviewImages?.() || images
+        followUpQueue.value = [
+          ...followUpQueue.value,
+          {
+            id: `followup_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            message,
+            images: images.length > 0 ? images : undefined,
+            previewImages: previewImages.length > 0 ? previewImages : undefined,
+            attachments: attachments.length > 0 ? attachments : undefined,
+            documentContext: documentContext || undefined,
+            workbenchContext: options.workbenchContext
+          }
+        ]
+        inputText.value = ''
+        if (attachments.length > 0) attachmentCallbacks?.clearAttachments()
+        if (images.length > 0) imageCallbacks?.clearImages()
+        return
+      }
+
+      if (!agentKey) return
+
       // 安全兜底：如果 tab 有延迟的 proactive 通知，用户此时的回复可能是对通知的回应
       // 队列化等待当前任务完成后再作为新任务启动（由 consumeProactiveContext 自动注入上下文）
       if (terminalStore.hasDeferredProactive(tabId)) {
@@ -1213,13 +1266,16 @@ export function useAgentMode(
       return
     }
 
-    // 同步收集附件/图片（不阻塞 UI）
-    const images = imageCallbacks?.getImages() || []
-    const previewImages = imageCallbacks?.getPreviewImages?.() || images
-    if (images.length > 0) {
+    // 同步收集附件/图片（不阻塞 UI）；排队项只认入队时的快照，绝不回读输入框
+    // ——否则排队期间用户新拖进来的图会被错挂到这条排队任务上
+    const images = queued ? (queued.images ?? []) : (imageCallbacks?.getImages() || [])
+    const previewImages = queued
+      ? (queued.previewImages ?? [])
+      : (imageCallbacks?.getPreviewImages?.() || images)
+    if (!queued && images.length > 0) {
       imageCallbacks?.clearImages()
     }
-    const attachments = attachmentCallbacks?.getAttachments() || []
+    const attachments = queued ? (queued.attachments ?? []) : (attachmentCallbacks?.getAttachments() || [])
     // getDocumentContext 依赖 uploadedDocs，须在其完成后再 clearAttachments
 
     // 立即进入运行态 + 乐观 user_task，用户消息与「正在准备...」零等待上墙
@@ -1275,10 +1331,12 @@ export function useAgentMode(
     // 异步上下文在 UI 反馈之后并行获取，不阻塞首屏
     const [hostId, documentContext] = await Promise.all([
       getHostIdByTabId(tabId),
-      getDocumentContext()
+      queued
+        ? Promise.resolve(queued.documentContext || '')
+        : getDocumentContext()
     ])
 
-    if (attachments.length > 0) {
+    if (!queued && attachments.length > 0) {
       attachmentCallbacks?.clearAttachments()
     }
 
@@ -1396,6 +1454,39 @@ export function useAgentMode(
     } catch (error) {
       log.error('中止 Agent 失败:', error)
     }
+  }
+
+  const removeFollowUp = (id: string) => {
+    followUpQueue.value = followUpQueue.value.filter(item => item.id !== id)
+  }
+
+  let followUpDrainTimer: ReturnType<typeof setTimeout> | null = null
+
+  const cancelFollowUpDrain = () => {
+    if (followUpDrainTimer) {
+      clearTimeout(followUpDrainTimer)
+      followUpDrainTimer = null
+    }
+  }
+
+  /** 当前 run 结束后按顺序开下一件。延后 shift，以便关 tab / 手动删掉能拦住。 */
+  const scheduleNextFollowUp = (tabId: string): boolean => {
+    if (followUpDrainTimer || followUpQueue.value.length === 0) return false
+    terminalStore.requestAgentCompleteTabAttentionSkip(tabId)
+    followUpDrainTimer = setTimeout(() => {
+      followUpDrainTimer = null
+      if (!terminalStore.tabs.some(tab => tab.id === tabId)) return
+      if (isAgentRunning.value) return
+      const next = followUpQueue.value[0]
+      if (!next) return
+      followUpQueue.value = followUpQueue.value.slice(1)
+      log.info('任务结束，启动排队中的下一条:', next.message)
+      void runAgent(next.message, {
+        workbenchContext: next.workbenchContext,
+        queuedPayload: next
+      })
+    }, 100)
+    return true
   }
 
   // alwaysAllow: 会话内存白名单（路径类等仍可用；命令类 UI 已改为加入规则）
@@ -1702,6 +1793,8 @@ export function useAgentMode(
         return
       }
 
+      if (foundTabId && scheduleNextFollowUp(foundTabId)) return
+
       // 任务在后台 tab 结束时，标签栏高亮（与待确认一致），便于多 tab 定位
       if (
         foundTabId &&
@@ -1721,6 +1814,8 @@ export function useAgentMode(
       finalizeAgentRunWithScrollSettle(currentTabId.value)
       queuedProactiveReply.value = null
       // handleError 已通过 onStep 推送 error + final_result，此处不再重复 add error step。
+
+      if (foundTabId && scheduleNextFollowUp(foundTabId)) return
 
       if (
         foundTabId &&
@@ -2061,6 +2156,7 @@ export function useAgentMode(
     cancelPendingReveal()
     cleanupHistorySearchMatch?.()
     abortInFlightHistorySearch()
+    cancelFollowUpDrain()
   })
 
   return {
@@ -2103,6 +2199,8 @@ export function useAgentMode(
     isStepsCollapsed,
     runAgent,
     abortAgent,
+    followUpQueueView,
+    removeFollowUp,
     confirmToolCall,
     confirmTrustCommandAndAllow,
     submitSecureInput,
