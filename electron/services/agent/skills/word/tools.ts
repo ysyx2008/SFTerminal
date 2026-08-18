@@ -80,7 +80,7 @@ word_read({ path: "/path/to/doc.docx" })`,
     type: 'function',
     function: {
       name: 'word_add',
-      description: `向**新建的**（word_create）Word 文档添加内容。添加后需要调用 word_save 保存。
+      description: `向**新建的**（word_create）Word 文档添加内容。改动留在本次会话，由 word_save 写入文件。
 
 **重要限制**：本工具**不能用于已通过 word_open 打开的现有文档**——内容会被保存时丢弃（XML 编辑模式只写回原 documentXml，不读 sections）。
 - 已有文档想"加内容"：用 word_from_markdown 整篇重写（推荐，支持图片）
@@ -224,11 +224,11 @@ word_read({ path: "/path/to/doc.docx" })`,
     type: 'function',
     function: {
       name: 'word_replace',
-      description: `在 Word 文档中查找并替换文本，完整保留原始文档格式。
+      description: `在已打开的 Word 文档中查找并替换文本，完整保留原始文档格式。
 
 **功能**：
-- 直接操作 .docx 文件，无需先 word_open/word_save/word_close
-- 自动创建备份后替换
+- 在本次打开的文档上操作，不必再次打开
+- 改动留在本次会话，由 word_save 写入文件
 - 完整保留所有格式（字体、颜色、加粗、样式等）
 - 支持全文查找替换，可选区分大小写
 - 支持跨格式区域（Run）的文本匹配
@@ -245,7 +245,7 @@ word_replace({
         properties: {
           path: {
             type: 'string',
-            description: '文件路径（绝对路径或相对于当前目录），无需先打开'
+            description: '已打开的文件路径（绝对路径或相对于当前目录）'
           },
           find: {
             type: 'string',
@@ -268,14 +268,14 @@ word_replace({
     type: 'function',
     function: {
       name: 'word_modify_paragraph',
-      description: `修改 Word 文档中指定段落的内容或样式，保留其他格式不变。
+      description: `修改已打开的 Word 文档中指定段落的内容或样式，保留其他格式不变。
 
 **功能**：
-- 直接操作 .docx 文件，无需先 word_open/word_save/word_close
+- 在本次打开的文档上操作，不必再次打开
+- 改动留在本次会话，由 word_save 写入文件
 - 通过索引定位段落（从 0 开始，使用 word_read 查看索引）
 - 可修改文本内容（保留原格式结构）
 - 可修改样式（字体、字号、粗体等）
-- 自动创建备份
 
 **示例**：
 word_modify_paragraph({
@@ -291,7 +291,7 @@ word_modify_paragraph({
         properties: {
           path: {
             type: 'string',
-            description: '文件路径（绝对路径或相对于当前目录），无需先打开'
+            description: '已打开的文件路径（绝对路径或相对于当前目录）'
           },
           index: {
             type: 'number',
@@ -339,13 +339,13 @@ word_modify_paragraph({
     type: 'function',
     function: {
       name: 'word_delete_paragraph',
-      description: `删除 Word 文档中指定的段落，保留其他内容和格式不变。
+      description: `删除已打开的 Word 文档中指定的段落，保留其他内容和格式不变。
 
 **功能**：
-- 直接操作 .docx 文件，无需先 word_open/word_save/word_close
+- 在本次打开的文档上操作，不必再次打开
+- 改动留在本次会话，由 word_save 写入文件
 - 通过索引定位段落（从 0 开始，使用 word_read 查看索引）
 - 删除后其他段落索引会变化
-- 自动创建备份
 
 **示例**：
 word_delete_paragraph({
@@ -357,7 +357,7 @@ word_delete_paragraph({
         properties: {
           path: {
             type: 'string',
-            description: '文件路径（绝对路径或相对于当前目录），无需先打开'
+            description: '已打开的文件路径（绝对路径或相对于当前目录）'
           },
           index: {
             type: 'number',
@@ -425,7 +425,7 @@ word_delete_paragraph({
 - 设置页脚文字
 - 添加页码（支持多种格式）
 
-**注意**：需要先用 word_open 打开文档，设置后需要 word_save 保存。`,
+**注意**：文档需已打开；改动留在本次会话，由 word_save 写入文件。`,
       parameters: {
         type: 'object',
         properties: {
@@ -471,7 +471,7 @@ word_delete_paragraph({
 - 可以指定修订作者名称
 - 适用于需要审阅和批注的协作文档
 
-**注意**：需要先用 word_open 打开文档，设置后需要 word_save 保存。`,
+**注意**：文档需已打开；改动留在本次会话，由 word_save 写入文件。`,
       parameters: {
         type: 'object',
         properties: {
