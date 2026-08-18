@@ -2,7 +2,34 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.6.0 (2026-08-11) (Latest)
+## v11.7.0 (2026-08-18) (Latest)
+
+> A new three-column layout: navigate on the left, work in the middle, artifacts on the right. Queue the next message while a task is running. After a crash, copy a summary to send us.
+
+### New Features
+- 🎯 **Three-column layout**: New chat, Reach, Terminal, and recent conversations on the left; the current work in the middle; artifacts on the right, gone when collapsed. No full-width title bar. The sidebar opens and closes, and you can go back and forward.
+- 🎯 **Queue the next message**: While a task is running, ⌘/Ctrl+Enter queues it for when the task finishes; Enter still inserts into the current task. Queued items sit above the input and can be removed.
+- 🎯 **Crash summary**: Prompted after a crash or unexpected last exit; copy a redacted summary to send us, or export a full diagnostics pack from Settings
+- 🎯 **Easier artifacts**: Switch files from a list at the top of the chat; Word / Excel / PDF use system icons; Excel preview can switch sheets
+- 🎯 **Search conversation text**: Type to filter titles, Enter to search the body. New chats appear after the first message; task titles refresh every few turns from the whole conversation, and manual edits are kept
+- 🎯 **MCP connects when enabled**: No more manual connect; the UI calls them Connectors
+- 🎯 **Token use this chat**: Usage shown next to the model name
+- 🎯 **Readable PDF text**: Pages with a text layer are extracted; scans stay as images
+- 🎯 **WPS files**: `.wps` / `.et` open directly; older formats that won't open ask you to resave
+- 🎯 **Todos into a new task**: Right-click “Do this for me / Schedule it” to start a new chat
+
+### Improvements
+- ⚡ **Cheaper DeepSeek default**: First-run setup uses V4 Flash
+- ⚡ **Longer replies**: Default max output raised to 32K
+- ⚡ **Volcengine media skill**: Image-to-image and longer video
+
+### Bug Fixes
+- 🐛 **Knowledge search goes empty / memory spikes**: The service recovers after a drop, instead of silently returning nothing or leaving extra processes
+- 🐛 **Word edits not saved, or a whole paragraph going bold**
+- 🐛 **Light terminal hard to read**: White highlights such as port numbers disappear
+- 🐛 **Misc**: Search kept running after Stop; skill preview not found; standalone browser window pulled back to attach
+
+## v11.6.0 (2026-08-11)
 
 > Artifacts are easier to edit, preview, and send to your phone; long chats make room automatically; Settings is tidier.
 
