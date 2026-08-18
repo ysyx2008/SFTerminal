@@ -36,6 +36,7 @@ describe('resolveWorkbenchAgentPrompt', () => {
     expect(prompt).toContain('一次只预览')
     expect(prompt).toContain('list_workbench_artifacts')
     expect(prompt).toContain('mv')
+    expect(prompt).toContain('manage_pane(action=open)')
   })
 
   it('远程 assistant tab 不注入', () => {

@@ -12,7 +12,7 @@
  *
  * 设计要点：
  * - 仅在终端 Agent（有对应 BrowserWindow）下可用，Watch / IM 远程 Agent 调用会超时返回错误
- * - 工具元数据 supportedModes 限定为 ['local', 'ssh']
+ * - 桌面助手也可 open 真终端；Watch / IM / CLI 无渲染窗时仍会失败
  * - 默认 5s 超时；reconnect 握手更久，单独放宽
  */
 import { BrowserWindow, ipcMain } from 'electron'
@@ -31,6 +31,7 @@ export type SplitTargetOp =
 // 历史曾用 paneId 字段名，已统一为 ptyId 以避免与"布局节点 id"概念混淆。
 export type SplitPaneOp =
   | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: SplitTargetOp }
+  | { type: 'open'; target?: SplitTargetOp }
   | { type: 'close'; ptyId: string }
   | { type: 'focus'; ptyId: string }
   | { type: 'list' }

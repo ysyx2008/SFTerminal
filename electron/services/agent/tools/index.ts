@@ -89,7 +89,7 @@ function requirePtyId(ptyId: string | undefined, toolName: string): string | Too
   return {
     success: false,
     output: '',
-    error: `工具 ${toolName} 需要绑定终端会话`
+    error: `工具 ${toolName} 需要绑定终端会话。若还没有看得见的终端，请先 manage_pane(action=open)。`
   }
 }
 

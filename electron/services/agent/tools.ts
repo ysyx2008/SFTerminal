@@ -1084,23 +1084,25 @@ Agent 类型：
       type: 'function',
       function: {
         name: 'manage_pane',
-        description: `管理当前终端 tab 的窗格与连通。用 action 区分操作：
+        description: `管理当前会话的终端窗格与连通。用 action 区分操作：
 
 - list：列出窗格（ptyId / label / isActive / terminalType / connected）。connected 仅表示主进程尚未观察到断开，不是远端健康探测。
-- split：再开一扇。必填 direction=horizontal|vertical；可选 target：不传/inherit 复用激活窗格、local、ssh:<sessionId>（先 list_ssh_sessions）。
-- close：关掉一扇（必填 pane_id=ptyId）。不能关最后一个窗格。
+- open：不分屏、直接连一台真终端。可选 target：不传/local 开本机、ssh:<sessionId>（先 list_ssh_sessions）。助手没有终端时用这个换到终端台；已有终端时再开一扇。
+- split：再开一扇（须已有终端）。必填 direction=horizontal|vertical；可选 target：不传/inherit 复用激活窗格、local、ssh:<sessionId>。
+- close：关掉一扇（必填 pane_id=ptyId）。终端页不能关最后一扇；助手可以关最后一扇，工作台滑回对话。
 - focus：切焦点并切换 Agent 默认操作窗格（必填 pane_id）。
 - ensure_connected：确保 SSH 窗格连通；已通则幂等；断则原地重连（成功=新 shell）。可选 pane_id。
 
 窗格唯一标识是 ptyId（SSH 重连 reuseId 保持不变）。给 execute_command 等传 pane_id 时用该值。
+开了真终端后必须用 execute_command 打在看得见的窗里，不要用 exec 幕后执行。
 SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不自动重跑命令）；勿叫用户点按钮。
-典型：list_ssh_sessions → manage_pane(action=split, target="ssh:…") → 各窗格 execute_command。`,
+典型：list_ssh_sessions → manage_pane(action=open, target="ssh:…") → execute_command。`,
         parameters: {
           type: 'object',
           properties: {
             action: {
               type: 'string',
-              enum: ['list', 'split', 'close', 'focus', 'ensure_connected'],
+              enum: ['list', 'open', 'split', 'close', 'focus', 'ensure_connected'],
               description: '要执行的窗格操作'
             },
             direction: {
@@ -1110,7 +1112,7 @@ SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不�
             },
             target: {
               type: 'string',
-              description: 'action=split 可选：inherit / local / ssh:<sessionId>'
+              description: 'action=open/split 可选：inherit / local / ssh:<sessionId>'
             },
             pane_id: {
               type: 'string',
@@ -1121,7 +1123,7 @@ SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不�
         }
       },
       _meta: {
-        supportedModes: ['local', 'ssh'],
+        supportedModes: ['local', 'ssh', 'assistant'],
         // streaming-tool-executor 只看工具名：合并后整体不可并行（list 失去并行是可接受代价）
         parallelizable: false,
       }
@@ -1132,7 +1134,7 @@ SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不�
         name: 'list_ssh_sessions',
         description: `列出用户已配置好的 SSH 会话清单（不含密码 / 私钥等敏感字段），返回每个会话的 sessionId、name、host、port、username、group、lastUsedAt。
 
-用途：当你想在新窗格里连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 manage_pane(action="split", direction, target="ssh:<sessionId>") 即可在新窗格中打开对应的 SSH 连接。无需用户手工切换或输入凭证。
+用途：当你想连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 manage_pane(action="open", target="ssh:<sessionId>") 打开真终端（助手没有终端时用 open；已有终端再开一扇可用 split）。无需用户手工切换或输入凭证。
 
 适用场景：
 - 多机巡检 / 灰度对比（dev/staging/prod 平铺为多窗格）
@@ -1144,7 +1146,7 @@ SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不�
         }
       },
       _meta: {
-        supportedModes: ['local', 'ssh'],
+        supportedModes: ['local', 'ssh', 'assistant'],
         parallelizable: true,
       }
     } as ToolDefinitionWithMeta,
@@ -1263,6 +1265,8 @@ SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不�
 
   if (options?.mode === 'assistant') {
     filteredTools.push(...(ASSISTANT_WORKBENCH_AGENT_TOOLS as unknown as ToolDefinitionWithMeta[]))
+    // 助手可换到真终端：同一轮里可能先 open 再 execute_command，工具须始终在
+    filteredTools.push(...(getAllTerminalTools() as ToolDefinitionWithMeta[]))
   }
 
   // 终端工作台（local / ssh）：注入 PTY 终端工具（execute_command 等）

@@ -1249,17 +1249,27 @@ export function useAgentMode(
 
     // 获取 Agent 上下文。助手会话必须自报形态——漏了它，落盘的会话形态会被兜底成「本地终端」，
     // 之后再也分不清这条对话到底来自终端还是助手
+    const hostedContext = isAssistantMode ? terminalStore.getAgentContext(tabId) : null
+    const hostedPtyId = currentTab.value && isAssistantMode
+      ? terminalStore.getActivePtyId(currentTab.value)
+      : undefined
     const context = isAssistantMode
       ? {
-          mode: 'single' as const,
-          terminalOutput: [] as string[],
-          systemInfo: getLocalSystemInfo(),
+          mode: (hostedContext?.mode === 'split' && (hostedContext.panes?.length ?? 0) > 1)
+            ? 'split' as const
+            : 'single' as const,
+          terminalOutput: hostedContext?.terminalOutput ?? [],
+          systemInfo: hostedContext?.systemInfo ?? getLocalSystemInfo(),
           terminalType: 'assistant' as const,
+          ...(hostedPtyId ? { ptyId: hostedPtyId } : {}),
+          ...(hostedContext && 'panes' in hostedContext && hostedContext.panes
+            ? { panes: hostedContext.panes, activePaneId: hostedContext.activePaneId }
+            : {}),
         }
       : terminalStore.getAgentContext(tabId)
     // 终端模式下 ptyId 必须存在（分屏取激活窗格，单屏取 tab.ptyId）
     const runPtyId = isAssistantMode
-      ? undefined
+      ? hostedPtyId
       : (currentTab.value ? terminalStore.getActivePtyId(currentTab.value) : undefined)
     if (!isAssistantMode && (!context || !runPtyId)) {
       log.error('无法获取终端上下文')

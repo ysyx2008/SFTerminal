@@ -2935,6 +2935,11 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   white-space: nowrap;
   position: relative;
   flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+.system-info-bar > * {
+  -webkit-app-region: no-drag;
 }
 
 .system-info-left {

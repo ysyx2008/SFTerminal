@@ -980,6 +980,18 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     // 清理连接
     if (tab.type === 'assistant') {
+      const hosted = tab.splitLayout
+        ? getAllTerminalPanes(tab.splitLayout).filter(p => Boolean(p.ptyId))
+        : []
+      await Promise.all(
+        hosted.map(pane => {
+          if (!pane.ptyId) return Promise.resolve()
+          if (pane.terminalType === 'ssh') {
+            return window.electronAPI.ssh.disconnect(pane.ptyId).catch(() => {})
+          }
+          return window.electronAPI.pty.dispose(pane.ptyId).catch(() => {})
+        })
+      )
       if (tab.agentId) {
         window.electronAPI.agent.cleanup(tab.agentId).catch(() => {})
       }
@@ -1674,9 +1686,14 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
 
     if (currentTab.type === 'assistant') {
-      lastSplitError = 'cannot split assistant tab'
-      log.warn('Cannot split assistant tab')
-      return null
+      const hosted = currentTab.splitLayout
+        ? getAllTerminalPanes(currentTab.splitLayout).filter(p => p.ptyId).length
+        : 0
+      if (hosted === 0 && !currentTab.ptyId) {
+        lastSplitError = 'assistant tab has no terminal yet; open one first'
+        log.warn('Cannot split assistant tab before opening a terminal')
+        return null
+      }
     }
 
     // 兜底：老数据可能无 splitLayout，补齐
@@ -1777,6 +1794,72 @@ export const useTerminalStore = defineStore('terminal', () => {
       `panes=${getAllTerminalPanes(currentTab.splitLayout).map(p => p.ptyId).join(',')}`
     )
     return newPane.id
+  }
+
+  /**
+   * 在指定 tab 上开一台真终端（不分屏）。
+   * 助手没有第一扇时用它换台；已有窗格时退化为再开一扇（默认上下分）。
+   */
+  async function openTerminalOnTab(
+    tabId: string,
+    target: SplitTarget = { kind: 'local' }
+  ): Promise<string | null> {
+    lastSplitError = null
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab) {
+      lastSplitError = `tab not found: ${tabId}`
+      log.warn(lastSplitError)
+      return null
+    }
+
+    const existing = tab.splitLayout
+      ? getAllTerminalPanes(tab.splitLayout).filter(p => Boolean(p.ptyId))
+      : []
+    if (existing.length > 0) {
+      const splitTarget: SplitTarget = target.kind === 'inherit' ? { kind: 'local' } : target
+      const paneId = await splitTerminal('vertical', splitTarget, tabId)
+      if (!paneId || !tab.splitLayout) return null
+      const created = getAllTerminalPanes(tab.splitLayout).find(p => p.id === paneId)
+      return created?.ptyId ?? tab.ptyId ?? null
+    }
+
+    const seed: SplitPane = { id: 'seed', type: 'terminal', terminalType: 'local' }
+    const resolved = resolveSplitTarget(target.kind === 'inherit' ? { kind: 'local' } : target, seed)
+    if (!resolved) return null
+
+    const newPtyId = await createTerminalInstanceForTarget(resolved)
+    if (!newPtyId) return null
+
+    tab.ptyId = newPtyId
+    tab.isConnected = true
+    tab.connectionError = undefined
+    if (resolved.terminalType === 'ssh') {
+      tab.sshConfig = resolved.sshConfig
+      tab.sshSessionId = resolved.sshSessionId
+      tab.systemInfo = {
+        os: 'linux',
+        shell: 'bash',
+        description: resolved.sshConfig
+          ? `SSH 连接: ${resolved.sshConfig.username}@${resolved.sshConfig.host}`
+          : 'SSH'
+      }
+    } else {
+      tab.sshConfig = undefined
+      tab.sshSessionId = undefined
+      tab.systemInfo = detectLocalSystemInfo()
+    }
+    ensureRootSplitLayoutForTab(tab, resolved.terminalType)
+    const leaf = tab.splitLayout ? getAllTerminalPanes(tab.splitLayout)[0] : undefined
+    if (leaf) {
+      leaf.ptyId = newPtyId
+      leaf.terminalType = resolved.terminalType
+      leaf.sshConfig = resolved.sshConfig
+      leaf.sshSessionId = resolved.sshSessionId
+      if (resolved.label) leaf.label = resolved.label
+    }
+    assertTabLayoutInvariant(tab)
+    log.info(`Opened terminal on tab=${tabId} ptyId=${newPtyId} type=${resolved.terminalType}`)
+    return newPtyId
   }
 
   /**
@@ -1958,8 +2041,17 @@ export const useTerminalStore = defineStore('terminal', () => {
     // 从布局中移除窗格
     const allPanes = getAllTerminalPanes(tab.splitLayout)
 
-    // 关掉最后一个窗格 → 关闭整个 tab
+    // 关掉最后一个窗格：终端页 = 关页散场；助手页 = 拆管子、滑回对话台，人不走
     if (allPanes.length <= 1) {
+      if (tab.type === 'assistant') {
+        log.info(`Last hosted terminal closed on assistant tab=${tabId}, sliding back`)
+        tab.ptyId = undefined
+        tab.splitLayout = undefined
+        tab.sshConfig = undefined
+        tab.sshSessionId = undefined
+        tab.isConnected = false
+        return true
+      }
       log.debug('Last pane closed, closing tab')
       await closeTab(tabId)
       return true
@@ -1975,10 +2067,18 @@ export const useTerminalStore = defineStore('terminal', () => {
     const fallbackPane = remainingPanes.find(p => p.isActive) || remainingPanes[0]
     if (fallbackPane?.ptyId) {
       tab.ptyId = fallbackPane.ptyId
-      if (fallbackPane.terminalType) {
-        tab.type = fallbackPane.terminalType
-      }
-      if (fallbackPane.terminalType === 'ssh') {
+      if (tab.type !== 'assistant') {
+        if (fallbackPane.terminalType) {
+          tab.type = fallbackPane.terminalType
+        }
+        if (fallbackPane.terminalType === 'ssh') {
+          tab.sshConfig = fallbackPane.sshConfig
+          tab.sshSessionId = fallbackPane.sshSessionId
+        } else {
+          tab.sshConfig = undefined
+          tab.sshSessionId = undefined
+        }
+      } else if (fallbackPane.terminalType === 'ssh') {
         tab.sshConfig = fallbackPane.sshConfig
         tab.sshSessionId = fallbackPane.sshSessionId
       } else {
@@ -2830,8 +2930,7 @@ export const useTerminalStore = defineStore('terminal', () => {
           if (screenService) {
             terminalOutput = screenService.getLastNLines(50)
           }
-          // tab.type 在 assistant 时已被分屏入口排除，此处一定是 local|ssh
-          const fallbackType = (pane.terminalType || tab.type) as 'local' | 'ssh'
+          const fallbackType = (pane.terminalType === 'ssh' ? 'ssh' : 'local') as 'local' | 'ssh'
           return {
             paneId: pane.id,
             ptyId: pane.ptyId as string,
@@ -3006,7 +3105,7 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 违反时仅记录日志，不抛异常，避免阻塞用户操作；便于排查状态机 bug。
    */
   function assertTabLayoutInvariant(tab: TerminalTab): void {
-    if (tab.type === 'assistant') return
+    if (tab.type === 'assistant' && !tab.splitLayout) return
     if (tab.ptyId && !tab.splitLayout) {
       log.error(
         `[invariant] Tab ${tab.id} has ptyId (${tab.ptyId}) but no splitLayout — should have been initialized`
@@ -3056,10 +3155,15 @@ export const useTerminalStore = defineStore('terminal', () => {
    *
    * 已有 splitLayout 时本函数 no-op，避免覆盖。
    */
-  function ensureRootSplitLayoutForTab(tab: TerminalTab): void {
-    if (tab.type === 'assistant') return
+  function ensureRootSplitLayoutForTab(
+    tab: TerminalTab,
+    paneTerminalType?: 'local' | 'ssh'
+  ): void {
     if (!tab.ptyId) return
     if (tab.splitLayout) return
+    const leafType: 'local' | 'ssh' | undefined = paneTerminalType
+      ?? (tab.type === 'ssh' ? 'ssh' : tab.type === 'local' ? 'local' : undefined)
+    if (!leafType) return
 
     const t = i18n.global.t
     tab.splitLayout = {
@@ -3071,7 +3175,7 @@ export const useTerminalStore = defineStore('terminal', () => {
           id: uuidv4(),
           type: 'terminal',
           ptyId: tab.ptyId,
-          terminalType: tab.type,
+          terminalType: leafType,
           sshConfig: tab.sshConfig,
           sshSessionId: tab.sshSessionId,
           label: t('terminal.split.label.main'),
@@ -3080,6 +3184,13 @@ export const useTerminalStore = defineStore('terminal', () => {
         }
       ]
     }
+  }
+
+  function tabHostsTerminal(tab: { splitLayout?: SplitPane; ptyId?: string }): boolean {
+    if (tab.splitLayout) {
+      return getAllTerminalPanes(tab.splitLayout).some(p => Boolean(p.ptyId))
+    }
+    return Boolean(tab.ptyId)
   }
 
   /**
@@ -3526,6 +3637,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     writeToPty,
     resizePty,
     splitTerminal,
+    openTerminalOnTab,
+    tabHostsTerminal,
     getLastSplitError,
     closePane: closePaneInternal,
     setActivePaneInTab,

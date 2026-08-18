@@ -6,6 +6,7 @@
  */
 export { AiPanel } from './ai-panel'
 export { TerminalTabView } from './terminal-tab-view'
+export { TerminalPaneHost } from './terminal-pane-host'
 export { WorkbenchShell } from './workbench-shell'
 export { useToast, toast } from './toast'
 export { useMarkdown, mermaidSvgToDataUrl } from './markdown'

@@ -178,6 +178,11 @@ export default {
     commandDone: '完成',
     commandTimeout: '命令执行超时 ({seconds}s)',
     localTerminal: '本地终端',
+    hosted: {
+      close: '关闭终端',
+      newLocal: '再开一扇本地终端',
+      newSsh: '再开一扇 SSH'
+    },
     sshDisconnected: '[SSH 连接断开]',
     disconnectReasons: {
       closed: '连接已关闭',

@@ -597,10 +597,9 @@ export class PromptBuilder {
   private buildSplitPanesSection(): string {
     const panes = this.context.panes
     if (!panes || panes.length === 0) return ''
-    if (this.context.mode !== 'split') return ''
 
     const lines: string[] = []
-    lines.push('# 多屏布局（分屏模式）')
+    lines.push(panes.length > 1 ? '# 多屏布局（分屏模式）' : '# 当前终端')
     lines.push('')
     lines.push(`当前 tab 包含 ${panes.length} 个并存的终端窗格。`
       + '终端类工具（execute_command / send_input / send_control_key / check_terminal_status / get_terminal_context）'

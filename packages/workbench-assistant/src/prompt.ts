@@ -16,7 +16,7 @@ export const AGENT_PROMPT = [
   '',
   '**展示**：一次只预览一个产出物；有多个时，标题为下拉可切换。`generate_chart` / `render_echarts_option` 只在对话流，不计入产出物列表。',
   '',
-  '**不含**：图表、普通 message、exec 输出。',
+  '**不含**：图表、普通 message、exec 输出。终端不是产出物——要让用户看见命令，用 `manage_pane(action=open)` 换到真终端台（左边终端、右边这场对话），再用 `execute_command` 打在窗里。关最后一扇终端会滑回对话台，对话还在。',
   '',
   '**磁盘同步**：每个 artifact 绑定一个 `filePath`。`rm` 或原路径不存在时，面板会自动移除对应项；全部移除后面板隐藏。`mv` / Shell 改名**不会**自动在新路径注册——旧路径项会移除，若需继续预览须用 `write_text_file` 等会推送预览的工具重新 open。',
   '',

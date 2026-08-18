@@ -17,6 +17,7 @@ const log = createLogger('SplitPaneHandler')
 
 type Op =
   | { type: 'split'; direction: 'horizontal' | 'vertical'; target?: SplitTarget }
+  | { type: 'open'; target?: SplitTarget }
   | { type: 'close'; ptyId: string }
   | { type: 'focus'; ptyId: string }
   | { type: 'list' }
@@ -112,16 +113,32 @@ async function dispatch(
     }
   }
 
-  if (tab.type === 'assistant') {
-    log.warn(`dispatch ${op.type}: tab is assistant`)
-    return { ok: false, error: 'Cannot operate split panes on assistant tab' }
-  }
   log.info(`dispatch ${op.type} tab=${tab.id} type=${tab.type}`)
 
   // 锁定到 tab.id 后续操作都用它，避免下面任何路径里再读到 activeTab 引发漂移
   const tabId = tab.id
 
   switch (op.type) {
+    case 'open': {
+      const t0 = Date.now()
+      log.info(`open start target=${op.target?.kind || 'local'}`)
+      const ptyId = await store.openTerminalOnTab(tabId, op.target ?? { kind: 'local' })
+      const t1 = Date.now()
+      log.info(`open done ptyId=${ptyId || 'null'} elapsed=${t1 - t0}ms`)
+      if (!ptyId) {
+        const reason = store.getLastSplitError() || 'terminal creation failed, or invalid SSH sessionId'
+        return { ok: false, error: `Open terminal failed: ${reason}` }
+      }
+      const latest = store.tabs.find(t => t.id === tabId)
+      return {
+        ok: true,
+        data: {
+          tabId,
+          ptyId,
+          panes: collectPanes(latest?.splitLayout)
+        }
+      }
+    }
     case 'split': {
       const t0 = Date.now()
       log.info(`split start direction=${op.direction} target=${op.target?.kind || 'inherit'}`)
@@ -132,21 +149,21 @@ async function dispatch(
         const reason = store.getLastSplitError() || 'no active tab, terminal creation failed, or invalid SSH sessionId'
         return { ok: false, error: `Split failed: ${reason}` }
       }
+      const latest = store.tabs.find(t => t.id === tabId)
       return {
         ok: true,
         data: {
           tabId: tab.id,
           newPaneId,
-          panes: collectPanes(tab.splitLayout)
+          panes: collectPanes(latest?.splitLayout)
         }
       }
     }
     case 'close': {
       log.info(`close start ptyId=${op.ptyId}`)
-      // 不允许 Agent 通过 close_pane 关掉最后一个窗格——这等于关闭整个 tab。
-      // tab 的关闭是用户决策，应通过 UI 完成。
+      // 终端页：不允许关最后一扇（等于关页）。助手页：允许，关完滑回对话台。
       const allPanes = tab.splitLayout ? collectPanes(tab.splitLayout) : []
-      if (allPanes.length <= 1) {
+      if (allPanes.length <= 1 && tab.type !== 'assistant') {
         return {
           ok: false,
           error: '只剩最后一个窗格，不能通过 manage_pane(action=close) 关闭——这等于关闭整个 tab。如需关闭 tab，请让用户手动操作。'
@@ -164,7 +181,8 @@ async function dispatch(
           error: `Pane not found: "${op.ptyId}". No pane has this ptyId — use manage_pane(action=list) to refresh.`
         }
       }
-      const remainingPanes = collectPanes(tab.splitLayout)
+      const latest = store.tabs.find(t => t.id === tabId)
+      const remainingPanes = collectPanes(latest?.splitLayout)
       return {
         ok: true,
         data: {
@@ -173,7 +191,8 @@ async function dispatch(
           panes: remainingPanes,
           // mode 按叶子数量判断而非 splitLayout 是否存在——root 永远是 split 容器，
           // 但只剩 1 个叶子时用户体验等同单屏，应该报 'single' 让 Agent 心智一致。
-          mode: remainingPanes.length > 1 ? 'split' : 'single'
+          // 助手关完最后一扇后 panes 为空，mode=none，工作台已滑回对话台。
+          mode: remainingPanes.length === 0 ? 'none' : remainingPanes.length > 1 ? 'split' : 'single'
         }
       }
     }

@@ -50,6 +50,6 @@ export interface WorkbenchAgentPromptTab {
  * 桌面 `TerminalTab` 可赋给此形状；岗包优先用本类型，避免依赖 `@/stores/terminal`。
  */
 export interface WorkbenchRendererProps {
-  tab: { id: string; title?: string }
+  tab: { id: string; title?: string; splitLayout?: unknown; ptyId?: string }
   isActive: boolean
 }

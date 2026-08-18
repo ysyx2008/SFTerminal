@@ -178,6 +178,11 @@ export default {
     commandDone: 'Done',
     commandTimeout: 'Command timed out ({seconds}s)',
     localTerminal: 'Local Terminal',
+    hosted: {
+      close: 'Close terminal',
+      newLocal: 'Open another local terminal',
+      newSsh: 'Open another SSH session'
+    },
     sshDisconnected: '[SSH Disconnected]',
     disconnectReasons: {
       closed: 'Connection closed',

@@ -127,6 +127,35 @@ export async function splitTerminalTool(args: Record<string, unknown>, ownerAgen
   )
 }
 
+export async function openTerminalTool(
+  args: Record<string, unknown>,
+  ownerAgentKey?: string,
+  config?: ToolExecutorConfig
+): Promise<ToolResult> {
+  const parsedTarget = parseSplitTarget(args.target ?? 'local')
+  if (parsedTarget && typeof parsedTarget === 'object' && 'error' in parsedTarget) {
+    return fail(parsedTarget.error)
+  }
+  const target = (parsedTarget as SplitTargetOp | undefined) ?? { kind: 'local' }
+
+  const result = await callBridge({ type: 'open', target }, ownerAgentKey)
+  if (!result.ok) return fail(result.error || '打开终端失败')
+
+  const data = result.data as { ptyId?: string; panes?: PaneInfo[] } | undefined
+  const ptyId = data?.ptyId
+  if (ptyId) {
+    config?.setCurrentPtyId?.(ptyId)
+  }
+
+  const targetDesc = target.kind === 'ssh'
+    ? `已连接 SSH 会话 ${target.sessionId}`
+    : '已打开本地终端'
+  return ok(
+    `${targetDesc}。这是用户看得见的真终端，后续命令请用 execute_command（pane_id=${ptyId || '见返回数据'}），不要再用 exec 幕后执行。`,
+    result.data
+  )
+}
+
 /**
  * 列出所有已配置的 SSH 会话，供 Agent 调用 manage_pane(action=split) 时选择目标。
  *
@@ -143,7 +172,7 @@ export async function listSshSessionsTool(): Promise<ToolResult> {
     group: s.groupId || s.group
   }))
   return ok(
-    `共 ${safe.length} 个已配置的 SSH 会话。调用 manage_pane(action=split) 时把 sessionId 作为 target 传入即可在新窗格中连接对应主机：\n  - 字符串形式：target: "ssh:<sessionId>"\n  - 对象形式：target: { kind: "ssh", sessionId: "<sessionId>" }`,
+    `共 ${safe.length} 个已配置的 SSH 会话。先 manage_pane(action=open, target="ssh:<sessionId>") 打开真终端；已有终端再开一扇用 split。sessionId 写法：\n  - 字符串形式：target: "ssh:<sessionId>"\n  - 对象形式：target: { kind: "ssh", sessionId: "<sessionId>" }`,
     safe
   )
 }
@@ -168,10 +197,17 @@ export async function closePaneTool(
   // 如果关掉的就是 Agent 当前操作的窗格，自动把 currentPtyId 切到剩余某个，
   // 让后续 execute_command 等工具不必显式传 pane_id 也能继续工作。
   // 用 getCurrentPtyId（真实 pane ptyId），不用 ownerAgentKey（tabId，不含于 panes 列表）。
-  const data = result.data as { panes?: PaneInfo[] } | undefined
+  const data = result.data as { panes?: PaneInfo[]; mode?: string } | undefined
   const remaining = data?.panes
   const currentPtyId = config?.getCurrentPtyId?.()
-  if (currentPtyId && remaining && !remaining.some(p => p.ptyId === currentPtyId)) {
+  if (!remaining || remaining.length === 0) {
+    config?.setCurrentPtyId?.('')
+    return ok(
+      '已关闭最后一扇终端，工作台已回到对话。若还要让用户看见命令，请先 manage_pane(action=open) 再 execute_command。',
+      result.data
+    )
+  }
+  if (currentPtyId && !remaining.some(p => p.ptyId === currentPtyId)) {
     const newPtyId = pickFallbackPtyId(remaining)
     if (newPtyId) {
       config?.setCurrentPtyId?.(newPtyId)
@@ -256,12 +292,14 @@ export async function managePaneTool(
 ): Promise<ToolResult> {
   const action = (args as { action?: unknown }).action
   if (typeof action !== 'string' || !action) {
-    return fail('action 必填：list | split | close | focus | ensure_connected')
+    return fail('action 必填：list | open | split | close | focus | ensure_connected')
   }
 
   switch (action) {
     case 'list':
       return listPanesTool(ownerAgentKey, config)
+    case 'open':
+      return openTerminalTool(args, ownerAgentKey, config)
     case 'split':
       return splitTerminalTool(args, ownerAgentKey)
     case 'close':
@@ -271,7 +309,7 @@ export async function managePaneTool(
     case 'ensure_connected':
       return ensureConnectedTool(args, ownerAgentKey, config)
     default:
-      return fail(`未知 action="${action}"，支持：list | split | close | focus | ensure_connected`)
+      return fail(`未知 action="${action}"，支持：list | open | split | close | focus | ensure_connected`)
   }
 }
 
