@@ -202,14 +202,9 @@ export function replaceTextInParagraphXml(
     newFullText = newFullText.substring(0, m.index) + replaceText + newFullText.substring(m.index + m.length)
   }
 
-  // 将新文本分配回各个 t 元素
-  // 策略：将所有文本放入第一个 t 元素，清空其他 t 元素
-  // 这虽然简单，但完美保留了第一个 run 的格式，且不改变 XML 结构
-  //
-  // 更精细的策略：保持文本在各 run 之间的分布比例
-  // 我们采用精细策略以更好地保留跨 run 的格式
-
-  // 重新分配文本到各 t 元素
+  // 按原始 run 边界回填：未改动的字留在原 run；跨 run 的替换按各 run
+  // 原先占的字数切开，多出来的字进最后一个被命中的 run。
+  // 这样「开头两字加粗、后文正常」替换整段后，不会整段变成加粗。
   const newTexts = distributeTextToRuns(fullText, newFullText, tElements.map(t => t.text), matches, replaceText)
 
   // 从后往前替换 XML 中的 t 元素
@@ -242,7 +237,8 @@ export function replaceTextInParagraphXml(
 }
 
 /**
- * 将替换后的新文本按照原始 run 分布重新分配
+ * 将替换后的新文本按照原始 run 分布重新分配。
+ * 跨 run 的替换按各 run 原先占的字数切开，多出的字进最后一个被命中的 run。
  */
 function distributeTextToRuns(
   oldFullText: string,
@@ -265,10 +261,6 @@ function distributeTextToRuns(
 
   // 构建新的 run 文本
   const newRunTexts = oldRunTexts.map(() => '')
-
-  // 处理方法：在原始文本中标记哪些区域被替换了
-  // 被替换区域的新文本放入匹配起始位置对应的 run
-  // 未被替换的区域保持在原来的 run 中
 
   // 构建 "段" 列表（未替换段 + 替换段 交替）
   interface Segment {
@@ -306,10 +298,8 @@ function distributeTextToRuns(
     })
   }
 
-  // 分配到各 run
   for (const seg of segments) {
     if (seg.type === 'keep') {
-      // 保持原始分布
       for (let i = seg.startInOld; i < seg.endInOld; i++) {
         const runIdx = charToRun[i]
         if (runIdx !== undefined) {
@@ -317,13 +307,53 @@ function distributeTextToRuns(
         }
       }
     } else {
-      // 替换文本放入匹配起始位置的 run
-      const runIdx = charToRun[seg.startInOld] ?? 0
-      newRunTexts[runIdx] += seg.text
+      appendReplacementAcrossRuns(seg.text, seg.startInOld, seg.endInOld, charToRun, newRunTexts)
     }
   }
 
   return newRunTexts
+}
+
+/** 跨 run 替换：前面的 run 保持原占用字数，多出的字进最后一个被命中的 run。 */
+function appendReplacementAcrossRuns(
+  replaceText: string,
+  startInOld: number,
+  endInOld: number,
+  charToRun: number[],
+  newRunTexts: string[]
+): void {
+  const runOrder: number[] = []
+  const runLens = new Map<number, number>()
+  for (let i = startInOld; i < endInOld; i++) {
+    const runIdx = charToRun[i]
+    if (runIdx === undefined) continue
+    if (!runLens.has(runIdx)) {
+      runLens.set(runIdx, 0)
+      runOrder.push(runIdx)
+    }
+    runLens.set(runIdx, (runLens.get(runIdx) ?? 0) + 1)
+  }
+
+  if (runOrder.length === 0) {
+    newRunTexts[0] = (newRunTexts[0] ?? '') + replaceText
+    return
+  }
+  if (runOrder.length === 1) {
+    newRunTexts[runOrder[0]] += replaceText
+    return
+  }
+
+  let offset = 0
+  for (let i = 0; i < runOrder.length; i++) {
+    const runIdx = runOrder[i]
+    if (i === runOrder.length - 1) {
+      newRunTexts[runIdx] += replaceText.slice(offset)
+    } else {
+      const take = Math.min(runLens.get(runIdx) ?? 0, Math.max(0, replaceText.length - offset))
+      newRunTexts[runIdx] += replaceText.slice(offset, offset + take)
+      offset += take
+    }
+  }
 }
 
 /**
