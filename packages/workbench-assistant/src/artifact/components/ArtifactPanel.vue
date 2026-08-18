@@ -65,7 +65,7 @@ const desktopHost = requireArtifactDesktopHost()
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 const saveBridge = createArtifactSaveBridge()
 provideArtifactSaveBridge(saveBridge)
-const { hoverTip, showTip, hideTip } = useHoverTip({
+const { hoverTip, hideTip } = useHoverTip({
   placement: 'bottom',
   delayMs: BUTTON_HOVER_TIP_DELAY_MS
 })

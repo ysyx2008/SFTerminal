@@ -257,7 +257,9 @@ describe('prepareImAgentMedia', () => {
       fileName: '旧稿.wps',
     }])
 
-    expect(result.documentContext ?? '').not.toMatch(/ÐÏ|\x00/)
+    const documentContext = result.documentContext ?? ''
+    expect(documentContext).not.toContain('\0')
+    expect(documentContext).not.toMatch(/ÐÏ/)
     expect(result.documentContext ?? '').toMatch(/另存为 Word|WPS/)
   })
 })

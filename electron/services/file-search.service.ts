@@ -229,11 +229,10 @@ export class FileSearchService {
       }
 
       let settled = false
-      let onAbort: (() => void) | undefined
       const finish = (fn: () => void) => {
         if (settled) return
         settled = true
-        if (onAbort) signal?.removeEventListener('abort', onAbort)
+        signal?.removeEventListener('abort', onAbort)
         fn()
       }
 
@@ -249,7 +248,7 @@ export class FileSearchService {
         }
       })
 
-      onAbort = () => {
+      function onAbort() {
         child.kill()
         finish(() => reject(createAbortError()))
       }
