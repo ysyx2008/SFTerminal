@@ -1771,10 +1771,8 @@ export function useAgentMode(
 
     // 监听完成
     cleanupCompleteListener = window.electronAPI.agent.onComplete((data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => {
-      const foundTabId = data.ptyId
-        ? terminalStore.findTabIdByPtyId(data.ptyId)
-        : terminalStore.findTabIdByAgentId(data.agentId)
-      // 只处理属于当前 AiPanel 绑定 tab 的事件（优先使用 ptyId 匹配）
+      // 与 onStep 同一套路由：助手完成事件的 ptyId 是 agentId，不能只按终端窗格找
+      const foundTabId = resolveTabIdForAgentEvent(data.agentId, data.ptyId)
       if (foundTabId !== currentTabId.value) return
 
       finalizeAgentRunWithScrollSettle(currentTabId.value)
@@ -1816,9 +1814,7 @@ export function useAgentMode(
 
     // 监听错误
     cleanupErrorListener = window.electronAPI.agent.onError((data: { agentId: string; ptyId?: string; error: string }) => {
-      const foundTabId = data.ptyId
-        ? terminalStore.findTabIdByPtyId(data.ptyId)
-        : terminalStore.findTabIdByAgentId(data.agentId)
+      const foundTabId = resolveTabIdForAgentEvent(data.agentId, data.ptyId)
       if (foundTabId !== currentTabId.value) return
 
       finalizeAgentRunWithScrollSettle(currentTabId.value)
