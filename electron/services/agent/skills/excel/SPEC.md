@@ -2,7 +2,13 @@
 
 ## 职责
 
-会话式读写 `.xlsx`：open / read / modify / save / close，以及 `excel_from_markdown`、`excel_merge_template`、样式与分析工具。
+会话式读写表格：打开、读、改、存，以及从 Markdown 生成、模板填充、样式与分析。
+
+## 设计目标
+
+### WPS 表格先按 Excel 来用
+
+用户交来的新版 WPS 表格，应当能用现有 Excel 能力打开、改、存回原文件，不必先另存。新建仍用 Excel 格式。老格式或加密读不了时，请用户另存为 Excel。不做单独的 WPS 技能，也不在这一步做演示稿。
 
 ## Canvas 产出物
 

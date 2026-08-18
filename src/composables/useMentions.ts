@@ -129,7 +129,8 @@ export function useMentions(
     const ext = name.split('.').pop()?.toLowerCase()
     const iconMap: Record<string, string> = {
       // 文档
-      pdf: '📕', doc: '📘', docx: '📘', txt: '📄', md: '📝',
+      pdf: '📕', doc: '📘', docx: '📘', wps: '📘', wpt: '📘', txt: '📄', md: '📝',
+      xls: '📗', xlsx: '📗', et: '📗', ett: '📗',
       // 代码
       js: '📜', ts: '📜', py: '🐍', java: '☕', go: '🐹', rs: '🦀',
       vue: '💚', jsx: '⚛️', tsx: '⚛️', html: '🌐', css: '🎨',

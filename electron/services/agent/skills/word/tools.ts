@@ -12,7 +12,7 @@ export const wordTools: ToolDefinition[] = [
       description: `创建一个新的 Word 文档并打开会话。
 
 **注意**：
-- 文件路径应以 .docx 结尾
+- 文件路径应以 .docx 结尾；若用户给的是 .wps/.wpt，保持原后缀
 - 创建后文档处于打开状态，可以添加内容
 - 完成后请调用 word_save 保存，然后 word_close 关闭`,
       parameters: {
@@ -20,7 +20,7 @@ export const wordTools: ToolDefinition[] = [
         properties: {
           path: {
             type: 'string',
-            description: '文件路径（绝对路径或相对于当前目录），应以 .docx 结尾'
+            description: '文件路径（绝对路径或相对于当前目录），默认 .docx；也可使用 .wps/.wpt'
           }
         },
         required: ['path']
@@ -31,9 +31,10 @@ export const wordTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'word_open',
-      description: `打开已存在的 Word 文档，建立会话。后续的读取和修改操作都在此会话中进行。
+      description: `打开已存在的 Word 或 WPS 文字文档，建立会话。后续的读取和修改操作都在此会话中进行。
 
 **注意**：
+- 支持 .docx 以及新版 WPS 文字（.wps/.wpt）
 - 同一文件不能重复打开
 - 打开后请及时操作，5 分钟无操作会自动关闭
 - 完成后请调用 word_save 保存（如有修改），然后 word_close 关闭`,
@@ -56,7 +57,7 @@ export const wordTools: ToolDefinition[] = [
       description: `读取 Word 文档内容，返回带段落索引的 Markdown 格式文本。
 
 **功能**：
-- 无需先 word_open，可直接读取 .docx 文件
+- 无需先 word_open，可直接读取 .docx 或新版 WPS 文字（.wps/.wpt）
 - 返回带段落索引号 [0] [1] [2] ... 的内容，便于后续使用 word_modify_paragraph 或 word_delete_paragraph
 - 识别标题、段落、列表、表格、图片等结构
 - 保留粗体、斜体、链接等内联格式
@@ -626,7 +627,7 @@ config: { font:"宋体", fontSize:14, headings:{1:{font:"黑体",size:22,align:"
           },
           from_template: {
             type: 'string',
-            description: '样板文档路径（.docx），从中提取样式定义'
+            description: '样板文档路径（.docx 或新版 WPS 文字），从中提取样式定义'
           },
           from_description: {
             type: 'string',
@@ -793,7 +794,7 @@ word_merge_template({
         properties: {
           template: {
             type: 'string',
-            description: '模板 .docx 文件路径（绝对路径或相对当前目录）'
+            description: '模板路径（.docx 或新版 WPS 文字），绝对路径或相对当前目录'
           },
           output: {
             type: 'string',

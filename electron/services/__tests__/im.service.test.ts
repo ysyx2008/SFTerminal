@@ -189,6 +189,77 @@ describe('prepareImAgentMedia', () => {
     expect(result.attachments[0].filename).toBe('gone.png')
     expect(result.consumedPaths.size).toBe(0)
   })
+
+  it('parses new-format WPS writer attachments into documentContext', async () => {
+    const JSZip = (await import('jszip')).default
+    const zip = new JSZip()
+    zip.file('[Content_Types].xml',
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '</Types>'
+    )
+    zip.file('_rels/.rels',
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      '</Relationships>'
+    )
+    zip.file('word/document.xml',
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:body><w:p><w:r><w:t>IM里的WPS正文</w:t></w:r></w:p></w:body></w:document>'
+    )
+    const localPath = writeTempFile('纪要.wps', await zip.generateAsync({ type: 'nodebuffer' }))
+
+    const result = await prepareImAgentMedia([{
+      type: 'file',
+      localPath,
+      fileName: '纪要.wps',
+    }])
+
+    expect(result.documentContext).toContain('IM里的WPS正文')
+    expect(result.documentContext).toContain('纪要.wps')
+    expect(result.consumedPaths.has(localPath)).toBe(true)
+  })
+
+  it('parses new-format WPS spreadsheet attachments into documentContext', async () => {
+    const ExcelJS = await import('exceljs')
+    const workbook = new ExcelJS.Workbook()
+    const sheet = workbook.addWorksheet('销售')
+    sheet.addRow(['品名', '数量'])
+    sheet.addRow(['苹果', 12])
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'im-media-'))
+    tmpDirs.push(dir)
+    const localPath = path.join(dir, '销售.et')
+    await workbook.xlsx.writeFile(localPath)
+
+    const result = await prepareImAgentMedia([{
+      type: 'file',
+      localPath,
+      fileName: '销售.et',
+    }])
+
+    expect(result.documentContext).toContain('苹果')
+    expect(result.documentContext).toContain('销售.et')
+    expect(result.consumedPaths.has(localPath)).toBe(true)
+  })
+
+  it('does not treat legacy WPS binary as readable document text', async () => {
+    const ole = Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00])
+    const localPath = writeTempFile('旧稿.wps', ole)
+
+    const result = await prepareImAgentMedia([{
+      type: 'file',
+      localPath,
+      fileName: '旧稿.wps',
+    }])
+
+    expect(result.documentContext ?? '').not.toMatch(/ÐÏ|\x00/)
+    expect(result.documentContext ?? '').toMatch(/另存为 Word|WPS/)
+  })
 })
 
 describe('IMService proactive notification routing', () => {

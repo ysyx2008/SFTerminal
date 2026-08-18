@@ -790,6 +790,22 @@ function resolvePath(ptyId: string, filePath: string): string {
   return path.resolve(cwd, filePath)
 }
 
+function isWordLikePath(filePath: string): boolean {
+  return ['.docx', '.wps', '.wpt'].includes(path.extname(filePath).toLowerCase())
+}
+
+function isWpsWriterPath(filePath: string): boolean {
+  return ['.wps', '.wpt'].includes(path.extname(filePath).toLowerCase())
+}
+
+function ensureWordPath(filePath: string): string {
+  return isWordLikePath(filePath) ? filePath : `${filePath}.docx`
+}
+
+function wpsWriterUnreadableError(): ToolResult {
+  return { success: false, output: '', error: t('word.wps_unsupported') }
+}
+
 /**
  * 创建新 Word 文档
  */
@@ -804,10 +820,7 @@ async function wordCreate(
   
   let filePath = resolvePath(ptyId, args.path as string)
   
-  // 确保文件扩展名为 .docx
-  if (!filePath.toLowerCase().endsWith('.docx')) {
-    filePath += '.docx'
-  }
+  filePath = ensureWordPath(filePath)
 
   // 检查是否已打开
   if (isSessionOpen(filePath)) {
@@ -881,7 +894,9 @@ async function wordOpen(
     const zip = await JSZip.loadAsync(fileBuffer)
     const documentXml = await zip.file('word/document.xml')?.async('string')
     if (!documentXml) {
-      return { success: false, output: '', error: t('word.open_failed') }
+      return isWpsWriterPath(filePath)
+        ? wpsWriterUnreadableError()
+        : { success: false, output: '', error: t('word.open_failed') }
     }
 
     const session = createXmlSession(filePath, zip, documentXml)
@@ -924,6 +939,9 @@ async function wordOpen(
 
     return { success: true, output }
   } catch (error) {
+    if (isWpsWriterPath(filePath)) {
+      return wpsWriterUnreadableError()
+    }
     const errorMsg = error instanceof Error ? error.message : t('word.open_failed')
     return { success: false, output: '', error: errorMsg }
   }
@@ -2529,10 +2547,7 @@ async function wordFromMarkdown(
   const styleName = args.style as string | undefined
   const pageSize = args.page_size as 'a4' | 'letter' | undefined
   
-  // 确保文件扩展名为 .docx
-  if (!filePath.toLowerCase().endsWith('.docx')) {
-    filePath += '.docx'
-  }
+  filePath = ensureWordPath(filePath)
 
   // 加载自定义样式
   loadCustomStyles()
@@ -2797,7 +2812,7 @@ async function wordCreateStyle(
       const mammoth = await import('mammoth')
       let description: string
       
-      if (descPath.toLowerCase().endsWith('.docx')) {
+      if (isWordLikePath(descPath)) {
         const result = await mammoth.extractRawText({ path: descPath })
         description = result.value
       } else if (descPath.toLowerCase().endsWith('.pdf')) {
@@ -3323,7 +3338,7 @@ async function wordMergeTemplate(
   if (!fs.existsSync(templatePath)) {
     return { success: false, output: '', error: t('error.file_not_found', { path: templatePath }) }
   }
-  if (!templatePath.toLowerCase().endsWith('.docx')) {
+  if (!isWordLikePath(templatePath)) {
     return { success: false, output: '', error: t('word.merge_not_docx', { path: templatePath }) }
   }
 

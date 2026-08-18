@@ -59,6 +59,7 @@ const BUILTIN_PLATFORMS: readonly IMPlatform[] = ['dingtalk', 'feishu', 'slack',
 /** 桌面上传可解析的文档扩展名（与 DocumentParserService.detectFileType 对齐） */
 const PARSEABLE_DOC_EXTENSIONS = new Set([
   '.pdf', '.docx', '.doc', '.xlsx', '.xls',
+  '.wps', '.wpt', '.et', '.ett',
   '.txt', '.md', '.markdown', '.json', '.xml', '.html', '.htm', '.csv',
 ])
 

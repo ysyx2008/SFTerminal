@@ -32,7 +32,7 @@ const wordSkill: Skill = {
     '用户通常只会说：「按附件格式写一份 Word」「照着这个版式生成 docx」——**不要**要求用户说 load_skill / word_create_style。',
     '',
     '**标准流程（同一轮对话内静默完成）**：',
-    '1. 用户附了 .docx/.pdf/.txt 格式说明或排版样板 → 读取内容',
+    '1. 用户附了 .docx/.wps/.pdf/.txt 格式说明或排版样板 → 读取内容',
     '2. 若尚无匹配自定义样式：`word_create_style` 注册一次（样式名用简短英文或拼音，如 `user-format-党委议案`）',
     '   - 样板里已有 Normal/Title/Heading 等真实段落样式 → `from_template`',
     '   - 仅是文字版式说明（如「正文仿宋三号」）→ 整理为 `config`（可 `base: "official"`），**同一次调用带 config 保存**，不要只调 `from_description` 就结束',

@@ -231,6 +231,18 @@ function resolvePath(ptyId: string, filePath: string): string {
   return path.resolve(cwd, filePath)
 }
 
+function isExcelLikePath(filePath: string): boolean {
+  return ['.xlsx', '.et', '.ett'].includes(path.extname(filePath).toLowerCase())
+}
+
+function isWpsSheetPath(filePath: string): boolean {
+  return ['.et', '.ett'].includes(path.extname(filePath).toLowerCase())
+}
+
+function ensureExcelPath(filePath: string): string {
+  return isExcelLikePath(filePath) ? filePath : `${filePath}.xlsx`
+}
+
 /**
  * 打开 Excel 文件
  */
@@ -300,6 +312,9 @@ async function excelOpen(
 
     return { success: true, output }
   } catch (error) {
+    if (fileExists && isWpsSheetPath(filePath)) {
+      return { success: false, output: '', error: t('excel.et_unsupported') }
+    }
     const errorMsg = error instanceof Error ? error.message : t('excel.open_failed')
     return { success: false, output: '', error: errorMsg }
   }
@@ -978,9 +993,7 @@ async function excelFromMarkdown(
   const defaultSheetName = (args.sheet_name as string) || 'Sheet1'
   const styleName = args.style as string | undefined
 
-  if (!filePath.toLowerCase().endsWith('.xlsx')) {
-    filePath += '.xlsx'
-  }
+  filePath = ensureExcelPath(filePath)
 
   let markdown = markdownArg
   if (markdownPathArg) {
@@ -2473,7 +2486,7 @@ async function excelMergeTemplate(
   if (!fs.existsSync(templatePath)) {
     return { success: false, output: '', error: t('error.file_not_found', { path: templatePath }) }
   }
-  if (!templatePath.toLowerCase().endsWith('.xlsx')) {
+  if (!isExcelLikePath(templatePath)) {
     return { success: false, output: '', error: t('excel.merge_not_xlsx', { path: templatePath }) }
   }
 

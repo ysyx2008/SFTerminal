@@ -36,8 +36,8 @@ export function resolveAttachmentExt(fileType?: string, filename?: string): stri
   if (fromType.includes('/')) {
     const sub = fromType.split('/').pop() || ''
     if (sub === 'pdf') return 'pdf'
-    if (sub.includes('word') || sub === 'msword') return 'docx'
-    if (sub.includes('sheet') || sub.includes('excel')) return 'xlsx'
+    if (sub.includes('word') || sub === 'msword' || sub.includes('wps-office.wps') || sub === 'kswps') return 'docx'
+    if (sub.includes('sheet') || sub.includes('excel') || sub.includes('wps-office.et') || sub === 'kset') return 'xlsx'
     if (sub.includes('presentation') || sub.includes('powerpoint')) return 'pptx'
     if (sub.startsWith('image')) return 'png'
     if (sub.startsWith('audio')) return 'mp3'
@@ -58,10 +58,14 @@ export function getAttachmentIconMeta(fileType?: string, filename?: string): Att
       return { kind: 'pdf', color: '#ef5350' }
     case 'doc':
     case 'docx':
+    case 'wps':
+    case 'wpt':
       return { kind: 'word', color: '#42a5f5' }
     case 'xls':
     case 'xlsx':
     case 'csv':
+    case 'et':
+    case 'ett':
       return { kind: 'sheet', color: '#66bb6a' }
     case 'ppt':
     case 'pptx':

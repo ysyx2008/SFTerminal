@@ -70,6 +70,21 @@ describe('DocumentParserService', () => {
     it('未知类型应返回 unknown', () => {
       expect(service.detectFileType('test.xyz')).toBe('unknown')
     })
+
+    it('应该正确检测 WPS 文字和表格', () => {
+      expect(service.detectFileType('报告.wps')).toBe('wps')
+      expect(service.detectFileType('模板.wpt')).toBe('wps')
+      expect(service.detectFileType('报表.et')).toBe('et')
+      expect(service.detectFileType('表模板.ett')).toBe('et')
+      expect(service.detectFileType('REPORT.WPS')).toBe('wps')
+    })
+
+    it('应该通过 MIME 类型检测 WPS 文件', () => {
+      expect(service.detectFileType('file', 'application/wps-office.wps')).toBe('wps')
+      expect(service.detectFileType('file', 'application/kswps')).toBe('wps')
+      expect(service.detectFileType('file', 'application/wps-office.et')).toBe('et')
+      expect(service.detectFileType('file', 'application/kset')).toBe('et')
+    })
   })
 
   describe('parseDocument - Excel', () => {
@@ -843,6 +858,165 @@ describe('DocumentParserService', () => {
     })
   })
 
+  describe('parseDocument - WPS', () => {
+    async function createMinimalDocx(filePath: string): Promise<void> {
+      const JSZip = (await import('jszip')).default
+      const zip = new JSZip()
+      zip.file('[Content_Types].xml',
+        '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+        '</Types>'
+      )
+      zip.file('_rels/.rels',
+        '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+        '</Relationships>'
+      )
+      zip.file('word/document.xml',
+        '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        '<w:body><w:p><w:r><w:t>WPS文字正文</w:t></w:r></w:p></w:body></w:document>'
+      )
+      fs.writeFileSync(filePath, await zip.generateAsync({ type: 'nodebuffer' }))
+    }
+
+    it('新版 WPS 文字应按 Word 抽出正文', async () => {
+      const tempFile = path.join(os.tmpdir(), `test-wps-${crypto.randomUUID()}.wps`)
+      await createMinimalDocx(tempFile)
+      try {
+        const result = await service.parseDocument({
+          name: '报告.wps',
+          path: tempFile,
+          size: fs.statSync(tempFile).size
+        })
+        expect(result.fileType).toBe('wps')
+        expect(result.error).toBeUndefined()
+        expect(result.content).toContain('WPS文字正文')
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+
+    it('WPS 文字模板应按 Word 抽出正文', async () => {
+      const tempFile = path.join(os.tmpdir(), `test-wpt-${crypto.randomUUID()}.wpt`)
+      await createMinimalDocx(tempFile)
+      try {
+        const result = await service.parseDocument({
+          name: '模板.wpt',
+          path: tempFile,
+          size: fs.statSync(tempFile).size
+        })
+        expect(result.fileType).toBe('wps')
+        expect(result.error).toBeUndefined()
+        expect(result.content).toContain('WPS文字正文')
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+
+    it('新版 WPS 表格应按 Excel 抽出正文', async () => {
+      const ExcelJS = await import('exceljs')
+      const workbook = new ExcelJS.Workbook()
+      const sheet = workbook.addWorksheet('工资')
+      sheet.addRow(['姓名', '金额'])
+      sheet.addRow(['王五', 8000])
+      const tempFile = path.join(os.tmpdir(), `test-et-${crypto.randomUUID()}.et`)
+      await workbook.xlsx.writeFile(tempFile)
+      try {
+        const result = await service.parseDocument({
+          name: '工资.et',
+          path: tempFile,
+          size: fs.statSync(tempFile).size
+        })
+        expect(result.fileType).toBe('et')
+        expect(result.error).toBeUndefined()
+        expect(result.content).toContain('王五')
+        expect(result.content).toContain('8000')
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+
+    it('WPS 表格模板应按 Excel 抽出正文', async () => {
+      const ExcelJS = await import('exceljs')
+      const workbook = new ExcelJS.Workbook()
+      const sheet = workbook.addWorksheet('模板')
+      sheet.addRow(['项目', '预算'])
+      sheet.addRow(['差旅', 3000])
+      const tempFile = path.join(os.tmpdir(), `test-ett-${crypto.randomUUID()}.ett`)
+      await workbook.xlsx.writeFile(tempFile)
+      try {
+        const result = await service.parseDocument({
+          name: '预算.ett',
+          path: tempFile,
+          size: fs.statSync(tempFile).size
+        })
+        expect(result.fileType).toBe('et')
+        expect(result.error).toBeUndefined()
+        expect(result.content).toContain('差旅')
+        expect(result.content).toContain('3000')
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+
+    it('老格式 WPS 文字应提示另存为 Word，不给乱码', async () => {
+      const tempFile = path.join(os.tmpdir(), `legacy-wps-${crypto.randomUUID()}.wps`)
+      const ole = Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00])
+      fs.writeFileSync(tempFile, ole)
+      try {
+        const result = await service.parseDocument({
+          name: '旧稿.wps',
+          path: tempFile,
+          size: fs.statSync(tempFile).size
+        })
+        expect(result.fileType).toBe('wps')
+        expect(result.error).toMatch(/另存为 Word/)
+        expect(result.content).toBe('')
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+
+    it('非 Office 包的 .wps 应提示另存，不把原文当正文', async () => {
+      const tempFile = path.join(os.tmpdir(), `text-wps-${crypto.randomUUID()}.wps`)
+      fs.writeFileSync(tempFile, '这不是WPS文档，只是普通文字')
+      try {
+        const result = await service.parseDocument({
+          name: '假文件.wps',
+          path: tempFile,
+          size: fs.statSync(tempFile).size
+        })
+        expect(result.error).toMatch(/另存为 Word/)
+        expect(result.content).toBe('')
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+
+    it('老格式 WPS 表格应提示另存为 Excel，不给乱码', async () => {
+      const tempFile = path.join(os.tmpdir(), `legacy-et-${crypto.randomUUID()}.et`)
+      const ole = Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00])
+      fs.writeFileSync(tempFile, ole)
+      try {
+        const result = await service.parseDocument({
+          name: '旧表.et',
+          path: tempFile,
+          size: fs.statSync(tempFile).size
+        })
+        expect(result.fileType).toBe('et')
+        expect(result.error).toMatch(/另存为 Excel/)
+        expect(result.content).toBe('')
+      } finally {
+        fs.unlinkSync(tempFile)
+      }
+    })
+  })
+
   describe('checkCapabilities', () => {
     it('应该包含 xlsx 能力检查', async () => {
       const capabilities = await service.checkCapabilities()
@@ -863,6 +1037,15 @@ describe('DocumentParserService', () => {
       expect(xlsxType).toBeDefined()
       expect(xlsxType?.description).toContain('Excel')
       expect(xlsType).toBeDefined()
+    })
+
+    it('应该包含 WPS 文字和表格类型', async () => {
+      await service.checkCapabilities()
+      const types = service.getSupportedTypes()
+      expect(types.find(t => t.extension === '.wps')?.description).toContain('WPS')
+      expect(types.find(t => t.extension === '.wpt')?.description).toContain('WPS')
+      expect(types.find(t => t.extension === '.et')?.description).toContain('WPS')
+      expect(types.find(t => t.extension === '.ett')?.description).toContain('WPS')
     })
   })
 

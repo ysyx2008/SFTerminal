@@ -890,7 +890,7 @@ function findClosestContext(fileContent: string, oldText: string): string | unde
  */
 function isDocumentType(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase()
-  return ['.pdf', '.docx', '.doc', '.xlsx', '.xls'].includes(ext)
+  return ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.wps', '.wpt', '.et', '.ett'].includes(ext)
 }
 
 /**

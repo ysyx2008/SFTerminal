@@ -92,4 +92,14 @@ describe('extractStyleFromTemplate', () => {
     expect(result.config.headings?.[2]?.bold).toBe(true)
     expect(result.config.renderHr).toBe(false)
   })
+
+  it('extracts styles from a .wps sample (OOXML)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'word-style-wps-'))
+    const wpsPath = path.join(dir, 'sample.wps')
+    await writeMinimalDocx(wpsPath, STYLES, DOCUMENT)
+
+    const result = await extractStyleFromTemplate(wpsPath)
+    expect(result.config.font).toBe('仿宋')
+    expect(result.sourceType).toBe('template')
+  })
 })

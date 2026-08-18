@@ -13,6 +13,10 @@ describe('resolveAttachmentExt', () => {
 
   it('handles mime-like fileType', () => {
     expect(resolveAttachmentExt('application/pdf', 'x.bin')).toBe('pdf')
+    expect(resolveAttachmentExt('application/wps-office.wps', 'x.bin')).toBe('docx')
+    expect(resolveAttachmentExt('application/kswps', 'x.bin')).toBe('docx')
+    expect(resolveAttachmentExt('application/wps-office.et', 'x.bin')).toBe('xlsx')
+    expect(resolveAttachmentExt('application/kset', 'x.bin')).toBe('xlsx')
   })
 })
 
@@ -22,6 +26,12 @@ describe('getAttachmentIconMeta', () => {
     expect(getAttachmentIconMeta('docx')).toMatchObject({ kind: 'word' })
     expect(getAttachmentIconMeta('xlsx')).toMatchObject({ kind: 'sheet' })
     expect(getAttachmentIconMeta('pptx')).toMatchObject({ kind: 'slides' })
+    expect(getAttachmentIconMeta('wps')).toMatchObject({ kind: 'word' })
+    expect(getAttachmentIconMeta('wpt', '模板.wpt')).toMatchObject({ kind: 'word' })
+    expect(getAttachmentIconMeta('et')).toMatchObject({ kind: 'sheet' })
+    expect(getAttachmentIconMeta(undefined, '工资.ett')).toMatchObject({ kind: 'sheet' })
+    expect(getAttachmentIconMeta('application/wps-office.wps').kind).toBe('word')
+    expect(getAttachmentIconMeta('application/wps-office.et').kind).toBe('sheet')
   })
 
   it('maps media and archives', () => {

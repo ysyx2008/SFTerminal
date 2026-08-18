@@ -59,6 +59,8 @@ export type DocumentType =
   | 'doc'
   | 'xlsx'
   | 'xls'
+  | 'wps'
+  | 'et'
   | 'txt'
   | 'md'
   | 'json'
@@ -198,6 +200,12 @@ export class DocumentParserService {
         return 'xlsx'
       case '.xls':
         return 'xls'
+      case '.wps':
+      case '.wpt':
+        return 'wps'
+      case '.et':
+      case '.ett':
+        return 'et'
       case '.txt':
         return 'txt'
       case '.md':
@@ -223,6 +231,8 @@ export class DocumentParserService {
       if (mimeType === 'application/msword') return 'doc'
       if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return 'xlsx'
       if (mimeType === 'application/vnd.ms-excel') return 'xls'
+      if (mimeType === 'application/wps-office.wps' || mimeType === 'application/wps-office.wpt' || mimeType === 'application/kswps') return 'wps'
+      if (mimeType === 'application/wps-office.et' || mimeType === 'application/wps-office.ett' || mimeType === 'application/kset') return 'et'
       if (mimeType.startsWith('text/')) return 'txt'
       if (mimeType === 'application/json') return 'json'
       if (mimeType === 'application/xml' || mimeType === 'text/xml') return 'xml'
@@ -266,6 +276,8 @@ export class DocumentParserService {
         case 'doc':
         case 'xlsx':
         case 'xls':
+        case 'wps':
+        case 'et':
         case 'txt':
         case 'md':
         case 'json':
@@ -281,6 +293,8 @@ export class DocumentParserService {
           else if (fileType === 'docx') await this.parseDocx(file.path, result, opts, report)
           else if (fileType === 'doc') await this.parseDoc(file.path, result, opts, report)
           else if (fileType === 'xlsx' || fileType === 'xls') await this.parseExcel(file.path, result, opts, report)
+          else if (fileType === 'wps') await this.parseWpsWriter(file.path, result, opts, report)
+          else if (fileType === 'et') await this.parseWpsSpreadsheet(file.path, result, opts, report)
           else if (fileType === 'csv') await this.parseCsv(file.path, result, opts, report)
           else await this.parseTextFile(file.path, result, opts, report)
           break
@@ -774,6 +788,91 @@ export class DocumentParserService {
   }
 
   /**
+   * 新版 WPS 文字/表格常是换后缀的 Office 包；老格式或加密则明确提示另存。
+   */
+  private sniffOfficeContainer(filePath: string): 'ooxml' | 'ole' | 'unknown' {
+    const fd = fs.openSync(filePath, 'r')
+    try {
+      const buf = Buffer.alloc(8)
+      const n = fs.readSync(fd, buf, 0, 8, 0)
+      if (n >= 4 && buf[0] === 0x50 && buf[1] === 0x4B && (buf[2] === 0x03 || buf[2] === 0x05 || buf[2] === 0x07)) {
+        return 'ooxml'
+      }
+      if (n >= 4 && buf[0] === 0xD0 && buf[1] === 0xCF && buf[2] === 0x11 && buf[3] === 0xE0) {
+        return 'ole'
+      }
+      return 'unknown'
+    } finally {
+      fs.closeSync(fd)
+    }
+  }
+
+  private markWpsUnreadable(result: ParsedDocument, kind: 'writer' | 'sheet'): void {
+    result.content = ''
+    result.images = undefined
+    result.error = t(kind === 'writer' ? 'doc.wps_legacy_unsupported' : 'doc.et_legacy_unsupported')
+  }
+
+  private async parseWpsWriter(
+    filePath: string,
+    result: ParsedDocument,
+    opts: Required<ParseOptions>,
+    report?: ProgressReporter
+  ): Promise<void> {
+    if (this.sniffOfficeContainer(filePath) !== 'ooxml') {
+      this.markWpsUnreadable(result, 'writer')
+      return
+    }
+    try {
+      await this.parseDocx(filePath, result, opts, report)
+      if (!result.content?.trim() && !result.images?.length) {
+        this.markWpsUnreadable(result, 'writer')
+      }
+    } catch (err) {
+      log.warn('WPS writer parse failed:', err instanceof Error ? err.message : err)
+      if (this.isParserLibraryMissing(err)) {
+        result.content = ''
+        result.images = undefined
+        result.error = err instanceof Error ? err.message : t('doc.parse_failed')
+        return
+      }
+      this.markWpsUnreadable(result, 'writer')
+    }
+  }
+
+  private async parseWpsSpreadsheet(
+    filePath: string,
+    result: ParsedDocument,
+    opts: Required<ParseOptions>,
+    report?: ProgressReporter
+  ): Promise<void> {
+    if (this.sniffOfficeContainer(filePath) !== 'ooxml') {
+      this.markWpsUnreadable(result, 'sheet')
+      return
+    }
+    try {
+      await this.parseExcel(filePath, result, opts, report)
+      if (!result.content?.trim()) {
+        this.markWpsUnreadable(result, 'sheet')
+      }
+    } catch (err) {
+      log.warn('WPS spreadsheet parse failed:', err instanceof Error ? err.message : err)
+      if (this.isParserLibraryMissing(err)) {
+        result.content = ''
+        result.images = undefined
+        result.error = err instanceof Error ? err.message : t('doc.parse_failed')
+        return
+      }
+      this.markWpsUnreadable(result, 'sheet')
+    }
+  }
+
+  private isParserLibraryMissing(err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err)
+    return message === t('doc.mammoth_not_installed') || message === t('doc.exceljs_not_installed')
+  }
+
+  /**
    * 解析 Word 文档 (.doc - 旧版格式)
    */
   private async parseDoc(filePath: string, result: ParsedDocument, _opts: Required<ParseOptions>, report?: ProgressReporter): Promise<void> {
@@ -1121,6 +1220,10 @@ export class DocumentParserService {
       { extension: '.doc', description: t('doc.type_doc'), available: !!this.WordExtractor },
       { extension: '.xlsx', description: t('doc.type_xlsx'), available: !!this.ExcelJS },
       { extension: '.xls', description: t('doc.type_xls'), available: !!this.ExcelJS },
+      { extension: '.wps', description: t('doc.type_wps'), available: !!this.mammoth },
+      { extension: '.wpt', description: t('doc.type_wpt'), available: !!this.mammoth },
+      { extension: '.et', description: t('doc.type_et'), available: !!this.ExcelJS },
+      { extension: '.ett', description: t('doc.type_ett'), available: !!this.ExcelJS },
       { extension: '.txt', description: t('doc.type_txt'), available: true },
       { extension: '.md', description: t('doc.type_md'), available: true },
       { extension: '.json', description: t('doc.type_json'), available: true },

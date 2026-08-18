@@ -1,6 +1,6 @@
 # Document Parser Service SPEC
 
-> Last verified: 2026-08-13
+> Last verified: 2026-08-18
 
 ## 职责
 
@@ -23,6 +23,14 @@ Word 里的架构图常常是 EMF/WMF：真正的画面是矢量画出来的，�
 ### 混合 PDF 按页分流
 
 同一份里有的页有字、有的页是扫描件时：有字的页走文本，没字或文字不可靠的页才渲图。不要整本都当扫描件，也不要只抽字却把没字的页丢掉。预览渲图的页数上限照旧。
+
+### WPS 文字和表格要能读
+
+国内很多文件是 WPS 自己的后缀。秘书读这些文字、表格时，应当和读 Word、Excel 一样能抽出正文。桌面上传、聊天附件、让秘书去读某个文件，都要认这些后缀。
+
+只读，不写回 WPS 自己的格式。演示稿这次不做。
+
+不装 WPS，也不启动 WPS 或 Word。新版 WPS 文件按 Word / Excel 来读。早期专有格式或加密文件读不了时，明确告诉用户请另存为 Word 或 Excel，不要给乱码。
 
 ## 公开 API
 
@@ -80,3 +88,4 @@ type DocumentType = "pdf" | "docx" | "doc" | "xlsx" | "xls" | "txt" | "md" | "js
 - **大文件限制**：`MAX_RENDER_PAGES` + `MAX_PDF_FILE_SIZE` 硬限制，不得移除
 - **解析失败不抛异常**——返回 `ParsedDocument.error` 字段，调用方自行判断
 - **二进制检测在文本解析前**——`isLikelyBinary()` 先于 `parseTextFile()`，防止大二进制文件当文本读爆内存
+- **WPS 文字/表格可读**：认 `.wps` / `.wpt` / `.et` / `.ett`；读不了时提示另存为 Word/Excel，不把二进制当正文。演示稿不做。不依赖本机安装 WPS。

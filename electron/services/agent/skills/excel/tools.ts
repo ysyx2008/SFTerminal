@@ -9,9 +9,10 @@ export const excelTools: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'excel_open',
-      description: `打开 Excel 文件，建立会话。后续的读取和修改操作都在此会话中进行。
+      description: `打开 Excel 或 WPS 表格，建立会话。后续的读取和修改操作都在此会话中进行。
 
 **注意**：
+- 支持 .xlsx 以及新版 WPS 表格（.et/.ett）
 - 同一文件不能重复打开
 - 打开后请及时操作，5 分钟无操作会自动关闭（未保存的修改会丢失）
 - 完成后请调用 excel_save 保存，然后 excel_close 关闭`,
@@ -20,7 +21,7 @@ export const excelTools: ToolDefinition[] = [
         properties: {
           path: {
             type: 'string',
-            description: '文件路径（绝对路径或相对于当前目录）'
+            description: '文件路径（绝对路径或相对于当前目录），支持 .xlsx / .et / .ett'
           },
           create_if_not_exists: {
             type: 'boolean',
@@ -163,7 +164,7 @@ export const excelTools: ToolDefinition[] = [
         properties: {
           path: {
             type: 'string',
-            description: '目标文件路径（.xlsx），绝对路径或相对于当前目录'
+            description: '目标文件路径（默认 .xlsx，也可使用 .et/.ett），绝对路径或相对于当前目录'
           },
           markdown: {
             type: 'string',
@@ -587,7 +588,7 @@ excel_merge_template({
         properties: {
           template: {
             type: 'string',
-            description: '模板 .xlsx 文件路径（绝对路径或相对当前目录）'
+            description: '模板表格路径（.xlsx 或新版 WPS 表格），绝对路径或相对当前目录'
           },
           output: {
             type: 'string',
