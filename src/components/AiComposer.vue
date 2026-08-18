@@ -465,7 +465,9 @@ const measureTextareaHeight = () => {
   const wrap = textareaWrapEl.value
   let frozeWrap = false
   try {
-    const maxH = 360
+    // 读 CSS max-height：欢迎页会压得更矮，硬编码 360 会提前锁 overflow:hidden
+    const computedMax = parseFloat(getComputedStyle(textarea).maxHeight)
+    const maxH = Number.isFinite(computedMax) && computedMax > 0 ? computedMax : 360
     const minH = 20
     textarea.style.overflow = 'hidden'
 
