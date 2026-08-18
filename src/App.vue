@@ -1692,10 +1692,12 @@ onUnmounted(() => {
         </div>
       </main>
 
-      <!-- 窗口左上常驻：侧栏开关。钉在窗口坐标上，不跟侧栏开合跑 -->
+      <!-- 窗口左上常驻：侧栏开关。钉在窗口坐标上，不跟侧栏开合跑。
+           主机管理盖在这排上面时 inert，避免还能 Tab 到被盖住的按钮。 -->
       <div
         class="shell-chrome"
         :class="{ 'shell-chrome--traffic-inset': isMac && !isFullScreen }"
+        :inert="showSidebar ? true : undefined"
       >
         <button
           v-if="isWin"
@@ -1724,6 +1726,7 @@ onUnmounted(() => {
           'is-animating': isRecallSidebarAnimating,
         }"
         :style="{ width: showRecallSidebar ? `${recallSidebarWidth}px` : '0px' }"
+        :inert="showSidebar ? true : undefined"
       >
         <div class="shell-nav-chrome-inner" :style="{ width: `${recallSidebarWidth}px` }">
           <button
@@ -2363,13 +2366,18 @@ onUnmounted(() => {
   contain: paint;
 }
 
-/* 欢迎页：主机管理叠加在最近对话侧栏之上，关掉后最近对话仍可见 */
+/* 欢迎页：主机管理叠加在最近对话侧栏之上，关掉后最近对话仍可见。
+   必须盖过窗口左上的侧栏开关 / 前进后退（z-index 40/41），否则会挡住关闭按钮。 */
+.sidebar--hosts:not(.is-collapsed) {
+  z-index: 50;
+}
+
 .sidebar--overlay {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
-  z-index: 20;
+  z-index: 50;
   box-shadow: 6px 0 28px rgba(0, 0, 0, 0.28);
 }
 
