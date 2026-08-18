@@ -478,7 +478,10 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     blue: '#3c7cab',
     magenta: '#b8448b',
     cyan: '#4c7f8c',
-    white: '#fcfcfc',
+    // ANSI 7/15 常被 shell 高亮当成前景色（数字、参数等）。
+    // Cursor 原值接近背景，浅色底上会淡到看不见；改为可读灰，
+    // 且与 brightBlack（弱化/补全）拉开：brightWhite > white > brightBlack。
+    white: '#4a4a4a',
     brightBlack: '#5c5c5c',    // ansiBrightBlack #141414AD ≈ #5C5C5C
     brightRed: '#e75e78',
     brightGreen: '#55a583',
@@ -486,7 +489,7 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     brightBlue: '#6299c3',
     brightMagenta: '#d06ba6',
     brightCyan: '#6f9ba6',
-    brightWhite: '#ffffff'
+    brightWhite: '#3a3a3a'
   },
 
   // Blue (VS 经典风格) — 2026-04 与 ui-themes.ts/main.css 的新蓝调保持一致
@@ -553,7 +556,7 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     blue: '#4a7a9a',
     magenta: '#8a5a8a',
     cyan: '#3a8a7a',
-    white: '#e5f0e8',
+    white: '#3a564c',
     brightBlack: '#4a665a',
     brightRed: '#c86060',
     brightGreen: '#5aaa75',
@@ -561,7 +564,7 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     brightBlue: '#5a8aaa',
     brightMagenta: '#9a6a9a',
     brightCyan: '#4a9a8a',
-    brightWhite: '#f6fbf8'
+    brightWhite: '#324840'
   },
 
   // Ayu Mirage
@@ -628,7 +631,7 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     blue: '#8b5cf6',
     magenta: '#a78bfa',
     cyan: '#06b6d4',
-    white: '#e8e2f4',
+    white: '#4e4664',
     brightBlack: '#5a5070',
     brightRed: '#f87171',
     brightGreen: '#4ade80',
@@ -636,7 +639,7 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     brightBlue: '#a78bfa',
     brightMagenta: '#c4b5fd',
     brightCyan: '#22d3ee',
-    brightWhite: '#f8f6fc'
+    brightWhite: '#453a58'
   },
 
   // Aurora (极光主题)
@@ -703,7 +706,7 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     blue: '#7a6a9a',
     magenta: '#d4728a',
     cyan: '#5a8a8a',
-    white: '#e8d0dc',
+    white: '#5c4250',
     brightBlack: '#6b4a5a',
     brightRed: '#d96060',
     brightGreen: '#6aaa7a',
@@ -711,7 +714,7 @@ const integratedTerminalThemes: Record<UiThemeName, ITheme> = {
     brightBlue: '#8a7aaa',
     brightMagenta: '#e4829a',
     brightCyan: '#6a9a9a',
-    brightWhite: '#fdf8fa'
+    brightWhite: '#523848'
   },
 
   // Sponsor Rose Pine (赞助者玫瑰松主题)
