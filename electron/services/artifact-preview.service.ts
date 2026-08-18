@@ -22,6 +22,7 @@ import type { CanvasRendererType } from '@shared/types'
 import { ARTIFACT_PREVIEW_SCHEME } from '@shared/types'
 import { createLogger } from '../utils/logger'
 import { getScratchPath } from './agent/tools/file'
+import { renderExcelWorkbookPreviewHtml } from './agent/skills/excel/preview-html'
 
 const log = createLogger('ArtifactPreview')
 
@@ -30,14 +31,6 @@ const MAMMOTH_STYLE_MAP = [
   'p.Title => h1.document-title:fresh',
   "p[style-name='Subtitle'] => h2.document-subtitle:fresh",
 ]
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
 
 async function previewDocxHtml(filePath: string): Promise<string> {
   const mammoth = await import('mammoth')
@@ -52,29 +45,7 @@ async function previewXlsxHtml(filePath: string): Promise<string> {
   const ExcelJS = await import('exceljs')
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.readFile(filePath)
-  const sheet = workbook.worksheets[0]
-  if (!sheet || sheet.rowCount === 0) {
-    return '<p><em>(空工作簿)</em></p>'
-  }
-
-  const maxRows = Math.min(sheet.rowCount, 100)
-  const maxCols = Math.min(sheet.columnCount, 20)
-  const rows: string[] = ['<table class="excel-preview">']
-
-  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowNumber > maxRows) return
-    const cells: string[] = []
-    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      if (colNumber > maxCols) return
-      const val = cell.value == null ? '' : String(cell.text ?? cell.value)
-      const tag = rowNumber === 1 ? 'th' : 'td'
-      cells.push(`<${tag}>${escapeHtml(val)}</${tag}>`)
-    })
-    if (cells.length > 0) rows.push(`<tr>${cells.join('')}</tr>`)
-  })
-
-  rows.push('</table>')
-  return rows.join('\n')
+  return renderExcelWorkbookPreviewHtml(workbook.worksheets)
 }
 
 /** 按 renderer 从磁盘文件重建产出物 preview content */

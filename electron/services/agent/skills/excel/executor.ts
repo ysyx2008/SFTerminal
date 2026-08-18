@@ -30,6 +30,7 @@ import {
 } from './styles'
 import { mergeXlsxFile } from './template-merge'
 import { formatCellValue, validateExpectedOriginals } from './cell-value'
+import { renderExcelWorkbookPreviewHtml, type PreviewHighlights } from './preview-html'
 import { buildReadRangeMarkdownTable } from './read-markdown'
 import { app } from 'electron'
 import { getKnowledgeService } from '../../../knowledge'
@@ -168,124 +169,12 @@ function resolveStyle(styleName?: string): ExcelStyleConfig {
   return customStyles.get(styleName) || getStyleConfig(styleName)
 }
 
-/**
- * 生成 Excel 工作簿的 HTML 预览（供 Canvas 展示）
- * 显示当前活动 sheet 或第一个 sheet 的数据
- */
-interface PreviewHighlights {
-  modified?: Set<string>
-  deleting?: Set<string>
-  /** 删除行后上移的单元格 */
-  shifted?: Set<string>
-  /** 删除列后左移的单元格 */
-  shiftedCol?: Set<string>
-}
-
 function generateExcelPreviewHtml(filePath: string, activeSheet?: string, highlights?: PreviewHighlights): string {
   const session = getSession(filePath)
   if (!session) return ''
-
-  const workbook = session.workbook
-  const worksheets = workbook.worksheets
-  if (worksheets.length === 0) return '<p><em>(空工作簿)</em></p>'
-
-  const parts: string[] = []
-
-  // Sheet 标签栏放到表格之后（底部），和 Excel 一致
-  let sheetTabsHtml = ''
-  if (worksheets.length > 1) {
-    const tabs = worksheets.map(ws => {
-      const isActive = activeSheet ? ws.name === activeSheet : ws === worksheets[0]
-      return `<span class="sheet-tab${isActive ? ' active' : ''}">${escapeHtml(ws.name)}</span>`
-    }).join('')
-    sheetTabsHtml = `<div class="sheet-tabs">${tabs}</div>`
-  }
-
-  const targetSheet = activeSheet
-    ? workbook.getWorksheet(activeSheet) || worksheets[0]
-    : worksheets[0]
-
-  if (!targetSheet || targetSheet.rowCount === 0) {
-    parts.push('<p><em>(空工作表)</em></p>')
-    return parts.join('\n')
-  }
-
-  const maxRows = Math.min(targetSheet.rowCount, 100)
-  const maxCols = Math.min(targetSheet.columnCount, 20)
-
-  // 用 eachRow/eachCell 只读遍历已有数据，避免 getRow/getCell 创建空对象污染 workbook
-  const dataRows: Map<number, Map<number, { val: string; isNum: boolean }>> = new Map()
-  let actualMaxCol = 0
-
-  targetSheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
-    if (rowNum > maxRows) return
-    const cellMap = new Map<number, { val: string; isNum: boolean }>()
-    row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-      if (colNum > maxCols) return
-      cellMap.set(colNum, {
-        val: formatCellValue(cell.value),
-        isNum: typeof cell.value === 'number' ||
-          (typeof cell.value === 'object' && cell.value !== null &&
-           'result' in (cell.value as Record<string, unknown>) &&
-           typeof (cell.value as Record<string, unknown>).result === 'number')
-      })
-      if (colNum > actualMaxCol) actualMaxCol = colNum
-    })
-    dataRows.set(rowNum, cellMap)
-  })
-
-  const colCount = Math.min(actualMaxCol, maxCols) || 1
-  const htmlRows: string[] = []
-
-  const colHeaders = ['<th class="corner"></th>']
-  for (let c = 1; c <= colCount; c++) {
-    colHeaders.push(`<th>${numberToColumnLetter(c)}</th>`)
-  }
-  htmlRows.push(`<tr>${colHeaders.join('')}</tr>`)
-
-  for (let r = 1; r <= maxRows; r++) {
-    const cellMap = dataRows.get(r)
-    const cells = [`<td class="row-header">${r}</td>`]
-    for (let c = 1; c <= colCount; c++) {
-      const data = cellMap?.get(c)
-      const key = `${r},${c}`
-      const classes: string[] = []
-      if (data?.isNum) classes.push('num')
-      if (highlights?.deleting?.has(key)) classes.push('deleting')
-      else if (highlights?.shifted?.has(key)) classes.push('shifted')
-      else if (highlights?.shiftedCol?.has(key)) classes.push('shifted-col')
-      else if (highlights?.modified?.has(key)) classes.push('modified')
-      const classAttr = classes.length > 0 ? ` class="${classes.join(' ')}"` : ''
-
-      if (data) {
-        cells.push(`<td${classAttr}>${escapeHtml(data.val)}</td>`)
-      } else {
-        cells.push(`<td${classAttr}></td>`)
-      }
-    }
-    htmlRows.push(`<tr>${cells.join('')}</tr>`)
-  }
-
-  parts.push(`<table>${htmlRows.join('')}</table>`)
-
-  if (targetSheet.rowCount > maxRows || targetSheet.columnCount > maxCols) {
-    parts.push(`<p style="color: #888; font-size: 11px; margin-top: 4px;">显示 ${maxRows}/${targetSheet.rowCount} 行, ${maxCols}/${targetSheet.columnCount} 列</p>`)
-  }
-
-  if (sheetTabsHtml) {
-    parts.push(sheetTabsHtml)
-  }
-
-  return parts.join('\n')
+  return renderExcelWorkbookPreviewHtml(session.workbook.worksheets, { activeSheet, highlights })
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
 
 /**
  * 执行 Excel 技能工具
