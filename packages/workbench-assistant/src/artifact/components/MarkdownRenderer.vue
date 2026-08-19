@@ -7,12 +7,16 @@
  * 立即序列化回写 store 并前进磁盘基线，dirty/冲突比较全在规范化空间进行。
  * 选区引用无文件行号（内容锚定），见 SPEC「设计目标：编辑器形态」。
  */
-import { computed, inject, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Wand2 } from 'lucide-vue-next'
 import { buildArtifactPreviewUrl } from '@shared/types'
 import { useAssistantArtifactStore } from '../store'
 import { useArtifactSaveBridge } from '../domain/artifact-save-bridge'
+import {
+  decideRendererContentArrival,
+  shouldReportDraftDirty
+} from '../domain/coedit-conflict'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
 import { requireArtifactDesktopHost } from '../host'
 import { SET_COMPOSER_DRAFT_KEY, type ArtifactComposerQuote } from '../composer-quote'
@@ -41,10 +45,20 @@ const editorWrapRef = ref<HTMLElement | null>(null)
 /** 是否存在可作作用域的选区（驱动底部状态行提示） */
 const hasSelectionScope = ref(false)
 let editorHandle: MarkdownWysiwygHandle | null = null
-/** 程序化 setContent 期间屏蔽 onDocChanged 回环 */
+/** 程序化 setContent / 初次挂载期间屏蔽 onDocChanged 回环 */
 let applyingExternal = false
 /** 编辑器异步挂载完成前到达的外部内容 */
 let pendingExternalDoc: string | null = null
+/** 编辑器已完成首次规范化；此前空草稿对基线不算 dirty */
+const editorReady = ref(false)
+
+function releaseApplyingExternal() {
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      applyingExternal = false
+    })
+  })
+}
 
 const ctxVisible = ref(false)
 const ctxX = ref(0)
@@ -66,8 +80,10 @@ const canSave = computed(() => typeof filePath.value === 'string' && filePath.va
 const diskBaseline = computed(
   () => artifactStore.getDiskBaseline(props.tabId, props.artifactId) ?? artifact.value?.content ?? ''
 )
-/** dirty = 草稿 ≠ 磁盘基线（而非 ≠ store.content，flush 不再洗掉 dirty） */
-const isDirty = computed(() => draft.value !== diskBaseline.value)
+/** dirty = 草稿 ≠ 磁盘基线；编辑器未就绪时不报（空草稿对基线会误报） */
+const isDirty = computed(() =>
+  shouldReportDraftDirty(editorReady.value, draft.value, diskBaseline.value)
+)
 /** 有选区提示、未保存、或无路径时才显示底部状态行 */
 const showStatusBar = computed(
   () => hasSelectionScope.value || (canSave.value && isDirty.value) || !canSave.value
@@ -103,7 +119,7 @@ function applyExternalContent(raw: string) {
     artifactStore.updateContent(props.tabId, canonical, props.artifactId)
     artifactStore.syncCoeditBaseline(props.tabId, props.artifactId, canonical)
   } finally {
-    applyingExternal = false
+    releaseApplyingExternal()
   }
 }
 
@@ -111,20 +127,26 @@ watch(
   () => artifact.value?.content,
   (c) => {
     const next = c ?? ''
-    if (next === draft.value) return
-    if (draft.value === lastSynced.value) {
-      if (!editorHandle && artifactStore.isArtifactDirty(props.tabId, props.artifactId)) {
-        // 重挂载恢复 dirty 草稿：store 里是用户未保存内容，不视为外部版本、不动基线
-        draft.value = next
-        lastSynced.value = artifactStore.getDiskBaseline(props.tabId, props.artifactId) ?? next
-        return
-      }
-      // 本地未偏离 → 接受外部版本（含规范化回写）
-      applyExternalContent(next)
-    } else {
-      // 本地草稿 dirty → 挂起外部版本，保护用户输入（横幅由 deferredContent 驱动）
-      artifactStore.deferExternalContent(props.tabId, props.artifactId, next)
+    const decision = decideRendererContentArrival({
+      next,
+      draft: draft.value,
+      lastSynced: lastSynced.value,
+      editorReady: editorReady.value,
+      hasEditor: !!editorHandle,
+      storeDirty: artifactStore.isArtifactDirty(props.tabId, props.artifactId)
+    })
+    if (decision === 'ignore') return
+    if (decision === 'restore-dirty') {
+      // 重挂载恢复 dirty 草稿：store 里是用户未保存内容，不视为外部版本、不动基线
+      draft.value = next
+      lastSynced.value = artifactStore.getDiskBaseline(props.tabId, props.artifactId) ?? next
+      return
     }
+    if (decision === 'apply') {
+      applyExternalContent(next)
+      return
+    }
+    artifactStore.deferExternalContent(props.tabId, props.artifactId, next)
   },
   { immediate: true }
 )
@@ -132,7 +154,7 @@ watch(
 // 基线变化后：保存成功（基线 = 草稿）时重对齐 lastSynced；并重算 dirty 推送
 watch(diskBaseline, (b) => {
   if (b === draft.value) lastSynced.value = b
-  if (!artifact.value) return
+  if (!artifact.value || !editorReady.value) return
   saveBridge?.setDirty(props.artifactId, isDirty.value)
   artifactStore.setArtifactDirty(props.tabId, props.artifactId, isDirty.value)
 })
@@ -152,7 +174,7 @@ watch(
 )
 
 watch(draft, () => {
-  if (!artifact.value) return
+  if (!artifact.value || !editorReady.value) return
   // dirty 推送两处：saveBridge（面板保存按钮）与 store 协同状态（Agent 快照/冲突分流）
   saveBridge?.setDirty(props.artifactId, isDirty.value)
   artifactStore.setArtifactDirty(props.tabId, props.artifactId, isDirty.value)
@@ -168,6 +190,7 @@ async function mountEditor() {
   const el = editorWrapRef.value
   if (!el) return
   mountError.value = false
+  applyingExternal = true
   try {
     // 动态引入：Crepe + ProseMirror + KaTeX 不进主包
     const { createMarkdownWysiwygEditor } = await import('../editor/markdown-wysiwyg-editor')
@@ -200,18 +223,23 @@ async function mountEditor() {
         // 序列化异常：不推进空基线，保留 initialDoc
         draft.value = initialDoc
         lastSynced.value = initialDoc
-        return
+      } else {
+        if (canonical !== draft.value) {
+          draft.value = canonical
+          artifactStore.updateContent(props.tabId, canonical, props.artifactId)
+        }
+        artifactStore.syncCoeditBaseline(props.tabId, props.artifactId, canonical)
+        lastSynced.value = canonical
       }
-      if (canonical !== draft.value) {
-        draft.value = canonical
-        artifactStore.updateContent(props.tabId, canonical, props.artifactId)
-      }
-      artifactStore.syncCoeditBaseline(props.tabId, props.artifactId, canonical)
-      lastSynced.value = canonical
     }
+    editorReady.value = true
+    saveBridge?.setDirty(props.artifactId, isDirty.value)
+    artifactStore.setArtifactDirty(props.tabId, props.artifactId, isDirty.value)
   } catch (err) {
     mountError.value = true
     toastError(err instanceof Error ? err.message : t('canvas.htmlPreviewFailed'))
+  } finally {
+    releaseApplyingExternal()
   }
 }
 

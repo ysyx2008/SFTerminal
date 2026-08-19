@@ -24,7 +24,9 @@ export type ExternalContentDecision = 'applied' | 'deferred'
 
 /**
  * 外部（Agent 改盘 / 磁盘回填）内容进入时的分流：
- * - 渲染器已标记 dirty → 挂起（即使基线尚未建立——用户已在打字，保护优先）
+ * - 渲染器已标记 dirty 且 store 已有正文 → 挂起
+ * - store 正文仍为空时不据此挂起：编辑器未挂载时「空草稿 ≠ 基线」会误报 dirty，
+ *   真正的未保存草稿由渲染器在收到外部内容后再补挂起
  * - 尚无基线（该产出物第一次收到外部内容）→ 接受并建立基线
  * - store 现存内容已偏离基线（用户草稿已 flush 进 store）→ 挂起
  * - 其余 → 接受
@@ -33,10 +35,47 @@ export function decideExternalContent(
   entry: CoeditEntry | undefined,
   currentContent: string,
 ): ExternalContentDecision {
-  if (entry?.dirty) return 'deferred'
+  if (entry?.dirty && currentContent !== '') return 'deferred'
   if (!entry || entry.baseline === undefined) return 'applied'
   if (currentContent !== entry.baseline) return 'deferred'
   return 'applied'
+}
+
+/** 编辑器尚未就绪时，空草稿对已有基线不算用户修改 */
+export function shouldReportDraftDirty(
+  editorReady: boolean,
+  draft: string,
+  baseline: string,
+): boolean {
+  if (!editorReady) return false
+  return draft !== baseline
+}
+
+export type RendererContentArrival =
+  | 'ignore'
+  | 'restore-dirty'
+  | 'apply'
+  | 'defer'
+
+/**
+ * 渲染器看到 store.content 变化时的分流。
+ * 编辑器未就绪时一律按外部内容接受（挂载后规范化），避免空草稿被当成冲突。
+ */
+export function decideRendererContentArrival(input: {
+  next: string
+  draft: string
+  lastSynced: string
+  editorReady: boolean
+  hasEditor: boolean
+  storeDirty: boolean
+}): RendererContentArrival {
+  if (input.next === input.draft) return 'ignore'
+  if (!input.editorReady || !input.hasEditor) {
+    if (input.storeDirty && input.draft === input.lastSynced) return 'restore-dirty'
+    return 'apply'
+  }
+  if (input.draft === input.lastSynced) return 'apply'
+  return 'defer'
 }
 
 /** 接受外部内容后：基线前进到该版本，冲突与 dirty 解除 */

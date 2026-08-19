@@ -2,11 +2,13 @@ import { describe, it, expect } from 'vitest'
 import {
   createCoeditEntry,
   decideExternalContent,
+  decideRendererContentArrival,
   entryAfterApply,
   entryAfterCanonicalize,
   entryAfterDefer,
   entryAfterDismissDeferred,
-  entryAfterSave
+  entryAfterSave,
+  shouldReportDraftDirty
 } from '../domain/coedit-conflict'
 
 describe('coedit-conflict', () => {
@@ -34,9 +36,72 @@ describe('coedit-conflict', () => {
       expect(decideExternalContent(entry, 'v1')).toBe('applied')
     })
 
-    it('dirty=true 但基线尚未建立（用户在建档前已开始打字）→ 挂起', () => {
+    it('dirty=true 但 store 正文仍为空（编辑器未灌入）→ 接受，避免空草稿误报', () => {
       const entry = { dirty: true }
-      expect(decideExternalContent(entry, '')).toBe('deferred')
+      expect(decideExternalContent(entry, '')).toBe('applied')
+    })
+
+    it('dirty=true 且 store 已有正文 → 挂起', () => {
+      const entry = { baseline: 'v1', dirty: true }
+      expect(decideExternalContent(entry, 'user draft')).toBe('deferred')
+    })
+  })
+
+  describe('shouldReportDraftDirty', () => {
+    it('编辑器未就绪：空草稿对基线不算 dirty', () => {
+      expect(shouldReportDraftDirty(false, '', 'disk v1')).toBe(false)
+    })
+
+    it('编辑器就绪且草稿偏离基线 → dirty', () => {
+      expect(shouldReportDraftDirty(true, 'typed', 'disk v1')).toBe(true)
+    })
+
+    it('编辑器就绪且草稿等于基线 → 干净', () => {
+      expect(shouldReportDraftDirty(true, 'v1', 'v1')).toBe(false)
+    })
+  })
+
+  describe('decideRendererContentArrival', () => {
+    it('内容未变 → 忽略', () => {
+      expect(decideRendererContentArrival({
+        next: 'v1', draft: 'v1', lastSynced: 'v1',
+        editorReady: true, hasEditor: true, storeDirty: false
+      })).toBe('ignore')
+    })
+
+    it('编辑器未就绪：不因空草稿挂起，接受外部内容', () => {
+      expect(decideRendererContentArrival({
+        next: 'disk v1', draft: '', lastSynced: '',
+        editorReady: false, hasEditor: false, storeDirty: false
+      })).toBe('apply')
+    })
+
+    it('编辑器未就绪、草稿已因规范化漂移 → 仍接受，不弹冲突', () => {
+      expect(decideRendererContentArrival({
+        next: 'disk v1', draft: 'canonical v1', lastSynced: '',
+        editorReady: false, hasEditor: false, storeDirty: true
+      })).toBe('apply')
+    })
+
+    it('编辑器未就绪但 store 已 dirty 且草稿未偏离 lastSynced → 恢复 dirty 草稿', () => {
+      expect(decideRendererContentArrival({
+        next: 'user draft', draft: '', lastSynced: '',
+        editorReady: false, hasEditor: false, storeDirty: true
+      })).toBe('restore-dirty')
+    })
+
+    it('编辑器就绪、本地未偏离 → 接受', () => {
+      expect(decideRendererContentArrival({
+        next: 'v2', draft: 'v1', lastSynced: 'v1',
+        editorReady: true, hasEditor: true, storeDirty: false
+      })).toBe('apply')
+    })
+
+    it('编辑器就绪、用户已改草稿 → 挂起', () => {
+      expect(decideRendererContentArrival({
+        next: 'v2', draft: 'my edit', lastSynced: 'v1',
+        editorReady: true, hasEditor: true, storeDirty: true
+      })).toBe('defer')
     })
   })
 
