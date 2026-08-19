@@ -15,8 +15,8 @@
  *
  * 命令路由约定：分屏后命令工具（execute_command 等）默认仍发到 Agent 当前默认
  * 操作窗格。要在其他窗格执行，请在工具参数里显式传 pane_id（值为目标窗格的
- * ptyId）。manage_pane 的 close / focus / list（自愈）在执行后会自动同步
- * Agent 的"当前默认窗格"。
+ * ptyId）。manage_pane 的 split / open / close / focus / list（自愈）在执行后
+ * 会自动同步 Agent 的"当前默认窗格"。split 返回的 ptyId 与 list 里那扇窗相同。
  */
 import { splitPaneBridge, type SplitPaneOp, type SplitPaneResult, type SplitTargetOp } from '../../split-pane-bridge.service'
 import { getConfigService } from '../../config.service'
@@ -100,7 +100,11 @@ function parseSplitTarget(raw: unknown): SplitTargetOp | undefined | { error: st
   return { error: 'target 格式无效' }
 }
 
-export async function splitTerminalTool(args: Record<string, unknown>, ownerAgentKey?: string): Promise<ToolResult> {
+export async function splitTerminalTool(
+  args: Record<string, unknown>,
+  ownerAgentKey?: string,
+  config?: ToolExecutorConfig
+): Promise<ToolResult> {
   const direction = (args as { direction?: unknown }).direction
   if (direction !== 'horizontal' && direction !== 'vertical') {
     return fail('direction 必须是 "horizontal" 或 "vertical"')
@@ -115,6 +119,12 @@ export async function splitTerminalTool(args: Record<string, unknown>, ownerAgen
   const result = await callBridge({ type: 'split', direction, target }, ownerAgentKey)
   if (!result.ok) return fail(result.error || '分屏失败')
 
+  const data = result.data as { ptyId?: string; newPaneId?: string; panes?: PaneInfo[] } | undefined
+  const ptyId = data?.ptyId || data?.newPaneId
+  if (ptyId) {
+    config?.setCurrentPtyId?.(ptyId)
+  }
+
   const targetDesc = target?.kind === 'ssh'
     ? `（连接到 SSH 会话 ${target.sessionId}）`
     : target?.kind === 'local'
@@ -122,7 +132,7 @@ export async function splitTerminalTool(args: Record<string, unknown>, ownerAgen
       : ''
 
   return ok(
-    `已创建${direction === 'horizontal' ? '左右' : '上下'}分屏${targetDesc}。后续如需在新窗格执行命令，请在 execute_command 等工具传入 pane_id（值为返回数据中新窗格的 ptyId——窗格标识统一用 ptyId）。`,
+    `已创建${direction === 'horizontal' ? '左右' : '上下'}分屏${targetDesc}。后续在新窗格执行命令请传入 pane_id=${ptyId || '见返回数据'}（与 list 里那扇窗的编号相同）。`,
     result.data
   )
 }
@@ -301,7 +311,7 @@ export async function managePaneTool(
     case 'open':
       return openTerminalTool(args, ownerAgentKey, config)
     case 'split':
-      return splitTerminalTool(args, ownerAgentKey)
+      return splitTerminalTool(args, ownerAgentKey, config)
     case 'close':
       return closePaneTool(args, ownerAgentKey, config)
     case 'focus':

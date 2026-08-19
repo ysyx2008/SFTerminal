@@ -76,6 +76,8 @@ export default {
     executeTask: 'Execute Task (Enter)',
     sendSupplementWithQueue: 'Add to the running task (Enter) · Queue for after it finishes ({shortcut})',
     followUpQueueHeader: '{count} queued · runs after the current task',
+    followUpQueueInsert: 'Insert into conversation',
+    followUpQueueInsertShort: 'Insert now',
     followUpQueueRemove: 'Remove from queue',
     useDefault: 'Use Default (Enter)',
     stopGeneration: 'Stop Generation',

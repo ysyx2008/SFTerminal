@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronLeft, ChevronRight, ChevronDown, Terminal, Monitor, Loader2, X, Plus, Layers, SatelliteDish, Bot, Zap, MessagesSquare, ListTodo } from 'lucide-vue-next'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../stores/terminal'
@@ -100,36 +100,56 @@ const scroll = (direction: 'left' | 'right') => {
   })
 }
 
-// 滚动到当前激活的 tab
-const scrollToActiveTab = () => {
+/**
+ * 把当前激活 tab 滚进滚动容器的可见区。
+ * 位置相对滚动容器换算（不依赖 offsetParent），可见区用容器 clientWidth，
+ * 避免右侧滚动按钮刚出现、栏宽尚未稳定时量错。
+ */
+const revealActiveTab = (behavior: ScrollBehavior = 'smooth') => {
+  const container = tabsContainerRef.value
+  if (!container) return
+
+  const activeTab = container.querySelector('.tab.active') as HTMLElement | null
+  if (!activeTab) return
+
+  const containerRect = container.getBoundingClientRect()
+  const tabRect = activeTab.getBoundingClientRect()
+  const tabLeft = tabRect.left - containerRect.left + container.scrollLeft
+  const tabRight = tabLeft + tabRect.width
+  const viewLeft = container.scrollLeft
+  const viewRight = viewLeft + container.clientWidth
+  const pad = 10
+
+  if (tabLeft < viewLeft) {
+    container.scrollTo({ left: Math.max(0, tabLeft - pad), behavior })
+  } else if (tabRight > viewRight) {
+    container.scrollTo({ left: tabRight - container.clientWidth + pad, behavior })
+  }
+  checkScrollState()
+}
+
+/** 等新 tab 入 DOM、左右滚动按钮显隐改完栏宽后再滚 */
+const scrollToActiveTab = (behavior: ScrollBehavior = 'smooth') => {
   nextTick(() => {
-    const container = tabsContainerRef.value
-    if (!container) return
-    
-    const activeTab = container.querySelector('.tab.active') as HTMLElement
-    if (!activeTab) return
-    
-    const containerRect = container.getBoundingClientRect()
-    const tabRect = activeTab.getBoundingClientRect()
-    
-    // 如果 tab 不在可见范围内，滚动到可见
-    if (tabRect.left < containerRect.left) {
-      container.scrollBy({
-        left: tabRect.left - containerRect.left - 10,
-        behavior: 'smooth'
-      })
-    } else if (tabRect.right > containerRect.right) {
-      container.scrollBy({
-        left: tabRect.right - containerRect.right + 10,
-        behavior: 'smooth'
-      })
-    }
+    nextTick(() => {
+      requestAnimationFrame(() => revealActiveTab(behavior))
+    })
   })
 }
 
-// 监听 tab 变化和激活状态变化
+const onViewportChange = () => {
+  checkScrollState()
+  scrollToActiveTab('auto')
+}
+
+let tabBarResizeObserver: ResizeObserver | null = null
+
+// 监听 tab 数量：新开后滚动按钮可能刚出现，栏宽变了，要再滚一次
 watch(() => terminalStore.tabs.length, () => {
-  nextTick(checkScrollState)
+  nextTick(() => {
+    checkScrollState()
+    scrollToActiveTab()
+  })
 })
 
 watch(() => terminalStore.activeTabId, () => {
@@ -138,12 +158,21 @@ watch(() => terminalStore.activeTabId, () => {
 
 onMounted(() => {
   checkScrollState()
-  // 监听滚动事件
-  tabsContainerRef.value?.addEventListener('scroll', checkScrollState)
-  // 监听窗口大小变化
-  window.addEventListener('resize', checkScrollState)
-  // 加载可用的 shell 列表
+  scrollToActiveTab()
+  window.addEventListener('resize', onViewportChange)
+  if (typeof ResizeObserver !== 'undefined') {
+    tabBarResizeObserver = new ResizeObserver(onViewportChange)
+    // 只看外层栏宽（侧栏 / 对话栏 / 窗口）。不要观察 tabs-container：
+    // 左右按钮显隐会改它的宽度，点箭头滚动时会被立刻拉回当前 tab。
+    if (tabBarRef.value) tabBarResizeObserver.observe(tabBarRef.value)
+  }
   loadAvailableShells()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', onViewportChange)
+  tabBarResizeObserver?.disconnect()
+  tabBarResizeObserver = null
 })
 
 const handleNewTab = (shell?: string) => {
@@ -551,6 +580,8 @@ const tasksAreaAttentionTooltip = computed(() => {
   display: flex;
   align-items: center;
   gap: 2px;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
 }

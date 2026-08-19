@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick, onUnmounted, defineAsyncComponent } fro
 import { useTerminalStore } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
 import type { TerminalTab } from '../stores/terminal'
+import TabBar from './TabBar.vue'
 import TerminalPaneHost from './TerminalPaneHost.vue'
 
 /** 终端工作台侧栏对话：经 SDK 薄壳入口，与 assistant/companion 一致 */
@@ -13,6 +14,10 @@ const AiPanel = defineAsyncComponent(() =>
 const terminalStore = useTerminalStore()
 const configStore = useConfigStore()
 const isSteamBuild = typeof __STEAM_BUILD__ !== 'undefined' && __STEAM_BUILD__
+
+const emit = defineEmits<{
+  'open-ssh': []
+}>()
 
 // 助手面板位置：跟随终端设置，默认右侧
 const aiPanelPosition = computed<'left' | 'right'>(
@@ -109,7 +114,14 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
 </script>
 
 <template>
-  <div ref="containerRef" class="terminal-tab" :class="`ai-panel-${aiPanelPosition}`">
+  <div
+    ref="containerRef"
+    class="terminal-tab"
+    :class="[
+      `ai-panel-${aiPanelPosition}`,
+      { 'is-ai-open': showAiPanel && !isSteamBuild }
+    ]"
+  >
     <template v-if="!isSteamBuild && aiPanelMounted">
       <div
         class="tab-ai-sidebar"
@@ -133,6 +145,13 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
       </div>
     </template>
     <div class="terminal-main">
+      <div v-if="isActive" class="terminal-column-header">
+        <TabBar
+          variant="terminal"
+          class="terminal-tab-strip"
+          @open-ssh="emit('open-ssh')"
+        />
+      </div>
       <TerminalPaneHost :tab="tab" :is-active="isActive" show-close-on-error @send-to-ai="handleSendToAi" />
     </div>
   </div>
@@ -144,6 +163,27 @@ defineExpose({ toggleAiPanel, ensureAiPanel, showAiPanel })
   flex-direction: row;
   width: 100%;
   height: 100%;
+  --workbench-panel-header-height: 38px;
+}
+
+.terminal-column-header {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  height: var(--workbench-panel-header-height, 38px);
+  min-height: var(--workbench-panel-header-height, 38px);
+  padding: 0 8px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  -webkit-app-region: drag;
+}
+
+.terminal-tab-strip {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  -webkit-app-region: drag;
 }
 
 /* 助手面板在右：把行方向反过来，让 sidebar 出现在右侧。

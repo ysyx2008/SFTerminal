@@ -190,62 +190,66 @@ function togglePanel() {
       <TerminalPaneHost :tab="tab" :is-active="isActive" show-stage-chrome @send-to-ai="handleSendToAi" />
     </div>
     <div
-      v-if="hasHostedTerminal"
-      class="stage-resizer"
-      :class="{ resizing: stageResizing }"
-      @mousedown="startStageResize"
-    />
-    <WorkbenchShell
-      class="assistant-shell"
+      class="assistant-chat-column"
       :style="hasHostedTerminal ? { width: chatWidth + 'px' } : undefined"
-      :toggle-visible="docExpanded"
-      v-model:toggle-ratio="ratio"
-      toggle-side="right"
     >
-      <template #anchor>
-        <div class="assistant-chat">
-          <AiPanel
-            ref="aiPanelRef"
-            :tab-id="tab.id"
-            :tab-active="isActive"
-            :consume-workbench-context="consumeWorkbenchContext"
-          />
-          <div v-if="hasArtifacts" class="artifact-list-chrome">
-            <button
-              type="button"
-              class="artifact-chrome-btn"
-              :class="{ 'is-open': listOpen }"
-              :title="t('canvas.artifactList')"
-              :aria-label="t('canvas.artifactList')"
-              :aria-expanded="listOpen"
-              @click="toggleList"
-            >
-              <List :size="14" />
-            </button>
-            <Transition name="artifact-list-pop">
-              <ArtifactListPopover
-                v-if="listOpen"
-                :artifacts="artifacts"
-                :active-artifact-id="activeArtifactId"
-                @select="openArtifact"
-                @close="listOpen = false"
-              />
-            </Transition>
+      <div
+        v-if="hasHostedTerminal"
+        class="stage-resizer"
+        :class="{ resizing: stageResizing }"
+        @mousedown="startStageResize"
+      />
+      <WorkbenchShell
+        class="assistant-shell"
+        :toggle-visible="docExpanded"
+        v-model:toggle-ratio="ratio"
+        toggle-side="right"
+      >
+        <template #anchor>
+          <div class="assistant-chat">
+            <AiPanel
+              ref="aiPanelRef"
+              :tab-id="tab.id"
+              :tab-active="isActive"
+              :consume-workbench-context="consumeWorkbenchContext"
+            />
+            <div v-if="hasArtifacts" class="artifact-list-chrome">
+              <button
+                type="button"
+                class="artifact-chrome-btn"
+                :class="{ 'is-open': listOpen }"
+                :title="t('canvas.artifactList')"
+                :aria-label="t('canvas.artifactList')"
+                :aria-expanded="listOpen"
+                @click="toggleList"
+              >
+                <List :size="14" />
+              </button>
+              <Transition name="artifact-list-pop">
+                <ArtifactListPopover
+                  v-if="listOpen"
+                  :artifacts="artifacts"
+                  :active-artifact-id="activeArtifactId"
+                  @select="openArtifact"
+                  @close="listOpen = false"
+                />
+              </Transition>
+            </div>
           </div>
-        </div>
-      </template>
-      <template #toggle>
-        <ArtifactPanel
-          v-if="hasArtifacts"
-          ref="artifactPanelRef"
-          :tab-id="tab.id"
-          :scroll-to-agent-step="scrollToAgentStep"
-          :add-composer-quote="addComposerQuote"
-          :add-composer-image="addComposerImage"
-          :set-composer-draft="setComposerDraft"
-        />
-      </template>
-    </WorkbenchShell>
+        </template>
+        <template #toggle>
+          <ArtifactPanel
+            v-if="hasArtifacts"
+            ref="artifactPanelRef"
+            :tab-id="tab.id"
+            :scroll-to-agent-step="scrollToAgentStep"
+            :add-composer-quote="addComposerQuote"
+            :add-composer-image="addComposerImage"
+            :set-composer-draft="setComposerDraft"
+          />
+        </template>
+      </WorkbenchShell>
+    </div>
     <div v-if="hasArtifacts && !hasHostedTerminal" class="artifact-fold-chrome">
       <button
         type="button"
@@ -281,6 +285,38 @@ function togglePanel() {
   height: 100%;
 }
 
+.assistant-chat-column {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.assistant-workbench.is-terminal-stage .assistant-chat-column {
+  flex: 0 0 auto;
+  min-width: 300px;
+  border-left: 1px solid var(--border-color);
+  transition: width 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.assistant-workbench.is-terminal-stage .assistant-chat-column::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(var(--accent-secondary-rgb, 116, 199, 236), 0.15), transparent);
+  pointer-events: none;
+}
+
+.assistant-workbench.is-stage-resizing .assistant-chat-column {
+  transition: none;
+}
+
 .assistant-shell {
   flex: 1 1 auto;
   min-width: 0;
@@ -288,21 +324,14 @@ function togglePanel() {
   height: 100%;
 }
 
-.assistant-workbench.is-terminal-stage .assistant-shell {
-  flex: 0 0 auto;
-  min-width: 300px;
-  transition: width 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.assistant-workbench.is-stage-resizing .assistant-shell {
-  transition: none;
-}
-
 .stage-resizer {
-  flex: 0 0 5px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
   cursor: col-resize;
   background: transparent;
-  position: relative;
   z-index: 5;
 }
 

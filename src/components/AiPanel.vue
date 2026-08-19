@@ -651,6 +651,7 @@ const {
   abortAgent,
   followUpQueueView,
   removeFollowUp,
+  insertFollowUp,
   confirmToolCall,
   confirmTrustCommandAndAllow,
   submitSecureInput,
@@ -2720,6 +2721,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :submit-empty-message="handleComposerEmptySubmit"
         :follow-up-queue="followUpQueueView"
         :remove-follow-up="removeFollowUp"
+        :insert-follow-up="insertFollowUp"
         :clear-tab-error="clearTabError"
         :consume-workbench-context="props.consumeWorkbenchContext"
       >

@@ -142,10 +142,10 @@ async function dispatch(
     case 'split': {
       const t0 = Date.now()
       log.info(`split start direction=${op.direction} target=${op.target?.kind || 'inherit'}`)
-      const newPaneId = await store.splitTerminal(op.direction, op.target, tabId)
+      const ptyId = await store.splitTerminal(op.direction, op.target, tabId)
       const t1 = Date.now()
-      log.info(`split done newPaneId=${newPaneId || 'null'} elapsed=${t1 - t0}ms`)
-      if (!newPaneId) {
+      log.info(`split done ptyId=${ptyId || 'null'} elapsed=${t1 - t0}ms`)
+      if (!ptyId) {
         const reason = store.getLastSplitError() || 'no active tab, terminal creation failed, or invalid SSH sessionId'
         return { ok: false, error: `Split failed: ${reason}` }
       }
@@ -153,8 +153,9 @@ async function dispatch(
       return {
         ok: true,
         data: {
-          tabId: tab.id,
-          newPaneId,
+          tabId,
+          ptyId,
+          newPaneId: ptyId, // 兼容旧字段名；值与 ptyId 相同，不是布局节点 id
           panes: collectPanes(latest?.splitLayout)
         }
       }

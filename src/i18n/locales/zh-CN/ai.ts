@@ -76,6 +76,8 @@ export default {
     executeTask: '执行任务 (Enter)',
     sendSupplementWithQueue: '补充给当前任务 (Enter) · 排队到任务结束后再做 ({shortcut})',
     followUpQueueHeader: '排队 {count} 条 · 当前任务结束后依次执行',
+    followUpQueueInsert: '插入当前对话',
+    followUpQueueInsertShort: '现在插入',
     followUpQueueRemove: '从队列移除',
     useDefault: '使用默认值 (Enter)',
     stopGeneration: '停止生成',

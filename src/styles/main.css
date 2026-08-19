@@ -2093,8 +2093,34 @@ textarea:focus {
   transition: padding-left var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
 
-.app-container:not(.is-win) .tab-view-workbench .assistant-workbench.is-terminal-stage .system-info-bar {
+/* tab-view-workbench 落在助手根上，和 is-terminal-stage 是同一个节点，不能写成后代 */
+.app-container:not(.is-win) .tab-view-workbench.is-terminal-stage .system-info-bar {
   padding-left: 12px;
+}
+
+/* 终端页三栏：各栏顶栏就是第一排，按谁贴着窗口左/右沿让位 */
+.app-container:not(.is-win) .terminal-tab.ai-panel-right .terminal-column-header,
+.app-container:not(.is-win) .terminal-tab:not(.is-ai-open) .terminal-column-header {
+  padding-left: max(8px, var(--shell-inset-left));
+  transition: padding-left var(--shell-drawer-duration) var(--shell-drawer-ease);
+}
+
+.app-container:not(.is-win) .terminal-tab.ai-panel-left.is-ai-open .system-info-bar {
+  padding-left: max(12px, var(--shell-inset-left));
+  transition: padding-left var(--shell-drawer-duration) var(--shell-drawer-ease);
+}
+
+.app-container .terminal-tab.ai-panel-right.is-ai-open .system-info-bar,
+.app-container .terminal-tab.ai-panel-left.is-ai-open .terminal-column-header,
+.app-container .terminal-tab:not(.is-ai-open) .terminal-column-header {
+  padding-right: max(8px, var(--shell-inset-right));
+}
+
+/* 对话栏开关钉在主区右上（26 + 8 呼吸），第一排再让出这一截 */
+.app-container.has-ai-toggle .terminal-tab.ai-panel-right.is-ai-open .system-info-bar,
+.app-container.has-ai-toggle .terminal-tab.ai-panel-left.is-ai-open .terminal-column-header,
+.app-container.has-ai-toggle .terminal-tab:not(.is-ai-open) .terminal-column-header {
+  padding-right: calc(max(8px, var(--shell-inset-right)) + 34px);
 }
 
 /* 巡检页自带全宽页头，左侧同样让位 */

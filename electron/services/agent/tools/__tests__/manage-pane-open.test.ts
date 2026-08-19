@@ -64,6 +64,86 @@ describe('manage_pane action=open', () => {
   })
 })
 
+describe('manage_pane action=split', () => {
+  beforeEach(() => {
+    exec.mockReset()
+  })
+
+  it('returns the new pane ptyId and sets it as current', async () => {
+    const newPtyId = 'pty-new'
+    exec.mockResolvedValue({
+      ok: true,
+      data: {
+        tabId: 'tab-1',
+        ptyId: newPtyId,
+        newPaneId: newPtyId,
+        panes: [
+          { ptyId: 'pty-old', label: '左侧', isActive: false, terminalType: 'local' },
+          { ptyId: newPtyId, label: '右侧', isActive: true, terminalType: 'local' }
+        ]
+      }
+    })
+    const setCurrentPtyId = vi.fn()
+    const result = await managePaneTool(
+      { action: 'split', direction: 'horizontal' },
+      'tab-1',
+      { setCurrentPtyId } as never
+    )
+    expect(result.success).toBe(true)
+    expect(result.output).toContain(`pane_id=${newPtyId}`)
+    const payload = JSON.parse(result.output.slice(result.output.indexOf('{'))) as {
+      ptyId: string
+      newPaneId: string
+      panes: Array<{ ptyId: string }>
+    }
+    expect(payload.ptyId).toBe(newPtyId)
+    expect(payload.newPaneId).toBe(newPtyId)
+    expect(payload.panes.map(p => p.ptyId)).toContain(newPtyId)
+    expect(setCurrentPtyId).toHaveBeenCalledWith(newPtyId)
+    expect(exec).toHaveBeenCalledWith(
+      { type: 'split', direction: 'horizontal', target: undefined },
+      'tab-1'
+    )
+  })
+
+  it('accepts newPaneId as ptyId when ptyId field is missing', async () => {
+    exec.mockResolvedValue({
+      ok: true,
+      data: {
+        newPaneId: 'pty-from-alias',
+        panes: [{ ptyId: 'pty-from-alias', label: '右侧', isActive: true, terminalType: 'local' }]
+      }
+    })
+    const setCurrentPtyId = vi.fn()
+    const result = await managePaneTool(
+      { action: 'split', direction: 'vertical', target: 'local' },
+      'tab-1',
+      { setCurrentPtyId } as never
+    )
+    expect(result.success).toBe(true)
+    expect(result.output).toContain('pane_id=pty-from-alias')
+    expect(setCurrentPtyId).toHaveBeenCalledWith('pty-from-alias')
+  })
+
+  it('rejects invalid direction', async () => {
+    const result = await managePaneTool({ action: 'split', direction: 'diagonal' }, 'tab-1')
+    expect(result.success).toBe(false)
+    expect(exec).not.toHaveBeenCalled()
+  })
+
+  it('does not set current ptyId when split fails', async () => {
+    exec.mockResolvedValue({ ok: false, error: 'Split failed: no active tab' })
+    const setCurrentPtyId = vi.fn()
+    const result = await managePaneTool(
+      { action: 'split', direction: 'horizontal' },
+      'tab-1',
+      { setCurrentPtyId } as never
+    )
+    expect(result.success).toBe(false)
+    expect(setCurrentPtyId).not.toHaveBeenCalled()
+  })
+})
+
 describe('getAgentTools assistant hosted terminal', () => {
   it('exposes manage_pane open and execute_command in assistant mode', () => {
     const tools = getAgentTools(undefined, { mode: 'assistant' })

@@ -33,6 +33,29 @@ function getLocalSystemInfo() {
 
 const SCROLL_THRESHOLD = 100
 const SCROLL_THROTTLE_MS = 1000
+/** 现场灌入的主动提醒与刚落盘的那条时间可能差几十毫秒，按同文 + 短窗口去重 */
+const COMPANION_PROACTIVE_DEDUP_MS = 5000
+
+type CompanionStepLike = {
+  id?: string
+  type: string
+  content: string
+  timestamp?: number
+}
+
+function isDuplicateCompanionLiveStep(
+  step: CompanionStepLike,
+  mergedSteps: CompanionStepLike[],
+  mergedIds: Set<string>
+): boolean {
+  if (step.id && mergedIds.has(step.id)) return true
+  if (step.type !== 'proactive_notice') return false
+  return mergedSteps.some(existing =>
+    existing.type === 'proactive_notice'
+    && existing.content === step.content
+    && Math.abs((existing.timestamp ?? 0) - (step.timestamp ?? 0)) < COMPANION_PROACTIVE_DEDUP_MS
+  )
+}
 
 export interface AgentTaskGroup {
   id: string
@@ -211,13 +234,12 @@ export function useAgentMode(
     return currentTab.value?.aiLoading || false
   })
 
-  // 获取当前终端的系统信息
+  // 获取当前终端的系统信息。独立助手滑回对话台后不再展示这台终端的主机信息。
   const currentSystemInfo = computed(() => {
     const tab = currentTab.value
-    if (tab?.systemInfo) {
-      return tab.systemInfo
-    }
-    return null
+    if (!tab?.systemInfo) return null
+    if (tab.type === 'assistant' && !tab.ptyId) return null
+    return tab.systemInfo
   })
 
   // 获取当前终端选中的文本
@@ -1166,7 +1188,15 @@ export function useAgentMode(
       queued ? (queued.images?.length ?? 0) : (imageCallbacks?.getImages()?.length ?? 0)
     ) > 0
     const message = overrideMessage ?? inputText.value
-    if ((!message.trim() && !hasImageData && !options?.workbenchContext?.selectionScope?.excerpt?.trim()) || !currentTabId.value) return
+    const putBackQueued = () => {
+      if (!queued) return
+      if (followUpQueue.value.some(entry => entry.id === queued.id)) return
+      followUpQueue.value = [queued, ...followUpQueue.value]
+    }
+    if ((!message.trim() && !hasImageData && !options?.workbenchContext?.selectionScope?.excerpt?.trim()) || !currentTabId.value) {
+      putBackQueued()
+      return
+    }
 
     const tabId = currentTabId.value
 
@@ -1217,14 +1247,13 @@ export function useAgentMode(
       const documentContext = await getDocumentContext()
       const images = imageCallbacks?.getImages() || []
       
-      const success = await window.electronAPI.agent.addMessage(
-        agentKey,
+      const success = await appendToCurrentConversation({
         message,
-        supplementAttachments.length > 0 ? supplementAttachments : undefined,
-        documentContext || undefined,
-        images.length > 0 ? images : undefined,
-        options?.workbenchContext
-      )
+        attachments: supplementAttachments.length > 0 ? supplementAttachments : undefined,
+        documentContext: documentContext || undefined,
+        images: images.length > 0 ? images : undefined,
+        workbenchContext: options?.workbenchContext
+      })
       
       if (success) {
         if (supplementAttachments.length > 0) attachmentCallbacks?.clearAttachments()
@@ -1234,7 +1263,9 @@ export function useAgentMode(
     }
 
     const startTime = Date.now()
-    inputText.value = ''
+    if (!queued) {
+      inputText.value = ''
+    }
 
     // 并发软上限检查：超过 MAX_CONCURRENT_AGENTS 时提示用户，但不强制阻止
     if (terminalStore.isAtConcurrencyLimit) {
@@ -1273,6 +1304,7 @@ export function useAgentMode(
       : (currentTab.value ? terminalStore.getActivePtyId(currentTab.value) : undefined)
     if (!isAssistantMode && (!context || !runPtyId)) {
       log.error('无法获取终端上下文')
+      putBackQueued()
       return
     }
 
@@ -1470,6 +1502,39 @@ export function useAgentMode(
     followUpQueue.value = followUpQueue.value.filter(item => item.id !== id)
   }
 
+  const takeFollowUp = (id: string): FollowUpQueueItem | undefined => {
+    const item = followUpQueue.value.find(entry => entry.id === id)
+    if (!item) return undefined
+    followUpQueue.value = followUpQueue.value.filter(entry => entry.id !== id)
+    return item
+  }
+
+  const restoreFollowUp = (item: FollowUpQueueItem, index: number) => {
+    const next = [...followUpQueue.value]
+    next.splice(Math.min(Math.max(index, 0), next.length), 0, item)
+    followUpQueue.value = next
+  }
+
+  /** 追加进当前这场还在跑的对话；不中止任务、不另起一轮。 */
+  const appendToCurrentConversation = async (payload: {
+    message: string
+    attachments?: AttachmentInfo[]
+    documentContext?: string
+    images?: string[]
+    workbenchContext?: WorkbenchContext
+  }): Promise<boolean> => {
+    const agentKey = getAgentKey()
+    if (!agentKey) return false
+    return window.electronAPI.agent.addMessage(
+      agentKey,
+      payload.message,
+      payload.attachments,
+      payload.documentContext,
+      payload.images,
+      payload.workbenchContext
+    )
+  }
+
   let followUpDrainTimer: ReturnType<typeof setTimeout> | null = null
 
   const cancelFollowUpDrain = () => {
@@ -1479,7 +1544,7 @@ export function useAgentMode(
     }
   }
 
-  /** 当前 run 结束后按顺序开下一件。延后 shift，以便关 tab / 手动删掉能拦住。 */
+  /** 当前 run 结束后按顺序开下一件。延后取出，以便关 tab / 手动删掉 / 插入当前对话能拦住。 */
   const scheduleNextFollowUp = (tabId: string): boolean => {
     if (followUpDrainTimer || followUpQueue.value.length === 0) return false
     terminalStore.requestAgentCompleteTabAttentionSkip(tabId)
@@ -1489,7 +1554,7 @@ export function useAgentMode(
       if (isAgentRunning.value) return
       const next = followUpQueue.value[0]
       if (!next) return
-      followUpQueue.value = followUpQueue.value.slice(1)
+      if (!takeFollowUp(next.id)) return
       log.info('任务结束，启动排队中的下一条:', next.message)
       void runAgent(next.message, {
         workbenchContext: next.workbenchContext,
@@ -1497,6 +1562,32 @@ export function useAgentMode(
       })
     }, 100)
     return true
+  }
+
+  /** 把排队中的一条追加进当前这场（与回车补充同一条路）；闲着则马上开下一件。不打断正在跑的任务。 */
+  const insertFollowUp = async (id: string) => {
+    const index = followUpQueue.value.findIndex(entry => entry.id === id)
+    const item = takeFollowUp(id)
+    if (!item) return
+    cancelFollowUpDrain()
+
+    if (isAgentRunning.value) {
+      const success = await appendToCurrentConversation({
+        message: item.message,
+        attachments: item.attachments,
+        documentContext: item.documentContext,
+        images: item.images,
+        workbenchContext: item.workbenchContext
+      })
+      if (!success) restoreFollowUp(item, index)
+      return
+    }
+
+    log.info('插入排队消息为下一件任务:', item.message)
+    void runAgent(item.message, {
+      workbenchContext: item.workbenchContext,
+      queuedPayload: item
+    })
   }
 
   // alwaysAllow: 会话内存白名单（路径类等仍可用；命令类 UI 已改为加入规则）
@@ -1598,7 +1689,7 @@ export function useAgentMode(
     const key = getAgentKey()
     if (!isAgentRunning.value || !key) return
 
-    await window.electronAPI.agent.addMessage(key, message)
+    await appendToCurrentConversation({ message })
   }
 
   // 获取步骤类型的图标
@@ -2122,22 +2213,27 @@ export function useAgentMode(
     }
   }
 
-  // 联络常驻 tab：重启后会话为空时，载入上次 __companion__ 对话，避免一片空白。
-  // 同一次运行内若已有 live steps（IM/Gateway 流入），则跳过，不覆盖现有对话。
-  // 注意：这是「展示层」恢复（steps 上墙）。后端会话连续性由持久命名 Agent 自己的
-  // restoreFromHistory/TaskMemory 负责——桌面续聊会新开 session 但带着恢复的工作记忆，
-  // 因此前端这里无需关心 record.messages。
-  // 合并视图由后端 Companion.getMergedViewRecord 产出（最近 N 条 companion record 的 steps
-  // 按时间升序拼接，id/timestamp 成对取最新一条以对齐续聊上下文），前端不再自拼。
+  // 联络常驻 tab：挂载时把合并视图上墙。已经恢复过、或正在跑任务则不动。
+  // 现场已灌进的提醒/消息接到历史后面，按 id（及短时间窗内同文主动提醒）去重，
+  // 不因为已经有几条提醒就放弃整段历史。
   const restoreCompanionHistoryIfNeeded = async () => {
     if (currentTab.value?.agentId !== COMPANION_TAB_AGENT_ID) return
-    if ((agentState.value?.steps?.length ?? 0) > 0) return
+    if (agentState.value?.loadedFromHistory) return
+    if (isAgentRunning.value) return
     try {
       const merged = await window.electronAPI.history.getCompanionMergedView()
-      // await 期间可能有 live step 流入，再次确认仍为空才恢复，避免覆盖
       if (!merged) return
-      if ((agentState.value?.steps?.length ?? 0) > 0) return
-      terminalStore.restoreAgentHistory(currentTabId.value, merged)
+      if (agentState.value?.loadedFromHistory) return
+      if (isAgentRunning.value) return
+
+      const liveSteps = agentState.value?.steps ?? []
+      const mergedSteps = merged.steps ?? []
+      const mergedIds = new Set(mergedSteps.map(s => s.id).filter(Boolean))
+      const extraLive = liveSteps.filter(step => !isDuplicateCompanionLiveStep(step, mergedSteps, mergedIds))
+      const steps = extraLive.length > 0
+        ? [...mergedSteps, ...extraLive].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+        : mergedSteps
+      terminalStore.restoreAgentHistory(currentTabId.value, { ...merged, steps })
     } catch (err) {
       log.warn('[Companion] 恢复历史会话失败:', err)
     }
@@ -2207,6 +2303,7 @@ export function useAgentMode(
     abortAgent,
     followUpQueueView,
     removeFollowUp,
+    insertFollowUp,
     confirmToolCall,
     confirmTrustCommandAndAllow,
     submitSecureInput,

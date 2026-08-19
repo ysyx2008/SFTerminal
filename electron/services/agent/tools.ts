@@ -1088,12 +1088,12 @@ Agent 类型：
 
 - list：列出窗格（ptyId / label / isActive / terminalType / connected）。connected 仅表示主进程尚未观察到断开，不是远端健康探测。
 - open：不分屏、直接连一台真终端。可选 target：不传/local 开本机、ssh:<sessionId>（先 list_ssh_sessions）。助手没有终端时用这个换到终端台；已有终端时再开一扇。
-- split：再开一扇（须已有终端）。必填 direction=horizontal|vertical；可选 target：不传/inherit 复用激活窗格、local、ssh:<sessionId>。
+- split：再开一扇（须已有终端）。必填 direction=horizontal|vertical；可选 target：不传/inherit 复用激活窗格、local、ssh:<sessionId>。成功后返回的 ptyId 就是之后 execute_command / focus / close 用的编号，与 list 里那扇窗相同。
 - close：关掉一扇（必填 pane_id=ptyId）。终端页不能关最后一扇；助手可以关最后一扇，工作台滑回对话。
 - focus：切焦点并切换 Agent 默认操作窗格（必填 pane_id）。
 - ensure_connected：确保 SSH 窗格连通；已通则幂等；断则原地重连（成功=新 shell）。可选 pane_id。
 
-窗格唯一标识是 ptyId（SSH 重连 reuseId 保持不变）。给 execute_command 等传 pane_id 时用该值。
+窗格唯一标识是 ptyId（SSH 重连 reuseId 保持不变）。分屏或再开一扇成功后返回的编号就是这个值，给 execute_command 等传 pane_id 时直接用，不必再 list。
 开了真终端后必须用 execute_command 打在看得见的窗里，不要用 exec 幕后执行。
 SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不自动重跑命令）；勿叫用户点按钮。
 典型：list_ssh_sessions → manage_pane(action=open, target="ssh:…") → execute_command。`,

@@ -75,6 +75,7 @@ const props = defineProps<{
   submitEmptyMessage: () => void | Promise<void>
   followUpQueue?: { id: string; message: string }[]
   removeFollowUp?: (id: string) => void
+  insertFollowUp?: (id: string) => void
   clearTabError: () => void
   /**
    * 发送时取出的旁路工作台上下文（不上聊天气泡）。
@@ -858,14 +859,25 @@ const handleSendClick = (event: MouseEvent) => {
     </div>
     <div v-for="item in followUpItems" :key="item.id" class="follow-up-row">
       <span class="follow-up-row-text" :title="item.message">{{ item.message }}</span>
-      <button
-        type="button"
-        class="follow-up-row-remove"
-        :title="t('ai.followUpQueueRemove')"
-        @click="removeFollowUp?.(item.id)"
-      >
-        <X :size="12" />
-      </button>
+      <div class="follow-up-row-actions">
+        <button
+          type="button"
+          class="follow-up-row-insert"
+          :title="t('ai.followUpQueueInsert')"
+          @click="insertFollowUp?.(item.id)"
+        >
+          <span class="follow-up-row-insert-full">{{ t('ai.followUpQueueInsert') }}</span>
+          <span class="follow-up-row-insert-short">{{ t('ai.followUpQueueInsertShort') }}</span>
+        </button>
+        <button
+          type="button"
+          class="follow-up-row-remove"
+          :title="t('ai.followUpQueueRemove')"
+          @click="removeFollowUp?.(item.id)"
+        >
+          <X :size="12" />
+        </button>
+      </div>
     </div>
   </div>
 
@@ -1676,6 +1688,8 @@ const handleSendClick = (event: MouseEvent) => {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border-top: 1px solid var(--border-color);
+  container-type: inline-size;
+  container-name: follow-up-queue;
 }
 
 .follow-up-queue-header {
@@ -1709,6 +1723,44 @@ const handleSendClick = (event: MouseEvent) => {
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+.follow-up-row-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.follow-up-row-insert {
+  padding: 1px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.follow-up-row-insert-short {
+  display: none;
+}
+
+.follow-up-row-insert:hover,
+.follow-up-row-insert:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+@container follow-up-queue (max-width: 280px) {
+  .follow-up-row-insert-full {
+    display: none;
+  }
+  .follow-up-row-insert-short {
+    display: inline;
+  }
 }
 
 /* × 只在指到那一条时露出来，多条排队时不铺一列叉 */

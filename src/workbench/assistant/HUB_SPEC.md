@@ -37,7 +37,7 @@
 
 `ensureCompanionTab()` 在 `initializeApp()` 最早调用，保证 `__companion__` tab 在整个 session 生命周期内始终存在。`closeTab` 对 `__companion__` 进行保护，永远返回 false。
 
-**渲染与历史恢复**：联络 tab 走专属的 `CompanionWorkbench → AiPanel`（`kind='companion'`，与 assistant 平级；**只含聊天，无产出物面板/历史侧栏**，契约见 `workbench/companion/SPEC.md`），样式与普通助手一致且可从桌面直接续聊。IM/Gateway/桌面/Watch `talk_to_user` 的步骤都以 `agentId = __companion__` 通过标准 `agent:step` 流入同一会话。重启后联络 tab 为空时，`useAgentMode` 挂载阶段调 `history.getCompanionMergedView()` 取后端 `Companion.getMergedViewRecord()` 产出的合并视图 record（最近 N 条 companion record 的 steps 按时间升序拼接，`id`/`timestamp` 成对取最新一条以对齐续聊上下文；带 await 前后双重空检查防覆盖 live steps）；合并逻辑真相源在后端 `electron/services/conversation/companion.ts`，前端不再自拼。后端会话连续性由持久命名 Agent 自身的 `restoreFromHistory`/`restoreRecentTaskMemory` 负责。<br/>**已知局限**：仅能恢复带 `agentKey` 的记录（2026-06-21 引入字段之后产生的）；更早的联络对话与普通助手任务在历史里无字段可区分，无法回填，不出现在联络 tab。
+**渲染与历史恢复**：联络 tab 走专属的 `CompanionWorkbench → AiPanel`（`kind='companion'`，与 assistant 平级；**只含聊天，无产出物面板/历史侧栏**，契约见 `workbench/companion/SPEC.md`），样式与普通助手一致且可从桌面直接续聊。IM/Gateway/桌面/Watch `talk_to_user` 的步骤都以 `agentId = __companion__` 通过标准 `agent:step` 流入同一会话。重启后联络 tab 挂载时恢复合并时间线（最近大约十段真对话，主动提醒不占名额；已灌进的现场提醒接到后面、不重复）。已经恢复过或正在跑任务则不动。合并逻辑真相源在后端联络关系线，前端不再自拼。后端会话连续性由持久命名 Agent 自身的 `restoreFromHistory`/`restoreRecentTaskMemory` 负责。<br/>**已知局限**：仅能恢复带 `agentKey` 的记录（2026-06-21 引入字段之后产生的）；更早的联络对话与普通助手任务在历史里无字段可区分，无法回填，不出现在联络 tab。
 
 ---
 

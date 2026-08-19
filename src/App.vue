@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted, provide, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, provide, watch, unref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Loader2, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from './stores/terminal'
 import { initSplitPaneHandler, disposeSplitPaneHandler } from './services/split-pane-handler'
 import { initWorkbenchHandler, disposeWorkbenchHandler } from './services/workbench-handler'
 import { useConfigStore, type SshSession } from './stores/config'
-import TabBar from './components/TabBar.vue'
 import TerminalTabView from './components/TerminalTabView.vue'
 import { resolveWorkbenchRenderer, resolveWorkbenchKind, isWorkbenchAvailable } from './workbench/registry'
 import { bootstrapWorkbenchCapabilities } from './workbench/bootstrap'
@@ -232,6 +231,10 @@ const welcomeUiReady = ref(false)
 
 // 每个终端 tab 对应的 TerminalTabView 实例引用（tabId -> instance）
 const tabViewRefs = ref<Record<string, InstanceType<typeof TerminalTabView> | null>>({})
+
+function setTabViewRef(tabId: string, el: unknown) {
+  tabViewRefs.value[tabId] = (el as InstanceType<typeof TerminalTabView> | null) ?? null
+}
 
 function onAwakenClose(awakened?: boolean) {
   showAwaken.value = false
@@ -1124,20 +1127,18 @@ const showWelcomePage = computed(() =>
   !activeSurfaceTabId.value
 )
 /**
- * 主区要不要壳层顶条：装终端 Tab 条时要；
- * 欢迎页 / 空终端 / 待办这三个页面自己没有第一排，需要一条透明区兜住窗口拖拽；
- * 助手工作台与巡检有自己的第一排，让它们直接顶到窗口上沿。
+ * 主区要不要壳层顶条：欢迎页 / 空终端 / 待办自己没有第一排，需要一条透明区兜住窗口拖拽。
+ * 终端页已是三栏（各栏自己的顶栏贴窗口上沿），不再用通栏菜单；助手与巡检同理。
  *
  * Windows 例外——三个自绘窗口按钮宽 138px，浮在主区右上；
  * 助手工作台自己的第一排若顶到窗口上沿，会被这三颗按钮压住，
- * 所以 Windows 一律保留这条顶条来托住按钮。
+ * 所以 Windows 在这些页面仍留顶条托住按钮。终端页右栏顶栏自己让位，不再留通栏。
  */
 const needsShellTop = computed(() =>
-  isWin ||
-  showTerminalTabStrip.value ||
   showWelcomePage.value ||
   showTerminalEmpty.value ||
-  terminalStore.todosActive
+  terminalStore.todosActive ||
+  (isWin && !showTerminalTabStrip.value)
 )
 /** 主工作区显示某个 tab 工作台（欢迎页 / 智能巡检 / 待办 / 空终端时隐藏，但 tab 组件保持挂载） */
 const showTabWorkbench = computed(
@@ -1332,12 +1333,15 @@ const toggleAiPanel = () => {
   getActiveTabView()?.toggleAiPanel()
 }
 
-// 开关画的是「收起」还是「展开」，得看当前终端的侧栏开着没
 const aiPanelVisible = computed(() => {
   const id = terminalStore.activeTabId
   if (!isTerminalTab(id)) return false
-  return !!tabViewRefs.value[id]?.showAiPanel
+  return !!unref(tabViewRefs.value[id]?.showAiPanel)
 })
+
+const showAiPanelToggle = computed(() =>
+  !isSteamBuild && showTerminalTabStrip.value
+)
 
 // 确保指定 tab 的 AI 面板可见
 function ensureAiPanel(tabId?: string) {
@@ -1537,6 +1541,7 @@ onUnmounted(() => {
       'is-fullscreen': isFullScreen,
       'nav-collapsed': !showRecallSidebar,
       'main-leftmost': !showRecallSidebar && !showSidebar,
+      'has-ai-toggle': showAiPanelToggle,
     }"
     :data-ui-theme="currentUiTheme"
     :data-color-scheme="currentColorScheme"
@@ -1596,57 +1601,15 @@ onUnmounted(() => {
 
       <!-- 终端区域 / 欢迎页 / 智能巡检 -->
       <main class="terminal-area">
-        <!-- 主区顶条只在页面没有自己的第一排时出现（欢迎页 / 空终端 / 待办），
-             以及终端进来时用来装 Tab 条。其余页面（助手工作台、巡检）由它们自己的第一排顶到窗口上沿。 -->
+        <!-- 主区顶条只在页面没有自己的第一排时出现（欢迎页 / 空终端 / 待办）。
+             终端页 / 助手 / 巡检由各栏自己的顶栏顶到窗口上沿。 -->
         <div
           v-if="needsShellTop"
           class="shell-top shell-top--main"
-          :class="{ 'shell-top--tabs': showTerminalTabStrip }"
         >
-          <TabBar
-            v-if="showTerminalTabStrip"
-            variant="terminal"
-            class="terminal-tab-strip"
-            @open-ssh="openHostSidebar"
-          />
-          <span v-else class="shell-top-fill" />
-          <!-- AI 侧栏开关钉在这排最右：长在面板自己头上的话，收起后开关也跟着没了 -->
-          <button
-            v-if="showTerminalTabStrip && !isSteamBuild"
-            class="btn-icon ai-panel-toggle-btn"
-            :title="t('shell.toggleAiPanel')"
-            :aria-expanded="aiPanelVisible"
-            @click="toggleAiPanel"
-          >
-            <PanelRightClose v-if="aiPanelVisible" :size="17" :stroke-width="1.75" />
-            <PanelRightOpen v-else :size="17" :stroke-width="1.75" />
-          </button>
+          <span class="shell-top-fill" />
         </div>
 
-        <div class="main-float main-float--right">
-          <template v-if="authStore.showSoftEntry">
-            <button
-              v-if="!authStore.isAuthenticated"
-              class="btn-icon btn-icon-header sso-soft-btn"
-              :disabled="authStore.loading"
-              :title="t('header.ssoLogin')"
-              @click="onSsoSoftLogin"
-            >
-              {{ t('header.ssoLogin') }}
-            </button>
-            <button
-              v-else-if="recallSidebarCollapsed"
-              class="btn-icon btn-icon-header sso-soft-btn"
-              :title="authStore.user?.email || authStore.user?.name || t('header.ssoLogout')"
-              @click="onSsoSoftLogout"
-            >
-              {{ t('header.ssoLogout') }}
-            </button>
-          </template>
-          <!-- Windows 自绘标题栏按钮（最小化 / 最大化 / 关闭）：仅 Win 平台 + 非全屏时显示。
-               全屏模态打开时，模态全屏覆盖会自动遮住这三个按钮，模态自带的 X 是唯一可见关闭入口。 -->
-          <WindowControls v-if="isWin && !isFullScreen" />
-        </div>
         <TerminalPlaceEmpty
           v-if="showTerminalEmpty"
           class="main-surface"
@@ -1684,13 +1647,53 @@ onUnmounted(() => {
         >
           <component
             :is="resolveWorkbenchRenderer(resolveWorkbenchKind(tab))"
-            :ref="(el: any) => { tabViewRefs[tab.id] = el }"
+            :ref="(el: unknown) => setTabViewRef(tab.id, el)"
             :tab="tab"
             :is-active="showTabWorkbench && tab.id === activeSurfaceTabId"
             :class="tab.type === 'assistant' ? 'tab-view-workbench' : 'tab-view-inner'"
+            @open-ssh="openHostSidebar"
           />
         </div>
       </main>
+
+      <!-- 窗口右上常驻：对话栏开关 + SSO + Windows 窗口按钮。
+           钉在窗口坐标上，不跟对话栏开合跑（与左上侧栏开关同一套）。 -->
+      <div class="main-float main-float--right">
+        <button
+          v-if="showAiPanelToggle"
+          type="button"
+          class="btn-icon ai-panel-toggle-btn"
+          :class="{ 'is-collapsed': !aiPanelVisible }"
+          :title="t('shell.toggleAiPanel')"
+          :aria-expanded="aiPanelVisible"
+          @click="toggleAiPanel"
+        >
+          <PanelRightClose v-if="aiPanelVisible" :size="17" :stroke-width="1.75" />
+          <PanelRightOpen v-else :size="17" :stroke-width="1.75" />
+        </button>
+        <template v-if="authStore.showSoftEntry">
+          <button
+            v-if="!authStore.isAuthenticated"
+            class="btn-icon btn-icon-header sso-soft-btn"
+            :disabled="authStore.loading"
+            :title="t('header.ssoLogin')"
+            @click="onSsoSoftLogin"
+          >
+            {{ t('header.ssoLogin') }}
+          </button>
+          <button
+            v-else-if="recallSidebarCollapsed"
+            class="btn-icon btn-icon-header sso-soft-btn"
+            :title="authStore.user?.email || authStore.user?.name || t('header.ssoLogout')"
+            @click="onSsoSoftLogout"
+          >
+            {{ t('header.ssoLogout') }}
+          </button>
+        </template>
+        <!-- Windows 自绘标题栏按钮（最小化 / 最大化 / 关闭）：仅 Win 平台 + 非全屏时显示。
+             全屏模态打开时，模态全屏覆盖会自动遮住这三个按钮，模态自带的 X 是唯一可见关闭入口。 -->
+        <WindowControls v-if="isWin && !isFullScreen" />
+      </div>
 
       <!-- 窗口左上常驻：侧栏开关。钉在窗口坐标上，不跟侧栏开合跑。
            主机管理盖在这排上面时 inert，避免还能 Tab 到被盖住的按钮。 -->
@@ -1884,15 +1887,16 @@ onUnmounted(() => {
   --shell-inset-right: 148px;
 }
 
-/* 浮层本身不吃鼠标，空白处的拖拽仍由下面的第一排接住；只有按钮接收点击 */
+/* 浮层本身不吃鼠标，空白处的拖拽仍由下面的第一排接住；只有按钮接收点击。
+   钉在 .app-body（窗口坐标）上，z-index 与左上侧栏开关同档，避免被工作台挡住。 */
 .main-float {
   position: absolute;
   top: 0;
-  z-index: 30;
+  z-index: 40;
   display: flex;
   align-items: center;
   gap: 4px;
-  height: var(--shell-top-height);
+  height: var(--workbench-panel-header-height, var(--shell-top-height));
   padding: 0 8px;
   pointer-events: none;
 }
@@ -1963,8 +1967,13 @@ onUnmounted(() => {
 
 .main-float--right {
   right: 0;
-  padding-right: 0;
+  padding-right: 8px;
   gap: 8px;
+}
+
+/* Windows 三按钮必须贴窗口右沿；开关在它们左边，靠 gap 留空 */
+.app-container.is-win:not(.is-fullscreen) .main-float--right {
+  padding-right: 0;
 }
 
 /* 侧栏顶 / 主区顶：两段各自的顶条，共用高度与拖拽行为，保证窗口上沿基线齐平 */
@@ -2130,7 +2139,7 @@ onUnmounted(() => {
   color: var(--text-secondary);
 }
 
-/* AI 侧栏开关：与左边那枚侧栏开关同一套轻触感，方向相反 */
+/* 对话栏开关：与左边那枚侧栏开关同一套轻触感，方向相反，钉在窗口右上 */
 .ai-panel-toggle-btn {
   position: relative;
   display: inline-flex;
@@ -2144,6 +2153,8 @@ onUnmounted(() => {
   color: var(--text-tertiary, var(--text-secondary));
   background: transparent;
   transition: background 0.18s ease, color 0.18s ease;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 .ai-panel-toggle-btn:hover {
@@ -2152,13 +2163,16 @@ onUnmounted(() => {
   transform: none;
 }
 
-/* 顶栏图标不发光：全局 btn-icon hover 会加投影，这排细线条图标会被糊成一团 */
 .ai-panel-toggle-btn:hover svg {
   filter: none;
 }
 
 .ai-panel-toggle-btn:active {
   background: var(--bg-active, rgba(127, 127, 127, 0.2));
+}
+
+.ai-panel-toggle-btn.is-collapsed {
+  color: var(--text-secondary);
 }
 
 /* header 图标不发光（与 btn-icon-header 同一取向），避免顶栏出现彩色光晕 */
@@ -2379,16 +2393,6 @@ onUnmounted(() => {
   bottom: 0;
   z-index: 50;
   box-shadow: 6px 0 28px rgba(0, 0, 0, 0.28);
-}
-
-/* Tab 条移进主区顶条后由顶条提供外框，自己只负责铺满可用空间。
-   它是块容器而非控件，得从上面那条「顶条子元素一律 no-drag」里豁免出来，
-   否则 Tab 右侧那片空白也拖不动窗口；条内的 tab 与按钮各自已标 no-drag。 */
-.shell-top > .terminal-tab-strip {
-  flex: 1;
-  min-width: 0;
-  align-self: stretch;
-  -webkit-app-region: drag;
 }
 
 /* 终端区域 */

@@ -1793,7 +1793,8 @@ export const useTerminalStore = defineStore('terminal', () => {
       `Split done direction=${direction} activePtyId=${activePane.ptyId} newPtyId=${newPtyId} ` +
       `panes=${getAllTerminalPanes(currentTab.splitLayout).map(p => p.ptyId).join(',')}`
     )
-    return newPane.id
+    // 对外返回 ptyId：与 list / execute_command / focus / close 同一套编号
+    return newPtyId
   }
 
   /**
@@ -1817,10 +1818,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       : []
     if (existing.length > 0) {
       const splitTarget: SplitTarget = target.kind === 'inherit' ? { kind: 'local' } : target
-      const paneId = await splitTerminal('vertical', splitTarget, tabId)
-      if (!paneId || !tab.splitLayout) return null
-      const created = getAllTerminalPanes(tab.splitLayout).find(p => p.id === paneId)
-      return created?.ptyId ?? tab.ptyId ?? null
+      return splitTerminal('vertical', splitTarget, tabId)
     }
 
     const seed: SplitPane = { id: 'seed', type: 'terminal', terminalType: 'local' }
@@ -2049,6 +2047,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         tab.splitLayout = undefined
         tab.sshConfig = undefined
         tab.sshSessionId = undefined
+        tab.systemInfo = undefined
         tab.isConnected = false
         return true
       }
