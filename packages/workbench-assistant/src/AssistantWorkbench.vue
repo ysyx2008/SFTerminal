@@ -7,7 +7,7 @@
  * 「跳到生成处」/「引用到 Composer」经 AiPanel defineExpose，由本壳持 ref 转发。
  * Markdown 选区作用域：发送前经 consumeSelectionScope 静默附带，不进引用胶囊。
  */
-import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
+import { computed, reactive, ref, watch, nextTick, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { List, PanelRightClose, PanelRightOpen } from 'lucide-vue-next'
 import type { WorkbenchRendererProps } from '@sailfish/workbench-sdk'
@@ -82,14 +82,27 @@ function hostedTerminalCount(tab: { splitLayout?: unknown }): number {
 
 const hasHostedTerminal = computed(() => hostedTerminalCount(props.tab) > 0)
 const chatWidth = ref(420)
+const chatVisible = ref(true)
 const stageResizing = ref(false)
 const stageRef = ref<HTMLElement | null>(null)
 const MIN_CHAT_WIDTH = 300
 
-const docExpanded = computed(() =>
-  !hasHostedTerminal.value && artifactStore.isVisible(props.tab.id)
+type DeskSeat = 'none' | 'terminal' | 'artifact'
+const seat = ref<DeskSeat>('none')
+
+const terminalSeated = computed(() => hasHostedTerminal.value && seat.value === 'terminal')
+const artifactSeated = computed(() =>
+  seat.value === 'artifact' && artifactStore.isVisible(props.tab.id)
 )
+const docExpanded = computed(() => artifactSeated.value)
 const hasArtifacts = computed(() => artifactStore.hasArtifacts(props.tab.id))
+const showDeskList = computed(() =>
+  hasArtifacts.value || (hasHostedTerminal.value && !terminalSeated.value)
+)
+const showArtifactFold = computed(() => hasArtifacts.value && !terminalSeated.value)
+const showDeskChrome = computed(() =>
+  showDeskList.value || (showArtifactFold.value && !docExpanded.value)
+)
 const ratio = computed({
   get: () => artifactStore.splitRatio,
   set: (v: number) => { artifactStore.splitRatio = v },
@@ -101,15 +114,85 @@ const panelToggleTitle = computed(() =>
 const listOpen = ref(false)
 const artifacts = computed(() => artifactStore.getArtifacts(props.tab.id))
 const activeArtifactId = computed(() => artifactStore.getActiveArtifact(props.tab.id)?.id ?? null)
-
-watch(hasArtifacts, (has) => {
-  if (!has) listOpen.value = false
+const deskTerminalTitle = computed(() => {
+  const walk = (node: unknown): string | null => {
+    if (!node || typeof node !== 'object') return null
+    const n = node as {
+      type?: string
+      terminalType?: string
+      sshSessionId?: string
+      sshConfig?: { username?: string; host?: string }
+      isActive?: boolean
+      children?: unknown[]
+    }
+    if (n.type === 'terminal') {
+      if (n.terminalType === 'ssh') {
+        if (n.sshConfig?.host) {
+          return n.sshConfig.username
+            ? `${n.sshConfig.username}@${n.sshConfig.host}`
+            : n.sshConfig.host
+        }
+        return t('tabs.sshTerminal')
+      }
+      return t('terminal.localTerminal')
+    }
+    for (const child of n.children || []) {
+      const title = walk(child)
+      if (title) return title
+    }
+    return null
+  }
+  return walk(props.tab.splitLayout) ?? t('terminal.localTerminal')
 })
 
-watch(hasHostedTerminal, (hosted) => {
-  if (hosted) {
+watch(hasArtifacts, (has, had) => {
+  if (!has) listOpen.value = false
+  if (had && !has && hasHostedTerminal.value) {
+    seat.value = 'terminal'
+    chatVisible.value = true
+    artifactStore.dismissPanel(props.tab.id)
+  }
+})
+
+watch(hasHostedTerminal, (hosted, wasHosted) => {
+  if (wasHosted === undefined) {
+    if (hosted) {
+      seat.value = 'terminal'
+      artifactStore.minimizePanel(props.tab.id)
+    } else if (artifactStore.isVisible(props.tab.id)) {
+      seat.value = 'artifact'
+    }
+    return
+  }
+  if (hosted && !wasHosted) {
+    seat.value = 'terminal'
+    chatVisible.value = true
     listOpen.value = false
     artifactStore.minimizePanel(props.tab.id)
+    return
+  }
+  if (!hosted && wasHosted && seat.value === 'terminal') {
+    seat.value = 'none'
+  }
+}, { immediate: true })
+
+watch(() => artifactStore.isVisible(props.tab.id), (visible) => {
+  if (visible) {
+    if (seat.value === 'terminal') {
+      const steal = artifactStore.lastCanvasOpen
+      if (steal?.tabId === props.tab.id && steal.stealSeat) {
+        artifactStore.lastCanvasOpen = null
+        seat.value = 'artifact'
+        return
+      }
+      artifactStore.minimizePanel(props.tab.id)
+      return
+    }
+    seat.value = 'artifact'
+    return
+  }
+  if (seat.value === 'artifact') {
+    seat.value = 'none'
   }
 })
 
@@ -157,12 +240,20 @@ function toggleList() {
 }
 
 function openArtifact(artifactId: string) {
-  if (hasHostedTerminal.value) return
+  seat.value = 'artifact'
+  listOpen.value = false
   artifactStore.setActiveArtifact(props.tab.id, artifactId)
 }
 
+function seatTerminal() {
+  if (!hasHostedTerminal.value) return
+  seat.value = 'terminal'
+  listOpen.value = false
+  artifactStore.minimizePanel(props.tab.id)
+}
+
 function togglePanel() {
-  if (hasHostedTerminal.value) return
+  if (terminalSeated.value) return
   listOpen.value = false
   if (docExpanded.value) {
     if (artifactPanelRef.value) {
@@ -170,10 +261,37 @@ function togglePanel() {
     } else {
       artifactStore.minimizePanel(props.tab.id)
     }
+    seat.value = 'none'
     return
   }
+  seat.value = 'artifact'
   artifactStore.expandPanel(props.tab.id)
 }
+
+function toggleAiPanel() {
+  if (!terminalSeated.value) return
+  chatVisible.value = !chatVisible.value
+}
+
+function ensureAiPanel() {
+  chatVisible.value = true
+}
+
+/** 给窗口右上折叠开关用：普通 ref 经实例取出后会丢响应，用 reactive 对象让父级跟得上 */
+const deskChat = reactive({
+  seated: false,
+  visible: true,
+})
+watch(terminalSeated, (seated) => { deskChat.seated = seated }, { immediate: true })
+watch(chatVisible, (visible) => { deskChat.visible = visible })
+
+defineExpose({
+  toggleAiPanel,
+  ensureAiPanel,
+  showAiPanel: chatVisible,
+  hasDeskChatToggle: terminalSeated,
+  deskChat,
+})
 </script>
 
 <template>
@@ -182,26 +300,29 @@ function togglePanel() {
     class="assistant-workbench"
     :class="{
       'is-panel-open': docExpanded,
-      'is-terminal-stage': hasHostedTerminal,
-      'is-stage-resizing': stageResizing
+      'is-terminal-stage': terminalSeated,
+      'is-chat-collapsed': terminalSeated && !chatVisible,
+      'is-stage-resizing': stageResizing,
+      'has-desk-list': showDeskList,
+      'has-artifact-fold': showArtifactFold && !docExpanded
     }"
   >
-    <div v-if="hasHostedTerminal" class="assistant-terminal">
+    <div v-if="hasHostedTerminal" v-show="terminalSeated" class="assistant-terminal">
       <TerminalPaneHost :tab="tab" :is-active="isActive" show-stage-chrome @send-to-ai="handleSendToAi" />
     </div>
     <div
       class="assistant-chat-column"
-      :style="hasHostedTerminal ? { width: chatWidth + 'px' } : undefined"
+      :style="terminalSeated && chatVisible ? { width: chatWidth + 'px' } : undefined"
     >
       <div
-        v-if="hasHostedTerminal"
+        v-if="terminalSeated && chatVisible"
         class="stage-resizer"
         :class="{ resizing: stageResizing }"
         @mousedown="startStageResize"
       />
       <WorkbenchShell
         class="assistant-shell"
-        :toggle-visible="docExpanded"
+        :toggle-visible="docExpanded && hasArtifacts"
         v-model:toggle-ratio="ratio"
         toggle-side="right"
       >
@@ -213,27 +334,44 @@ function togglePanel() {
               :tab-active="isActive"
               :consume-workbench-context="consumeWorkbenchContext"
             />
-            <div v-if="hasArtifacts" class="artifact-list-chrome">
+            <div v-if="showDeskChrome" class="artifact-chrome artifact-chrome--cluster">
+              <div v-if="showDeskList" class="artifact-list-slot">
+                <button
+                  type="button"
+                  class="artifact-chrome-btn"
+                  :class="{ 'is-open': listOpen }"
+                  :title="t('canvas.artifactList')"
+                  :aria-label="t('canvas.artifactList')"
+                  :aria-expanded="listOpen"
+                  @click="toggleList"
+                >
+                  <List :size="14" />
+                </button>
+                <Transition name="artifact-list-pop">
+                  <ArtifactListPopover
+                    v-if="listOpen"
+                    :artifacts="artifacts"
+                    :active-artifact-id="activeArtifactId"
+                    :show-terminal="hasHostedTerminal"
+                    :terminal-title="deskTerminalTitle"
+                    :terminal-active="terminalSeated"
+                    @select="openArtifact"
+                    @select-terminal="seatTerminal"
+                    @close="listOpen = false"
+                  />
+                </Transition>
+              </div>
               <button
+                v-if="showArtifactFold && !docExpanded"
                 type="button"
                 class="artifact-chrome-btn"
-                :class="{ 'is-open': listOpen }"
-                :title="t('canvas.artifactList')"
-                :aria-label="t('canvas.artifactList')"
-                :aria-expanded="listOpen"
-                @click="toggleList"
+                :title="panelToggleTitle"
+                :aria-label="panelToggleTitle"
+                :aria-expanded="docExpanded"
+                @click="togglePanel"
               >
-                <List :size="14" />
+                <PanelRightOpen :size="14" />
               </button>
-              <Transition name="artifact-list-pop">
-                <ArtifactListPopover
-                  v-if="listOpen"
-                  :artifacts="artifacts"
-                  :active-artifact-id="activeArtifactId"
-                  @select="openArtifact"
-                  @close="listOpen = false"
-                />
-              </Transition>
             </div>
           </div>
         </template>
@@ -250,7 +388,7 @@ function togglePanel() {
         </template>
       </WorkbenchShell>
     </div>
-    <div v-if="hasArtifacts && !hasHostedTerminal" class="artifact-fold-chrome">
+    <div v-if="showArtifactFold && docExpanded" class="artifact-chrome artifact-chrome--fold">
       <button
         type="button"
         class="artifact-chrome-btn"
@@ -259,8 +397,7 @@ function togglePanel() {
         :aria-expanded="docExpanded"
         @click="togglePanel"
       >
-        <PanelRightClose v-if="docExpanded" :size="14" />
-        <PanelRightOpen v-else :size="14" />
+        <PanelRightClose :size="14" />
       </button>
     </div>
   </div>
@@ -317,6 +454,14 @@ function togglePanel() {
   transition: none;
 }
 
+.assistant-workbench.is-terminal-stage.is-chat-collapsed .assistant-chat-column {
+  width: 0 !important;
+  min-width: 0;
+  border-left: none;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .assistant-shell {
   flex: 1 1 auto;
   min-width: 0;
@@ -366,19 +511,23 @@ function togglePanel() {
   container-name: assistant-chat;
 }
 
-.artifact-list-chrome,
-.artifact-fold-chrome {
+.artifact-chrome {
   position: absolute;
   top: 8px;
   right: 8px;
   z-index: 5;
   display: flex;
+  flex-direction: row;
   align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
   -webkit-app-region: no-drag;
 }
 
-.assistant-workbench:not(.is-panel-open) .artifact-list-chrome {
-  right: 34px;
+.artifact-list-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .artifact-chrome-btn {

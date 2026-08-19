@@ -65,6 +65,8 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   const splitRatio = ref(0.5)
   const closeTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const lastDiskSync = ref<ArtifactDiskSyncEvent | null>(null)
+  /** 最近一次 canvas open：manage 工具视为明确请文件入座，其它写入只进清单 */
+  const lastCanvasOpen = ref<{ tabId: string; stealSeat: boolean } | null>(null)
   /** 人机双写协同状态（session 级，不持久化）：key = coeditKey(tabId, artifactId) */
   const coeditStates = ref<Map<string, CoeditEntry>>(new Map())
 
@@ -399,6 +401,12 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
 
   function handleAgentStep(tabId: string, step: AgentStep, allSteps: readonly AgentStep[] = []) {
     if (step.canvasData) {
+      if (step.canvasData.action === 'open') {
+        lastCanvasOpen.value = {
+          tabId,
+          stealSeat: step.toolName === 'manage_workbench_artifacts'
+        }
+      }
       applyCanvasDataForTab(tabId, enrichCanvasDataFromStep(step.canvasData, step, allSteps))
       if (step.canvasData.action === 'open') {
         const id = resolveCanvasArtifactId(step.canvasData)
@@ -472,6 +480,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     tabStates,
     splitRatio,
     lastDiskSync,
+    lastCanvasOpen,
     isVisible,
     hasArtifacts: hasArtifactsForTab,
     isPanelMinimized,

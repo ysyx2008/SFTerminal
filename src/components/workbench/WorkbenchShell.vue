@@ -295,6 +295,7 @@ onUnmounted(() => {
   flex: 0 0 auto;
   width: 0;
   min-width: 0;
+  max-width: 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -306,10 +307,12 @@ onUnmounted(() => {
 
 .workbench-region.region-open {
   width: var(--workbench-region-width, 0px);
+  max-width: none;
 }
 
 .workbench-region.region-collapsed {
   width: var(--workbench-collapsed-width, 40px);
+  max-width: none;
 }
 
 .workbench-region-inner {

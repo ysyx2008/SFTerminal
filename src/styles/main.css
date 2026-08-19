@@ -2046,33 +2046,32 @@ textarea:focus {
 
 .tab-view-workbench .system-info-bar > *,
 .tab-view-workbench .canvas-header > *,
-.tab-view-workbench .artifact-fold-chrome,
-.tab-view-workbench .artifact-list-chrome,
+.tab-view-workbench .artifact-chrome,
 .settings-modal > .settings-header > *,
 .watch-panel > .panel-header > * {
   -webkit-app-region: no-drag;
 }
 
-/* 对话顶栏给清单按钮留位；产出物收起时还要给折叠开关让开 */
-.tab-view-workbench .assistant-chat .system-info-bar {
+/* tab-view-workbench 与 assistant-workbench 是同一节点；顶栏只给实际出现的按钮让位 */
+.tab-view-workbench.has-desk-list .system-info-bar {
   padding-right: 38px;
 }
 
-.tab-view-workbench .assistant-workbench:not(.is-panel-open) .system-info-bar {
+.tab-view-workbench.has-desk-list.has-artifact-fold .system-info-bar {
   padding-right: 64px;
 }
 
-.app-container:not(.is-win) .tab-view-workbench .assistant-workbench:not(.is-panel-open) .system-info-bar {
-  padding-right: calc(max(8px, var(--shell-inset-right)) + 56px);
-}
-
-/* Windows 下壳层顶条已托住右上控件，展开按钮在第二排，不必再让位 */
-.app-container:not(.is-win) .tab-view-workbench .artifact-fold-chrome {
+.app-container:not(.is-win) .tab-view-workbench:not(.is-terminal-stage):not(.is-panel-open) .artifact-chrome--cluster,
+.app-container:not(.is-win) .tab-view-workbench .artifact-chrome--fold {
   right: max(8px, var(--shell-inset-right));
 }
 
-.app-container:not(.is-win) .tab-view-workbench .assistant-workbench:not(.is-panel-open) .artifact-list-chrome {
-  right: calc(max(8px, var(--shell-inset-right)) + 26px);
+.app-container:not(.is-win) .tab-view-workbench:not(.is-terminal-stage).has-desk-list .system-info-bar {
+  padding-right: calc(max(8px, var(--shell-inset-right)) + 30px);
+}
+
+.app-container:not(.is-win) .tab-view-workbench:not(.is-terminal-stage).has-desk-list.has-artifact-fold .system-info-bar {
+  padding-right: calc(max(8px, var(--shell-inset-right)) + 56px);
 }
 
 .app-container:not(.is-win) .tab-view-workbench .canvas-header {
@@ -2096,6 +2095,22 @@ textarea:focus {
 /* tab-view-workbench 落在助手根上，和 is-terminal-stage 是同一个节点，不能写成后代 */
 .app-container:not(.is-win) .tab-view-workbench.is-terminal-stage .system-info-bar {
   padding-left: 12px;
+}
+
+.app-container:not(.is-win) .tab-view-workbench.is-terminal-stage .artifact-chrome--cluster {
+  right: max(8px, var(--shell-inset-right));
+}
+
+.app-container.has-ai-toggle .tab-view-workbench.is-terminal-stage .system-info-bar {
+  padding-right: calc(max(8px, var(--shell-inset-right)) + 34px);
+}
+
+.app-container.has-ai-toggle .tab-view-workbench.is-terminal-stage.has-desk-list .system-info-bar {
+  padding-right: calc(max(8px, var(--shell-inset-right)) + 64px);
+}
+
+.app-container.has-ai-toggle .tab-view-workbench.is-terminal-stage .artifact-chrome--cluster {
+  right: calc(max(8px, var(--shell-inset-right)) + 34px);
 }
 
 /* 终端页三栏：各栏顶栏就是第一排，按谁贴着窗口左/右沿让位 */

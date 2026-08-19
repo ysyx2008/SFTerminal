@@ -4,6 +4,7 @@
  */
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Terminal } from 'lucide-vue-next'
 import type { CanvasArtifact } from '@shared/types'
 import { artifactDisplayLabel, sortArtifactsByRecent } from '../index'
 import ArtifactFileIcon from './ArtifactFileIcon.vue'
@@ -11,10 +12,14 @@ import ArtifactFileIcon from './ArtifactFileIcon.vue'
 const props = defineProps<{
   artifacts: readonly CanvasArtifact[]
   activeArtifactId: string | null
+  showTerminal?: boolean
+  terminalTitle?: string
+  terminalActive?: boolean
 }>()
 
 const emit = defineEmits<{
   select: [artifactId: string]
+  selectTerminal: []
   close: []
 }>()
 
@@ -31,9 +36,14 @@ function onSelect(id: string) {
   emit('close')
 }
 
+function onSelectTerminal() {
+  emit('selectTerminal')
+  emit('close')
+}
+
 function onDocMouseDown(e: MouseEvent) {
   const target = e.target as HTMLElement | null
-  if (target?.closest('.artifact-list-chrome')) return
+  if (target?.closest('.artifact-chrome')) return
   emit('close')
 }
 
@@ -57,12 +67,26 @@ onUnmounted(() => {
     <div class="artifact-list-pop-head">{{ t('canvas.artifactListTitle') }}</div>
     <div class="artifact-list-pop-body">
       <button
+        v-if="showTerminal"
+        type="button"
+        role="menuitem"
+        class="artifact-list-pop-item"
+        :class="{ active: terminalActive }"
+        :title="terminalTitle"
+        @click="onSelectTerminal"
+      >
+        <span class="artifact-list-pop-icon">
+          <Terminal :size="16" />
+        </span>
+        <span class="artifact-list-pop-name">{{ terminalTitle }}</span>
+      </button>
+      <button
         v-for="artifact in items"
         :key="artifact.id"
         type="button"
         role="menuitem"
         class="artifact-list-pop-item"
-        :class="{ active: artifact.id === activeArtifactId }"
+        :class="{ active: !terminalActive && artifact.id === activeArtifactId }"
         :title="labelOf(artifact)"
         @click="onSelect(artifact.id)"
       >

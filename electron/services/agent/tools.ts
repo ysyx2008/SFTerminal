@@ -1087,9 +1087,9 @@ Agent 类型：
         description: `管理当前会话的终端窗格与连通。用 action 区分操作：
 
 - list：列出窗格（ptyId / label / isActive / terminalType / connected）。connected 仅表示主进程尚未观察到断开，不是远端健康探测。
-- open：不分屏、直接连一台真终端。可选 target：不传/local 开本机、ssh:<sessionId>（先 list_ssh_sessions）。助手没有终端时用这个换到终端台；已有终端时再开一扇。
+- open：不分屏、直接连一台真终端。可选 target：不传/local 开本机、ssh:<sessionId>（先 list_ssh_sessions）。助手没有终端时用这个请终端入座（左边终端、右边这场对话）；正在看文件时开终端，文件让开进清单。已有终端时再开一扇。
 - split：再开一扇（须已有终端）。必填 direction=horizontal|vertical；可选 target：不传/inherit 复用激活窗格、local、ssh:<sessionId>。成功后返回的 ptyId 就是之后 execute_command / focus / close 用的编号，与 list 里那扇窗相同。
-- close：关掉一扇（必填 pane_id=ptyId）。终端页不能关最后一扇；助手可以关最后一扇，工作台滑回对话。
+- close：关掉一扇（必填 pane_id=ptyId）。终端页不能关最后一扇；助手可以关最后一扇，终端离座、回到对话独占，不自动把文件请回来。
 - focus：切焦点并切换 Agent 默认操作窗格（必填 pane_id）。
 - ensure_connected：确保 SSH 窗格连通；已通则幂等；断则原地重连（成功=新 shell）。可选 pane_id。
 
@@ -1134,7 +1134,7 @@ SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不�
         name: 'list_ssh_sessions',
         description: `列出用户已配置好的 SSH 会话清单（不含密码 / 私钥等敏感字段），返回每个会话的 sessionId、name、host、port、username、group、lastUsedAt。
 
-用途：当你想连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 manage_pane(action="open", target="ssh:<sessionId>") 打开真终端（助手没有终端时用 open；已有终端再开一扇可用 split）。无需用户手工切换或输入凭证。
+用途：当你想连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 manage_pane(action="open", target="ssh:<sessionId>") 请真终端入座（助手没有终端时用 open；已有终端再开一扇可用 split）。无需用户手工切换或输入凭证。
 
 适用场景：
 - 多机巡检 / 灰度对比（dev/staging/prod 平铺为多窗格）

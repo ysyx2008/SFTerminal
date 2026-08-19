@@ -1313,42 +1313,38 @@ const startRecallSidebarResize = (_e: MouseEvent) => {
   document.body.style.userSelect = 'none'
 }
 
-// 是否为终端工作台 tab（仅 local/ssh 由 TerminalTabView 渲染，独有 AI 侧栏方法）。
-// 其它工作台（助手等）的 tabViewRefs 实例没有 toggleAiPanel/ensureAiPanel，需先过滤，
-// 否则在其上调用会触发 TypeError（?. 只挡 null，挡不住方法 undefined）。
-function isTerminalTab(id: string): boolean {
-  const tab = terminalStore.tabs.find(t => t.id === id)
-  return !!tab && (tab.type === 'local' || tab.type === 'ssh')
+type ChatToggleView = {
+  toggleAiPanel?: () => void
+  ensureAiPanel?: () => void
+  showAiPanel?: unknown
+  hasDeskChatToggle?: unknown
+  deskChat?: { seated: boolean; visible: boolean }
 }
 
-// 获取当前活跃终端 tab 的 TerminalTabView 实例（非终端工作台返回 null）
-function getActiveTabView() {
-  const id = terminalStore.activeTabId
-  if (!isTerminalTab(id)) return null
-  return tabViewRefs.value[id] as InstanceType<typeof TerminalTabView> | null
+function getChatToggleView(tabId?: string): ChatToggleView | null {
+  const id = tabId || activeSurfaceTabId.value
+  if (!id) return null
+  return (tabViewRefs.value[id] as ChatToggleView | null) ?? null
 }
 
-// 切换当前 tab 的 AI 面板
 const toggleAiPanel = () => {
-  getActiveTabView()?.toggleAiPanel()
+  getChatToggleView()?.toggleAiPanel?.()
 }
 
 const aiPanelVisible = computed(() => {
-  const id = terminalStore.activeTabId
-  if (!isTerminalTab(id)) return false
-  return !!unref(tabViewRefs.value[id]?.showAiPanel)
+  const view = getChatToggleView()
+  if (view?.deskChat) return view.deskChat.visible
+  return !!unref(view?.showAiPanel)
 })
 
-const showAiPanelToggle = computed(() =>
-  !isSteamBuild && showTerminalTabStrip.value
-)
+const showAiPanelToggle = computed(() => {
+  if (isSteamBuild) return false
+  if (showTerminalTabStrip.value) return true
+  return !!getChatToggleView()?.deskChat?.seated
+})
 
-// 确保指定 tab 的 AI 面板可见
 function ensureAiPanel(tabId?: string) {
-  const id = tabId || terminalStore.activeTabId
-  if (!isTerminalTab(id)) return
-  const view = tabViewRefs.value[id] as InstanceType<typeof TerminalTabView> | null
-  view?.ensureAiPanel()
+  getChatToggleView(tabId)?.ensureAiPanel?.()
 }
 
 // 打开 SFTP 文件管理器（模态框模式）
