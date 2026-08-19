@@ -229,7 +229,7 @@ onUnmounted(() => {
 function handleSendToAi(text: string) {
   const addQuote = () =>
     (aiPanelRef.value as { addQuotedTerminalSelection?: (t: string, title: string) => boolean } | null)
-      ?.addQuotedTerminalSelection?.(text, props.tab.title)
+      ?.addQuotedTerminalSelection?.(text, props.tab.title ?? '')
   void nextTick(() => {
     if (!addQuote()) void nextTick(addQuote)
   })

@@ -7,7 +7,7 @@ import { shallowRef, triggerRef, computed, watch, provide } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AlertCircle, X } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
-import type { SplitPane } from '../stores/terminal'
+import type { SplitPane, TerminalTab } from '../stores/terminal'
 import { useConfigStore } from '../stores/config'
 import { getAllTerminalPanes } from '../stores/split-pane-tree'
 import Terminal from './Terminal.vue'
@@ -31,7 +31,10 @@ const emit = defineEmits<{
   sendToAi: [text: string]
 }>()
 
-const liveTab = computed(() => terminalStore.tabs.find(t => t.id === props.tab.id) ?? props.tab)
+// store 里找不到时兜底用 props.tab（组件只在有 tab 时才渲染，兜底分支几乎不触发）
+const liveTab = computed<TerminalTab>(
+  () => terminalStore.tabs.find(t => t.id === props.tab.id) ?? (props.tab as TerminalTab)
+)
 
 const terminalPanes = computed<SplitPane[]>(() => {
   if (!liveTab.value.splitLayout) return []
