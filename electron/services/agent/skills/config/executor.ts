@@ -16,6 +16,15 @@ import { BrowserWindow } from 'electron'
 import type { ToolResult, ToolExecutorConfig, AgentConfig } from '../../tools/types'
 import { getServerConfig as getEmailServerConfig } from '../email/session'
 import { getServerConfig as getCalendarServerConfig } from '../calendar/session'
+import {
+  addAiProfileConfig,
+  deleteAiProfileConfig,
+  formatAiProfilesDetail,
+  formatAiProfilesSummary,
+  updateAiProfileConfig,
+  type AiProfileTestFn,
+} from './ai-profiles'
+import type { AiProfile } from '@shared/types'
 
 // ==================== 配置项元数据 ====================
 
@@ -126,6 +135,12 @@ export async function executeConfigTool(
       return updateMcpServerConfig(args, executor)
     case 'config_mcp_server_delete':
       return deleteMcpServerConfig(args, executor)
+    case 'config_ai_profile_add':
+      return addAiProfileAndNotify(args, executor)
+    case 'config_ai_profile_update':
+      return updateAiProfileAndNotify(args, executor)
+    case 'config_ai_profile_delete':
+      return deleteAiProfileAndNotify(args)
     case 'im_connect':
       return connectIM(args)
     case 'email_verify':
@@ -194,6 +209,10 @@ function listConfig(args: Record<string, unknown>): ToolResult {
         lines.push(formatMcpServersSummary(config))
         continue
       }
+      if (m.key === 'aiProfiles') {
+        lines.push(formatAiProfilesSummary(config))
+        continue
+      }
       const sensitive = isSensitiveKey(m.key)
       const display = sensitive
         ? (resolveConfigValue(config, m.key) ? '_(已配置)_' : '_(未配置)_')
@@ -233,6 +252,9 @@ function getConfig(args: Record<string, unknown>): ToolResult {
   if (key === 'mcpServers') {
     return { success: true, output: `**${meta.label}** (\`${key}\`)\n${formatMcpServersDetail(config)}` }
   }
+  if (key === 'aiProfiles') {
+    return { success: true, output: `**${meta.label}** (\`${key}\`)\n${formatAiProfilesDetail(config)}` }
+  }
   return { success: true, output: `**${meta.label}** (\`${key}\`) = ${formatValue(val, meta)}` }
 }
 
@@ -249,10 +271,16 @@ function setConfig(args: Record<string, unknown>): ToolResult {
     return { success: false, output: '', error: `未知的配置项: "${key}"。使用 config_list 查看可用配置。` }
   }
   if (meta.readonly) {
-    const mcpHint = key === 'mcpServers'
+    const hint = key === 'mcpServers'
       ? ' 请改用 config_mcp_server_add、config_mcp_server_update、config_mcp_server_delete。'
-      : ''
-    return { success: false, output: '', error: `配置项 "${key}" 为只读，不允许通过此工具修改。${mcpHint}` }
+      : key === 'aiProfiles'
+        ? ' 请改用 config_ai_profile_add、config_ai_profile_update、config_ai_profile_delete。'
+        : key === 'emailAccounts'
+          ? ' 请改用 email_account_add、email_account_delete。'
+          : key === 'calendarAccounts'
+            ? ' 请改用 calendar_account_add、calendar_account_delete。'
+            : ''
+    return { success: false, output: '', error: `配置项 "${key}" 为只读，不允许通过此工具修改。${hint}` }
   }
 
   if (meta.options && !meta.options.includes(String(value))) {
@@ -573,6 +601,36 @@ async function deleteMcpServerConfig(
     success: true,
     output: `✅ 已删除 MCP 连接器 **${found.name}**（\`${serverId}\`）。剩余 ${remaining} 个。`,
   }
+}
+
+function resolveAiProfileTestFn(executor: ToolExecutorConfig): AiProfileTestFn | undefined {
+  const ai = executor.getAiService?.()
+  if (!ai?.testApiKey) return undefined
+  return (profile: Partial<AiProfile>) => ai.testApiKey(profile)
+}
+
+async function addAiProfileAndNotify(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const result = await addAiProfileConfig(getConfigService(), args, resolveAiProfileTestFn(executor))
+  if (result.success) notifyFrontendConfigChanged()
+  return result
+}
+
+async function updateAiProfileAndNotify(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const result = await updateAiProfileConfig(getConfigService(), args, resolveAiProfileTestFn(executor))
+  if (result.success) notifyFrontendConfigChanged()
+  return result
+}
+
+function deleteAiProfileAndNotify(args: Record<string, unknown>): ToolResult {
+  const result = deleteAiProfileConfig(getConfigService(), args)
+  if (result.success) notifyFrontendConfigChanged()
+  return result
 }
 
 // ==================== im_connect ====================
