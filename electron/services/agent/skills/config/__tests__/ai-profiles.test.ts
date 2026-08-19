@@ -178,12 +178,45 @@ describe('update / delete', () => {
     expect(store.getActiveAiProfile()).toBe('p2')
   })
 
-  it('clears visionProfileId refs on other profiles', () => {
+  it('refuses to delete the last remaining profile', () => {
+    const store = makeStore([sample()], 'p1')
+    const r = deleteAiProfileConfig(store, { profileId: 'p1' })
+    expect(r.success).toBe(false)
+    expect(r.error).toMatch(/最后一条/)
+    expect(store.getAiProfiles()).toHaveLength(1)
+  })
+
+  it('refuses to delete the in-use profile', () => {
+    const store = makeStore([
+      sample({ id: 'p1', name: 'A' }),
+      sample({ id: 'p2', name: 'B', apiKey: 'other' }),
+    ], 'p1')
+    const r = deleteAiProfileConfig(store, { profileId: 'p1' }, 'p1')
+    expect(r.success).toBe(false)
+    expect(r.error).toMatch(/正在用/)
+    expect(store.getAiProfiles()).toHaveLength(2)
+  })
+
+  it('refuses to delete the vision model linked to the in-use profile', () => {
     const store = makeStore([
       sample({ id: 'vision', name: 'V', modelType: 'vision' }),
       sample({ id: 'main', name: 'M', visionProfileId: 'vision' }),
+      sample({ id: 'other', name: 'O', apiKey: 'o' }),
     ], 'main')
-    deleteAiProfileConfig(store, { profileId: 'vision' })
-    expect(store.getAiProfiles()[0].visionProfileId).toBeUndefined()
+    const r = deleteAiProfileConfig(store, { profileId: 'vision' }, 'main')
+    expect(r.success).toBe(false)
+    expect(r.error).toMatch(/视觉模型/)
+    expect(store.getAiProfiles().map(p => p.id)).toEqual(['vision', 'main', 'other'])
+  })
+
+  it('clears visionProfileId refs when deleting an unlinked vision model', () => {
+    const store = makeStore([
+      sample({ id: 'vision', name: 'V', modelType: 'vision' }),
+      sample({ id: 'main', name: 'M', visionProfileId: 'vision' }),
+      sample({ id: 'other', name: 'O', apiKey: 'o' }),
+    ], 'other')
+    const r = deleteAiProfileConfig(store, { profileId: 'vision' }, 'other')
+    expect(r.success).toBe(true)
+    expect(store.getAiProfiles().find(p => p.id === 'main')?.visionProfileId).toBeUndefined()
   })
 })

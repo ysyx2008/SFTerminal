@@ -338,7 +338,8 @@ export async function updateAiProfileConfig(
 
 export function deleteAiProfileConfig(
   store: AiProfileStore,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  inUseProfileId?: string
 ): ToolResult {
   const profileId = argStr(args, 'profileId') || argStr(args, 'id')
   if (!profileId) return { success: false, output: '', error: '缺少 profileId（或 id）参数' }
@@ -347,6 +348,33 @@ export function deleteAiProfileConfig(
   const found = profiles.find(p => p.id === profileId)
   if (!found) {
     return { success: false, output: '', error: `未找到 id 为 "${profileId}" 的模型配置` }
+  }
+
+  if (profiles.length <= 1) {
+    return {
+      success: false,
+      output: '',
+      error: `**${found.name}** 是最后一条模型配置，删掉后秘书自己也没法继续。请先加上别的再删。`,
+    }
+  }
+
+  const inUse = inUseProfileId
+    ? profiles.find(p => p.id === inUseProfileId)
+    : undefined
+  const linkedVisionId = inUse?.visionProfileId
+  if (inUse && profileId === inUse.id) {
+    return {
+      success: false,
+      output: '',
+      error: `**${found.name}** 是当前对话正在用的模型，不能删。请先换一个，或只删其他配置。`,
+    }
+  }
+  if (linkedVisionId && profileId === linkedVisionId) {
+    return {
+      success: false,
+      output: '',
+      error: `**${found.name}** 是当前模型关联的视觉模型，不能删。请先换一个主模型或解除关联。`,
+    }
   }
 
   store.deleteAiProfile(profileId)

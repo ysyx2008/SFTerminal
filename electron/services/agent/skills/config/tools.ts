@@ -367,7 +367,7 @@ Key 不会回显。`,
     type: 'function',
     function: {
       name: 'config_ai_profile_delete',
-      description: '按 id 删除 AI 模型配置。若删的是当前默认，会切到剩下的第一条。删除前请与用户确认。',
+      description: '按 id 删除 AI 模型配置。不能删当前对话正在用的那条，也不能删它关联的视觉模型，也不能删最后一条。若删的是全局默认，会切到剩下的第一条。删除前请与用户确认。',
       parameters: {
         type: 'object',
         properties: {

@@ -140,7 +140,7 @@ export async function executeConfigTool(
     case 'config_ai_profile_update':
       return updateAiProfileAndNotify(args, executor)
     case 'config_ai_profile_delete':
-      return deleteAiProfileAndNotify(args)
+      return deleteAiProfileAndNotify(args, executor)
     case 'im_connect':
       return connectIM(args)
     case 'email_verify':
@@ -627,8 +627,15 @@ async function updateAiProfileAndNotify(
   return result
 }
 
-function deleteAiProfileAndNotify(args: Record<string, unknown>): ToolResult {
-  const result = deleteAiProfileConfig(getConfigService(), args)
+function deleteAiProfileAndNotify(
+  args: Record<string, unknown>,
+  executor: ToolExecutorConfig
+): ToolResult {
+  const result = deleteAiProfileConfig(
+    getConfigService(),
+    args,
+    executor.getActiveProfileId?.()
+  )
   if (result.success) notifyFrontendConfigChanged()
   return result
 }
