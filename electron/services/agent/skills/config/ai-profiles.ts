@@ -38,17 +38,17 @@ export function formatAiProfilesSummary(store: AiProfileStore): string {
   const profiles = store.getAiProfiles()
   const activeId = store.getActiveAiProfile()
   if (profiles.length === 0) {
-    return '  - **AI 模型配置** — _(未配置)_  使用 `config_ai_profile_add` 添加'
+    return '  - **AI 模型配置** — _(未配置)_  使用 `config_ai_profile` action=add 添加'
   }
   const lines = profiles.map(p => profileLine(p, activeId))
-  return `  - **AI 模型配置** — ${profiles.length} 个（勿用 config_set 整表覆盖；用 config_ai_profile_add 追加）\n${lines.join('\n')}`
+  return `  - **AI 模型配置** — ${profiles.length} 个（勿用 config_set 整表覆盖；用 config_ai_profile 追加）\n${lines.join('\n')}`
 }
 
 export function formatAiProfilesDetail(store: AiProfileStore): string {
   const profiles = store.getAiProfiles()
   const activeId = store.getActiveAiProfile()
   if (profiles.length === 0) {
-    return '_(未配置)_\n\n使用 `config_ai_profile_add` 添加模型。'
+    return '_(未配置)_\n\n使用 `config_ai_profile` action=add 添加模型。'
   }
   const blocks = profiles.map((p, i) => {
     const parts = [
@@ -67,7 +67,7 @@ export function formatAiProfilesDetail(store: AiProfileStore): string {
     if (p.visionProfileId) parts.push(`- visionProfileId: \`${p.visionProfileId}\``)
     return parts.join('\n')
   })
-  return `共 ${profiles.length} 个：\n\n${blocks.join('\n\n')}\n\n增删改请用 \`config_ai_profile_add\` / \`config_ai_profile_update\` / \`config_ai_profile_delete\`，勿用 \`config_set\` 写入整表。`
+  return `共 ${profiles.length} 个：\n\n${blocks.join('\n\n')}\n\n增删改请用 \`config_ai_profile\`（action=add/update/delete），勿用 \`config_set\` 写入整表。`
 }
 
 function argStr(args: Record<string, unknown>, key: string): string {
@@ -396,4 +396,16 @@ export function deleteAiProfileConfig(
     success: true,
     output: `✅ 已删除 AI 模型 **${found.name}**（\`${profileId}\`）。剩余 ${n} 个。`,
   }
+}
+
+export async function executeAiProfileAction(
+  store: AiProfileStore,
+  args: Record<string, unknown>,
+  opts?: { testFn?: AiProfileTestFn; inUseProfileId?: string }
+): Promise<ToolResult> {
+  const action = argStr(args, 'action')
+  if (action === 'add') return addAiProfileConfig(store, args, opts?.testFn)
+  if (action === 'update') return updateAiProfileConfig(store, args, opts?.testFn)
+  if (action === 'delete') return deleteAiProfileConfig(store, args, opts?.inUseProfileId)
+  return { success: false, output: '', error: 'action 须为 add、update 或 delete' }
 }

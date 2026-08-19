@@ -14,7 +14,7 @@ export const configTools: ToolDefinition[] = [
 返回按分类整理的配置清单（界面、终端、AI Agent、IM 渠道、邮箱、日历、网关、MCP 连接器等），
 每项标注是否可直接修改或需要用户确认。
 邮箱和日历账户会显示已配置的账户列表、服务商和当前连接状态。
-AI 模型配置会列出名称、模型名、接口地址、是否已填 Key、是否当前默认；增删改用 config_ai_profile_add/update/delete（不可用 config_set 整表覆盖）。
+AI 模型配置会列出名称、模型名、接口地址、是否已填 Key、是否当前默认；增删改用 config_ai_profile（不可用 config_set 整表覆盖）。
 MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可用 config_set 整表覆盖）。`,
       parameters: {
         type: 'object',
@@ -60,7 +60,7 @@ MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可
 **安全类配置**（界面语言、主题、终端字号等）直接生效。
 **敏感类配置**（IM 凭证、网关、代理）也可设置，写入后建议用 im_connect 测试连接。
 
-**AI 模型列表（aiProfiles）和 MCP 连接器列表（mcpServers）不可通过本工具整表写入**，否则会覆盖已有项。模型请用 \`config_ai_profile_add\` / \`config_ai_profile_update\` / \`config_ai_profile_delete\`；MCP 请用 \`config_mcp_server_add\` / \`config_mcp_server_update\` / \`config_mcp_server_delete\`。
+**AI 模型列表（aiProfiles）和 MCP 连接器列表（mcpServers）不可通过本工具整表写入**，否则会覆盖已有项。模型请用 \`config_ai_profile\`（action=add/update/delete）；MCP 请用 \`config_mcp_server_add\` / \`config_mcp_server_update\` / \`config_mcp_server_delete\`。
 
 常见用法：
 - 切换语言: key="language", value="en-US"
@@ -304,22 +304,27 @@ MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可
   {
     type: 'function',
     function: {
-      name: 'config_ai_profile_add',
-      description: `向旗鱼追加一个 AI 模型配置（合并到现有列表，不会删除已有项）。
+      name: 'config_ai_profile',
+      description: `管理旗鱼的 AI 模型配置（一条一条加/改/删，不会整表覆盖）。
 
-必填：name、apiUrl、model、apiKey。apiUrl 须为完整接口地址（例如 \`https://api.deepseek.com/v1/chat/completions\`），不要猜供应商默认地址，不清楚就问用户。
-可选：proxy、contextLength（默认 128000）、maxOutputTokens、temperature、modelType（general/vision）、visionProfileId、apiFormat（auto/openai/anthropic）、setActive。
+**action=add**：追加一条。必填 name、apiUrl、model、apiKey。apiUrl 须为完整接口地址，不要猜供应商默认地址。
+可选 proxy、contextLength（默认 128000）、maxOutputTokens、temperature、modelType（general/vision）、visionProfileId、apiFormat（auto/openai/anthropic）、setActive。
+第一条自动成为默认；之后不抢当前默认，除非 setActive=true。保存后会试连，失败也先存。
 
-第一条会自动成为默认；之后新加的不抢当前默认，除非 setActive=true。
-保存后会尝试测一下能否连上；测失败也先存下来并说明原因。
+**action=update**：按 profileId 部分更新。省略 apiKey 则保留原 Key。setActive=true 设为默认。保存后会试连。
+
+**action=delete**：按 profileId 删除。不能删当前对话正在用的那条，也不能删它关联的视觉模型，也不能删最后一条。删除前请与用户确认。
+
 Key 不会回显。`,
       parameters: {
         type: 'object',
         properties: {
+          action: { type: 'string', enum: ['add', 'update', 'delete'], description: 'add 追加 / update 修改 / delete 删除' },
+          profileId: { type: 'string', description: 'update/delete：要操作的模型 id' },
           name: { type: 'string', description: '显示名称，如"DeepSeek"' },
           apiUrl: { type: 'string', description: '完整 API 地址' },
           model: { type: 'string', description: '模型名，如 deepseek-chat' },
-          apiKey: { type: 'string', description: 'API Key（写入后不回显）' },
+          apiKey: { type: 'string', description: 'API Key（写入后不回显；update 时省略则保留原 Key）' },
           proxy: { type: 'string', description: '代理地址（可选）' },
           contextLength: { type: 'number', description: '上下文长度，默认 128000' },
           maxOutputTokens: { type: 'number', description: '单次回复最大输出 token' },
@@ -327,53 +332,10 @@ Key 不会回显。`,
           modelType: { type: 'string', enum: ['general', 'vision'], description: '模型类型，默认 general' },
           visionProfileId: { type: 'string', description: '关联的视觉模型 id（仅 general 有效）' },
           apiFormat: { type: 'string', enum: ['auto', 'openai', 'anthropic'], description: 'API 协议，默认 auto' },
-          id: { type: 'string', description: '唯一 id，省略则自动生成' },
+          id: { type: 'string', description: 'add：唯一 id，省略则自动生成' },
           setActive: { type: 'boolean', description: '是否设为默认模型' }
         },
-        required: ['name', 'apiUrl', 'model', 'apiKey']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'config_ai_profile_update',
-      description: `按 id 更新已有 AI 模型配置。未传入的字段保持原值（部分更新）。
-
-省略 apiKey 则保留原 Key；若传入则替换。setActive=true 将其设为默认。
-保存后会尝试测一下能否连上；测失败也先存下来并说明原因。`,
-      parameters: {
-        type: 'object',
-        properties: {
-          profileId: { type: 'string', description: '要更新的模型 id（与 config_get key=aiProfiles 中一致）' },
-          name: { type: 'string' },
-          apiUrl: { type: 'string' },
-          model: { type: 'string' },
-          apiKey: { type: 'string', description: '新 Key；省略则保留原 Key' },
-          proxy: { type: 'string' },
-          contextLength: { type: 'number' },
-          maxOutputTokens: { type: 'number' },
-          temperature: { type: 'number' },
-          modelType: { type: 'string', enum: ['general', 'vision'] },
-          visionProfileId: { type: 'string' },
-          apiFormat: { type: 'string', enum: ['auto', 'openai', 'anthropic'] },
-          setActive: { type: 'boolean', description: '设为默认模型' }
-        },
-        required: ['profileId']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'config_ai_profile_delete',
-      description: '按 id 删除 AI 模型配置。不能删当前对话正在用的那条，也不能删它关联的视觉模型，也不能删最后一条。若删的是全局默认，会切到剩下的第一条。删除前请与用户确认。',
-      parameters: {
-        type: 'object',
-        properties: {
-          profileId: { type: 'string', description: '要删除的模型 id' }
-        },
-        required: ['profileId']
+        required: ['action']
       }
     }
   }

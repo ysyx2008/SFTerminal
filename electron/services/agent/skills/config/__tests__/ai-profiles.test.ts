@@ -3,6 +3,7 @@ import type { AiProfile } from '@shared/types'
 import {
   addAiProfileConfig,
   deleteAiProfileConfig,
+  executeAiProfileAction,
   formatAiProfilesDetail,
   formatAiProfilesSummary,
   updateAiProfileConfig,
@@ -56,7 +57,7 @@ describe('formatAiProfiles', () => {
 
   it('empty list tells agent to use add, not just "0 项"', () => {
     const store = makeStore()
-    expect(formatAiProfilesSummary(store)).toContain('config_ai_profile_add')
+    expect(formatAiProfilesSummary(store)).toContain('config_ai_profile')
     expect(formatAiProfilesSummary(store)).not.toMatch(/\[0 项\]/)
   })
 })
@@ -218,5 +219,23 @@ describe('update / delete', () => {
     const r = deleteAiProfileConfig(store, { profileId: 'vision' }, 'other')
     expect(r.success).toBe(true)
     expect(store.getAiProfiles().find(p => p.id === 'main')?.visionProfileId).toBeUndefined()
+  })
+
+  it('executeAiProfileAction routes by action and rejects unknown action', async () => {
+    const store = makeStore()
+    const bad = await executeAiProfileAction(store, { action: 'merge' })
+    expect(bad.success).toBe(false)
+    expect(bad.error).toMatch(/add、update 或 delete/)
+
+    const added = await executeAiProfileAction(store, {
+      action: 'add',
+      name: 'X',
+      apiUrl: 'https://x.example/v1/chat/completions',
+      model: 'x',
+      apiKey: 'k',
+      id: 'id-x',
+    })
+    expect(added.success).toBe(true)
+    expect(store.getAiProfiles()).toHaveLength(1)
   })
 })

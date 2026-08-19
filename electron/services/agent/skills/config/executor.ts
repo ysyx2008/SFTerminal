@@ -17,11 +17,9 @@ import type { ToolResult, ToolExecutorConfig, AgentConfig } from '../../tools/ty
 import { getServerConfig as getEmailServerConfig } from '../email/session'
 import { getServerConfig as getCalendarServerConfig } from '../calendar/session'
 import {
-  addAiProfileConfig,
-  deleteAiProfileConfig,
+  executeAiProfileAction,
   formatAiProfilesDetail,
   formatAiProfilesSummary,
-  updateAiProfileConfig,
   type AiProfileTestFn,
 } from './ai-profiles'
 import type { AiProfile } from '@shared/types'
@@ -135,12 +133,8 @@ export async function executeConfigTool(
       return updateMcpServerConfig(args, executor)
     case 'config_mcp_server_delete':
       return deleteMcpServerConfig(args, executor)
-    case 'config_ai_profile_add':
-      return addAiProfileAndNotify(args, executor)
-    case 'config_ai_profile_update':
-      return updateAiProfileAndNotify(args, executor)
-    case 'config_ai_profile_delete':
-      return deleteAiProfileAndNotify(args, executor)
+    case 'config_ai_profile':
+      return runAiProfileAndNotify(args, executor)
     case 'im_connect':
       return connectIM(args)
     case 'email_verify':
@@ -274,7 +268,7 @@ function setConfig(args: Record<string, unknown>): ToolResult {
     const hint = key === 'mcpServers'
       ? ' 请改用 config_mcp_server_add、config_mcp_server_update、config_mcp_server_delete。'
       : key === 'aiProfiles'
-        ? ' 请改用 config_ai_profile_add、config_ai_profile_update、config_ai_profile_delete。'
+        ? ' 请改用 config_ai_profile（action=add/update/delete）。'
         : key === 'emailAccounts'
           ? ' 请改用 email_account_add、email_account_delete。'
           : key === 'calendarAccounts'
@@ -609,33 +603,14 @@ function resolveAiProfileTestFn(executor: ToolExecutorConfig): AiProfileTestFn |
   return (profile: Partial<AiProfile>) => ai.testApiKey(profile)
 }
 
-async function addAiProfileAndNotify(
+async function runAiProfileAndNotify(
   args: Record<string, unknown>,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  const result = await addAiProfileConfig(getConfigService(), args, resolveAiProfileTestFn(executor))
-  if (result.success) notifyFrontendConfigChanged()
-  return result
-}
-
-async function updateAiProfileAndNotify(
-  args: Record<string, unknown>,
-  executor: ToolExecutorConfig
-): Promise<ToolResult> {
-  const result = await updateAiProfileConfig(getConfigService(), args, resolveAiProfileTestFn(executor))
-  if (result.success) notifyFrontendConfigChanged()
-  return result
-}
-
-function deleteAiProfileAndNotify(
-  args: Record<string, unknown>,
-  executor: ToolExecutorConfig
-): ToolResult {
-  const result = deleteAiProfileConfig(
-    getConfigService(),
-    args,
-    executor.getActiveProfileId?.()
-  )
+  const result = await executeAiProfileAction(getConfigService(), args, {
+    testFn: resolveAiProfileTestFn(executor),
+    inUseProfileId: executor.getActiveProfileId?.(),
+  })
   if (result.success) notifyFrontendConfigChanged()
   return result
 }
