@@ -1,6 +1,6 @@
 # Knowledge Service SPEC
 
-> Last verified: 2026-08-13
+> Last verified: 2026-08-19
 
 ## 设计目标
 
@@ -40,6 +40,15 @@
   - 重启过程中不得让调用方误以为「本机不在 worker 模式」而走到没有加载模型的进程内推理上。
   - 长时间运行（跨天、多轮定期重启）后进程数与内存回到基线，不随运行时长单调增长。
 - **明确不做**：不用「进程数超限就杀最老的」这类兜底来掩盖泄漏；不因此取消定期重启——它是抑制推理内存池膨胀的必要手段。
+
+### 坏了不要把坏的存成最新备份，更不要整库推倒（2026-08-19）
+
+- **问题**：检索发现向量文件缺了一块，会标成损坏。下次启动本应先回到上一份好备份，只补缺的几篇。实际却先把当前这份坏的存成最新备份，再按它恢复；读不开就把整张向量表丢掉，九千多篇从头建。好备份被轮替掉后，热重载会连着全量重建。
+- **成功标准**：
+  - 已经标了损坏时，这次启动不再自动备份
+  - 恢复后如果还是读不开，从新到旧试更早的备份；都读不开也不要整表丢掉，也不要因此全量重建
+  - 自动备份只在没有损坏标记时做（启动时磁盘还没被这次进程打开，复制是安全的）
+- **明确不做**：这次不改「检索时怎么判断文件缺了」；不在退出时做同步备份（会拖慢关掉窗口）。
 
 ### 初始化失败熔断（2026-07-27）
 
@@ -235,8 +244,10 @@ type MemoryVolatility = "stable" | "moderate" | "volatile"
 - **MCP 通过 `setMcpService` 延迟注入**——不能放进构造参数（循环依赖）
 - **主机记忆相关方法名都带 `HostMemory`**（如 `searchHostMemories`、`getHostMemoriesForPrompt`），不是 `getHostMemory` / `deleteHostMemory`
 - **`data_corrupted` 仅重建向量侧**——BM25 为独立 JSON，损坏时保留 BM25，启动增量补向量即可
-- **备份恢复优先于清表重建**——`VectorStorage.initialize` 启动时若检测到 `.corrupted` 标记，先调 `backup.restoreBackup()` 从最近备份恢复；恢复成功删除标记、worker 启动即用恢复数据；恢复失败才走 dropTable + 全量重建。自动备份在 `KnowledgeService.initialize()` 开头后台异步触发（worker 启动前，磁盘是上次退出状态，文件级复制安全），受 30min 间隔限制，保留最近 3 份。备份时跳过 `.corrupted` 标记避免恢复后误触发
-- **恢复后增量补差集**——`restoreBackup()` 恢复磁盘文件后调 `vectorStorage.forceReinitialize()` 丢弃内存句柄，再 `initialize()` 触发 `checkAndRebuildIndex` 自动比对 docIds 差集，只补备份与当前 documents.json 的差集，不全量重 embed
+- **已标损坏时禁止自动备份**——避免把坏库存成最新备份、把好的轮替掉。自动备份仍在启动开头、向量库尚未打开时做（磁盘是上次退出状态，复制安全），受 30 分钟间隔限制，保留最近 3 份
+- **打开失败不得清表**——缺文件、读不开时保留现有向量表，不得整表丢掉；只有换了嵌入模型、维度对不上才清旧向量
+- **恢复从新到旧试备份**——启动发现损坏标记时先恢复；读得开才算成功。最新这份读不开就试更早的；都读不开则跳过启动补建，不要把「枚举失败」当成「库是空的」去全量重建
+- **恢复后增量补差集**——读得开的备份换回去之后，只补和当前文档清单的差集，不全量重做向量
 - **孤儿 chunk 后台清理**——`initialize()` 后 `setImmediate` 定向删 chunk；残留 &lt; 50 跳过整表重建
 - **退出时 `disposeAsync`**——主进程 `cleanupAllServices` / SIGINT·SIGTERM 会 compact LanceDB 并停 worker
 - **嵌入推理**——`@huggingface/transformers` v4 + `device: auto`（macOS→WebGPU via `gpu`、Linux x64→`gpu`、Windows→`dml`；Windows 不可用 `gpu` 别名，因 ORT 禁止 webgpu+dml 同会话）；加速 EP 初始化失败（无 DX12 GPU、驱动不兼容等）自动回退 `cpu`；设置项 `embeddingDevice`

@@ -37,6 +37,7 @@ import {
   listBackups as doListBackups,
   restoreBackup as doRestoreBackup,
   deleteBackup as doDeleteBackup,
+  hasCorruptionMarker,
   type BackupEntry
 } from './backup'
 
@@ -127,6 +128,8 @@ export class KnowledgeService extends EventEmitter {
    * 取值：'dimension_mismatch' | 'data_corrupted' | undefined（未发生过清空）
    */
   private lastClearReason: 'dimension_mismatch' | 'data_corrupted' | undefined
+  /** 向量库读不开时跳过启动补建，避免把「枚举失败」当成「库是空的」 */
+  private skipStartupVectorRebuild = false
 
   constructor(
     configService: ConfigService,
@@ -187,8 +190,9 @@ export class KnowledgeService extends EventEmitter {
 
     // 后台触发自动备份（距上次 > 30min 才真正复制）。
     // 放在 initialize 开头、worker 启动前：此刻磁盘是上次退出时的状态，
-    // 文件级复制最安全；备份在后台异步执行，不阻塞启动。
+    // 文件级复制最安全。已标损坏则跳过，避免把坏库存成最新备份。
     this.scheduleAutoBackup()
+    this.skipStartupVectorRebuild = false
 
     try {
       // 初始化 Embedding 服务
@@ -220,10 +224,9 @@ export class KnowledgeService extends EventEmitter {
         this.emit('indexCleared', { reason: 'dimension_mismatch', oldDimensions: oldDim, newDimensions: newDim })
       })
 
-      // 向量库损坏时仅清空向量侧；BM25 为独立 JSON，通常仍完好，保留可避免全量重建耗时翻倍
-      this.vectorStorage.once('dataCorrupted', () => {
-        log.warn('向量库数据损坏，将仅重建向量索引（保留 BM25）')
-        this.lastClearReason = 'data_corrupted'
+      this.vectorStorage.once('indexUnreadable', () => {
+        log.warn('向量库暂时无法读取，跳过启动时全量补建')
+        this.skipStartupVectorRebuild = true
       })
       
       await this.vectorStorage.initialize(dimensions)
@@ -274,6 +277,7 @@ export class KnowledgeService extends EventEmitter {
 
     if (force) {
       log.info('强制重建：清空向量库和 BM25 索引')
+      this.skipStartupVectorRebuild = false
       await this.vectorStorage.clear()
       await this.bm25Index.clear()
     }
@@ -514,6 +518,11 @@ export class KnowledgeService extends EventEmitter {
    *   启动都重复重建。
    */
   private async checkAndRebuildIndex(): Promise<void> {
+    if (this.skipStartupVectorRebuild) {
+      log.warn('启动时跳过索引补全：向量库当前无法安全读取，避免误触发全量重建')
+      return
+    }
+
     const docs = this.getDocuments()
     if (docs.length === 0) return
 
@@ -1667,6 +1676,10 @@ export class KnowledgeService extends EventEmitter {
    * 阻塞：完全不阻塞启动，setImmediate 推到下一个 tick。
    */
   private scheduleAutoBackup(): void {
+    if (hasCorruptionMarker()) {
+      log.info('自动备份跳过：已有损坏标记，先恢复、不备份坏库')
+      return
+    }
     setImmediate(() => {
       this.emit('backupStarted', { automatic: true })
       try {

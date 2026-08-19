@@ -18,7 +18,7 @@ import type {
   KnowledgeStats
 } from './types'
 import { getBM25Index, type BM25SearchResult } from './bm25'
-import { restoreBackup as doRestoreBackup } from './backup'
+import { restoreBackup as doRestoreBackup, listBackups, hasCorruptionMarker } from './backup'
 import { createLogger } from '../../utils/logger'
 import { UtilityWorkerSession, type WorkerSessionOptions } from './worker-session'
 
@@ -278,22 +278,43 @@ export class VectorStorage extends EventEmitter {
     if (this.isInitialized) return
     this.dimensions = dimensions
 
-    // 启动 worker / in-process 之前，先尝试从备份恢复损坏的向量库。
-    // 这样 worker 启动时磁盘已是恢复后的状态，不需要走 dropTable 重建路径；
-    // 恢复失败则保留原状，让 worker 的兜底逻辑（dropTable + dataCorrupted 事件）处理。
-    await this.tryRestoreFromBackupBeforeInit()
+    // 已标损坏：先从新到旧试备份。读得开才继续；都读不开也不清表。
+    const backups = hasCorruptionMarker() ? listBackups() : []
+    await this.tryRestoreFromBackupBeforeInit(backups[0]?.path)
 
     if (this.isWorkerModeAvailable()) {
       try {
-        await this.startWorker()
-        const result = await this.callWorker<{
-          ok: boolean
-          events: Array<{ name: string; args: any[] }>
-        }>('initialize', { storagePath: this.storagePath, dimensions })
+        let events = await this.connectWorker(dimensions)
 
-        // 转发 worker 报告的事件（dimensionMismatch / dataCorrupted）
-        for (const evt of result.events || []) {
+        if (this.eventsIndicateUnreadable(events) && backups.length > 1) {
+          for (let i = 1; i < backups.length; i++) {
+            log.warn(`恢复后仍无法读取，尝试更早的备份: ${backups[i].name}`)
+            this.killWorker()
+            const restored = doRestoreBackup(backups[i].path)
+            if (!restored.success) {
+              log.warn(`更早备份恢复失败: ${restored.error}`)
+              continue
+            }
+            try {
+              events = await this.connectWorker(dimensions)
+            } catch (e) {
+              log.warn('使用更早备份初始化失败:', e)
+              continue
+            }
+            if (!this.eventsIndicateUnreadable(events)) {
+              log.info(`已用更早备份恢复: ${backups[i].path}`)
+              this.emit('restoredFromBackup', { backupPath: backups[i].path, reason: 'older-backup' })
+              break
+            }
+          }
+        }
+
+        for (const evt of events) {
           this.emit(evt.name, ...(evt.args || []))
+        }
+
+        if (this.eventsIndicateUnreadable(events)) {
+          this.markCorrupted('index unreadable after restore attempts')
         }
 
         this.workerMode = true
@@ -318,15 +339,24 @@ export class VectorStorage extends EventEmitter {
     await this.initializeInProcess(dimensions)
   }
 
+  private async connectWorker(dimensions: number): Promise<Array<{ name: string; args: any[] }>> {
+    await this.startWorker()
+    const result = await this.callWorker<{
+      ok: boolean
+      events: Array<{ name: string; args: any[] }>
+    }>('initialize', { storagePath: this.storagePath, dimensions })
+    return result.events || []
+  }
+
+  private eventsIndicateUnreadable(events: Array<{ name: string }>): boolean {
+    return events.some(evt => evt.name === 'indexUnreadable')
+  }
+
   /**
-   * 启动前检查 .corrupted 标记：有标记则尝试从最近备份恢复。
-   * 恢复成功后删除标记，worker 启动时就不会触发 dropTable。
-   * 恢复失败保留标记，worker 兜底逻辑会清表并触发全量重建。
-   *
-   * 注意：这里只能恢复「上一次运行结束时被标记为损坏」的情况——
-   * 运行期被标记的损坏（如 hybridSearch 报 IO 错）需要下次启动才生效。
+   * 启动前检查损坏标记：有则先恢复（可指定某一份备份）。
+   * 恢复成功后删除标记。恢复失败保留标记，但不再清表。
    */
-  private async tryRestoreFromBackupBeforeInit(): Promise<void> {
+  private async tryRestoreFromBackupBeforeInit(backupPath?: string): Promise<void> {
     if (!fs.existsSync(this.corruptionMarkerPath)) return
 
     let reason = 'unknown'
@@ -338,16 +368,16 @@ export class VectorStorage extends EventEmitter {
     log.warn(`检测到损坏标记 (${reason})，尝试从备份恢复...`)
 
     try {
-      const result = doRestoreBackup()
+      const result = doRestoreBackup(backupPath)
       if (result.success) {
         log.info(`从备份恢复成功: ${result.backupPath}，删除损坏标记`)
         try { fs.unlinkSync(this.corruptionMarkerPath) } catch { /* ignore */ }
         this.emit('restoredFromBackup', { backupPath: result.backupPath, reason })
       } else {
-        log.warn(`从备份恢复失败: ${result.error}，将走清表重建路径`)
+        log.warn(`从备份恢复失败: ${result.error}，保留现有表（不清空）`)
       }
     } catch (e) {
-      log.warn('调用 restoreBackup 异常，将走清表重建路径:', e)
+      log.warn('调用 restoreBackup 异常，保留现有表（不清空）:', e)
     }
   }
 
@@ -454,17 +484,7 @@ export class VectorStorage extends EventEmitter {
 
       const corruption = this.consumeCorruptionMarker()
       if (corruption.corrupted) {
-        log.warn('启动时检测到向量表损坏标记，将清空并重建:', corruption.reason)
-        try {
-          const names = await this.db.tableNames()
-          if (names.includes('knowledge_vectors')) {
-            await this.db.dropTable('knowledge_vectors')
-          }
-        } catch (e) {
-          log.warn('清理损坏向量表失败:', e)
-        }
-        this.table = null
-        events.push({ name: 'dataCorrupted', args: [] })
+        log.warn('启动时仍有损坏标记（恢复未成功），保留现有表:', corruption.reason)
       }
 
       const tableNames = await this.db.tableNames()
@@ -473,8 +493,9 @@ export class VectorStorage extends EventEmitter {
 
         // 检查维度
         const mismatch = await this.checkDimensionMismatchInProc(dimensions)
-        if (mismatch === 'DATA_CORRUPTED') {
-          events.push({ name: 'dataCorrupted', args: [] })
+        if (mismatch === 'UNREADABLE') {
+          events.push({ name: 'indexUnreadable', args: [] })
+          this.markCorrupted('index unreadable after restore attempts')
         } else if (mismatch !== null) {
           log.info(`检测到向量维度变化 (${mismatch} -> ${dimensions})，自动清空旧索引...`)
           await this.db.dropTable('knowledge_vectors')
@@ -498,7 +519,7 @@ export class VectorStorage extends EventEmitter {
     }
   }
 
-  private async checkDimensionMismatchInProc(expectedDimensions: number): Promise<number | 'DATA_CORRUPTED' | null> {
+  private async checkDimensionMismatchInProc(expectedDimensions: number): Promise<number | 'UNREADABLE' | null> {
     if (!this.table) return null
     const maxRetries = 3
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -513,11 +534,8 @@ export class VectorStorage extends EventEmitter {
         if (attempt < maxRetries) await new Promise(r => setTimeout(r, 500 * attempt))
       }
     }
-    log.warn('LanceDB 表数据无法读取，清空损坏的表（非模型升级）')
-    try { await this.db.dropTable('knowledge_vectors') } catch (e) { log.warn('清空损坏表失败:', e) }
-    this.table = null
-    this.emit('dataCorrupted')
-    return 'DATA_CORRUPTED'
+    log.warn('LanceDB 表数据无法读取，保留现有表（不清空）')
+    return 'UNREADABLE'
   }
 
   // ────────────────────────── 公开 API（写操作） ──────────────────────────

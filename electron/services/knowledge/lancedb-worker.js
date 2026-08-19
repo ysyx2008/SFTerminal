@@ -27,7 +27,7 @@
  *   ⇠ { id, success: false, error: string, stack?: string }
  *
  *   initialize 的 result 包含额外事件字段：
- *     result.events = [{ name: 'dimensionMismatch'|'dataCorrupted', args: any[] }]
+ *     result.events = [{ name: 'dimensionMismatch'|'indexUnreadable', args: any[] }]
  *
  *   vectorSearch 的 result.hits 不含 vector 字段，节省 IPC 带宽。
  *   getValidRecords / getRecordsByDocIds 包含 vector 字段（调用方需要）。
@@ -197,15 +197,10 @@ async function checkDimensionMismatch(expectedDimensions) {
     }
   }
 
-  // 所有重试都失败：清空损坏的表
-  console.warn('[LanceDBWorker] LanceDB 表数据无法读取，清空损坏的表（非模型升级）')
-  try {
-    await db.dropTable(tableName)
-  } catch (e) {
-    console.warn('[LanceDBWorker] 清空损坏表失败:', e)
-  }
-  table = null
-  return 'DATA_CORRUPTED'  // 特殊标记，区分于正常的维度数值
+  // 读不开多半是缺了一块数据文件，不是维度变了。
+  // 清空整表会把还能用的索引一起丢掉，启动时被当成「库是空的」去全量重建。
+  console.warn('[LanceDBWorker] LanceDB 表数据无法读取，保留现有表（不清空）')
+  return 'UNREADABLE'
 }
 
 // ────────────────────────── 消息处理函数 ──────────────────────────
@@ -224,20 +219,11 @@ async function handleInitialize(data) {
   const { connect } = await loadLanceDB()
   db = await connect(storagePath)
 
-  // 消费上次运行期写入的损坏标记
+  // 损坏标记只表示「上次检索发现缺文件」。主进程应已先尝试从备份恢复；
+  // 这里若标记还在，说明恢复没做成——保留现有表，绝不因标记清表。
   const corruption = consumeCorruptionMarker()
   if (corruption.corrupted) {
-    console.warn('[LanceDBWorker] 启动时检测到损坏标记，清空并重建:', corruption.reason)
-    try {
-      const names = await db.tableNames()
-      if (names.includes(tableName)) {
-        await db.dropTable(tableName)
-      }
-    } catch (e) {
-      console.warn('[LanceDBWorker] 清理损坏表失败:', e)
-    }
-    table = null
-    events.push({ name: 'dataCorrupted', args: [] })
+    console.warn('[LanceDBWorker] 启动时仍有损坏标记（恢复未成功），保留现有表:', corruption.reason)
   }
 
   // 检查表是否存在并验证维度
@@ -245,8 +231,8 @@ async function handleInitialize(data) {
   if (tableNames.includes(tableName)) {
     table = await db.openTable(tableName)
     const mismatchResult = await checkDimensionMismatch(dim)
-    if (mismatchResult === 'DATA_CORRUPTED') {
-      events.push({ name: 'dataCorrupted', args: [] })
+    if (mismatchResult === 'UNREADABLE') {
+      events.push({ name: 'indexUnreadable', args: [] })
     } else if (mismatchResult !== null) {
       console.log(`[LanceDBWorker] 检测到向量维度变化 (${mismatchResult} -> ${dim})，清空旧索引`)
       await db.dropTable(tableName)

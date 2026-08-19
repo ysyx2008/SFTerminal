@@ -13,17 +13,15 @@
  *   - .password            加密口令（如有）
  *
  * 备份时机（关键）：
- *   - 仅在 disposeAsync 完成、worker 已 compact 落盘后做文件级复制——
- *     这是运行期唯一的「LanceDB 无写入」安全窗口
+ *   - 启动 initialize 开头、worker 尚未打开向量库时做文件级复制
+ *     （磁盘是上次退出状态；已标损坏则禁止自动备份，避免把坏库存成最新）
  *   - 距上次自动备份 > MIN_BACKUP_INTERVAL_MS 才备份，避免 dev 频繁热重载
  *     时每次都复制几十 MB
  *   - 手动备份不受时间间隔限制
  *
  * 恢复时机：
- *   - worker initialize 检测到 .corrupted 标记 / 维度不匹配时，先尝试从最近
- *     备份恢复；恢复成功就不发 dataCorrupted / dimensionMismatch 事件，
- *     后续由 KnowledgeService.checkAndRebuildIndex 跑增量补差集
- *   - 恢复失败再走原来的清表重建路径
+ *   - 启动检测到损坏标记时从新到旧试备份；读得开才算成功
+ *   - 都读不开也不清表、不全量重建
  *
  * 轮转：保留最近 MAX_BACKUPS 份，按 mtime 排序删旧
  */
@@ -48,6 +46,16 @@ function getBackupsRoot(): string {
 /** 知识库数据目录 */
 function getKnowledgeDir(): string {
   return path.join(app.getPath('userData'), 'knowledge')
+}
+
+/** 向量库损坏标记（检索缺文件时写入，下次启动据此恢复） */
+function getCorruptionMarkerPath(): string {
+  return path.join(getKnowledgeDir(), 'lancedb', '.corrupted')
+}
+
+/** 当前知识库是否已标损坏——自动备份必须避开，否则会把坏库存成最新 */
+export function hasCorruptionMarker(): boolean {
+  return fs.existsSync(getCorruptionMarkerPath())
 }
 
 /** 上次自动备份时间戳文件 */
@@ -173,6 +181,10 @@ export function createBackup(automatic: boolean = true): CreateBackupResult {
 
   // 自动备份时间间隔检查
   if (automatic) {
+    if (hasCorruptionMarker()) {
+      log.warn('自动备份跳过：知识库已标记损坏，避免把坏库存成最新备份')
+      return { success: true, backupPath: undefined }
+    }
     if (fs.existsSync(getLastBackupMarkerPath())) {
       try {
         const last = parseInt(
