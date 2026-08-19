@@ -24,9 +24,7 @@ export type ExternalContentDecision = 'applied' | 'deferred'
 
 /**
  * 外部（Agent 改盘 / 磁盘回填）内容进入时的分流：
- * - 渲染器已标记 dirty 且 store 已有正文 → 挂起
- * - store 正文仍为空时不据此挂起：编辑器未挂载时「空草稿 ≠ 基线」会误报 dirty，
- *   真正的未保存草稿由渲染器在收到外部内容后再补挂起
+ * - 渲染器已标记 dirty → 挂起（即使基线尚未建立——用户已在打字，保护优先）
  * - 尚无基线（该产出物第一次收到外部内容）→ 接受并建立基线
  * - store 现存内容已偏离基线（用户草稿已 flush 进 store）→ 挂起
  * - 其余 → 接受
@@ -35,7 +33,7 @@ export function decideExternalContent(
   entry: CoeditEntry | undefined,
   currentContent: string,
 ): ExternalContentDecision {
-  if (entry?.dirty && currentContent !== '') return 'deferred'
+  if (entry?.dirty) return 'deferred'
   if (!entry || entry.baseline === undefined) return 'applied'
   if (currentContent !== entry.baseline) return 'deferred'
   return 'applied'

@@ -54,9 +54,7 @@ const editorReady = ref(false)
 
 function releaseApplyingExternal() {
   void nextTick(() => {
-    requestAnimationFrame(() => {
-      applyingExternal = false
-    })
+    applyingExternal = false
   })
 }
 

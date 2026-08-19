@@ -36,14 +36,9 @@ describe('coedit-conflict', () => {
       expect(decideExternalContent(entry, 'v1')).toBe('applied')
     })
 
-    it('dirty=true 但 store 正文仍为空（编辑器未灌入）→ 接受，避免空草稿误报', () => {
+    it('dirty=true 但基线尚未建立（用户在建档前已开始打字）→ 挂起', () => {
       const entry = { dirty: true }
-      expect(decideExternalContent(entry, '')).toBe('applied')
-    })
-
-    it('dirty=true 且 store 已有正文 → 挂起', () => {
-      const entry = { baseline: 'v1', dirty: true }
-      expect(decideExternalContent(entry, 'user draft')).toBe('deferred')
+      expect(decideExternalContent(entry, '')).toBe('deferred')
     })
   })
 
