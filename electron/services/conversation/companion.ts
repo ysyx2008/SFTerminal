@@ -40,8 +40,10 @@ export interface CompanionExtractTaskOptions {
 }
 
 export class Companion {
-  /** 拉取最近多少条 record 做合并视图（联络 tab 展示 / fork）。10 与旧 forkAgent 实现一致。 */
+  /** 合并视图保留多少段「真对话」（非主动提醒）。主动提醒不占这个名额。 */
   static readonly RECENT_RECORDS_LIMIT = 10
+  /** 为凑齐真对话，最多先拉取多少条物理 record（含主动提醒）。 */
+  static readonly MERGE_FETCH_LIMIT = 80
   /**
    * 心跳 / Watch prompt：最多取多少条「互动」做 L4 概要
    *（user_task↔final_result 一对，或单条 proactive_notice）。
@@ -52,8 +54,8 @@ export class Companion {
    * L4 一行通常几十字符，此上限作兜底。
    */
   static readonly WATCH_PROMPT_MAX_TOTAL_CHARS = 2500
-  /** 为凑够足够轮次，合并视图最多拉取多少条 companion record。 */
-  static readonly WATCH_PROMPT_RECORDS_LIMIT = 50
+  /** 心跳摘要与联络展示共用同一段合并窗口。 */
+  static readonly WATCH_PROMPT_RECORDS_LIMIT = 80
 
   constructor(
     private readonly historyService: HistoryService,
@@ -88,13 +90,16 @@ export class Companion {
     liveRecord: AgentRecord | null | undefined,
     opts?: CompanionExtractTaskOptions
   ): { conversation: Conversation; record: AgentRecord } | null {
-    let records = this.historyService.getRecentRecordsByAgentKey(
-      this.agentKey,
+    let records = Companion.selectRecordsForMerge(
+      this.historyService.getRecentRecordsByAgentKey(
+        this.agentKey,
+        Companion.MERGE_FETCH_LIMIT
+      ) ?? [],
       Companion.RECENT_RECORDS_LIMIT
     )
     const hasSourceSteps = !!(opts?.sourceSteps && opts.sourceSteps.length > 0)
-    if ((!records || records.length === 0) && !liveRecord && !hasSourceSteps) return null
-    records = records ? [...records] : []
+    if (records.length === 0 && !liveRecord && !hasSourceSteps) return null
+    records = [...records]
     if (liveRecord) {
       const idx = records.findIndex(r => r.id === liveRecord.id)
       if (idx >= 0) records[idx] = liveRecord
@@ -103,6 +108,33 @@ export class Companion {
     // 允许仅有前端 sourceSteps（磁盘暂无记录）时仍能抽取
     if (records.length === 0 && !hasSourceSteps) return null
     return Conversation.extractTaskFromRecords(records, newSessionId, opts)
+  }
+
+  private static isProactiveRecord(record: Pick<AgentRecord, 'userTask'>): boolean {
+    return record.userTask === '__proactive__'
+  }
+
+  /**
+   * 从已按「最近活跃」取回的 record 里，留下最近 `realLimit` 段真对话，
+   * 以及它们之后（更新）的全部主动提醒。提醒不占真对话名额。
+   */
+  static selectRecordsForMerge(records: AgentRecord[], realLimit: number): AgentRecord[] {
+    if (records.length === 0 || realLimit <= 0) return []
+    const newestFirst = [...records].sort((a, b) => {
+      const ta = a.timestamp + (a.duration || 0)
+      const tb = b.timestamp + (b.duration || 0)
+      return tb - ta
+    })
+    const selected: AgentRecord[] = []
+    let reals = 0
+    for (const record of newestFirst) {
+      selected.push(record)
+      if (!Companion.isProactiveRecord(record)) {
+        reals++
+        if (reals >= realLimit) break
+      }
+    }
+    return selected
   }
 
   /**
@@ -122,14 +154,17 @@ export class Companion {
    *  - userTask（标题）：取最早一条非 `__proactive__` 记录；全 proactive 时回退到最早一条
    *
    * 返回 null：historyService 不可用 / 无近期 record。
-   * @param recordsLimit 拉取最近多少条物理 record 参与合并；默认 `RECENT_RECORDS_LIMIT`（联络 tab 展示）。
+   * @param recordsLimit 最多拉取多少条物理 record；默认 `MERGE_FETCH_LIMIT`。
+   *   拉回后按 {@link selectRecordsForMerge} 截到约 {@link RECENT_RECORDS_LIMIT} 段真对话，
+   *   窗口内的主动提醒一并保留。
    */
-  getMergedViewRecord(recordsLimit = Companion.RECENT_RECORDS_LIMIT): AgentRecord | null {
-    const records = this.historyService.getRecentRecordsByAgentKey(
+  getMergedViewRecord(recordsLimit = Companion.MERGE_FETCH_LIMIT): AgentRecord | null {
+    const fetched = this.historyService.getRecentRecordsByAgentKey(
       this.agentKey,
       recordsLimit
     )
-    if (!records || records.length === 0) return null
+    const records = Companion.selectRecordsForMerge(fetched ?? [], Companion.RECENT_RECORDS_LIMIT)
+    if (records.length === 0) return null
 
     const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp)
     const seen = new Set<string>()
@@ -137,12 +172,12 @@ export class Companion {
       .flatMap(r => (r.steps ?? []))
       .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
       .filter(s => (s.id && !seen.has(s.id) ? (seen.add(s.id), true) : !s.id))
-    const realRecords = ordered.filter(r => r.userTask !== '__proactive__')
+    const realRecords = ordered.filter(r => !Companion.isProactiveRecord(r))
     const mergedMessages = realRecords.flatMap(r => r.messages ?? [])
 
     const earliest = ordered[0]
     const latest = ordered[ordered.length - 1]
-    const firstRealRecord = ordered.find(r => r.userTask !== '__proactive__')
+    const firstRealRecord = ordered.find(r => !Companion.isProactiveRecord(r))
     const displayUserTask = firstRealRecord?.userTask ?? earliest.userTask
 
     // id/timestamp 成对取「最新一条」——续聊时 checkpoint 据此存盘，避免「裂成两条 session」
@@ -164,7 +199,7 @@ export class Companion {
    * - 总预算 {@link WATCH_PROMPT_MAX_TOTAL_CHARS}：超限丢最旧整行，不中段硬截断
    */
   formatRecentTurnsForWatchPrompt(maxTurns = Companion.WATCH_PROMPT_MAX_TURNS): string {
-    const record = this.getMergedViewRecord(Companion.WATCH_PROMPT_RECORDS_LIMIT)
+    const record = this.getMergedViewRecord()
     if (!record) return ''
 
     // 优先 merged steps：含 __proactive__ 的 proactive_notice。

@@ -236,7 +236,7 @@ interface WatchTemplate {
 
 **心跳机制**：`HEARTBEAT_FILENAME` 为 Agent 可读的心跳上下文文件（非全局执行锁）；`ensureWakeup` / `removeWakeup` 控制"唤醒态"。默认模板为 Markdown 章节（`# 通道` / `# 情境` / `# 身份与判断`）；`migrateHeartbeatFileIfNeeded` 升级默认系旧模板，并对残留旧沉默句做精确替换。
 
-**联络上下文注入**：`buildEnhancedPrompt` 在**所有** Watch（含内置 `__wakeup__` 心跳）执行前，经 `Companion.formatRecentTurnsForWatchPrompt()` 注入 **`# 联络摘要`（L4）**：最近 **12** 次互动压成一句话概要（`generateSummary`）；总预算约 2500 字符，超限丢最旧整行。只读文本 content，**不带** `images`/base64 附件。steps 仅 user_task / final_result / proactive_notice。合并最多 50 条 companion record。10s TTL；`talk_to_user` 落盘后失效缓存。联络 tab 展示仍用 `RECENT_RECORDS_LIMIT = 10`。普通关切另注「通道说明」，与唤醒 `# 通道` 同级。
+**联络上下文注入**：`buildEnhancedPrompt` 在**所有** Watch（含内置 `__wakeup__` 心跳）执行前，经 `Companion.formatRecentTurnsForWatchPrompt()` 注入 **`# 联络摘要`（L4）**：最近 **12** 次互动压成一句话概要（`generateSummary`）；总预算约 2500 字符，超限丢最旧整行。只读文本 content，**不带** `images`/base64 附件。steps 仅 user_task / final_result / proactive_notice。10s TTL；`talk_to_user` 落盘后失效缓存。联络页按大约十段真对话来拼，主动提醒不占这段名额。普通关切另注「通道说明」，与唤醒 `# 通道` 同级。
 
 ## 关键约束
 

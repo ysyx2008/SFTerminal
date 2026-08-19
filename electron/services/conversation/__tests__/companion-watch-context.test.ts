@@ -220,3 +220,64 @@ describe('Companion.formatRecentTurnsForWatchPrompt', () => {
     expect(text).toContain('用户消息 8')
   })
 })
+
+describe('Companion.getMergedViewRecord', () => {
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-companion-merge-'))
+  })
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('主动提醒再多也不挤掉最近的真对话', () => {
+    const hs = new HistoryService()
+    const t0 = Date.now() - 200_000
+    hs.saveAgentRecord(companionRec('real_old', {
+      timestamp: t0,
+      userTask: '昨天那句还在吗',
+      steps: [
+        { id: 'ut-old', type: 'user_task', content: '昨天那句还在吗', timestamp: t0 },
+        { id: 'fr-old', type: 'final_result', content: '在', timestamp: t0 + 1 }
+      ]
+    }))
+    for (let i = 0; i < 12; i++) {
+      const ts = t0 + 10_000 + i * 1000
+      hs.saveAgentRecord(companionRec(`proactive_${i}`, {
+        timestamp: ts,
+        userTask: '__proactive__',
+        steps: [
+          { id: `pn-${i}`, type: 'proactive_notice', content: `提醒 ${i}`, timestamp: ts }
+        ]
+      }))
+    }
+
+    const merged = new Companion(hs).getMergedViewRecord()
+    expect(merged).not.toBeNull()
+    const contents = (merged!.steps ?? []).map(s => s.content)
+    expect(contents).toContain('昨天那句还在吗')
+    expect(contents).toContain('提醒 11')
+  })
+
+  it('真对话超过名额时只留最近一段窗口', () => {
+    const hs = new HistoryService()
+    const t0 = Date.now() - 1_000_000
+    for (let i = 0; i < 12; i++) {
+      const ts = t0 + i * 10_000
+      hs.saveAgentRecord(companionRec(`real_${i}`, {
+        timestamp: ts,
+        userTask: `真对话 ${i}`,
+        steps: [
+          { id: `ut-${i}`, type: 'user_task', content: `真对话 ${i}`, timestamp: ts }
+        ]
+      }))
+    }
+
+    const merged = new Companion(hs).getMergedViewRecord()
+    expect(merged).not.toBeNull()
+    const contents = (merged!.steps ?? []).map(s => s.content)
+    expect(contents).not.toContain('真对话 0')
+    expect(contents).not.toContain('真对话 1')
+    expect(contents).toContain('真对话 2')
+    expect(contents).toContain('真对话 11')
+  })
+})
