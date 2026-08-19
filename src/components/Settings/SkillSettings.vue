@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RefreshCw, FolderOpen, Eye, X, Download, Trash2, ArrowUpCircle, Search, Star } from 'lucide-vue-next'
+import { showConfirm, showAlert } from '../../composables/useConfirm'
 
 const props = defineProps<{
   pendingInstallSkillId?: string
@@ -338,10 +339,10 @@ const installSkill = async (skill: MarketSkillItem) => {
       skill.hasUpdate = false
       await loadSkills()
     } else {
-      alert(`${t('skillSettings.installFailed')}: ${result.error}`)
+      await showAlert(t('common.error'), `${t('skillSettings.installFailed')}: ${result.error}`)
     }
   } catch (error: any) {
-    alert(`${t('skillSettings.installFailed')}: ${error.message}`)
+    await showAlert(t('common.error'), `${t('skillSettings.installFailed')}: ${error.message}`)
   } finally {
     operatingSkills.value.delete(skill.id)
   }
@@ -349,21 +350,33 @@ const installSkill = async (skill: MarketSkillItem) => {
 
 /** 从「我的技能」中移除/卸载技能（删除本地文件） */
 const removeUserSkill = async (skill: UserSkill) => {
-  if (!confirm(`${t('skillSettings.uninstall')} "${skill.name}"?`)) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('skillSettings.uninstall'),
+    message: `${t('skillSettings.uninstall')} "${skill.name}"?`,
+    confirmText: t('skillSettings.uninstall'),
+  })
+  if (!confirmed) return
   try {
     const result = await window.electronAPI.skillMarket.uninstall(skill.id)
     if (result.success) {
       await loadSkills()
     } else {
-      alert(`${t('skillSettings.uninstallFailed')}: ${result.error}`)
+      await showAlert(t('common.error'), `${t('skillSettings.uninstallFailed')}: ${result.error}`)
     }
   } catch (error: any) {
-    alert(`${t('skillSettings.uninstallFailed')}: ${error.message}`)
+    await showAlert(t('common.error'), `${t('skillSettings.uninstallFailed')}: ${error.message}`)
   }
 }
 
 const uninstallSkill = async (skill: MarketSkillItem) => {
-  if (!confirm(`${t('skillSettings.uninstall')} "${skill.name}"?`)) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('skillSettings.uninstall'),
+    message: `${t('skillSettings.uninstall')} "${skill.name}"?`,
+    confirmText: t('skillSettings.uninstall'),
+  })
+  if (!confirmed) return
   operatingSkills.value.add(skill.id)
   try {
     const result = await window.electronAPI.skillMarket.uninstall(skill.id)
@@ -373,10 +386,10 @@ const uninstallSkill = async (skill: MarketSkillItem) => {
       skill.hasUpdate = false
       await loadSkills()
     } else {
-      alert(`${t('skillSettings.uninstallFailed')}: ${result.error}`)
+      await showAlert(t('common.error'), `${t('skillSettings.uninstallFailed')}: ${result.error}`)
     }
   } catch (error: any) {
-    alert(`${t('skillSettings.uninstallFailed')}: ${error.message}`)
+    await showAlert(t('common.error'), `${t('skillSettings.uninstallFailed')}: ${error.message}`)
   } finally {
     operatingSkills.value.delete(skill.id)
   }
@@ -391,10 +404,10 @@ const updateSkill = async (skill: MarketSkillItem) => {
       skill.hasUpdate = false
       await loadSkills()
     } else {
-      alert(`${t('skillSettings.updateFailed')}: ${result.error}`)
+      await showAlert(t('common.error'), `${t('skillSettings.updateFailed')}: ${result.error}`)
     }
   } catch (error: any) {
-    alert(`${t('skillSettings.updateFailed')}: ${error.message}`)
+    await showAlert(t('common.error'), `${t('skillSettings.updateFailed')}: ${error.message}`)
   } finally {
     operatingSkills.value.delete(skill.id)
   }
@@ -416,7 +429,7 @@ const saveRegistryUrl = async () => {
     registryUrlEditing.value = false
     loadMarketSkills(true)
   } catch (error: any) {
-    alert('Failed to save: ' + error.message)
+    await showAlert(t('common.failed'), error.message)
   }
 }
 

@@ -96,6 +96,8 @@ export default {
     selectTask: '请从左侧选择任务查看详情',
     historyCount: '{count} 条记录',
     clearHistory: '清除历史',
+    confirmDeleteTask: '确定要删除任务 "{name}" 吗？',
+    confirmClearHistory: '确定要清除所有执行历史吗？',
     noHistory: '暂无执行记录',
     
     // 验证

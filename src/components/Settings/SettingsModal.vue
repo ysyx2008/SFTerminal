@@ -8,6 +8,7 @@ import type { LocaleType } from '../../i18n'
 import { getLocale } from '../../i18n'
 import { getDownloadPageUrl, getWebsiteUrl, getChangelogPageUrl } from '../../config/urls'
 import { getReleaseSummary } from '../../utils/releaseMeta'
+import { showConfirm } from '../../composables/useConfirm'
 import AiSettings from './AiSettings.vue'
 import AiRulesSettings from './AiRulesSettings.vue'
 import ThemeSettings from './ThemeSettings.vue'
@@ -279,7 +280,12 @@ const handleConfirmSupport = async () => {
 
 // 重置赞助状态（用于测试）
 const resetSponsorStatus = async () => {
-  if (confirm(t('sponsor.resetConfirm'))) {
+  const confirmed = await showConfirm({
+    type: 'warning',
+    title: t('common.confirm'),
+    message: t('sponsor.resetConfirm'),
+  })
+  if (confirmed) {
     await configStore.setSponsorStatus(false)
   }
 }
@@ -470,7 +476,12 @@ const tabGroups = computed(() => {
 })
 
 const restartSetup = async () => {
-  if (confirm(t('settings.restartSetupConfirm'))) {
+  const confirmed = await showConfirm({
+    type: 'warning',
+    title: t('common.confirm'),
+    message: t('settings.restartSetupConfirm'),
+  })
+  if (confirmed) {
     await configStore.setSetupCompleted(false)
     emit('restartSetup')
     emit('close')

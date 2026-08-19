@@ -16,6 +16,7 @@ import ToolCallContent from '../ToolCallContent.vue'
 import cronstrue from 'cronstrue/i18n'
 import WatchOverviewPanel from './WatchOverviewPanel.vue'
 import WatchHistoryDetailView from './WatchHistoryDetailView.vue'
+import { showConfirm, showAlert } from '../../composables/useConfirm'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -531,8 +532,14 @@ function cancelEditing() {
 async function saveEditing() {
   if (!selectedWatch.value || editSaving.value) return
   const form = editForm.value
-  if (!form.name.trim()) { alert(t('watch.validation.nameRequired')); return }
-  if (!form.prompt.trim()) { alert(t('watch.validation.promptRequired')); return }
+  if (!form.name.trim()) {
+    await showAlert(t('common.warning'), t('watch.validation.nameRequired'))
+    return
+  }
+  if (!form.prompt.trim()) {
+    await showAlert(t('common.warning'), t('watch.validation.promptRequired'))
+    return
+  }
 
   editSaving.value = true
   try {
@@ -633,14 +640,26 @@ const markWatchCompleted = (watchId: string) => {
 }
 
 const deleteWatch = async (w: WatchDefinition) => {
-  if (!confirm(t('watch.confirmDelete', { name: w.name }))) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.delete'),
+    message: t('watch.confirmDelete', { name: w.name }),
+    confirmText: t('common.delete'),
+  })
+  if (!confirmed) return
   await window.electronAPI.watch.delete(w.id)
   if (selectedWatch.value?.id === w.id) selectedWatch.value = null
   await loadWatchData()
 }
 
 const clearWatchHistory = async () => {
-  if (!confirm(t('watch.confirmClearHistory'))) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.clear'),
+    message: t('watch.confirmClearHistory'),
+    confirmText: t('common.clear'),
+  })
+  if (!confirmed) return
   await window.electronAPI.watch.clearHistory(historyWatchIdFilter.value ?? undefined)
   watchHistory.value = []
   selectedHistoryRecord.value = null

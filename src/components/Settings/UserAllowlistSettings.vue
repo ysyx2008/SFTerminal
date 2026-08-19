@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Trash2, RefreshCw, Search, Shield, ShieldAlert, FolderLock, HardDrive, Terminal, Plus, SlidersHorizontal, CircleHelp } from 'lucide-vue-next'
 import type { RiskLevel, CommandRiskPolicy } from '@shared/types/agent'
 import { DEFAULT_COMMAND_RISK_POLICY } from '@shared/types/agent'
+import { showConfirm } from '../../composables/useConfirm'
 
 type BuiltInRulesView = {
   argvCommands: Array<{
@@ -143,13 +144,18 @@ async function loadBuiltinRules() {
   }
 }
 
-function switchSubTab(tab: SubTab) {
+async function switchSubTab(tab: SubTab) {
   if (
     tab !== activeSubTab.value &&
     policyUnsaved.value &&
     (activeSubTab.value === 'policy' || activeSubTab.value === 'builtin')
   ) {
-    if (!window.confirm(t('settings.security.riskPolicy.unsavedLeave'))) {
+    const confirmed = await showConfirm({
+      type: 'warning',
+      title: t('common.confirm'),
+      message: t('settings.security.riskPolicy.unsavedLeave'),
+    })
+    if (!confirmed) {
       return
     }
   }

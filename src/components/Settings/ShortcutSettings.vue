@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfigStore, DEFAULT_KEYBOARD_SHORTCUTS, type KeyboardShortcuts } from '../../stores/config'
+import { showConfirm } from '../../composables/useConfirm'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -188,8 +189,13 @@ function resetShortcut(action: ShortcutAction, e: Event) {
   conflictMessage.value = ''
 }
 
-function resetAll() {
-  if (confirm(t('shortcutSettings.resetAllConfirm'))) {
+async function resetAll() {
+  const confirmed = await showConfirm({
+    type: 'warning',
+    title: t('common.confirm'),
+    message: t('shortcutSettings.resetAllConfirm'),
+  })
+  if (confirmed) {
     recordingAction.value = null
     configStore.setKeyboardShortcuts({ ...DEFAULT_KEYBOARD_SHORTCUTS })
     conflictMessage.value = ''

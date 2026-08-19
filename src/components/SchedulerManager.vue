@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Plus, Play, Trash2, Edit3, Clock, Server, Terminal, RefreshCw, History } from 'lucide-vue-next'
 import SchedulerTaskEditor from './SchedulerTaskEditor.vue'
+import { showConfirm } from '../composables/useConfirm'
 
 const { t } = useI18n()
 
@@ -233,7 +234,13 @@ const handleSaveTask = async (params: CreateTaskParams) => {
 
 // 删除任务
 const deleteTask = async (task: ScheduledTask) => {
-  if (!confirm(`确定要删除任务 "${task.name}" 吗？`)) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.delete'),
+    message: t('scheduler.confirmDeleteTask', { name: task.name }),
+    confirmText: t('common.delete'),
+  })
+  if (!confirmed) return
   
   try {
     await window.electronAPI.scheduler.deleteTask(task.id)
@@ -270,7 +277,13 @@ const runTask = async (task: ScheduledTask) => {
 
 // 清除历史
 const clearHistory = async () => {
-  if (!confirm('确定要清除所有执行历史吗？')) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.clear'),
+    message: t('scheduler.confirmClearHistory'),
+    confirmText: t('common.clear'),
+  })
+  if (!confirmed) return
   
   try {
     await window.electronAPI.scheduler.clearHistory()

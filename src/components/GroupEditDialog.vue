@@ -3,6 +3,7 @@ import { ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
 import type { SessionGroup, JumpHostConfig } from '../stores/config'
+import { showAlert } from '../composables/useConfirm'
 
 const { t } = useI18n()
 
@@ -61,16 +62,16 @@ const toggleJumpHost = (enabled: boolean) => {
   }
 }
 
-const saveGroup = () => {
+const saveGroup = async () => {
   if (!formData.value.name) {
-    alert(t('session.pleaseInputGroupName'))
+    await showAlert(t('common.warning'), t('session.pleaseInputGroupName'))
     return
   }
 
   if (formData.value.jumpHost) {
     const jh = formData.value.jumpHost
     if (!jh.host || !jh.username) {
-      alert(t('session.pleaseInputJumpHostInfo'))
+      await showAlert(t('common.warning'), t('session.pleaseInputJumpHostInfo'))
       return
     }
   }

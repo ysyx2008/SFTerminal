@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Pencil, Trash2, X, ExternalLink, Eye, Copy, GripVertical, RefreshCw, ChevronDown, Camera } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from '../../stores/config'
+import { showConfirm } from '../../composables/useConfirm'
 import type { FetchedAiModel } from '@shared/types'
 import { AI_TEMPLATES } from '../../config/ai-templates'
 import { v4 as uuidv4 } from 'uuid'
@@ -208,9 +209,15 @@ const saveProfile = async () => {
     return
   }
 
-  // API Key 未填写时给予提示确认
+  // API Key 未填写时给予提示确认（必须用应用内弹窗：Windows 上原生 confirm
+  // 关掉后窗口看似在前台，页面实际收不到点击，要 Alt+Tab 才恢复）
   if (!formData.value.apiKey) {
-    const confirmed = confirm(t('aiSettings.confirmNoApiKey'))
+    const confirmed = await showConfirm({
+      type: 'warning',
+      title: t('aiSettings.confirmNoApiKeyTitle'),
+      message: t('aiSettings.confirmNoApiKey'),
+      detail: t('aiSettings.confirmNoApiKeyDetail'),
+    })
     if (!confirmed) {
       return
     }
@@ -239,7 +246,12 @@ const saveProfile = async () => {
 }
 
 const deleteProfile = async (profile: AiProfile) => {
-  if (confirm(t('aiSettings.confirmDeleteProfile'))) {
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('aiSettings.deleteProfile'),
+    message: t('aiSettings.confirmDeleteProfile'),
+  })
+  if (confirmed) {
     await configStore.deleteAiProfile(profile.id)
   }
 }

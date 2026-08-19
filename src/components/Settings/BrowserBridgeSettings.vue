@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Plus,
 } from 'lucide-vue-next'
+import { showConfirm } from '../../composables/useConfirm'
 import {
   BROWSER_BRIDGE_FIREFOX_AMO_LISTING_URL,
   BROWSER_BRIDGE_CHROMIUM_CWS_LISTING_URL,
@@ -166,7 +167,12 @@ async function install() {
 }
 
 async function uninstall() {
-  if (!confirm(t('browserBridge.confirmUninstall'))) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.confirm'),
+    message: t('browserBridge.confirmUninstall'),
+  })
+  if (!confirmed) return
   uninstalling.value = true
   errorMsg.value = ''
   actionMsg.value = ''

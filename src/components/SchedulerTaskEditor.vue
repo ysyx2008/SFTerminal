@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Clock, Server, Terminal, MessageSquare } from 'lucide-vue-next'
+import { showAlert } from '../composables/useConfirm'
 
 const { t } = useI18n()
 
@@ -188,10 +189,10 @@ const validateForm = (): string | null => {
 }
 
 // 保存
-const handleSave = () => {
+const handleSave = async () => {
   const error = validateForm()
   if (error) {
-    alert(error)
+    await showAlert(t('common.warning'), error)
     return
   }
 

@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
 import { useConfigStore, type SshSession, type SshEncoding, type JumpHostConfig } from '../stores/config'
+import { showAlert } from '../composables/useConfirm'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -101,24 +102,24 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 }
 
-const saveSession = () => {
+const saveSession = async () => {
   if (!formData.value.name?.trim()) {
-    alert(t('session.validation.nameRequired'))
+    await showAlert(t('common.warning'), t('session.validation.nameRequired'))
     return
   }
   if (!formData.value.host?.trim()) {
-    alert(t('session.validation.hostRequired'))
+    await showAlert(t('common.warning'), t('session.validation.hostRequired'))
     return
   }
   if (!formData.value.username?.trim()) {
-    alert(t('session.validation.usernameRequired'))
+    await showAlert(t('common.warning'), t('session.validation.usernameRequired'))
     return
   }
 
   const data = { ...formData.value }
   if (jumpHostMode.value === 'custom') {
     if (!jumpHostForm.value.host || !jumpHostForm.value.username) {
-      alert(t('session.pleaseInputJumpHostInfo'))
+      await showAlert(t('common.warning'), t('session.pleaseInputJumpHostInfo'))
       return
     }
     data.jumpHostOverride = jumpHostForm.value as JumpHostConfig

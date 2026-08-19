@@ -96,6 +96,8 @@ export default {
     selectTask: 'Select a task from the list to view details',
     historyCount: '{count} records',
     clearHistory: 'Clear History',
+    confirmDeleteTask: 'Delete task "{name}"?',
+    confirmClearHistory: 'Clear all execution history?',
     noHistory: 'No execution history',
     
     // Validation

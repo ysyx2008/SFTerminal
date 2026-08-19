@@ -7,6 +7,7 @@ import {
   Sparkles, Fingerprint, UserRound, HeartPulse, Camera,
 } from 'lucide-vue-next'
 import WatchHistoryDetailView from './Awaken/WatchHistoryDetailView.vue'
+import { showConfirm } from '../composables/useConfirm'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -47,7 +48,7 @@ const activeTab = ref<NavTab>(
     : readLastTab()
 )
 
-function switchTab(tab: NavTab, onSwitch?: () => void) {
+async function switchTab(tab: NavTab, onSwitch?: () => void) {
   const dirtyChecks: Array<{ from: NavTab; dirty: boolean; reset: () => void }> = [
     { from: 'personality', dirty: personalityDirty.value, reset: resetPersonalityText },
     { from: 'identity', dirty: identityDirty.value, reset: resetIdentityText },
@@ -56,7 +57,12 @@ function switchTab(tab: NavTab, onSwitch?: () => void) {
   ]
   for (const check of dirtyChecks) {
     if (activeTab.value === check.from && tab !== check.from && check.dirty) {
-      if (!confirm(t('awaken.personalityUnsavedConfirm'))) return
+      const confirmed = await showConfirm({
+        type: 'warning',
+        title: t('common.confirm'),
+        message: t('awaken.personalityUnsavedConfirm'),
+      })
+      if (!confirmed) return
       check.reset()
     }
   }
@@ -201,7 +207,13 @@ const getStatusIcon = (status: WatchRunStatus): string => {
 }
 
 const clearWatchHistory = async () => {
-  if (!confirm(t('watch.confirmClearHistory'))) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.clear'),
+    message: t('watch.confirmClearHistory'),
+    confirmText: t('common.clear'),
+  })
+  if (!confirmed) return
   await window.electronAPI.watch.clearHistory('__wakeup__')
   watchHistory.value = []
   selectedHistoryRecord.value = null
@@ -603,7 +615,12 @@ function resetHeartbeatText() {
 }
 
 async function resetHeartbeatToDefault() {
-  if (!confirm(t('awaken.heartbeatResetConfirm'))) return
+  const confirmed = await showConfirm({
+    type: 'warning',
+    title: t('common.confirm'),
+    message: t('awaken.heartbeatResetConfirm'),
+  })
+  if (!confirmed) return
   try {
     await window.electronAPI.watch.resetHeartbeat()
     await loadHeartbeatText()
@@ -612,9 +629,14 @@ async function resetHeartbeatToDefault() {
   }
 }
 
-function requestClose() {
-  if (personalityDirty.value && !confirm(t('awaken.personalityUnsavedConfirm'))) {
-    return
+async function requestClose() {
+  if (personalityDirty.value) {
+    const confirmed = await showConfirm({
+      type: 'warning',
+      title: t('common.confirm'),
+      message: t('awaken.personalityUnsavedConfirm'),
+    })
+    if (!confirmed) return
   }
   emit('close', awakened.value)
 }

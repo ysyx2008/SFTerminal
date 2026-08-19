@@ -5,6 +5,7 @@ import { ExternalLink, FolderInput, Database, Plug, Check, ChevronDown, ChevronU
 import { useConfigStore, type AiProfile } from '../stores/config'
 import { AI_TEMPLATES, type AiTemplate } from '../config/ai-templates'
 import { v4 as uuidv4 } from 'uuid'
+import { showAlert } from '../composables/useConfirm'
 
 const { t } = useI18n()
 
@@ -96,7 +97,7 @@ const saveTemplateConfig = async (template: typeof aiTemplates.value[0]) => {
   // 自定义模板使用自定义表单数据
   if (template.isCustom) {
     if (!customFormData.value.name || !customFormData.value.apiUrl || !customFormData.value.model) {
-      alert(t('setup.aiConfig.fillRequired'))
+      await showAlert(t('common.warning'), t('setup.aiConfig.fillRequired'))
       return false
     }
     
@@ -115,7 +116,7 @@ const saveTemplateConfig = async (template: typeof aiTemplates.value[0]) => {
       return true
     } catch (error) {
       console.error('保存配置失败:', error)
-      alert(t('setup.aiConfig.saveFailed'))
+      await showAlert(t('common.error'), t('setup.aiConfig.saveFailed'))
       return false
     }
   }
@@ -125,7 +126,7 @@ const saveTemplateConfig = async (template: typeof aiTemplates.value[0]) => {
   
   // 本地服务不需要API Key，云服务需要
   if (template.needsApiKey && !apiKey) {
-    alert(t('setup.aiConfig.apiKeyRequired'))
+    await showAlert(t('common.warning'), t('setup.aiConfig.apiKeyRequired'))
     return false
   }
 
@@ -144,8 +145,8 @@ const saveTemplateConfig = async (template: typeof aiTemplates.value[0]) => {
     return true
   } catch (error) {
     console.error('保存配置失败:', error)
-    alert(t('setup.aiConfig.saveFailed'))
-    return false
+      await showAlert(t('common.error'), t('setup.aiConfig.saveFailed'))
+      return false
   }
 }
 
@@ -332,7 +333,7 @@ const skipWizard = async () => {
 const nextStep = async () => {
   // 非 Steam 版第 2 步：必须至少配置一个 AI 模型才能继续
   if (!isSteamBuild && currentStep.value === 2 && configStore.aiProfiles.length === 0) {
-    alert(t('setup.aiConfig.required'))
+    await showAlert(t('common.warning'), t('setup.aiConfig.required'))
     return
   }
 

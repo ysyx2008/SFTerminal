@@ -47,7 +47,7 @@ import {
   toast
 } from '../composables'
 import { mermaidSvgToDataUrl } from '../composables/useMarkdown'
-import { showConfirm } from '../composables/useConfirm'
+import { showConfirm, showAlert } from '../composables/useConfirm'
 import { planComposerPaste, ingestComposerAttachments } from '../composables/useComposerPaste'
 import { useFileDropTarget } from '../composables/useFileDropTarget'
 import { pickTaskCompleteLabel } from '../composables/useTaskCompleteLabel'
@@ -374,7 +374,7 @@ const handleForkFromGroup = async (group: import('../composables').AgentTaskGrou
     })
     if (!newTabId) {
       log.warn('Fork from group failed', { groupId: group.id, groupIndex: group.index })
-      window.alert(t('ai.fork.failed'))
+      await showAlert(t('common.error'), t('ai.fork.failed'))
     }
   } finally {
     forkingGroupIds.value.delete(group.id)
@@ -902,7 +902,12 @@ const historyDisplayTitle = (record: { title?: string; userTask: string }): stri
 // 加载历史记录（带确认）。欢迎区为完整 AgentRecord；弹窗无 steps 时按 id 拉全量
 const handleLoadHistory = async (row: AgentRecord | AgentHistorySummary) => {
   if (agentUserTask.value && hasExistingConversation.value) {
-    if (!window.confirm(t('ai.agentWelcome.confirmLoadHistory'))) {
+    const confirmed = await showConfirm({
+      type: 'warning',
+      title: t('common.confirm'),
+      message: t('ai.agentWelcome.confirmLoadHistory'),
+    })
+    if (!confirmed) {
       return
     }
   }

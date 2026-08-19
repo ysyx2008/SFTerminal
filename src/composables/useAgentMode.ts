@@ -18,6 +18,7 @@ import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
 import { estimateMessageStepVirtualSize } from '../utils/thinking-block'
 import { resolveWorkbenchAgentPrompt, resolveWorkbenchKind } from '../workbench'
+import { showConfirm, showAlert } from './useConfirm'
 
 const log = createLogger('Agent')
 
@@ -1626,7 +1627,12 @@ export function useAgentMode(
     const confirm = pendingConfirm.value
     const offer = confirm?.trustCommandOffer
     if (!offer) return
-    if (!window.confirm(t('ai.trustCommandConfirm', { cmd: offer.cmd }))) return
+    const confirmed = await showConfirm({
+      type: 'warning',
+      title: t('common.confirm'),
+      message: t('ai.trustCommandConfirm', { cmd: offer.cmd }),
+    })
+    if (!confirmed) return
     try {
       const result = await window.electronAPI.commandRules.upsert({
         cmd: offer.cmd,
@@ -1634,13 +1640,13 @@ export function useAgentMode(
         writesTo: offer.writesTo,
       })
       if (!result.ok) {
-        window.alert(t('ai.trustCommandFailed'))
+        await showAlert(t('common.error'), t('ai.trustCommandFailed'))
         return
       }
       await confirmToolCall(true)
     } catch (error) {
       log.error('信任命令并加入规则失败:', error)
-      window.alert(t('ai.trustCommandFailed'))
+      await showAlert(t('common.error'), t('ai.trustCommandFailed'))
     }
   }
 

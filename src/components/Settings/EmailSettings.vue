@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Pencil, Trash2, X, Mail, CheckCircle, AlertCircle, ShieldCheck, Loader2 } from 'lucide-vue-next'
 import { useConfigStore, type EmailAccount, type EmailProvider, type AccountTestStatus, EMAIL_PROVIDER_CONFIGS } from '../../stores/config'
+import { showConfirm, showAlert } from '../../composables/useConfirm'
 import { v4 as uuidv4 } from 'uuid'
 
 const { t } = useI18n()
@@ -117,14 +118,14 @@ const saveAccount = async () => {
   // 自定义服务器需要填写服务器地址
   if (formData.value.provider === 'custom') {
     if (!formData.value.imapHost || !formData.value.smtpHost) {
-      alert(t('emailSettings.serverRequired'))
+      await showAlert(t('common.warning'), t('emailSettings.serverRequired'))
       return
     }
   }
 
   // 新建账户必须填写密码
   if (!editingAccount.value && !formData.value.password) {
-    alert(t('emailSettings.passwordRequired'))
+    await showAlert(t('common.warning'), t('emailSettings.passwordRequired'))
     return
   }
 
@@ -177,13 +178,19 @@ const saveAccount = async () => {
     resetForm()
   } catch (error) {
     console.error('Failed to save email account:', error)
-    alert(t('emailSettings.saveFailed'))
+    await showAlert(t('common.error'), t('emailSettings.saveFailed'))
   }
 }
 
 // 删除账户
 const deleteAccount = async (account: EmailAccount) => {
-  if (!confirm(t('emailSettings.confirmDelete', { name: account.name }))) {
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.delete'),
+    message: t('emailSettings.confirmDelete', { name: account.name }),
+    confirmText: t('common.delete'),
+  })
+  if (!confirmed) {
     return
   }
 

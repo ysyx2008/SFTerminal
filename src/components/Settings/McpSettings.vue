@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Pencil, Trash2, X } from 'lucide-vue-next'
+import { showConfirm, showAlert } from '../../composables/useConfirm'
 import { v4 as uuidv4 } from 'uuid'
 
 const { t } = useI18n()
@@ -537,7 +538,13 @@ const saveServer = async () => {
 
 // 删除服务器
 const deleteServer = async (server: McpServerConfig) => {
-  if (confirm(t('mcpSettings.confirmDelete', { name: server.name }))) {
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.delete'),
+    message: t('mcpSettings.confirmDelete', { name: server.name }),
+    confirmText: t('common.delete'),
+  })
+  if (confirmed) {
     await window.electronAPI.mcp.deleteServer(server.id)
     await loadServers()
   }
@@ -549,7 +556,7 @@ const toggleEnabled = async (server: McpServerConfig) => {
   if (nextEnabled && !(server.whenToUse || '').trim()) {
     const { draft, error, toolsOk } = await generateWhenToUseDraft(server)
     if (!toolsOk && !draft) {
-      alert(error || t('mcpSettings.connectionFailed'))
+      await showAlert(t('common.error'), error || t('mcpSettings.connectionFailed'))
       return
     }
     const confirmed = await promptWhenToUseConfirm(draft, error || '')

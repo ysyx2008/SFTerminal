@@ -17,6 +17,7 @@ import {
   removePaneFromLayout
 } from './split-pane-tree'
 import { WELCOME_COMPOSER_TAB_ID } from '../constants/welcome-composer'
+import { showConfirm } from '../composables/useConfirm'
 import type { PendingImage } from '../composables/useImageUpload'
 import {
   CLOSED_HISTORY_CONVERSATION_META,
@@ -973,7 +974,11 @@ export const useTerminalStore = defineStore('terminal', () => {
 
       if (isAgentRunning) {
         // Agent 正在运行，显示警告确认
-        const confirmed = window.confirm(t('tabs.confirmCloseAgentRunning'))
+        const confirmed = await showConfirm({
+          type: 'warning',
+          title: t('common.confirm'),
+          message: t('tabs.confirmCloseAgentRunning'),
+        })
         if (!confirmed) return false
       }
     }

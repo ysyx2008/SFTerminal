@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Loader2, X, Trash2 } from 'lucide-vue-next'
+import { showConfirm, showAlert } from '../../composables/useConfirm'
 
 const { t } = useI18n()
 const api = window.electronAPI as any
@@ -218,9 +219,14 @@ const loadKnowledgeDocs = async () => {
 
 // ==================== 记忆操作 ====================
 
-const selectContextDoc = (item: ContextKnowledgeItem) => {
+const selectContextDoc = async (item: ContextKnowledgeItem) => {
   if (contextDocDirty.value && selectedContextId.value) {
-    if (!confirm(t('knowledgeManager.confirmSwitchMemory'))) return
+    const confirmed = await showConfirm({
+      type: 'warning',
+      title: t('common.confirm'),
+      message: t('knowledgeManager.confirmSwitchMemory'),
+    })
+    if (!confirmed) return
   }
   selectedContextId.value = item.contextId
   contextDocContent.value = item.content
@@ -238,7 +244,7 @@ const saveContextDoc = async () => {
       contextDocDirty.value = false
       await loadContextDocs()
     } else {
-      alert(t('knowledgeManager.saveMemoryFailed', { error: result.error || t('knowledgeManager.unknownError') }))
+      await showAlert(t('common.error'), t('knowledgeManager.saveMemoryFailed', { error: result.error || t('knowledgeManager.unknownError') }))
     }
   } catch (error) {
     console.error('保存记忆失败:', error)
@@ -248,7 +254,13 @@ const saveContextDoc = async () => {
 }
 
 const deleteContextDoc = async (contextId: string) => {
-  if (!confirm(t('knowledgeManager.confirmDeleteMemory', { name: getContextLabel(contextId) }))) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.delete'),
+    message: t('knowledgeManager.confirmDeleteMemory', { name: getContextLabel(contextId) }),
+    confirmText: t('common.delete'),
+  })
+  if (!confirmed) return
   try {
     const result = await window.electronAPI.contextKnowledge.delete(contextId)
     if (result.success) {
@@ -259,7 +271,7 @@ const deleteContextDoc = async (contextId: string) => {
       }
       await loadContextDocs()
     } else {
-      alert(t('knowledgeManager.deleteMemoryFailed', { error: result.error || t('knowledgeManager.unknownError') }))
+      await showAlert(t('common.error'), t('knowledgeManager.deleteMemoryFailed', { error: result.error || t('knowledgeManager.unknownError') }))
     }
   } catch (error) {
     console.error('删除记忆失败:', error)
@@ -286,7 +298,13 @@ const clearSelection = () => { selectedDocIds.value = new Set() }
 const viewDocument = (doc: KnowledgeDocument) => { selectedDoc.value = doc }
 
 const deleteDocument = async (doc: KnowledgeDocument) => {
-  if (!confirm(t('knowledgeManager.confirmDelete', { name: doc.filename }))) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.delete'),
+    message: t('knowledgeManager.confirmDelete', { name: doc.filename }),
+    confirmText: t('common.delete'),
+  })
+  if (!confirmed) return
   try {
     const result = await api.knowledge.removeDocument(doc.id)
     if (result.success) {
@@ -303,7 +321,13 @@ const deleteDocument = async (doc: KnowledgeDocument) => {
 const batchDeleteDocuments = async () => {
   const count = selectedDocIds.value.size
   if (count === 0) return
-  if (!confirm(t('knowledgeManager.confirmBatchDelete', { count }))) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.delete'),
+    message: t('knowledgeManager.confirmBatchDelete', { count }),
+    confirmText: t('common.delete'),
+  })
+  if (!confirmed) return
   try {
     batchDeleting.value = true
     const docIds = Array.from(selectedDocIds.value)
@@ -322,7 +346,13 @@ const batchDeleteDocuments = async () => {
 
 const clearKnowledge = async () => {
   if (kbDocuments.value.length === 0) return
-  if (!confirm(t('knowledgeManager.confirmClear', { count: kbDocuments.value.length }))) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.clear'),
+    message: t('knowledgeManager.confirmClear', { count: kbDocuments.value.length }),
+    confirmText: t('common.clear'),
+  })
+  if (!confirmed) return
   try {
     clearing.value = true
     const docIds = kbDocuments.value.map(d => d.id)
@@ -343,31 +373,36 @@ const exportKnowledge = async () => {
     exporting.value = true
     const result = await api.knowledge.exportData()
     if (result.canceled) return
-    if (result.success) alert(t('knowledgeManager.exportSuccess', { path: result.path }))
-    else alert(t('knowledgeManager.exportFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+    if (result.success) await showAlert(t('common.success'), t('knowledgeManager.exportSuccess', { path: result.path }))
+    else await showAlert(t('common.error'), t('knowledgeManager.exportFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
   } catch (error) {
     console.error('Export failed:', error)
-    alert(t('knowledgeManager.exportFailed'))
+    await showAlert(t('common.error'), t('knowledgeManager.exportFailed'))
   } finally {
     exporting.value = false
   }
 }
 
 const importKnowledge = async () => {
-  if (!confirm(t('knowledgeManager.confirmImport'))) return
+  const confirmed = await showConfirm({
+    type: 'warning',
+    title: t('common.confirm'),
+    message: t('knowledgeManager.confirmImport'),
+  })
+  if (!confirmed) return
   try {
     importing.value = true
     const result = await api.knowledge.importData()
     if (result.canceled) return
     if (result.success) {
-      alert(t('knowledgeManager.importSuccess', { count: result.imported || 0 }))
+      await showAlert(t('common.success'), t('knowledgeManager.importSuccess', { count: result.imported || 0 }))
       await loadKnowledgeDocs()
     } else {
-      alert(t('knowledgeManager.importFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+      await showAlert(t('common.error'), t('knowledgeManager.importFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
     }
   } catch (error) {
     console.error('Import failed:', error)
-    alert(t('knowledgeManager.importFailed'))
+    await showAlert(t('common.error'), t('knowledgeManager.importFailed'))
   } finally {
     importing.value = false
   }
@@ -389,17 +424,17 @@ const repairKnowledge = async () => {
 
     if (result.success) {
       const secs = ((result.durationMs || 0) / 1000).toFixed(1)
-      alert(t('knowledgeManager.repairSuccess', {
+      await showAlert(t('common.success'), t('knowledgeManager.repairSuccess', {
         added: result.added ?? 0,
         checked: result.checked ?? 0,
         secs,
       }))
     } else {
-      alert(t('knowledgeManager.repairFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+      await showAlert(t('common.error'), t('knowledgeManager.repairFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
     }
   } catch (error) {
     console.error('Repair index failed:', error)
-    alert(t('knowledgeManager.repairFailed'))
+    await showAlert(t('common.error'), t('knowledgeManager.repairFailed'))
   } finally {
     repairing.value = false
     repairProgress.value = null
@@ -425,49 +460,60 @@ const createBackup = async () => {
     const result = await api.knowledge.createBackup()
     if (result.success) {
       if (result.backupPath) {
-        alert(t('knowledgeManager.backupSuccess', { path: result.backupPath }))
+        await showAlert(t('common.success'), t('knowledgeManager.backupSuccess', { path: result.backupPath }))
       }
       await loadBackups()
       await loadKnowledgeDocs()
     } else {
-      alert(t('knowledgeManager.backupFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+      await showAlert(t('common.error'), t('knowledgeManager.backupFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
     }
   } catch (error) {
     console.error('Create backup failed:', error)
-    alert(t('knowledgeManager.backupFailed'))
+    await showAlert(t('common.error'), t('knowledgeManager.backupFailed'))
   } finally {
     backingUp.value = false
   }
 }
 
 const restoreFromBackup = async (backupPath: string) => {
-  if (!confirm(t('knowledgeManager.confirmRestore'))) return
+  const confirmed = await showConfirm({
+    type: 'warning',
+    title: t('common.confirm'),
+    message: t('knowledgeManager.confirmRestore'),
+  })
+  if (!confirmed) return
   try {
     restoring.value = true
     const result = await api.knowledge.restoreBackup(backupPath)
     if (result.success) {
-      alert(t('knowledgeManager.restoreSuccess', { path: result.backupPath || backupPath }))
+      await showAlert(t('common.success'), t('knowledgeManager.restoreSuccess', { path: result.backupPath || backupPath }))
       await loadKnowledgeDocs()
       showBackupsPanel.value = false
     } else {
-      alert(t('knowledgeManager.restoreFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+      await showAlert(t('common.error'), t('knowledgeManager.restoreFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
     }
   } catch (error) {
     console.error('Restore backup failed:', error)
-    alert(t('knowledgeManager.restoreFailed'))
+    await showAlert(t('common.error'), t('knowledgeManager.restoreFailed'))
   } finally {
     restoring.value = false
   }
 }
 
 const deleteBackupEntry = async (backupPath: string) => {
-  if (!confirm(t('knowledgeManager.confirmDeleteBackup'))) return
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.delete'),
+    message: t('knowledgeManager.confirmDeleteBackup'),
+    confirmText: t('common.delete'),
+  })
+  if (!confirmed) return
   try {
     const result = await api.knowledge.deleteBackup(backupPath)
     if (result.success) {
       await loadBackups()
     } else {
-      alert(result.error || t('knowledgeManager.unknownError'))
+      await showAlert(t('common.error'), result.error || t('knowledgeManager.unknownError'))
     }
   } catch (error) {
     console.error('Delete backup failed:', error)

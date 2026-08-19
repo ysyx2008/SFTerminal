@@ -10,6 +10,7 @@ import GroupEditDialog from './GroupEditDialog.vue'
 import SshCredentialDialog from './SshCredentialDialog.vue'
 import { useSessionList } from '../composables/useSessionList'
 import { useSessionDragDrop } from '../composables/useSessionDragDrop'
+import { showConfirm, showAlert } from '../composables/useConfirm'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -119,12 +120,18 @@ const handleSaveSession = async (formData: Partial<SshSession>) => {
     editingSession.value = null
   } catch (error) {
     console.error('保存会话失败:', error)
-    alert(t('session.validation.saveFailed'))
+    await showAlert(t('common.error'), t('session.validation.saveFailed'))
   }
 }
 
 const deleteSession = async (session: SshSession) => {
-  if (confirm(t('session.confirmDeleteHost', { name: session.name }))) {
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.delete'),
+    message: t('session.confirmDeleteHost', { name: session.name }),
+    confirmText: t('common.delete'),
+  })
+  if (confirmed) {
     await configStore.deleteSshSession(session.id)
   }
 }
@@ -208,7 +215,7 @@ const importXshellDirectory = async () => {
 
 const handleImportResult = async (importResult: { success: boolean; sessions: any[]; errors: string[] }) => {
   if (!importResult.success && importResult.sessions.length === 0) {
-    alert(`${t('session.importFailed')}：${importResult.errors.join('\n')}`)
+    await showAlert(t('common.error'), `${t('session.importFailed')}：${importResult.errors.join('\n')}`)
     return
   }
   let importedCount = 0
@@ -224,7 +231,7 @@ const handleImportResult = async (importResult: { success: boolean; sessions: an
   if (importResult.errors.length > 0) {
     message += `\n\n${t('session.importPartialFailed')}\n${importResult.errors.join('\n')}`
   }
-  alert(message)
+  await showAlert(t('common.success'), message)
 }
 
 // ==================== 分组管理 ====================
@@ -252,7 +259,13 @@ const handleSaveGroup = async (data: { name: string; jumpHost?: JumpHostConfig }
 }
 
 const handleDeleteGroup = async (group: SessionGroup) => {
-  if (confirm(t('session.confirmDeleteGroupNamed', { name: group.name }))) {
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.delete'),
+    message: t('session.confirmDeleteGroupNamed', { name: group.name }),
+    confirmText: t('common.delete'),
+  })
+  if (confirmed) {
     await configStore.deleteSessionGroup(group.id)
     showGroupEditor.value = false
     editingGroup.value = null

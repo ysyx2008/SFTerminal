@@ -7,6 +7,7 @@
 import { computed, ref } from 'vue'
 import i18n from '../i18n'
 import { toast } from './useToast'
+import { showConfirm } from './useConfirm'
 import { refreshSpeechPackAvailability } from './useSpeechRecognition'
 
 export interface SpeechPackProgressState {
@@ -191,7 +192,12 @@ export async function importSpeechPack(): Promise<void> {
 
 export async function uninstallSpeechPack(): Promise<void> {
   if (busy.value) return
-  if (!confirm(t('settings.speechPack.confirmUninstall'))) return
+  const confirmed = await showConfirm({
+    type: 'warning',
+    title: t('common.confirm'),
+    message: t('settings.speechPack.confirmUninstall'),
+  })
+  if (!confirmed) return
   busy.value = true
   error.value = ''
   try {

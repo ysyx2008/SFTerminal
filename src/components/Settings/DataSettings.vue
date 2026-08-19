@@ -8,6 +8,7 @@ const { t } = useI18n()
 const isSteamBuild = __STEAM_BUILD__
 
 import type { AgentRecord } from '@shared/types'
+import { showConfirm } from '../../composables/useConfirm'
 
 // 存储统计
 const storageStats = ref<{
@@ -347,7 +348,11 @@ const confirmRestartForMigration = async (): Promise<boolean> => {
   const msg = running
     ? t('dataSettings.changeDirConfirmRunning')
     : t('dataSettings.changeDirConfirmRestart')
-  return confirm(msg)
+  return showConfirm({
+    type: 'warning',
+    title: t('common.confirm'),
+    message: msg,
+  })
 }
 
 // 更改数据目录
@@ -357,7 +362,11 @@ const changeDataDir = async () => {
   try {
     const picked = await window.electronAPI.dataDir.pickTarget()
     if (picked.canceled || !picked.target) return
-    if (picked.nonEmpty && !confirm(t('dataSettings.changeDirConfirmNonEmpty'))) return
+    if (picked.nonEmpty && !(await showConfirm({
+      type: 'warning',
+      title: t('common.confirm'),
+      message: t('dataSettings.changeDirConfirmNonEmpty'),
+    }))) return
     if (!(await confirmRestartForMigration())) return
 
     const res = await window.electronAPI.dataDir.migrate(picked.target)
@@ -420,7 +429,11 @@ const startFullBackup = async () => {
   if (!window.electronAPI.dataBackup || isExporting.value) return
   try {
     const running = await window.electronAPI.dataDir.hasRunningAgents()
-    if (running && !confirm(t('dataSettings.backupConfirmRunning'))) return
+    if (running && !(await showConfirm({
+      type: 'warning',
+      title: t('common.confirm'),
+      message: t('dataSettings.backupConfirmRunning'),
+    }))) return
   } catch { /* ignore */ }
 
   // 选路径阶段：只锁按钮，不显示进度/取消（取消应走系统对话框）
@@ -454,7 +467,12 @@ const startFullBackup = async () => {
 
 const cancelFullBackup = async () => {
   if (!window.electronAPI.dataBackup || !backupProgress.value) return
-  if (!confirm(t('dataSettings.backupCancelConfirm'))) return
+  const confirmed = await showConfirm({
+    type: 'warning',
+    title: t('common.confirm'),
+    message: t('dataSettings.backupCancelConfirm'),
+  })
+  if (!confirmed) return
   await window.electronAPI.dataBackup.cancel()
 }
 
@@ -483,7 +501,12 @@ const cleanupOldRecords = async (days: number) => {
     ? t('dataSettings.confirmClearAll')
     : t('dataSettings.confirmCleanup', { days })
   
-  if (!confirm(confirmMsg)) {
+  const confirmed = await showConfirm({
+    type: 'danger',
+    title: t('common.confirm'),
+    message: confirmMsg,
+  })
+  if (!confirmed) {
     return
   }
   

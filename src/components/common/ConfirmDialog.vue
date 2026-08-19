@@ -239,6 +239,7 @@ const confirmBtnClass = computed(() => {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .file-info {
