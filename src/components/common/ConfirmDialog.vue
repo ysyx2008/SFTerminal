@@ -174,7 +174,6 @@ const confirmBtnClass = computed(() => {
   justify-content: center;
   /* 必须高于挂到 body 的二级窗（API 配置 / 插件安装 / 历史查看器等都是 10000） */
   z-index: 200000;
-  backdrop-filter: blur(2px);
 }
 
 .confirm-dialog {
