@@ -2206,12 +2206,16 @@ export class AiService {
       tools
     })
 
-    // 完成状态标记，防止重复回调
+    // 当前这次 HTTP 尝试是否已结束（重试等待期间为 true，用来挡住旧请求的收尾）
     let isCompleted = false
+    // 整次请求是否已向调用方交过终态；一旦为 true 不再 onDone/onError
+    let settled = false
     // 总超时计时器
     let totalTimeoutId: NodeJS.Timeout
     // 空闲超时计时器（收到数据后重置）
     let idleTimeoutId: NodeJS.Timeout
+    // 自动重试退避计时器（点停止时必须清掉，否则会等到点再发下一次请求）
+    let retryTimeoutId: NodeJS.Timeout | undefined
     // 请求对象引用
     let req: http.ClientRequest | undefined
     // 重试计数器
@@ -2234,13 +2238,27 @@ export class AiService {
     const readyToolCallIndices = new Set<number>()
 
     const complete = (fn: () => void) => {
-      if (!isCompleted) {
-        isCompleted = true
-        clearTimeout(totalTimeoutId)
-        clearTimeout(idleTimeoutId)
-        this.abortControllers.delete(reqId)
-        fn()
+      if (settled) return
+      settled = true
+      isCompleted = true
+      if (retryTimeoutId !== undefined) {
+        clearTimeout(retryTimeoutId)
+        retryTimeoutId = undefined
       }
+      clearTimeout(totalTimeoutId)
+      clearTimeout(idleTimeoutId)
+      this.abortControllers.delete(reqId)
+      fn()
+    }
+
+    const scheduleRetry = (next: () => void, delay: number) => {
+      if (retryTimeoutId !== undefined) clearTimeout(retryTimeoutId)
+      retryTimeoutId = setTimeout(() => {
+        retryTimeoutId = undefined
+        next()
+      }, delay)
+      // 挡住旧请求的 error/timeout 收尾，但 settled 仍为 false，点停止可以立刻 complete
+      isCompleted = true
     }
 
     // 重置状态以便重试（不重置 isCompleted，由 tryRetry/doRequest 管理）
@@ -2325,7 +2343,7 @@ export class AiService {
     // 尝试重试的辅助函数（网络错误：指数退避 + jitter；优先 err.code）
     const tryRetry = (error: NetworkErrorLike, doRequest: () => void): boolean => {
       // 已有重试在等待或请求已完成，跳过（防止 res/req 同时 emit error 导致重复重试）
-      if (isCompleted) return true
+      if (settled || isCompleted) return true
       if (retryCount < AI_RETRY.MAX_RETRIES && isRetryableError(error)) {
         retryCount++
         const delay = calculateBackoff(AI_RETRY.BASE_DELAY, retryCount - 1)
@@ -2343,28 +2361,26 @@ export class AiService {
           ...(isTimeoutError(error) ? { cause: 'timeout' as const } : {})
         }
         resetForRetry()
-        setTimeout(doRequest, delay)
-        // 阻止旧请求的其他错误处理器调用 complete()
-        isCompleted = true
+        scheduleRetry(doRequest, delay)
         return true
       }
       return false
     }
 
     const doRequest = () => {
+    if (settled) return
     // 每次（重）试开始时允许 complete() 回调
     isCompleted = false
 
     // 重试等待期间用户可能已取消请求
     if (abortController.signal.aborted) {
-      this.abortControllers.delete(reqId)
       getAiDebugService().logResponseDone(reqId, { finishReason: 'aborted' })
-      onDone({
+      complete(() => onDone({
         content: undefined,
         tool_calls: undefined,
         finish_reason: 'stop',
         aborted: true
-      })
+      }))
       return
     }
 
@@ -2402,6 +2418,15 @@ export class AiService {
             resetIdleTimeout()
           })
           res.on('end', () => {
+            if (settled || abortController.signal.aborted) {
+              complete(() => onDone({
+                content: undefined,
+                tool_calls: undefined,
+                finish_reason: 'stop',
+                aborted: true
+              }))
+              return
+            }
             const parsed = parseApiError(errorData)
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
             log.error(`Request HTTP error: model=${profile.model}, status=${res.statusCode}, duration=${elapsed}s, error=${parsed.message.slice(0, 200)}`)
@@ -2430,8 +2455,7 @@ export class AiService {
               getAiDebugService().logResponseError(reqId, `429 Rate Limited - retry ${rateLimitRetryCount}/${AI_RETRY.RATE_LIMIT_MAX_RETRIES} in ${retryAfterSec}s`)
               pendingRetryInfo = { attempt: rateLimitRetryCount, max: AI_RETRY.RATE_LIMIT_MAX_RETRIES, delayMs: retryAfterMs, reason: 'rate_limit', statusCode: 429 }
               resetForRetry()
-              setTimeout(doRequest, retryAfterMs)
-              isCompleted = true
+              scheduleRetry(doRequest, retryAfterMs)
             } else if (isContextLengthApiFailure(parsed.code, parsed.message)) {
               complete(() => onError(t('error.context_length_exceeded')))
             } else if (res.statusCode && AI_RETRY.RETRYABLE_STATUS_CODES.includes(res.statusCode) && serverErrorRetryCount < AI_RETRY.SERVER_ERROR_MAX_RETRIES) {
@@ -2446,8 +2470,7 @@ export class AiService {
               getAiDebugService().logResponseError(reqId, `${res.statusCode} Server Error - retry ${serverErrorRetryCount}/${AI_RETRY.SERVER_ERROR_MAX_RETRIES} in ${delaySec}s`)
               pendingRetryInfo = { attempt: serverErrorRetryCount, max: AI_RETRY.SERVER_ERROR_MAX_RETRIES, delayMs: delay, reason: 'server_error', statusCode: res.statusCode }
               resetForRetry()
-              setTimeout(doRequest, delay)
-              isCompleted = true
+              scheduleRetry(doRequest, delay)
             } else if (tryVisionFallback(parsed.message)) {
               // 已降级重试
             } else {
