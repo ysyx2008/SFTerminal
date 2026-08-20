@@ -8,16 +8,15 @@ export class SshConnectCancelledError extends Error {
   }
 }
 
-function destroyClient(client: Client): void {
-  try {
-    client.end()
-  } catch {
-    /* 握手中断开可能抛错，忽略 */
-  }
+/**
+ * 强拆 ssh2 客户端。不要先 end()：对面不回断开确认时，end() 会堵住 Electron 主进程，
+ * Windows 上整窗假死（停止、侧栏都点了没反应）。
+ */
+export function forceCloseClient(client: Client): void {
   try {
     client.destroy()
   } catch {
-    /* 同上 */
+    /* 握手中 / 已拆过都可能抛错，忽略 */
   }
 }
 
@@ -39,7 +38,7 @@ export class SshConnectAttempt {
   /** 登记握手期客户端；若已取消则立即销毁，避免"取消后才创建"的竞态漏网 */
   trackClient(client: Client): void {
     if (this.cancelled) {
-      destroyClient(client)
+      forceCloseClient(client)
       return
     }
     this.clients.add(client)
@@ -74,7 +73,7 @@ export class SshConnectAttempt {
     }
 
     for (const client of this.clients) {
-      destroyClient(client)
+      forceCloseClient(client)
     }
     this.clients.clear()
   }

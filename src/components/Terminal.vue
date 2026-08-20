@@ -654,18 +654,17 @@ onUnmounted(() => {
   
   document.removeEventListener('visibilitychange', syncCursorBlinkToVisibility)
 
-  // 清理 WebGL 渲染器
-  if (webglAddon) {
-    webglAddon.dispose()
-    webglAddon = null
-  }
-  
-  if (terminal) {
-    terminal.dispose()
-    terminal = null
-  }
+  // xterm / WebGL 拆掉可能同步卡住渲染进程；先让关窗返回，下一轮再拆
+  const gl = webglAddon
+  const term = terminal
+  webglAddon = null
+  terminal = null
   fitAddon = null
   searchAddon = null
+  setTimeout(() => {
+    try { gl?.dispose() } catch { /* ignore */ }
+    try { term?.dispose() } catch { /* ignore */ }
+  }, 0)
 })
 
 // 激活/失活切换：active 时 fit + focus；非 active 时 blur 释放焦点

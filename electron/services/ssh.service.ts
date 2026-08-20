@@ -6,7 +6,7 @@ import * as iconv from 'iconv-lite'
 import type { JumpHostConfig, SshConfig, SshEncoding } from '@shared/types'
 import { getUnixProbeCommands } from './host-profile.service'
 import { getSshErrorMessage } from './ssh-error'
-import { SshConnectAttempt, SshConnectCancelledError } from './ssh-connect-attempt'
+import { SshConnectAttempt, SshConnectCancelledError, forceCloseClient } from './ssh-connect-attempt'
 import { requestLocalNetworkAccessIfDenied } from '../utils/local-network-permission'
 import { createLogger } from '../utils/logger'
 import type { ExecuteInTerminalResult } from './pty.service'
@@ -646,27 +646,22 @@ export class SshService {
   /**
    * 断开 SSH 连接
    *
-   * 先从 Map 摘掉再 end：旧 client 的异步 close/error 会被身份校验忽略。
+   * 先从 Map 摘掉再收底层连接：旧 client 的异步 close/error 会被身份校验忽略。
    * 因此必须在此处显式 emitDisconnect——否则 reuseId 之后 UI 收不到断连，
    * 重连按钮不会出现（尤其是 reconnect 半路失败时）。
+   *
+   * 底层收尾放到下一轮事件循环，且用强拆而不是优雅 end()：对面不回断开确认时
+   * end() 会堵住主进程，Windows 上整窗假死（停止、侧栏都点了没反应）。
    */
   disconnect(id: string): void {
     const instance = this.instances.get(id)
     if (instance) {
       this.instances.delete(id)
       this.emitDisconnect({ id, reason: 'closed' })
-      try {
-        instance.client.end()
-      } catch {
-        // ignore
-      }
-      if (instance.jumpClient) {
-        try {
-          instance.jumpClient.end()
-        } catch {
-          // ignore
-        }
-      }
+      setImmediate(() => {
+        forceCloseClient(instance.client)
+        if (instance.jumpClient) forceCloseClient(instance.jumpClient)
+      })
     }
   }
 
@@ -676,11 +671,8 @@ export class SshService {
    */
   disposeAll(): void {
     this.instances.forEach((instance, id) => {
-      instance.client.end()
-      // 如果有跳板机连接，也关闭它
-      if (instance.jumpClient) {
-        instance.jumpClient.end()
-      }
+      forceCloseClient(instance.client)
+      if (instance.jumpClient) forceCloseClient(instance.jumpClient)
       this.instances.delete(id)
     })
   }
