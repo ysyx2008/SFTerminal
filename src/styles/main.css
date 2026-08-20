@@ -2061,43 +2061,42 @@ textarea:focus {
   padding-right: 64px;
 }
 
-.app-container:not(.is-win) .tab-view-workbench:not(.is-terminal-stage):not(.is-panel-open) .artifact-chrome--cluster,
-.app-container:not(.is-win) .tab-view-workbench .artifact-chrome--fold {
+.app-container .tab-view-workbench:not(.is-terminal-stage):not(.is-panel-open) .artifact-chrome--cluster,
+.app-container .tab-view-workbench .artifact-chrome--fold {
   right: max(8px, var(--shell-inset-right));
 }
 
-.app-container:not(.is-win) .tab-view-workbench:not(.is-terminal-stage).has-desk-list .system-info-bar {
+.app-container .tab-view-workbench:not(.is-terminal-stage).has-desk-list .system-info-bar {
   padding-right: calc(max(8px, var(--shell-inset-right)) + 30px);
 }
 
-.app-container:not(.is-win) .tab-view-workbench:not(.is-terminal-stage).has-desk-list.has-artifact-fold .system-info-bar {
+.app-container .tab-view-workbench:not(.is-terminal-stage).has-desk-list.has-artifact-fold .system-info-bar {
   padding-right: calc(max(8px, var(--shell-inset-right)) + 56px);
 }
 
-.app-container:not(.is-win) .tab-view-workbench .canvas-header {
+.app-container .tab-view-workbench .canvas-header {
   padding-right: calc(max(8px, var(--shell-inset-right)) + 30px);
 }
 
-/* 聊天区是主区最左那一栏，让开侧栏开关与 macOS 红绿灯。
-   Windows 下壳层顶条常驻、已经接管了这些控件，面板不再是第一排，也就不必让位。
+/* 聊天区是主区最左那一栏，让开侧栏开关、macOS 红绿灯、以及侧栏收起后浮到主区的控件。
    让位宽度随侧栏开合改变，与侧栏用同一档节奏挪动，避免一边在滑一边在跳。 */
-.app-container:not(.is-win) .tab-view-workbench .system-info-bar {
+.app-container .tab-view-workbench .system-info-bar {
   padding-left: max(12px, var(--shell-inset-left));
   transition: padding-left var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
 
 /* 换台后终端顶栏才是主区最左第一排；对话栏挪到右边，不再跟窗口按钮抢位 */
-.app-container:not(.is-win) .tab-view-workbench .stage-header {
+.app-container .tab-view-workbench .stage-header {
   padding-left: max(8px, var(--shell-inset-left));
   transition: padding-left var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
 
 /* tab-view-workbench 落在助手根上，和 is-terminal-stage 是同一个节点，不能写成后代 */
-.app-container:not(.is-win) .tab-view-workbench.is-terminal-stage .system-info-bar {
+.app-container .tab-view-workbench.is-terminal-stage .system-info-bar {
   padding-left: 12px;
 }
 
-.app-container:not(.is-win) .tab-view-workbench.is-terminal-stage .artifact-chrome--cluster {
+.app-container .tab-view-workbench.is-terminal-stage .artifact-chrome--cluster {
   right: max(8px, var(--shell-inset-right));
 }
 
@@ -2114,13 +2113,13 @@ textarea:focus {
 }
 
 /* 终端页三栏：各栏顶栏就是第一排，按谁贴着窗口左/右沿让位 */
-.app-container:not(.is-win) .terminal-tab.ai-panel-right .terminal-column-header,
-.app-container:not(.is-win) .terminal-tab:not(.is-ai-open) .terminal-column-header {
+.app-container .terminal-tab.ai-panel-right .terminal-column-header,
+.app-container .terminal-tab:not(.is-ai-open) .terminal-column-header {
   padding-left: max(8px, var(--shell-inset-left));
   transition: padding-left var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
 
-.app-container:not(.is-win) .terminal-tab.ai-panel-left.is-ai-open .system-info-bar {
+.app-container .terminal-tab.ai-panel-left.is-ai-open .system-info-bar {
   padding-left: max(12px, var(--shell-inset-left));
   transition: padding-left var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
@@ -2138,10 +2137,11 @@ textarea:focus {
   padding-right: calc(max(8px, var(--shell-inset-right)) + 34px);
 }
 
-/* 巡检页自带全宽页头，左侧同样让位 */
-.app-container:not(.is-win) .smart-patrol-page > .patrol-header {
+/* 巡检页自带全宽页头，左右按窗口控件让位 */
+.app-container .smart-patrol-page > .patrol-header {
   padding-left: max(20px, var(--shell-inset-left));
-  transition: padding-left var(--shell-drawer-duration) var(--shell-drawer-ease);
+  padding-right: max(20px, var(--shell-inset-right));
+  transition: padding var(--shell-drawer-duration) var(--shell-drawer-ease);
 }
 
 /* Windows 改为完全自绘标题栏（WindowControls.vue）后，三个按钮是普通 DOM 元素。

@@ -1128,17 +1128,12 @@ const showWelcomePage = computed(() =>
 )
 /**
  * 主区要不要壳层顶条：欢迎页 / 空终端 / 待办自己没有第一排，需要一条透明区兜住窗口拖拽。
- * 终端页已是三栏（各栏自己的顶栏贴窗口上沿），不再用通栏菜单；助手与巡检同理。
- *
- * Windows 例外——三个自绘窗口按钮宽 138px，浮在主区右上；
- * 助手工作台自己的第一排若顶到窗口上沿，会被这三颗按钮压住，
- * 所以 Windows 在这些页面仍留顶条托住按钮。终端页右栏顶栏自己让位，不再留通栏。
+ * 终端页 / 助手 / 巡检各栏自己的顶栏贴窗口上沿，窗口按钮浮在第一排右侧，由该排让位。
  */
 const needsShellTop = computed(() =>
   showWelcomePage.value ||
   showTerminalEmpty.value ||
-  terminalStore.todosActive ||
-  (isWin && !showTerminalTabStrip.value)
+  terminalStore.todosActive
 )
 /** 主工作区显示某个 tab 工作台（欢迎页 / 智能巡检 / 待办 / 空终端时隐藏，但 tab 组件保持挂载） */
 const showTabWorkbench = computed(
@@ -1876,6 +1871,14 @@ onUnmounted(() => {
 /* Windows 自绘三按钮（46px × 3）浮在主区右上 */
 .app-container.is-win:not(.is-fullscreen) {
   --shell-inset-right: 138px;
+}
+
+/* Windows 无红绿灯约束：左上控件、侧栏顶、对话顶栏用同一行高，避免融在一起时高低不齐 */
+.app-container.is-win:not(.is-fullscreen) .shell-chrome,
+.app-container.is-win:not(.is-fullscreen) .shell-nav-chrome,
+.app-container.is-win:not(.is-fullscreen) .shell-top--sidebar,
+.app-container.is-win:not(.is-fullscreen) .sidebar-header {
+  height: var(--workbench-panel-header-height);
 }
 
 /* 非 Windows：SSO 软登录也浮在主区右上，第一排（含产出物展开按钮）要让开 */
