@@ -650,8 +650,13 @@ const {
   runAgent,
   abortAgent,
   followUpQueueView,
+  isEditingFollowUp,
   removeFollowUp,
   insertFollowUp,
+  beginEditFollowUp,
+  cancelEditFollowUp,
+  saveEditFollowUp,
+  reorderFollowUp,
   confirmToolCall,
   confirmTrustCommandAndAllow,
   submitSecureInput,
@@ -696,6 +701,7 @@ const {
   {
     getImages: () => [...getImageDataUrls(), ...getAllDocImages()],
     getPreviewImages: () => [...getImageDataUrls(), ...getDocPreviewImages()],
+    getPendingImages: () => getImageDataUrls(),
     clearImages
   },
   {
@@ -708,7 +714,8 @@ const {
         totalPages: d.totalPages || d.pageCount,
         previewPages: d.images?.length
       })),
-    clearAttachments: clearUploadedDocs
+    clearAttachments: clearUploadedDocs,
+    getParsedDocs: () => uploadedDocs.value.map(d => ({ ...d })),
   },
   scrollerRef,
   tabActive
@@ -1157,11 +1164,88 @@ const handleComposerSubmit = async (
   message: string,
   options?: { workbenchContext?: import('@shared/types').WorkbenchContext; enqueue?: boolean }
 ) => {
+  if (isEditingFollowUp.value) {
+    const pendingImagesOnly = getImageDataUrls()
+    const images = [...pendingImagesOnly, ...getAllDocImages()]
+    const previewImages = [...pendingImagesOnly, ...getDocPreviewImages()]
+    const attachments = uploadedDocs.value.map(d => ({
+      filename: d.filename,
+      filePath: d.filePath,
+      fileSize: d.fileSize,
+      fileType: d.fileType,
+      totalPages: d.totalPages || d.pageCount,
+      previewPages: d.images?.length
+    }))
+    const documentContext = [
+      await getDocumentContext(),
+      getDocImagesContext()
+    ].filter(Boolean).join('\n\n')
+    await saveEditFollowUp({
+      message,
+      images: images.length > 0 ? images : undefined,
+      previewImages: previewImages.length > 0 ? previewImages : undefined,
+      pendingImages: pendingImagesOnly.length > 0 ? pendingImagesOnly : undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      parsedDocs: uploadedDocs.value.length > 0 ? uploadedDocs.value.map(d => ({ ...d })) : undefined,
+      documentContext: documentContext || undefined,
+    })
+    clearComposerDraft()
+    clearImages()
+    clearUploadedDocs()
+    return
+  }
   if (!(await guardVisionBeforeSend())) return
   await runAgent(message, options)
 }
 
+const isComposerOccupiedForFollowUpEdit = () => {
+  const hasText = !!composerRef.value?.getText()?.trim()
+  const hasQuotes = composerQuoteStore.getSnippets(props.tabId).length > 0
+  return hasText || pendingImages.value.length > 0 || uploadedDocs.value.length > 0 || hasQuotes
+}
+
+const handleBeginEditFollowUp = (id: string) => {
+  if (isComposerOccupiedForFollowUpEdit()) {
+    toast.warning(t('ai.followUpEditBlocked'))
+    return
+  }
+  const item = beginEditFollowUp(id)
+  if (!item) return
+  composerRef.value?.setText(item.message)
+  const restoreImages = item.pendingImages?.length
+    ? item.pendingImages
+    : (!item.parsedDocs?.length && item.images?.length ? item.images : [])
+  if (restoreImages.length) {
+    loadPendingImages(restoreImages.map((dataUrl, i) => ({
+      id: `followup_edit_${item.id}_${i}`,
+      dataUrl,
+      name: `image_${i + 1}`,
+      size: 0,
+    })))
+  } else {
+    clearImages()
+  }
+  if (item.parsedDocs?.length && currentTabId.value) {
+    terminalStore.setUploadedDocs(currentTabId.value, item.parsedDocs.map(d => ({ ...d })))
+  } else {
+    clearUploadedDocs()
+  }
+  nextTick(() => composerRef.value?.focusInput())
+}
+
+const handleCancelEditFollowUp = () => {
+  cancelEditFollowUp()
+  clearComposerDraft()
+  clearImages()
+  clearUploadedDocs()
+  composerQuoteStore.clearSnippets(props.tabId)
+}
+
 const handleComposerEmptySubmit = async () => {
+  if (isEditingFollowUp.value) {
+    await handleComposerSubmit('')
+    return
+  }
   const agentKey = getAgentKey()
   if (!agentKey || !isAgentRunning.value || !canSendEmpty.value) return
   await window.electronAPI.agent.addMessage(agentKey, '')
@@ -2725,8 +2809,12 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :submit-message="handleComposerSubmit"
         :submit-empty-message="handleComposerEmptySubmit"
         :follow-up-queue="followUpQueueView"
+        :is-editing-follow-up="isEditingFollowUp"
         :remove-follow-up="removeFollowUp"
         :insert-follow-up="insertFollowUp"
+        :begin-edit-follow-up="handleBeginEditFollowUp"
+        :cancel-edit-follow-up="handleCancelEditFollowUp"
+        :reorder-follow-up="reorderFollowUp"
         :clear-tab-error="clearTabError"
         :consume-workbench-context="props.consumeWorkbenchContext"
       >

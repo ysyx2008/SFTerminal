@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRandomPlaceholder } from '../composables/useRandomPlaceholder'
-import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2, ListTree } from 'lucide-vue-next'
+import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2, ListTree, Pencil, CornerDownLeft, GripVertical } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
 import { toast } from '../composables/useToast'
 import { useComposerQuoteStore } from '../stores/composer-quote'
@@ -73,9 +73,13 @@ const props = defineProps<{
   ttsStop: () => void
   submitMessage: (message: string, options?: { workbenchContext?: import('@shared/types').WorkbenchContext; enqueue?: boolean }) => void | Promise<void>
   submitEmptyMessage: () => void | Promise<void>
-  followUpQueue?: { id: string; message: string }[]
+  followUpQueue?: { id: string; message: string; editing?: boolean }[]
+  isEditingFollowUp?: boolean
   removeFollowUp?: (id: string) => void
   insertFollowUp?: (id: string) => void
+  beginEditFollowUp?: (id: string) => void
+  cancelEditFollowUp?: () => void
+  reorderFollowUp?: (fromIndex: number, toIndex: number) => void
   clearTabError: () => void
   /**
    * 发送时取出的旁路工作台上下文（不上聊天气泡）。
@@ -316,15 +320,69 @@ const { value: randomPlaceholder, pick: pickRandomPlaceholder } = useRandomPlace
 const isMacShortcut = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
 const queueShortcut = isMacShortcut ? '⌘↵' : 'Ctrl+Enter'
 
+const followUpItems = computed(() => props.followUpQueue ?? [])
+const isEditingFollowUp = computed(() => !!props.isEditingFollowUp)
+
+const sendButtonTitle = computed(() => {
+  if (isEditingFollowUp.value) return t('ai.followUpEditSave')
+  if (props.isAgentRunning) return t('ai.sendSupplementWithQueue', { shortcut: queueShortcut })
+  return t('ai.executeTask')
+})
+
 const composerPlaceholder = computed(
   () =>
     props.placeholder ??
-    (props.isAgentRunning
-      ? t('ai.inputPlaceholderSupplement', { shortcut: queueShortcut })
-      : randomPlaceholder.value || t(props.placeholderFallbackKey ?? 'ai.inputPlaceholderAgent'))
+    (isEditingFollowUp.value
+      ? t('ai.inputPlaceholderEditFollowUp')
+      : props.isAgentRunning
+        ? t('ai.inputPlaceholderSupplement', { shortcut: queueShortcut })
+        : randomPlaceholder.value || t(props.placeholderFallbackKey ?? 'ai.inputPlaceholderAgent'))
 )
 
-const followUpItems = computed(() => props.followUpQueue ?? [])
+const followUpDragIndex = ref<number | null>(null)
+const followUpDragOverIndex = ref<number | null>(null)
+
+const handleFollowUpDragStart = (index: number, event: DragEvent) => {
+  followUpDragIndex.value = index
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(index))
+  }
+}
+
+const handleFollowUpDragOver = (index: number, event: DragEvent) => {
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  followUpDragOverIndex.value = index
+}
+
+const handleFollowUpDrop = (toIndex: number, event: DragEvent) => {
+  event.preventDefault()
+  const fromIndex = followUpDragIndex.value
+  followUpDragIndex.value = null
+  followUpDragOverIndex.value = null
+  if (fromIndex == null || fromIndex === toIndex) return
+  props.reorderFollowUp?.(fromIndex, toIndex)
+}
+
+const handleFollowUpDragEnd = () => {
+  followUpDragIndex.value = null
+  followUpDragOverIndex.value = null
+}
+
+const handleFollowUpQueueDragLeave = (event: DragEvent) => {
+  const root = event.currentTarget as HTMLElement | null
+  const related = event.relatedTarget as Node | null
+  if (root && related && root.contains(related)) return
+  followUpDragOverIndex.value = null
+}
+
+const handleCancelEditClick = () => {
+  props.cancelEditFollowUp?.()
+  inputText.value = ''
+  void pickRandomPlaceholder()
+  syncTextareaSize()
+}
 
 /** embedded 模式：有附件时才显示外层统一容器，避免空态双层边框 */
 const hasComposerAttachments = computed(
@@ -611,7 +669,21 @@ const handleInputKeyDown = (event: KeyboardEvent) => {
     if (handled) return
   }
 
+  if (event.key === 'Escape' && isEditingFollowUp.value) {
+    event.preventDefault()
+    handleCancelEditClick()
+    return
+  }
+
   if (event.key !== 'Enter' || isComposing.value) return
+
+  // 编辑排队消息：回车与 ⌘/Ctrl+回车都是保存回原位；Shift+回车仍换行
+  if (isEditingFollowUp.value) {
+    if (event.shiftKey) return
+    event.preventDefault()
+    void handleSend()
+    return
+  }
 
   // 只认宣传出去的那个组合键：mac 是 ⌘、其它是 Ctrl，且不带 Shift/Alt
   const isQueueChord =
@@ -639,11 +711,15 @@ const handleSend = async (opts?: { enqueue?: boolean }) => {
   closeMentionMenu()
 
   const quotesSnapshot = [...quoteStore.getSnippets(props.currentTabId)]
-  const workbenchContext = props.consumeWorkbenchContext?.()
+  // 编辑排队不吃选区作用域——保存时沿用入队快照
+  const workbenchContext = isEditingFollowUp.value
+    ? undefined
+    : props.consumeWorkbenchContext?.()
   const hasSelectionScope = Boolean(workbenchContext?.selectionScope?.excerpt?.trim())
 
   if (
     !opts?.enqueue &&
+    !isEditingFollowUp.value &&
     !inputText.value.trim() &&
     !props.hasImages &&
     quotesSnapshot.length === 0 &&
@@ -661,11 +737,28 @@ const handleSend = async (opts?: { enqueue?: boolean }) => {
   }
 
   if (
+    !isEditingFollowUp.value &&
     !inputText.value.trim() &&
     !props.hasImages &&
     quotesSnapshot.length === 0 &&
     !hasSelectionScope
   ) {
+    return
+  }
+
+  // 编辑排队且内容清空：仍提交，由上层从队列删掉
+  if (
+    isEditingFollowUp.value &&
+    !inputText.value.trim() &&
+    !props.hasImages &&
+    quotesSnapshot.length === 0 &&
+    !hasSelectionScope
+  ) {
+    inputText.value = ''
+    void pickRandomPlaceholder()
+    props.clearTabError()
+    quoteStore.clearSnippets(props.currentTabId)
+    await props.submitMessage('', {})
     return
   }
 
@@ -853,21 +946,60 @@ const handleSendClick = (event: MouseEvent) => {
     </div>
   </div>
 
-  <div v-if="followUpItems.length > 0" class="follow-up-queue">
+  <div
+    v-if="followUpItems.length > 0"
+    class="follow-up-queue"
+    @dragleave="handleFollowUpQueueDragLeave"
+  >
     <div class="follow-up-queue-header">
       {{ t('ai.followUpQueueHeader', { count: followUpItems.length }) }}
     </div>
-    <div v-for="item in followUpItems" :key="item.id" class="follow-up-row">
-      <span class="follow-up-row-text" :title="item.message">{{ item.message }}</span>
-      <div class="follow-up-row-actions">
+    <div
+      v-for="(item, index) in followUpItems"
+      :key="item.id"
+      class="follow-up-row"
+      :class="{
+        'follow-up-row-editing': item.editing,
+        'follow-up-row-drag-over': followUpDragOverIndex === index && followUpDragIndex !== index,
+        'follow-up-row-dragging': followUpDragIndex === index,
+      }"
+      @dragover="handleFollowUpDragOver(index, $event)"
+      @drop="handleFollowUpDrop(index, $event)"
+      @dragend="handleFollowUpDragEnd"
+    >
+      <span
+        v-if="!item.editing"
+        class="follow-up-row-grip"
+        draggable="true"
+        :title="t('ai.followUpQueueReorder')"
+        @dragstart="handleFollowUpDragStart(index, $event)"
+      >
+        <GripVertical :size="12" />
+      </span>
+      <span v-else class="follow-up-row-grip follow-up-row-grip-disabled">
+        <GripVertical :size="12" />
+      </span>
+      <span
+        v-if="item.editing"
+        class="follow-up-row-text follow-up-row-text-editing"
+      >{{ t('ai.followUpQueueEditing') }}</span>
+      <span v-else class="follow-up-row-text" :title="item.message">{{ item.message }}</span>
+      <div v-if="!item.editing" class="follow-up-row-actions">
         <button
           type="button"
-          class="follow-up-row-insert"
+          class="follow-up-row-icon-btn"
+          :title="t('ai.followUpQueueEdit')"
+          @click="beginEditFollowUp?.(item.id)"
+        >
+          <Pencil :size="12" />
+        </button>
+        <button
+          type="button"
+          class="follow-up-row-icon-btn"
           :title="t('ai.followUpQueueInsert')"
           @click="insertFollowUp?.(item.id)"
         >
-          <span class="follow-up-row-insert-full">{{ t('ai.followUpQueueInsert') }}</span>
-          <span class="follow-up-row-insert-short">{{ t('ai.followUpQueueInsertShort') }}</span>
+          <CornerDownLeft :size="12" />
         </button>
         <button
           type="button"
@@ -895,7 +1027,21 @@ const handleSendClick = (event: MouseEvent) => {
     </div>
   </div>
 
-  <div class="ai-input" :class="{ 'ai-input-embedded': embedded }">
+  <div
+    v-if="isEditingFollowUp"
+    class="follow-up-edit-banner"
+  >
+    <span class="follow-up-edit-banner-text">{{ t('ai.followUpEditBanner') }}</span>
+    <button
+      type="button"
+      class="follow-up-edit-banner-cancel"
+      @click="handleCancelEditClick"
+    >
+      {{ t('ai.followUpEditCancel') }}
+    </button>
+  </div>
+
+  <div class="ai-input" :class="{ 'ai-input-embedded': embedded, 'ai-input-editing-follow-up': isEditingFollowUp }">
     <div
       v-if="contextStats.tokenEstimate > 0"
       ref="contextMiniEl"
@@ -1101,14 +1247,23 @@ const handleSendClick = (event: MouseEvent) => {
           <button v-if="ttsIsSpeaking" class="tts-stop-btn" @click="ttsStop" :title="t('ai.stopTts')">
             <Volume2 :size="18" class="tts-speaking-icon" />
           </button>
-          <button v-if="isLoading && !isAgentRunning" class="stop-btn" @click="stopGeneration" :title="t('ai.stopGeneration')">
+          <button v-if="isLoading && !isAgentRunning && !isEditingFollowUp" class="stop-btn" @click="stopGeneration" :title="t('ai.stopGeneration')">
             <Square :size="16" fill="currentColor" />
+          </button>
+          <button
+            v-else-if="isEditingFollowUp"
+            class="send-btn send-btn-edit-follow-up"
+            :disabled="isAttaching"
+            :title="sendButtonTitle"
+            @click="handleSendClick"
+          >
+            <Check :size="18" />
           </button>
           <button
             v-else-if="isAgentRunning && canSubmitMessage"
             class="send-btn send-btn-supplement"
             :disabled="isAttaching"
-            :title="t('ai.sendSupplementWithQueue', { shortcut: queueShortcut })"
+            :title="sendButtonTitle"
             @click="handleSendClick"
           >
             <ArrowUp :size="18" />
@@ -1119,7 +1274,7 @@ const handleSendClick = (event: MouseEvent) => {
           <button v-else-if="isAgentRunning" class="stop-btn" @click="abortAgent" :title="t('ai.stopAgent')">
             <Square :size="16" fill="currentColor" />
           </button>
-          <button v-else class="send-btn send-btn-agent" :disabled="isAttaching || !canSubmitMessage" :title="t('ai.executeTask')" @click="handleSendClick">
+          <button v-else class="send-btn send-btn-agent" :disabled="isAttaching || !canSubmitMessage" :title="sendButtonTitle" @click="handleSendClick">
             <ArrowUp :size="18" />
           </button>
         </div>
@@ -1152,7 +1307,7 @@ const handleSendClick = (event: MouseEvent) => {
         </button>
 
         <button
-          v-if="isLoading && !isAgentRunning"
+          v-if="isLoading && !isAgentRunning && !isEditingFollowUp"
           class="stop-btn"
           @click="stopGeneration"
           :title="t('ai.stopGeneration')"
@@ -1160,10 +1315,19 @@ const handleSendClick = (event: MouseEvent) => {
           <Square :size="16" fill="currentColor" />
         </button>
         <button
+          v-else-if="isEditingFollowUp"
+          class="send-btn send-btn-edit-follow-up"
+          :disabled="isAttaching"
+          :title="sendButtonTitle"
+          @click="handleSendClick"
+        >
+          <Check :size="18" />
+        </button>
+        <button
           v-else-if="isAgentRunning && canSubmitMessage"
           class="send-btn send-btn-supplement"
           :disabled="isAttaching"
-          :title="t('ai.sendSupplementWithQueue', { shortcut: queueShortcut })"
+          :title="sendButtonTitle"
           @click="handleSendClick"
         >
           <ArrowUp :size="18" />
@@ -1189,7 +1353,7 @@ const handleSendClick = (event: MouseEvent) => {
           v-else
           class="send-btn send-btn-agent"
           :disabled="isAttaching || !canSubmitMessage"
-          :title="t('ai.executeTask')"
+          :title="sendButtonTitle"
           @click="handleSendClick"
         >
           <ArrowUp :size="18" />
@@ -1715,6 +1879,38 @@ const handleSendClick = (event: MouseEvent) => {
   background: var(--bg-secondary);
 }
 
+.follow-up-row-dragging {
+  opacity: 0.45;
+}
+
+.follow-up-row-drag-over {
+  box-shadow: inset 0 2px 0 var(--accent-primary);
+}
+
+.follow-up-row-editing {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.follow-up-row-grip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+  color: var(--text-muted);
+  cursor: grab;
+  opacity: 0.55;
+}
+
+.follow-up-row-grip-disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.follow-up-row:active .follow-up-row-grip {
+  cursor: grabbing;
+}
+
 .follow-up-row-text {
   flex: 1;
   min-width: 0;
@@ -1725,6 +1921,10 @@ const handleSendClick = (event: MouseEvent) => {
   overflow-wrap: anywhere;
 }
 
+.follow-up-row-text-editing {
+  -webkit-line-clamp: 1;
+}
+
 .follow-up-row-actions {
   flex-shrink: 0;
   display: flex;
@@ -1732,35 +1932,25 @@ const handleSendClick = (event: MouseEvent) => {
   gap: 2px;
 }
 
-.follow-up-row-insert {
-  padding: 1px 6px;
+.follow-up-row-icon-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
   border: none;
   border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.4;
   cursor: pointer;
-  white-space: nowrap;
+  opacity: 0.75;
 }
 
-.follow-up-row-insert-short {
-  display: none;
-}
-
-.follow-up-row-insert:hover,
-.follow-up-row-insert:focus-visible {
+.follow-up-row-icon-btn:hover,
+.follow-up-row-icon-btn:focus-visible {
+  opacity: 1;
   background: var(--bg-hover);
   color: var(--text-primary);
-}
-
-@container follow-up-queue (max-width: 280px) {
-  .follow-up-row-insert-full {
-    display: none;
-  }
-  .follow-up-row-insert-short {
-    display: inline;
-  }
 }
 
 /* × 只在指到那一条时露出来，多条排队时不铺一列叉 */
@@ -1788,6 +1978,41 @@ const handleSendClick = (event: MouseEvent) => {
   opacity: 1;
   background: rgba(var(--color-error-rgb), 0.12);
   color: var(--color-error);
+}
+
+.follow-up-edit-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--accent-primary) 14%, var(--bg-tertiary));
+  border-top: 1px solid color-mix(in srgb, var(--accent-primary) 35%, var(--border-color));
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.follow-up-edit-banner-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.follow-up-edit-banner-cancel {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.follow-up-edit-banner-cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .ai-input {
@@ -2111,6 +2336,21 @@ const handleSendClick = (event: MouseEvent) => {
 
 .send-btn-default {
   background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success) 50%, var(--color-success) 100%);
+}
+
+.send-btn-edit-follow-up {
+  background: linear-gradient(135deg, #6b8cff 0%, #5a7bff 50%, #4f6ef7 100%);
+  box-shadow: 0 2px 8px rgba(90, 123, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.ai-input-editing-follow-up {
+  border-color: color-mix(in srgb, var(--accent-primary) 55%, var(--border-color));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 28%, transparent);
+}
+
+.composer-root-embedded-filled:has(.ai-input-editing-follow-up) {
+  border-color: color-mix(in srgb, var(--accent-primary) 55%, var(--border-color));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-primary) 22%, transparent);
 }
 
 .stop-btn {

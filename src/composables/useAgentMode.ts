@@ -10,7 +10,7 @@ import { useConfigStore } from '../stores/config'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
 import { applySearchMatch, isCurrentSearchRequest } from '../utils/history-search-stream'
 import type { ExecutionMode, AttachmentInfo, AgentRecord, AgentHistorySummary, WorkbenchContext } from '@shared/types'
-import type { AgentStep, AgentState } from '../stores/terminal'
+import type { AgentStep, AgentState, ParsedDocument } from '../stores/terminal'
 import type { MessageScrollerHandle } from '../types/message-scroller'
 import { createLogger } from '../utils/logger'
 import { isAssistantConversationSurfaceVisible } from '../utils/agent-tab-ui-meta'
@@ -78,16 +78,24 @@ export interface AgentTaskGroup {
 export interface FollowUpQueueItem {
   id: string
   message: string
+  /** 传给模型的完整图片（含文档预览页） */
   images?: string[]
   previewImages?: string[]
+  /** 仅输入框待发图片，编辑时填回用 */
+  pendingImages?: string[]
   attachments?: AttachmentInfo[]
+  /** 入队时的完整文档快照，编辑时填回输入框用 */
+  parsedDocs?: ParsedDocument[]
   documentContext?: string
   workbenchContext?: WorkbenchContext
+  /** 正在输入框里改这条——仍占队列位置，不参与 drain */
+  editing?: boolean
 }
 
 export interface FollowUpQueueViewItem {
   id: string
   message: string
+  editing?: boolean
 }
 
 export interface VirtualItem {
@@ -109,11 +117,13 @@ export function useAgentMode(
   imageCallbacks?: {
     getImages: () => string[]          // 全部图片（传给 AI 视觉模型）
     getPreviewImages?: () => string[]  // UI 展示用的预览图（仅 PDF 页面渲染），默认同 getImages
+    getPendingImages?: () => string[]  // 仅输入框待发图片（不含文档页），编辑填回用
     clearImages: () => void
   },
   attachmentCallbacks?: {
     getAttachments: () => AttachmentInfo[]  // 获取当前已上传文件的元信息
     clearAttachments: () => void            // 清空已上传文件列表
+    getParsedDocs?: () => ParsedDocument[]  // 入队/编辑时保留完整文档快照
   },
   scrollerRef?: Ref<MessageScrollerHandle | null>,
   tabActive?: Ref<boolean | undefined>
@@ -150,8 +160,12 @@ export function useAgentMode(
   /** 运行中 ⌘/Ctrl+Enter：等当前任务结束后作为下一件新任务，不插入当前执行 */
   const followUpQueue = ref<FollowUpQueueItem[]>([])
   const followUpQueueView = computed<FollowUpQueueViewItem[]>(() =>
-    followUpQueue.value.map(({ id, message }) => ({ id, message }))
+    followUpQueue.value.map(({ id, message, editing }) => ({ id, message, editing }))
   )
+  /** 正在输入框里改的那条排队 id；有值时回车/⌘回车都是保存回原位 */
+  const editingFollowUpId = ref<string | null>(null)
+  const editingFollowUpSnapshot = ref<FollowUpQueueItem | null>(null)
+  const isEditingFollowUp = computed(() => editingFollowUpId.value != null)
   
   // 是否有新消息（用户不在底部时显示提示）
   const hasNewMessage = ref(false)
@@ -1209,9 +1223,11 @@ export function useAgentMode(
     if (isAgentRunning.value) {
       if (options?.enqueue) {
         const attachments = attachmentCallbacks?.getAttachments() || []
+        const parsedDocs = attachmentCallbacks?.getParsedDocs?.() || []
         const documentContext = await getDocumentContext()
         const images = imageCallbacks?.getImages() || []
         const previewImages = imageCallbacks?.getPreviewImages?.() || images
+        const pendingImages = imageCallbacks?.getPendingImages?.() || []
         followUpQueue.value = [
           ...followUpQueue.value,
           {
@@ -1219,13 +1235,15 @@ export function useAgentMode(
             message,
             images: images.length > 0 ? images : undefined,
             previewImages: previewImages.length > 0 ? previewImages : undefined,
+            pendingImages: pendingImages.length > 0 ? pendingImages : undefined,
             attachments: attachments.length > 0 ? attachments : undefined,
+            parsedDocs: parsedDocs.length > 0 ? parsedDocs.map(d => ({ ...d })) : undefined,
             documentContext: documentContext || undefined,
             workbenchContext: options.workbenchContext
           }
         ]
         inputText.value = ''
-        if (attachments.length > 0) attachmentCallbacks?.clearAttachments()
+        if (attachments.length > 0 || parsedDocs.length > 0) attachmentCallbacks?.clearAttachments()
         if (images.length > 0) imageCallbacks?.clearImages()
         return
       }
@@ -1500,7 +1518,14 @@ export function useAgentMode(
   }
 
   const removeFollowUp = (id: string) => {
+    const wasEditing = editingFollowUpId.value === id
+    if (wasEditing) {
+      editingFollowUpId.value = null
+      editingFollowUpSnapshot.value = null
+    }
     followUpQueue.value = followUpQueue.value.filter(item => item.id !== id)
+    const tabId = currentTabId.value
+    if (wasEditing && tabId && !isAgentRunning.value) scheduleNextFollowUp(tabId)
   }
 
   const takeFollowUp = (id: string): FollowUpQueueItem | undefined => {
@@ -1548,13 +1573,15 @@ export function useAgentMode(
   /** 当前 run 结束后按顺序开下一件。延后取出，以便关 tab / 手动删掉 / 插入当前对话能拦住。 */
   const scheduleNextFollowUp = (tabId: string): boolean => {
     if (followUpDrainTimer || followUpQueue.value.length === 0) return false
+    // 队首正在编辑：等改完再开；不跳过它去跑后面的
+    if (followUpQueue.value[0]?.editing) return false
     terminalStore.requestAgentCompleteTabAttentionSkip(tabId)
     followUpDrainTimer = setTimeout(() => {
       followUpDrainTimer = null
       if (!terminalStore.tabs.some(tab => tab.id === tabId)) return
       if (isAgentRunning.value) return
       const next = followUpQueue.value[0]
-      if (!next) return
+      if (!next || next.editing) return
       if (!takeFollowUp(next.id)) return
       log.info('任务结束，启动排队中的下一条:', next.message)
       void runAgent(next.message, {
@@ -1567,6 +1594,7 @@ export function useAgentMode(
 
   /** 把排队中的一条追加进当前这场（与回车补充同一条路）；闲着则马上开下一件。不打断正在跑的任务。 */
   const insertFollowUp = async (id: string) => {
+    if (editingFollowUpId.value === id) return
     const index = followUpQueue.value.findIndex(entry => entry.id === id)
     const item = takeFollowUp(id)
     if (!item) return
@@ -1589,6 +1617,111 @@ export function useAgentMode(
       workbenchContext: item.workbenchContext,
       queuedPayload: item
     })
+  }
+
+  /** 开始编辑：标记队列位为「编辑中」，返回快照供输入框填入。调用方须先确认输入框空闲。 */
+  const beginEditFollowUp = (id: string): FollowUpQueueItem | null => {
+    if (editingFollowUpId.value) return null
+    const item = followUpQueue.value.find(entry => entry.id === id)
+    if (!item || item.editing) return null
+    cancelFollowUpDrain()
+    editingFollowUpId.value = id
+    editingFollowUpSnapshot.value = {
+      ...item,
+      images: item.images ? [...item.images] : undefined,
+      previewImages: item.previewImages ? [...item.previewImages] : undefined,
+      pendingImages: item.pendingImages ? [...item.pendingImages] : undefined,
+      attachments: item.attachments ? item.attachments.map(a => ({ ...a })) : undefined,
+      parsedDocs: item.parsedDocs ? item.parsedDocs.map(d => ({ ...d })) : undefined,
+      workbenchContext: item.workbenchContext ? { ...item.workbenchContext } : undefined,
+    }
+    followUpQueue.value = followUpQueue.value.map(entry =>
+      entry.id === id ? { ...entry, editing: true } : entry
+    )
+    return editingFollowUpSnapshot.value
+  }
+
+  /** 取消编辑：原样恢复，清除编辑标记；若手头已空闲则继续 drain */
+  const cancelEditFollowUp = () => {
+    const id = editingFollowUpId.value
+    const snap = editingFollowUpSnapshot.value
+    const tabId = currentTabId.value
+    if (!id || !snap) {
+      editingFollowUpId.value = null
+      editingFollowUpSnapshot.value = null
+      return
+    }
+    followUpQueue.value = followUpQueue.value.map(entry =>
+      entry.id === id ? { ...snap, editing: undefined } : entry
+    )
+    editingFollowUpId.value = null
+    editingFollowUpSnapshot.value = null
+    if (tabId && !isAgentRunning.value) scheduleNextFollowUp(tabId)
+  }
+
+  /**
+   * 保存编辑回原位。内容全空则删掉这条。
+   * workbenchContext 沿用入队快照（编辑态不重新吃选区）。
+   */
+  const saveEditFollowUp = async (payload: {
+    message: string
+    images?: string[]
+    previewImages?: string[]
+    pendingImages?: string[]
+    attachments?: AttachmentInfo[]
+    parsedDocs?: ParsedDocument[]
+    documentContext?: string
+  }): Promise<boolean> => {
+    const id = editingFollowUpId.value
+    const snap = editingFollowUpSnapshot.value
+    const tabId = currentTabId.value
+    if (!id || !snap) return false
+
+    const message = payload.message.trim()
+    const images = payload.images?.length ? payload.images : undefined
+    const previewImages = payload.previewImages?.length ? payload.previewImages : undefined
+    const pendingImages = payload.pendingImages?.length ? payload.pendingImages : undefined
+    const attachments = payload.attachments?.length ? payload.attachments : undefined
+    const parsedDocs = payload.parsedDocs?.length
+      ? payload.parsedDocs.map(d => ({ ...d }))
+      : undefined
+    const documentContext = payload.documentContext || undefined
+    const empty = !message && !images?.length && !attachments?.length && !parsedDocs?.length
+
+    if (empty) {
+      followUpQueue.value = followUpQueue.value.filter(entry => entry.id !== id)
+    } else {
+      const updated: FollowUpQueueItem = {
+        id,
+        message,
+        images,
+        previewImages,
+        pendingImages,
+        attachments,
+        parsedDocs,
+        documentContext,
+        workbenchContext: snap.workbenchContext,
+      }
+      followUpQueue.value = followUpQueue.value.map(entry =>
+        entry.id === id ? updated : entry
+      )
+    }
+
+    editingFollowUpId.value = null
+    editingFollowUpSnapshot.value = null
+    if (tabId && !isAgentRunning.value) scheduleNextFollowUp(tabId)
+    return true
+  }
+
+  const reorderFollowUp = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+    const list = [...followUpQueue.value]
+    if (fromIndex < 0 || fromIndex >= list.length || toIndex < 0 || toIndex >= list.length) return
+    const [moved] = list.splice(fromIndex, 1)
+    if (!moved) return
+    // drop 目标行 = 插到该行之前；from < to 时先 splice 会让目标左移一位
+    list.splice(fromIndex < toIndex ? toIndex - 1 : toIndex, 0, moved)
+    followUpQueue.value = list
   }
 
   // alwaysAllow: 会话内存白名单（路径类等仍可用；命令类 UI 已改为加入规则）
@@ -2308,8 +2441,13 @@ export function useAgentMode(
     runAgent,
     abortAgent,
     followUpQueueView,
+    isEditingFollowUp,
     removeFollowUp,
     insertFollowUp,
+    beginEditFollowUp,
+    cancelEditFollowUp,
+    saveEditFollowUp,
+    reorderFollowUp,
     confirmToolCall,
     confirmTrustCommandAndAllow,
     submitSecureInput,
