@@ -32,7 +32,12 @@ import {
   findArtifactIdsWithMissingFiles,
   refreshFilePathExistsMap
 } from './domain/artifact-file-status'
-import { shouldSyncArtifactsAfterStep } from './domain/artifact-disk-sync'
+import {
+  artifactNeedsForcedPreviewRefresh,
+  shouldRefreshPreviewAfterStep,
+  shouldSkipPreviewRefresh,
+  shouldSyncArtifactsAfterStep
+} from './domain/artifact-disk-sync'
 import {
   ARTIFACT_CONTENT_RELOAD_DELAYS_MS,
   artifactNeedsContentReload,
@@ -60,6 +65,24 @@ function coeditKey(tabId: string, artifactId: string): string {
   return `${tabId} ${artifactId}`
 }
 
+type LocalFsStatFn = (filePath: string) => Promise<{
+  success: boolean
+  data?: { modifyTime?: number } | null
+}>
+
+async function readFileMtime(filePath: string): Promise<number | undefined> {
+  const localFs = window.electronAPI?.localFs as { stat?: LocalFsStatFn } | undefined
+  const stat = localFs?.stat
+  if (!stat) return undefined
+  try {
+    const res = await stat(filePath)
+    const t = res.data?.modifyTime
+    return typeof t === 'number' ? t : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export const useAssistantArtifactStore = defineStore('assistantArtifact', () => {
   const tabStates = ref<Map<string, TabArtifactState>>(new Map())
   const splitRatio = ref(0.5)
@@ -69,6 +92,21 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   const lastCanvasOpen = ref<{ tabId: string; stealSeat: boolean } | null>(null)
   /** 人机双写协同状态（session 级，不持久化）：key = coeditKey(tabId, artifactId) */
   const coeditStates = ref<Map<string, CoeditEntry>>(new Map())
+  /** 只读预览上次对应的磁盘修改时间：key = filePath */
+  const previewSourceMtimes = new Map<string, number>()
+
+  function rememberPreviewMtime(filePath: string, mtime: number) {
+    previewSourceMtimes.set(filePath, mtime)
+  }
+
+  function forgetPreviewMtime(filePath: string | null | undefined) {
+    if (filePath) previewSourceMtimes.delete(filePath)
+  }
+
+  async function capturePreviewMtime(filePath: string): Promise<void> {
+    const t = await readFileMtime(filePath)
+    if (t != null) rememberPreviewMtime(filePath, t)
+  }
 
   function getCoeditEntry(tabId: string, artifactId: string): CoeditEntry | undefined {
     return coeditStates.value.get(coeditKey(tabId, artifactId))
@@ -153,6 +191,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   }
 
   function removeArtifactFromTab(tabId: string, artifactId: string) {
+    forgetPreviewMtime(getArtifactByIdForTab(tabId, artifactId)?.filePath)
     dropCoeditEntry(tabId, artifactId)
     mutateTab(tabId, state => removeArtifact(state, artifactId))
   }
@@ -177,6 +216,12 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
       }
     }
     mutateTab(tabId, state => applyCanvasData(state, nextData))
+    if ((data.action === 'open' || data.action === 'update') && nextData.filePath) {
+      const opened = getArtifactByIdForTab(tabId, resolveCanvasArtifactId(nextData))
+      if (opened && artifactNeedsForcedPreviewRefresh(opened) && opened.filePath) {
+        void capturePreviewMtime(opened.filePath)
+      }
+    }
   }
 
   function open(
@@ -327,12 +372,14 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   /**
    * 历史持久化会剥离 md/html 产出物的 content（contentFromFile）。
    * 恢复后或 open 时 content 为空，这里按 filePath 异步读盘/重建预览。
+   * force：Word/表格等只读预览即使已有 HTML 也从磁盘重建（助手改完文件后跟上）。
    * 写入磁盘与 step 到达存在竞态，失败时会退避重试。
    */
   async function reloadArtifactContent(
     tabId: string,
     artifactId?: string,
-    attempt = 0
+    attempt = 0,
+    options?: { force?: boolean }
   ): Promise<void> {
     const previewApi = window.electronAPI?.localFs?.previewArtifact
     const readApi = window.electronAPI?.localFs?.readFile
@@ -342,13 +389,21 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
       ? [getArtifactByIdForTab(tabId, artifactId)].filter((a): a is CanvasArtifact => a != null)
       : [...getArtifactsForTab(tabId)]
 
-    const pending = targets.filter(artifactNeedsContentReload)
+    const pending = options?.force
+      ? targets.filter(artifactNeedsForcedPreviewRefresh)
+      : targets.filter(artifactNeedsContentReload)
     if (pending.length === 0) return
 
-    let anyStillEmpty = false
+    let anyFailed = false
     await Promise.all(
       pending.map(async (a) => {
         try {
+          if (options?.force && a.filePath) {
+            const currentMtime = await readFileMtime(a.filePath)
+            if (shouldSkipPreviewRefresh(previewSourceMtimes.get(a.filePath), currentMtime)) {
+              return
+            }
+          }
           const data = await loadArtifactContentFromDisk(a, {
             previewArtifact: previewApi,
             readFile: readApi
@@ -356,21 +411,30 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
           if (data) {
             // 读盘回填同样走冲突分流：用户草稿 dirty 时挂起而非覆盖
             ingestExternalContent(tabId, a.id, data)
+            if (a.filePath) {
+              const savedMtime = await readFileMtime(a.filePath)
+              if (savedMtime != null) rememberPreviewMtime(a.filePath, savedMtime)
+            }
             return
           }
         } catch {
           /* 读盘/预览失败：留空，由退避重试或磁盘同步处理 */
         }
-        if (artifactNeedsContentReload(getArtifactByIdForTab(tabId, a.id) ?? a)) {
-          anyStillEmpty = true
+        const current = getArtifactByIdForTab(tabId, a.id) ?? a
+        if (
+          options?.force
+            ? artifactNeedsForcedPreviewRefresh(current)
+            : artifactNeedsContentReload(current)
+        ) {
+          anyFailed = true
         }
       })
     )
 
     const retryDelay = ARTIFACT_CONTENT_RELOAD_DELAYS_MS[attempt]
-    if (anyStillEmpty && retryDelay !== undefined) {
+    if (anyFailed && retryDelay !== undefined) {
       await sleep(retryDelay)
-      await reloadArtifactContent(tabId, artifactId, attempt + 1)
+      await reloadArtifactContent(tabId, artifactId, attempt + 1, options)
     }
   }
 
@@ -416,10 +480,14 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     if (shouldSyncArtifactsAfterStep(step)) {
       void syncArtifactsWithDisk(tabId)
     }
+    if (shouldRefreshPreviewAfterStep(step)) {
+      void reloadArtifactContent(tabId, undefined, 0, { force: true })
+    }
   }
 
   function cleanup(tabId: string) {
     cancelPendingClose(tabId)
+    for (const a of getArtifactsForTab(tabId)) forgetPreviewMtime(a.filePath)
     dropCoeditEntriesForTab(tabId)
     tabStates.value.delete(tabId)
     tabStates.value = new Map(tabStates.value)

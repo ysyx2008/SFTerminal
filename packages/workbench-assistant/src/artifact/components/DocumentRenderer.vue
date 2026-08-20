@@ -2,12 +2,27 @@
 /**
  * Canvas DocumentRenderer
  *
- * 渲染 Word 文档的 HTML 预览（由 mammoth.js 转换）。
+ * Word / WPS 文字 HTML 预览（mammoth 转换，只读）。
+ * 选区即作用域：划一段后发送时静默附带摘录，右键快捷指令只预填输入框。
  */
-import { computed, toRef } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Wand2 } from 'lucide-vue-next'
 import { useAssistantArtifactStore } from '../store'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
+import { requireArtifactDesktopHost } from '../host'
+import { artifactBasename } from '../domain/artifact-actions'
+import {
+  applyStickyMarks,
+  clearStickyMarks,
+  excerptFromRange,
+  rangeFromExcerpt,
+  rangeInsideRoot,
+  STICKY_MARK_CLASS
+} from '../domain/html-sticky-selection'
+import { SET_COMPOSER_DRAFT_KEY, type ArtifactComposerQuote } from '../composer-quote'
+import { registerSelectionScopeProvider } from '../selection-scope'
+import '../ui/quote-context-menu.css'
 
 const props = defineProps<{
   tabId: string
@@ -17,27 +32,315 @@ const props = defineProps<{
 const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()
 const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
-const content = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId)?.content ?? '')
+const setComposerDraft = inject(SET_COMPOSER_DRAFT_KEY, undefined)
+const desktopHost = requireArtifactDesktopHost()
+
+const rootRef = ref<HTMLElement | null>(null)
+const contentRef = ref<HTMLElement | null>(null)
+const hasSelectionScope = ref(false)
+let stickyRange: Range | null = null
+/** Range 失效时仍可用，保证右键能拿到摘录 */
+let lastExcerpt = ''
+/** 指针已离开预览：用背景钉住，并收掉原生选区，避免双重高亮 */
+let pinSticky = false
+/** 只在文档 HTML 真变时写 innerHTML，避免点输入框重绘冲掉高亮 */
+let paintedHtml: string | null = null
+
+const ctxVisible = ref(false)
+const ctxX = ref(0)
+const ctxY = ref(0)
+const ctxQuotePayload = ref<{ excerpt: string } | null>(null)
+
+const artifact = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId))
+const content = computed(() => artifact.value?.content ?? '')
+const filePath = computed(() => artifact.value?.filePath ?? null)
+
+const panelActive = computed(() => {
+  const root = rootRef.value
+  if (!root?.isConnected) return false
+  if (!artifactStore.isVisible(props.tabId)) return false
+  if (artifactStore.getActiveArtifact(props.tabId)?.id !== props.artifactId) return false
+  if (artifactStore.getActiveArtifact(props.tabId)?.renderer !== 'document') return false
+  return desktopHost.isTabActive(props.tabId)
+})
+
+function captureQuoteMeta(): { excerpt: string } | null {
+  const live = rangeInsideRoot(contentRef.value, window.getSelection())
+  const excerpt = live ? excerptFromRange(live) : lastExcerpt
+  return excerpt.trim() ? { excerpt: excerpt.trim() } : null
+}
+
+function lockRange(range: Range): void {
+  stickyRange = range
+  lastExcerpt = excerptFromRange(range)
+  hasSelectionScope.value = Boolean(lastExcerpt)
+}
+
+function resolveStickyRange(): Range | null {
+  const live = rangeInsideRoot(contentRef.value, window.getSelection())
+  if (live) {
+    lockRange(live)
+    return live
+  }
+  if (stickyRange) return stickyRange
+  const recovered = rangeFromExcerpt(contentRef.value, lastExcerpt)
+  if (recovered) stickyRange = recovered
+  return recovered
+}
+
+function pinStickyHighlight(): void {
+  const el = contentRef.value
+  if (!el) return
+  pinSticky = true
+  if (el.querySelector(`.${STICKY_MARK_CLASS}`)) {
+    window.getSelection()?.removeAllRanges()
+    return
+  }
+  const range = resolveStickyRange()
+  applyStickyMarks(el, range)
+  window.getSelection()?.removeAllRanges()
+}
+
+function clearSticky(): void {
+  pinSticky = false
+  stickyRange = null
+  lastExcerpt = ''
+  hasSelectionScope.value = false
+  clearStickyMarks(contentRef.value)
+}
+
+function buildSelectionScope(): ArtifactComposerQuote | null {
+  const meta = captureQuoteMeta()
+  const trimmed = meta?.excerpt.trim()
+  if (!trimmed) return null
+  const fp = filePath.value
+  const title = artifact.value?.title ?? ''
+  const label = fp ? artifactBasename(fp) : (title || 'Word')
+  return {
+    label,
+    sourcePath: fp || null,
+    sourceLinesAccurate: false,
+    quoteOrigin: 'canvas',
+    startLine: null,
+    endLine: null,
+    excerpt: trimmed
+  }
+}
+
+const QUOTE_ACTION_KEYS = ['rewrite', 'polish', 'proofread', 'translate', 'expand'] as const
+
+function applyCtxQuoteAction(actionKey: string) {
+  const meta = ctxQuotePayload.value
+  if (!meta?.excerpt.trim()) {
+    closeCtxMenu()
+    return
+  }
+  setComposerDraft?.(t(`canvas.quoteDraft.${actionKey}`))
+  closeCtxMenu()
+}
+
+function openCtxMenu(e: MouseEvent) {
+  const meta = captureQuoteMeta()
+  if (!meta?.excerpt.trim()) return
+  e.preventDefault()
+  e.stopPropagation()
+  ctxQuotePayload.value = meta
+  ctxX.value = e.clientX
+  ctxY.value = e.clientY
+  // 右键手势里 mousedown 可能晚于 contextmenu，推迟挂上以免当场被关掉
+  requestAnimationFrame(() => {
+    ctxVisible.value = true
+  })
+}
+
+function closeCtxMenu() {
+  ctxVisible.value = false
+  ctxQuotePayload.value = null
+}
+
+function onSelectionChange() {
+  const range = rangeInsideRoot(contentRef.value, window.getSelection())
+  if (range) {
+    lockRange(range)
+    if (pinSticky) {
+      window.getSelection()?.removeAllRanges()
+      return
+    }
+    clearStickyMarks(contentRef.value)
+    return
+  }
+  if (pinSticky) return
+  if (stickyRange || lastExcerpt) pinStickyHighlight()
+}
+
+function onContentMouseUp(e: MouseEvent) {
+  // 右键随后的 mouseup 常把原生选区折叠，不能据此清 sticky，否则菜单点完发送会丢作用域
+  if (e.button === 2) return
+  const range = rangeInsideRoot(contentRef.value, window.getSelection())
+  if (range) {
+    pinSticky = false
+    lockRange(range)
+    clearStickyMarks(contentRef.value)
+    return
+  }
+  // 点预览空白才清；点到输入框不会进这个 handler
+  const target = e.target as Node | null
+  if (target && rootRef.value?.contains(target)) clearSticky()
+}
+
+function onGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeCtxMenu()
+}
+
+function pinIfPointerLeftPreview(target: EventTarget | null): void {
+  const el = target as HTMLElement | null
+  if (el?.closest?.('.md-ctx-menu')) return
+  const inside = !!(rootRef.value && el && rootRef.value.contains(el))
+  if (inside) {
+    pinSticky = false
+    clearStickyMarks(contentRef.value)
+    return
+  }
+  if (stickyRange || lastExcerpt) pinStickyHighlight()
+}
+
+function onGlobalMouseDown(e: MouseEvent) {
+  if (e.button !== 0) return
+  const t = e.target as HTMLElement
+  if (t.closest?.('.md-ctx-menu')) return
+  closeCtxMenu()
+  pinIfPointerLeftPreview(e.target)
+}
+
+function onPointerDownCapture(e: PointerEvent) {
+  if (e.button !== 0) return
+  pinIfPointerLeftPreview(e.target)
+}
+
+function onFocusIn(e: FocusEvent) {
+  pinIfPointerLeftPreview(e.target)
+}
+
+function onWindowKeydown(e: KeyboardEvent) {
+  const meta = e.metaKey || e.ctrlKey
+  if (!meta || e.shiftKey || e.altKey) return
+  if (e.key.toLowerCase() !== 'l') return
+  if (!panelActive.value) return
+  const quoteMeta = captureQuoteMeta()
+  if (!quoteMeta?.excerpt.trim()) return
+  e.preventDefault()
+  e.stopPropagation()
+  setComposerDraft?.('')
+  closeCtxMenu()
+}
+
+function paintDocumentHtml(html: string) {
+  const el = contentRef.value
+  if (!el) return
+  if (paintedHtml === html) return
+  paintedHtml = html
+  el.innerHTML = html
+  clearSticky()
+}
+
+watch(
+  [content, loadingFromDisk],
+  () => { void nextTick(() => paintDocumentHtml(content.value)) },
+  { immediate: true }
+)
+
+watch(panelActive, (active) => {
+  if (active && pinSticky && (stickyRange || lastExcerpt)) pinStickyHighlight()
+})
+
+let unregisterSelectionScope: (() => void) | null = null
+
+onMounted(() => {
+  unregisterSelectionScope = registerSelectionScopeProvider(props.tabId, {
+    getScope: () => buildSelectionScope(),
+    clearScope: () => clearSticky()
+  })
+  rootRef.value?.addEventListener('contextmenu', openCtxMenu)
+  document.addEventListener('selectionchange', onSelectionChange)
+  document.addEventListener('focusin', onFocusIn)
+  document.addEventListener('pointerdown', onPointerDownCapture, true)
+  window.addEventListener('keydown', onWindowKeydown, true)
+  window.addEventListener('keydown', onGlobalKeydown)
+  document.addEventListener('mousedown', onGlobalMouseDown, true)
+})
+
+onUnmounted(() => {
+  unregisterSelectionScope?.()
+  unregisterSelectionScope = null
+  rootRef.value?.removeEventListener('contextmenu', openCtxMenu)
+  clearSticky()
+  document.removeEventListener('selectionchange', onSelectionChange)
+  document.removeEventListener('focusin', onFocusIn)
+  document.removeEventListener('pointerdown', onPointerDownCapture, true)
+  window.removeEventListener('keydown', onWindowKeydown, true)
+  window.removeEventListener('keydown', onGlobalKeydown)
+  document.removeEventListener('mousedown', onGlobalMouseDown, true)
+})
 </script>
 
 <template>
-  <div class="document-renderer">
-    <div v-if="loadingFromDisk && !content.trim()" class="document-loading">
-      {{ t('canvas.htmlPreviewLoading') }}
+  <div ref="rootRef" class="document-renderer">
+    <div class="document-scroll" @mouseup="onContentMouseUp">
+      <div v-if="loadingFromDisk && !content.trim()" class="document-loading">
+        {{ t('canvas.htmlPreviewLoading') }}
+      </div>
+      <div v-else class="document-page">
+        <div
+          ref="contentRef"
+          class="document-content"
+        />
+      </div>
     </div>
-    <div v-else class="document-page">
-      <div class="document-content" v-html="content"></div>
+
+    <div v-if="hasSelectionScope" class="doc-status-bar" role="status">
+      <span class="doc-shortcut-hint">{{ t('canvas.quoteHint') }}</span>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="ctxVisible"
+        class="md-ctx-menu"
+        :style="{ left: ctxX + 'px', top: ctxY + 'px' }"
+        role="menu"
+        @mousedown.prevent
+      >
+        <div class="md-ctx-group">{{ t('canvas.quoteActionGroup') }}</div>
+        <button
+          v-for="key in QUOTE_ACTION_KEYS"
+          :key="key"
+          type="button"
+          role="menuitem"
+          class="md-ctx-item"
+          @click="applyCtxQuoteAction(key)"
+        >
+          <Wand2 :size="14" aria-hidden="true" />
+          <span>{{ t(`canvas.quoteActions.${key}`) }}</span>
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
 .document-renderer {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
+  min-height: 0;
+  background: #2a2a2a;
+}
+
+.document-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: #2a2a2a;
   padding: 20px 16px;
 }
 
@@ -62,12 +365,25 @@ const content = computed(() => artifactStore.getArtifactById(props.tabId, props.
 }
 
 .document-content {
+  --doc-sel-bg: color-mix(in srgb, var(--accent-primary, #4d9eff) 35%, transparent);
   color: #1a1a1a;
   font-family: 'Songti SC', 'SimSun', 'Times New Roman', serif;
   font-size: 14px;
   line-height: 1.8;
   word-wrap: break-word;
   text-align: justify;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.document-content :deep(::selection) {
+  background: var(--doc-sel-bg);
+  color: inherit;
+}
+
+.document-content :deep(.sf-doc-sticky-mark) {
+  background: var(--doc-sel-bg);
+  color: inherit;
 }
 
 .document-content :deep(h1.document-title) {
@@ -191,5 +507,25 @@ const content = computed(() => artifactStore.getArtifactById(props.tabId, props.
 .document-content :deep(sup) {
   font-size: 0.75em;
   color: #666;
+}
+
+.doc-status-bar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 22px;
+  padding: 3px 10px;
+  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  background: #2a2a2a;
+}
+
+.doc-shortcut-hint {
+  color: var(--text-tertiary, #6a6a6a);
+  font-size: 10px;
+  line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

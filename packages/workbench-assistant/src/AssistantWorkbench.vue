@@ -5,7 +5,7 @@
  * 锚点区 = 聊天（AiPanel，常驻）；可隐区 = 产出物面板（ArtifactPanel，按需显隐）。
  * step→产出物接线在本岗挂载（useArtifactAgentBridge）。
  * 「跳到生成处」/「引用到 Composer」经 AiPanel defineExpose，由本壳持 ref 转发。
- * Markdown 选区作用域：发送前经 consumeSelectionScope 静默附带，不进引用胶囊。
+ * 产出物选区作用域：发送前经 consumeSelectionScope 静默附带，不进引用胶囊。
  */
 import { computed, reactive, ref, watch, nextTick, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -54,7 +54,7 @@ function setComposerDraft(text: string) {
   aiPanelRef.value?.setComposerDraft(text)
 }
 
-/** 发送时静默取出 Markdown 选区作用域（取出即清除 sticky；不上聊天气泡） */
+/** 发送时静默取出产出物选区作用域（取出即清除 sticky；不上聊天气泡） */
 function consumeWorkbenchContext(): WorkbenchContext | undefined {
   const scope = consumeSelectionScope(props.tab.id)
   if (!scope?.excerpt.trim()) return undefined

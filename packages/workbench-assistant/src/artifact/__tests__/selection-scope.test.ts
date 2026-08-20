@@ -1,5 +1,5 @@
 /**
- * Markdown 选区作用域登记：发送时由岗壳静默取出交给 AI，不进 Composer 引用胶囊。
+ * 产出物选区作用域登记：发送时由岗壳静默取出交给 AI，不进 Composer 引用胶囊。
  */
 import { describe, expect, it } from 'vitest'
 import {

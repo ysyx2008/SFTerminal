@@ -1,5 +1,5 @@
 /**
- * Markdown 选区作用域登记：发送时由岗壳静默取出交给 AI，不进 Composer 引用胶囊。
+ * 产出物选区作用域登记：发送时由岗壳静默取出交给 AI，不进 Composer 引用胶囊。
  *
  * 依赖方向：workbench-assistant 登记；AssistantWorkbench 在发送前 consume；
  * src 侧 AiPanel/AiComposer 只接收回调结果，不反向依赖本包。
@@ -15,7 +15,7 @@ export interface SelectionScopeProvider {
 
 const providersByTabId = new Map<string, SelectionScopeProvider>()
 
-/** MarkdownRenderer 挂载时登记；返回反登记函数 */
+/** 当前预览/编辑器挂载时登记；返回反登记函数 */
 export function registerSelectionScopeProvider(
   tabId: string,
   provider: SelectionScopeProvider

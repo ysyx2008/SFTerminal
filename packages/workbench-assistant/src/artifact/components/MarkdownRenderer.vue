@@ -23,6 +23,7 @@ import { SET_COMPOSER_DRAFT_KEY, type ArtifactComposerQuote } from '../composer-
 import { registerSelectionScopeProvider } from '../selection-scope'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 import type { MarkdownWysiwygHandle } from '../editor/markdown-wysiwyg-editor'
+import '../ui/quote-context-menu.css'
 
 const props = defineProps<{
   tabId: string
@@ -671,50 +672,6 @@ onUnmounted(() => {
 </style>
 
 <style>
-/* 非 scoped：Teleport 到 body 的菜单 */
-.md-ctx-menu {
-  position: fixed;
-  z-index: 10050;
-  min-width: 180px;
-  padding: 4px;
-  border-radius: 6px;
-  background: var(--bg-secondary, #2d2d2d);
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-}
-
-.md-ctx-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-primary, #eaeaea);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.md-ctx-item:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.08));
-}
-
-.md-ctx-sep {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--border-color, rgba(255, 255, 255, 0.12));
-}
-
-.md-ctx-group {
-  padding: 4px 10px 2px;
-  font-size: 10px;
-  color: var(--text-tertiary, #888);
-  user-select: none;
-}
-
 /* 人机双写：外部版本冲突横幅 */
 .md-coedit-banner {
   display: flex;

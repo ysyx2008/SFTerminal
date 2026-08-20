@@ -1,6 +1,6 @@
 # 助手产出物（Artifact）子系统 SPEC
 
-> Last verified: 2026-08-19
+> Last verified: 2026-08-20
 
 ## 职责
 
@@ -29,7 +29,18 @@
 - **保存即规范化**：所见即所得编辑器以自己的标准格式写回文件——用户未触碰部分的排版风格（列表符号、标题写法、空行等）在保存时可能被重排为规范形式；内容语义不变
 - **选区引用无行号**：从可视化编辑器选区引用的摘录以选中原文为锚（内容匹配），不携带精确文件行号
 
-明确不做（一期）：改前 diff 逐条确认；预览选区的精确行号；Excel/PPT 双写。
+明确不做（一期）：改前 diff 逐条确认；预览选区的精确行号；Excel/PPT 双写；在 Word / WPS 预览里直接打字改文档。
+
+**Word / WPS 预览选区（2026-08-20 确认）**：Word、WPS 文字预览和 Markdown 一样，用户划一段就能让助手只改这段。预览仍然只读——不在面板里直接改文档（预览是给人看的译本，写不回原文件还不毁格式）。行为承诺：
+
+- **选中就能发指令**：划完直接在下方输入框写要求；选区高亮在点到输入框后仍保留，方便确认范围
+- **不出现引用胶囊，聊天气泡也不展示选区脚手架**：只留用户写下的话，选中原文经工作台上下文旁路交给助手
+- **右键快捷指令**：改写 / 润色 / 校对 / 翻译 / 扩写，只预填输入框文案，选区仍由发送时附带
+- **按选中原文定位**：没有精确段落号，助手以选中文字为锚；预览里的字和文件里偶尔对不齐时，助手应再读文件对准，而不是改错地方
+- **WPS 文字与 Word 同一套**：用户不必区分
+- **改完立刻看见**：助手改完这份已打开的文件后（无论用 Word 工具还是普通写文件/脚本），预览立刻换成新内容，不用关开。预览仍只读，磁盘文件是真相
+
+明确不做：在预览里直接打字改 Word；嵌一套 Office 编辑器；Excel / PPT 圈选（另案）。
 
 **面板收起（2026-08-17 确认）**：产出物入座时，收起与历史对话侧栏同一套手感——收起后整栏消失，不留一条图标窄栏。开关钉在工作台右上角，开合时不跟着面板跑；有产出物且文件在座位上（或可以入座）时在，图标随开合换向。助手再产出新东西时，若座位空着或正坐着文件，面板会自动打开；若终端正在座位上，新文件只进清单、不抢座。开合是抽屉推拉：整栏变速滑入滑出，不是整块闪没或闪现。历史侧栏开合时，产出物面板保持当时的宽度，不跟着工作台变窄变宽再算一遍。
 
@@ -85,7 +96,7 @@ packages/workbench-assistant/src/artifact/
 | 溯源 / 引用 | `AiPanel.scrollToAgentStep` / `addComposerQuote` + 岗壳转发 | ArtifactPanel prop → provide；Markdown inject |
 | 保存逻辑 | `domain/artifact-actions.ts` | Save / Save As / Save All（查注册表） |
 | 编辑桥接 | `domain/artifact-save-bridge.ts` | Markdown draft → 面板级保存 |
-| 磁盘同步 | `domain/artifact-file-status.ts` + `artifact-disk-sync.ts` | exists 复检；exec 后触发 |
+| 磁盘同步 | `domain/artifact-file-status.ts` + `artifact-disk-sync.ts` | exists 复检；改盘后重建只读预览 |
 | 右键菜单 | `domain/artifact-context-menu.ts` | 菜单项可见性（查 editable） |
 | 视图 | `components/*` | ArtifactPanel |
 
@@ -122,7 +133,7 @@ packages/workbench-assistant/src/artifact/
 - **清单**：有产出物才出现；按钮钉在对话区右上。点开是实底小面板，宽度随名称伸缩，点选即打开并显示该项。换文件只走这里，面板标题不再下拉
 - **类型图标**：有磁盘路径用系统文件图标；没有或取不到再用通用类型图标
 - **空面板**：全部产出物关闭或磁盘同步移除后，面板自动隐藏；有新产出时再展开
-- **磁盘同步**：path 不存在则移除项（含 `exec`/`await_exec` 后复检）。**不会**扫描目录或推断 `mv` 新路径；Shell 改名后须 Agent 用带 canvasData 的工具重新 open
+- **磁盘同步**：path 不存在则移除项（含 `exec`/`await_exec` 后复检）。已打开的 Word / WPS / 表格预览会在助手改完磁盘文件后从文件重建，不用关开。**不会**扫描目录或推断 `mv` 新路径；Shell 改名后须 Agent 用带 canvasData 的工具重新 open
 
 ## CanvasData.action
 
@@ -147,6 +158,7 @@ packages/workbench-assistant/src/artifact/
 - `__tests__/artifact-actions.test.ts`
 - `__tests__/artifact-file-status.test.ts`
 - `__tests__/artifact-disk-sync.test.ts`
+- `__tests__/artifact-preview-refresh.test.ts`
 - `__tests__/artifact-context-menu.test.ts`
 - `__tests__/renderer-registry.test.ts`
 - `__tests__/artifact-source.test.ts`

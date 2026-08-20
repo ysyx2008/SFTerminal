@@ -27,7 +27,12 @@ export {
 } from './domain/artifact-tab-layout'
 
 export {
+  DISK_PREVIEW_RENDERERS,
   DISK_SYNC_AFTER_TOOLS,
+  PREVIEW_REFRESH_AFTER_TOOLS,
+  artifactNeedsForcedPreviewRefresh,
+  shouldRefreshPreviewAfterStep,
+  shouldSkipPreviewRefresh,
   shouldSyncArtifactsAfterStep
 } from './domain/artifact-disk-sync'
 

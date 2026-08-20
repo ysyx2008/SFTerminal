@@ -18,7 +18,7 @@ export interface WorkbenchArtifactSnapshot {
 }
 
 /**
- * Markdown 选区作用域（人机双写）：只进模型旁路，不上聊天气泡。
+ * 产出物选区作用域：只进模型旁路，不上聊天气泡。
  * 行号不精确时 Agent 以 excerpt 内容锚定。
  */
 export interface WorkbenchSelectionScope {
