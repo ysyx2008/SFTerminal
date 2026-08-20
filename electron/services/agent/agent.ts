@@ -2513,7 +2513,7 @@ export abstract class Agent {
     // 重试成功（首次 onChunk 到达）/ 最终失败（onError）/ 完成（onDone 兜底）时停掉 streaming 状态
     let lastRetryStepId: string | undefined
     let lastRetryParams: Record<string, string> | undefined
-    let retryInFlightTimer: ReturnType<typeof setTimeout> | undefined
+    let retryCountdownTimer: ReturnType<typeof setInterval> | undefined
     // 每个 toolCallId 独立节流（多个 tool_call 并行流式时互不干扰）
     const toolProgressThrottle = new Map<string, number>()
     const STREAM_THROTTLE_MS = 100
@@ -2536,14 +2536,14 @@ export abstract class Agent {
 
     // 把当前"正在重试"卡片定稿（关闭 spinner、改成「已重试」），保留卡片作为审计痕迹。
     // 触发时机：重试成功（首次 onChunk）/ 整体完成（onDone）/ 最终失败（onError）/ 下一轮重试开始
-    const clearRetryInFlightTimer = () => {
-      if (retryInFlightTimer !== undefined) {
-        clearTimeout(retryInFlightTimer)
-        retryInFlightTimer = undefined
+    const clearRetryCountdown = () => {
+      if (retryCountdownTimer !== undefined) {
+        clearInterval(retryCountdownTimer)
+        retryCountdownTimer = undefined
       }
     }
     const finalizeRetryStep = () => {
-      clearRetryInFlightTimer()
+      clearRetryCountdown()
       if (lastRetryStepId) {
         const doneContent = lastRetryParams
           ? `🔄 ${t('agent.retry_done', lastRetryParams)}`
@@ -2935,11 +2935,10 @@ export abstract class Agent {
           // 显示 waiting 卡片让用户清楚"在等下次重试"，而不是"卡住了"。
           // retryInfo 缺失时（如 vision-fallback 等内部重试）不显示，避免误导用户
           if (retryInfo) {
-            const seconds = String(Math.max(1, Math.round(retryInfo.delayMs / 1000)))
             const params: Record<string, string> = {
               attempt: String(retryInfo.attempt),
               max: String(retryInfo.max),
-              seconds
+              seconds: String(Math.max(1, Math.round(retryInfo.delayMs / 1000)))
             }
             if (retryInfo.statusCode !== undefined) params.status = String(retryInfo.statusCode)
             const i18nKey =
@@ -2950,23 +2949,34 @@ export abstract class Agent {
             const stepId = this.generateId()
             lastRetryStepId = stepId
             lastRetryParams = params
+            const renderWait = (remaining: number) =>
+              `🔄 ${t(i18nKey, { ...params, seconds: String(remaining) })}`
             // 接替初始占位；上下文栏独立，删 step 不影响状态栏
             this.addStepReplacingInitial(run, {
               id: stepId,
               type: 'waiting',
-              content: `🔄 ${t(i18nKey, params)}`,
+              content: renderWait(Math.max(1, Math.round(retryInfo.delayMs / 1000))),
               isStreaming: true
             }, effectiveProfileId)
-            // 退避间隔一过，请求已经发出去——改成「正在重试」，避免还停在「几秒后重试」
-            // 让用户干等下一次超时却以为只是在倒计时
-            retryInFlightTimer = setTimeout(() => {
-              retryInFlightTimer = undefined
+            // 秒数倒数；间隔一过改成「正在重试」，避免还停在「几秒后重试」
+            const waitUntil = Date.now() + retryInfo.delayMs
+            const tickRetryWait = () => {
               if (lastRetryStepId !== stepId) return
+              const remaining = Math.ceil((waitUntil - Date.now()) / 1000)
+              if (remaining <= 0) {
+                clearRetryCountdown()
+                this.updateStep(stepId, {
+                  content: `🔄 ${t('agent.retry_in_flight', params)}`,
+                  isStreaming: true
+                })
+                return
+              }
               this.updateStep(stepId, {
-                content: `🔄 ${t('agent.retry_in_flight', params)}`,
+                content: renderWait(remaining),
                 isStreaming: true
               })
-            }, retryInfo.delayMs)
+            }
+            retryCountdownTimer = setInterval(tickRetryWait, 1000)
           } else {
             // retryInfo 缺失（vision-fallback 等）：不展示 waiting 卡，但仍需清理
             // 初始占位步骤，否则"正在准备..."会在无 waiting 接班时孤立显示
