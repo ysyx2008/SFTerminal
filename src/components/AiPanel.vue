@@ -4592,14 +4592,17 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .agent-step-inline.waiting {
   background: rgba(var(--color-info-rgb), 0.1);
   border-left: 3px solid var(--color-info);
-  padding-left: 10px;
+  /* 覆盖 :last-child 的 padding-bottom: 0，否则有底色的卡片上下不对称 */
+  padding: 8px 10px;
   margin-left: -2px;
   border-radius: 4px;
   color: var(--text-primary);
+  align-items: center;
 }
 
 .agent-step-inline.waiting .step-icon {
   color: var(--color-info);
+  line-height: 1;
 }
 
 .agent-step-inline.asking {
@@ -4619,15 +4622,17 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .agent-step-inline.waiting_password {
   background: rgba(var(--color-warning-rgb), 0.12);
   border-left: 3px solid var(--color-warning);
-  padding-left: 10px;
+  padding: 8px 10px;
   margin-left: -2px;
   border-radius: 4px;
   color: var(--text-primary);
+  align-items: center;
   animation: password-pulse 2s ease-in-out infinite;
 }
 
 .agent-step-inline.waiting_password .step-icon {
   color: var(--color-warning);
+  line-height: 1;
   animation: key-bounce 1s ease-in-out infinite;
 }
 
