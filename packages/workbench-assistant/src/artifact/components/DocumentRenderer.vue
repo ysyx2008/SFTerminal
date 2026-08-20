@@ -37,7 +37,6 @@ const desktopHost = requireArtifactDesktopHost()
 
 const rootRef = ref<HTMLElement | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
-const hasSelectionScope = ref(false)
 let stickyRange: Range | null = null
 /** Range 失效时仍可用，保证右键能拿到摘录 */
 let lastExcerpt = ''
@@ -73,7 +72,6 @@ function captureQuoteMeta(): { excerpt: string } | null {
 function lockRange(range: Range): void {
   stickyRange = range
   lastExcerpt = excerptFromRange(range)
-  hasSelectionScope.value = Boolean(lastExcerpt)
 }
 
 function resolveStickyRange(): Range | null {
@@ -105,7 +103,6 @@ function clearSticky(): void {
   pinSticky = false
   stickyRange = null
   lastExcerpt = ''
-  hasSelectionScope.value = false
   clearStickyMarks(contentRef.value)
 }
 
@@ -295,10 +292,6 @@ onUnmounted(() => {
           class="document-content"
         />
       </div>
-    </div>
-
-    <div v-if="hasSelectionScope" class="doc-status-bar" role="status">
-      <span class="doc-shortcut-hint">{{ t('canvas.quoteHint') }}</span>
     </div>
 
     <Teleport to="body">
@@ -507,25 +500,5 @@ onUnmounted(() => {
 .document-content :deep(sup) {
   font-size: 0.75em;
   color: #666;
-}
-
-.doc-status-bar {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  min-height: 22px;
-  padding: 3px 10px;
-  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  background: #2a2a2a;
-}
-
-.doc-shortcut-hint {
-  color: var(--text-tertiary, #6a6a6a);
-  font-size: 10px;
-  line-height: 1.35;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>
