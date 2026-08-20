@@ -4,6 +4,7 @@
  */
 import { registerArtifactDesktopHost } from '@sailfish/workbench-assistant/artifact'
 import { useTerminalStore } from '../../stores/terminal'
+import { resolveAssistantName } from '../../utils/assistant-name'
 
 let registered = false
 
@@ -16,6 +17,9 @@ export function ensureAssistantArtifactHostRegistered(): void {
     },
     isTabActive(tabId) {
       return useTerminalStore().activeTabId === tabId
+    },
+    getAssistantName() {
+      return resolveAssistantName()
     },
     persistArtifacts(tabId) {
       useTerminalStore().saveArtifactsToHistory(tabId)

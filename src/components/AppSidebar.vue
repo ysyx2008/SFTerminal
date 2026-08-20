@@ -12,9 +12,9 @@ import {
 } from 'lucide-vue-next'
 import { isOemFeatureEnabled } from '@shared/oem-features'
 import { isWorkbenchAvailable } from '../workbench/registry'
-import { useConfigStore } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { useAuthStore } from '../stores/auth'
+import { resolveAssistantName } from '../utils/assistant-name'
 import { useTodoOverdueCount } from '../composables/useTodoOverdueCount'
 import { useWatchAnomalyCount } from '../composables/useWatchAnomalyCount'
 import RecentConversationsPanel from './RecentConversationsPanel.vue'
@@ -35,7 +35,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const configStore = useConfigStore()
 const terminalStore = useTerminalStore()
 const authStore = useAuthStore()
 const { overdueCount, hasUnseenOverdue } = useTodoOverdueCount()
@@ -48,17 +47,8 @@ const canShowTerminal = isWorkbenchAvailable('local') || isWorkbenchAvailable('s
 const canShowAwaken = !isSteamBuild && isOemFeatureEnabled('awaken')
 const canShowWatch = !isSteamBuild && isOemFeatureEnabled('watch')
 
-/** Steam 版用独立品牌名 */
-const steamAppTitle = computed(() =>
-  (configStore.language || 'zh-CN').startsWith('zh') ? '旗鱼终端' : 'SFTerm'
-)
-
-/** 应用的名字只在这里露一次：秘书就是这个应用本身 */
-const secretaryName = computed(() => {
-  const name = configStore.agentName?.trim()
-  if (name) return name
-  return isSteamBuild ? steamAppTitle.value : t('app.title')
-})
+/** 秘书就是这个应用本身；名字的解析口径统一在 resolveAssistantName */
+const secretaryName = computed(() => resolveAssistantName())
 
 const secretaryInitial = computed(() => secretaryName.value.slice(0, 1))
 

@@ -56,6 +56,9 @@ const ctxX = ref(0)
 const ctxY = ref(0)
 const ctxMenuRef = ref<HTMLElement | null>(null)
 const ctxQuotePayload = ref<{ excerpt: string } | null>(null)
+/** 菜单标题里叫助手的名字，而不是「AI」 */
+const assistantName = computed(() => desktopHost.getAssistantName())
+
 const {
   anchor: hintAnchor,
   show: showSelectionHint,
@@ -347,7 +350,7 @@ onUnmounted(() => {
         role="menu"
         @mousedown.prevent
       >
-        <div class="md-ctx-group">{{ t('canvas.quoteActionGroup') }}</div>
+        <div class="md-ctx-group">{{ t('canvas.quoteActionGroup', { name: assistantName }) }}</div>
         <button
           v-for="key in QUOTE_ACTION_KEYS"
           :key="key"

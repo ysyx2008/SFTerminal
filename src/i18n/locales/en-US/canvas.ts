@@ -19,10 +19,8 @@ export default {
     captureFeedbackReady: 'Screenshot added to input — add your comments and send',
     captureFeedbackDraft: 'Here is a screenshot of "{title}" in its current state. Please revise based on my comments: ',
     markdownSource: 'Markdown',
-    selectionActionHint: 'Ask AI to edit this: type a request, or right-click',
-    quoteToComposer: 'Quote to AI chat',
-    quoteToAiNeedSelection: 'Select text to quote first',
-    quoteActionGroup: 'Ask AI to edit this',
+    selectionActionHint: 'Ask {name} to edit this: type a request, or right-click',
+    quoteActionGroup: 'Ask {name} to edit this',
     quoteActions: {
       rewrite: 'Rewrite',
       polish: 'Polish',

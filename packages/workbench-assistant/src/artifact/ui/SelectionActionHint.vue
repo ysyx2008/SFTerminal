@@ -11,6 +11,7 @@ import {
   placeSelectionHint,
   type ContextMenuBox
 } from '../domain/context-menu-position'
+import { requireArtifactDesktopHost } from '../host'
 
 const props = defineProps<{
   anchor: ContextMenuBox | null
@@ -19,6 +20,9 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const desktopHost = requireArtifactDesktopHost()
+/** 提示里叫助手的名字，而不是「AI」 */
+const assistantName = computed(() => desktopHost.getAssistantName())
 
 const ESTIMATE = { width: 190, height: 26 }
 const hintRef = ref<HTMLElement | null>(null)
@@ -78,7 +82,7 @@ onUnmounted(() => bindStaleWatchers(false))
       aria-hidden="true"
     >
       <Sparkles :size="12" aria-hidden="true" />
-      <span>{{ t('canvas.selectionActionHint') }}</span>
+      <span>{{ t('canvas.selectionActionHint', { name: assistantName }) }}</span>
     </div>
   </Teleport>
 </template>

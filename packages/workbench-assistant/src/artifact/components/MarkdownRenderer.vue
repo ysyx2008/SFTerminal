@@ -50,6 +50,9 @@ const mountError = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const editorWrapRef = ref<HTMLElement | null>(null)
 let editorHandle: MarkdownWysiwygHandle | null = null
+/** 菜单标题里叫助手的名字，而不是「AI」 */
+const assistantName = computed(() => desktopHost.getAssistantName())
+
 const {
   anchor: hintAnchor,
   show: showSelectionHint,
@@ -524,7 +527,7 @@ onUnmounted(() => {
         @mousedown.prevent
       >
         <template v-if="submitComposerMessage || setComposerDraft">
-          <div class="md-ctx-group">{{ t('canvas.quoteActionGroup') }}</div>
+          <div class="md-ctx-group">{{ t('canvas.quoteActionGroup', { name: assistantName }) }}</div>
           <button
             v-for="key in QUOTE_ACTION_KEYS"
             :key="key"

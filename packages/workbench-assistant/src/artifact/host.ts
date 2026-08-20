@@ -10,6 +10,8 @@ export interface ArtifactDesktopHost {
   getAgentSteps(tabId: string): readonly AgentStep[]
   /** 是否为当前激活 tab（快捷键作用域等） */
   isTabActive(tabId: string): boolean
+  /** 助手在界面上的名字（用户起了名就是用户起的） */
+  getAssistantName(): string
   /** 将产出物清单持久化到历史会话 */
   persistArtifacts(tabId: string): void
 }

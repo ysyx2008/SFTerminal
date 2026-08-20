@@ -19,10 +19,8 @@ export default {
     captureFeedbackReady: '截图已放入输入框，补充意见后发送',
     captureFeedbackDraft: '这是「{title}」当前的渲染效果截图，请根据我的意见修改：',
     markdownSource: 'Markdown',
-    selectionActionHint: '让 AI 改这段：提要求，或右键',
-    quoteToComposer: '引用到 AI 对话',
-    quoteToAiNeedSelection: '请先选中要引用的文字',
-    quoteActionGroup: '让 AI 处理这段',
+    selectionActionHint: '让{name}改这段：提要求，或右键',
+    quoteActionGroup: '让{name}处理这段',
     quoteActions: {
       rewrite: '改写',
       polish: '润色',
