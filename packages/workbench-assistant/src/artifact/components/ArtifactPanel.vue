@@ -37,7 +37,9 @@ import HoverTipOverlay from '../ui/HoverTipOverlay.vue'
 import {
   ADD_COMPOSER_QUOTE_KEY,
   SET_COMPOSER_DRAFT_KEY,
-  type AddComposerQuoteFn
+  SUBMIT_COMPOSER_MESSAGE_KEY,
+  type AddComposerQuoteFn,
+  type SubmitComposerMessageFn
 } from '../composer-quote'
 
 const props = defineProps<{
@@ -50,6 +52,8 @@ const props = defineProps<{
   addComposerImage?: (image: { dataUrl: string; name: string; width?: number; height?: number }) => void
   /** 岗壳注入：设置 Composer 草稿文本（AiPanel.setComposerDraft） */
   setComposerDraft?: (text: string) => void
+  /** 岗壳注入：当场发出一条消息（右键快捷指令） */
+  submitComposerMessage?: SubmitComposerMessageFn
 }>()
 
 provide(ADD_COMPOSER_QUOTE_KEY, (snippet) => {
@@ -57,6 +61,9 @@ provide(ADD_COMPOSER_QUOTE_KEY, (snippet) => {
 })
 provide(SET_COMPOSER_DRAFT_KEY, (text) => {
   props.setComposerDraft?.(text)
+})
+provide(SUBMIT_COMPOSER_MESSAGE_KEY, (text) => {
+  props.submitComposerMessage?.(text)
 })
 
 const { t } = useI18n()

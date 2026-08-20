@@ -3,7 +3,7 @@
  * Canvas DocumentRenderer
  *
  * Word / WPS 文字 HTML 预览（mammoth 转换，只读）。
- * 选区即作用域：划一段后发送时静默附带摘录，右键快捷指令只预填输入框。
+ * 选区即作用域：划一段后发送时静默附带摘录，右键快捷指令当场发出。
  */
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -20,7 +20,7 @@ import {
   rangeInsideRoot,
   STICKY_MARK_CLASS
 } from '../domain/html-sticky-selection'
-import { SET_COMPOSER_DRAFT_KEY, type ArtifactComposerQuote } from '../composer-quote'
+import { SET_COMPOSER_DRAFT_KEY, SUBMIT_COMPOSER_MESSAGE_KEY, type ArtifactComposerQuote } from '../composer-quote'
 import { registerSelectionScopeProvider } from '../selection-scope'
 import { clampContextMenuPosition, intersectViewport } from '../domain/context-menu-position'
 import '../ui/quote-context-menu.css'
@@ -36,6 +36,7 @@ const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()
 const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
 const setComposerDraft = inject(SET_COMPOSER_DRAFT_KEY, undefined)
+const submitComposerMessage = inject(SUBMIT_COMPOSER_MESSAGE_KEY, undefined)
 const desktopHost = requireArtifactDesktopHost()
 
 const rootRef = ref<HTMLElement | null>(null)
@@ -157,7 +158,7 @@ function applyCtxQuoteAction(actionKey: string) {
     closeCtxMenu()
     return
   }
-  setComposerDraft?.(t(`canvas.quoteDraft.${actionKey}`))
+  submitComposerMessage?.(t(`canvas.quoteActions.${actionKey}`))
   closeCtxMenu()
 }
 

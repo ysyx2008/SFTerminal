@@ -870,6 +870,24 @@ watch(consumedTokenTitle, (text) => {
   }
 })
 
+/** 面板快捷指令当场发送：不改输入框里已有的字，选区仍走 consumeWorkbenchContext */
+const submitPrepared = async (text: string) => {
+  const trimmed = text.trim()
+  if (!trimmed) return
+  if (props.isAttaching) {
+    toast.warning(t('ai.parsingPleaseWait'))
+    return
+  }
+  closeMentionMenu()
+  const workbenchContext = isEditingFollowUp.value
+    ? undefined
+    : props.consumeWorkbenchContext?.()
+  await props.submitMessage(trimmed, {
+    ...(workbenchContext ? { workbenchContext } : {}),
+    ...(props.isAgentRunning && !isEditingFollowUp.value ? { enqueue: true } : {})
+  })
+}
+
 defineExpose({
   focusInput,
   appendText,
@@ -878,6 +896,7 @@ defineExpose({
   flashHint,
   getText: () => inputText.value,
   refreshPlaceholder: () => { void pickRandomPlaceholder() },
+  submitPrepared,
 })
 
 const handleSendClick = (event: MouseEvent) => {

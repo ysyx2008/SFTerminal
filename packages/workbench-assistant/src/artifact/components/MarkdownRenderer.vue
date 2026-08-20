@@ -19,7 +19,7 @@ import {
 } from '../domain/coedit-conflict'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
 import { requireArtifactDesktopHost } from '../host'
-import { SET_COMPOSER_DRAFT_KEY, type ArtifactComposerQuote } from '../composer-quote'
+import { SET_COMPOSER_DRAFT_KEY, SUBMIT_COMPOSER_MESSAGE_KEY, type ArtifactComposerQuote } from '../composer-quote'
 import { registerSelectionScopeProvider } from '../selection-scope'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 import type { MarkdownWysiwygHandle } from '../editor/markdown-wysiwyg-editor'
@@ -38,6 +38,7 @@ const artifactStore = useAssistantArtifactStore()
 const saveBridge = useArtifactSaveBridge()
 const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
 const setComposerDraft = inject(SET_COMPOSER_DRAFT_KEY, undefined)
+const submitComposerMessage = inject(SUBMIT_COMPOSER_MESSAGE_KEY, undefined)
 const desktopHost = requireArtifactDesktopHost()
 const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 
@@ -301,7 +302,7 @@ function applyCtxQuoteAction(actionKey: string) {
     closeCtxMenu()
     return
   }
-  setComposerDraft?.(t(`canvas.quoteDraft.${actionKey}`))
+  submitComposerMessage?.(t(`canvas.quoteActions.${actionKey}`))
   closeCtxMenu()
 }
 
@@ -503,7 +504,7 @@ onUnmounted(() => {
         role="menu"
         @mousedown.prevent
       >
-        <template v-if="setComposerDraft">
+        <template v-if="submitComposerMessage || setComposerDraft">
           <div class="md-ctx-group">{{ t('canvas.quoteActionGroup') }}</div>
           <button
             v-for="key in QUOTE_ACTION_KEYS"

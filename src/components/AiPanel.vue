@@ -1330,6 +1330,10 @@ function setComposerDraft(text: string) {
   nextTick(() => composer.focusInput())
 }
 
+function submitComposerMessage(text: string) {
+  void composerRef.value?.submitPrepared?.(text)
+}
+
 // ==================== 定时任务 / 远程任务监听 ====================
 // 监听定时任务 / 远程任务：当有 pendingSchedulerTask 时自动执行
 // 触发时机：tab 切换到当前实例、或新的 pending task 被写入当前 tab
@@ -1947,7 +1951,7 @@ async function scrollToAgentStep(stepId: string) {
   }, 2500)
 }
 
-defineExpose({ analyzeText, addQuotedTerminalSelection, addComposerQuote, addComposerImage, setComposerDraft, scrollToAgentStep })
+defineExpose({ analyzeText, addQuotedTerminalSelection, addComposerQuote, addComposerImage, setComposerDraft, submitComposerMessage, scrollToAgentStep })
 
 /** 首次展示从历史恢复的对话（尚无已存滚动位置）→ 应滚到底部 */
 const shouldScrollHistoryOnShow = () =>

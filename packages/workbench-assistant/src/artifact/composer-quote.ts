@@ -20,3 +20,8 @@ export type SetComposerDraftFn = (text: string) => void
 
 /** 选区快捷指令：面板 provide → MarkdownRenderer inject（设置 Composer 草稿文本） */
 export const SET_COMPOSER_DRAFT_KEY: InjectionKey<SetComposerDraftFn> = Symbol('setComposerDraft')
+
+export type SubmitComposerMessageFn = (text: string) => void
+
+/** 选区右键快捷指令：当场发出，不预填输入框 */
+export const SUBMIT_COMPOSER_MESSAGE_KEY: InjectionKey<SubmitComposerMessageFn> = Symbol('submitComposerMessage')

@@ -34,6 +34,7 @@ const aiPanelRef = ref<{
   addComposerQuote: (snippet: ArtifactComposerQuote) => void
   addComposerImage: (image: { dataUrl: string; name: string; width?: number; height?: number }) => void
   setComposerDraft: (text: string) => void
+  submitComposerMessage: (text: string) => void
 } | null>(null)
 
 const artifactPanelRef = ref<{ minimizePanel: () => void } | null>(null)
@@ -52,6 +53,10 @@ function addComposerImage(image: { dataUrl: string; name: string; width?: number
 
 function setComposerDraft(text: string) {
   aiPanelRef.value?.setComposerDraft(text)
+}
+
+function submitComposerMessage(text: string) {
+  aiPanelRef.value?.submitComposerMessage(text)
 }
 
 /** 发送时静默取出产出物选区作用域（取出即清除 sticky；不上聊天气泡） */
@@ -384,6 +389,7 @@ defineExpose({
             :add-composer-quote="addComposerQuote"
             :add-composer-image="addComposerImage"
             :set-composer-draft="setComposerDraft"
+            :submit-composer-message="submitComposerMessage"
           />
         </template>
       </WorkbenchShell>
