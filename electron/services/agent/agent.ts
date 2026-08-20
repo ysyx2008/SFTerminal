@@ -2516,6 +2516,7 @@ export abstract class Agent {
     let retryCountdownTimer: ReturnType<typeof setInterval> | undefined
     // 每个 toolCallId 独立节流（多个 tool_call 并行流式时互不干扰）
     const toolProgressThrottle = new Map<string, number>()
+    const toolMetaCache = new Map<string, ReturnType<typeof getMetaByName>>()
     const STREAM_THROTTLE_MS = 100
     const TOOL_PROGRESS_THROTTLE_MS = 120
     let slowTtftTimer: ReturnType<typeof setTimeout> | undefined
@@ -2827,19 +2828,19 @@ export abstract class Agent {
         (toolCallId: string, toolName: string, partialArgs: string) => {
           if (!toolCallId) return  // 没有稳定 id 就无法与后续 executor 的 addStep 关联，跳过
 
-          const now = Date.now()
-          const lastAt = toolProgressThrottle.get(toolCallId) || 0
-          if (now - lastAt < TOOL_PROGRESS_THROTTLE_MS) return
+          let meta = toolMetaCache.get(toolCallId)
+          if (!toolMetaCache.has(toolCallId)) {
+            meta = getMetaByName(this.getAvailableTools(), toolName)
+            toolMetaCache.set(toolCallId, meta)
+          }
 
-          const meta = getMetaByName(this.getAvailableTools(), toolName)
-
-          // 流式参数早失败：工具声明了 streamValidate 时，用已到达的 partial args 检测
-          // 「注定失败」的情形（如以 create 写已存在文件），命中即记录错误并中止当前生成，
-          // 避免等整段长参数（content）流完才在执行阶段报错。抽象层只读元数据，不感知工具名。
+          // 流式参数早失败：不走预卡片节流。节流只服务预卡片刷新；校验必须
+          // 在字段刚闭合时立刻跑，并把原始 JSON 交给校验方判断字段是否写完。
+          // 抽象层只读元数据，不感知工具名。
           if (meta?.streamValidate && !run.streamEarlyFailures?.has(toolCallId)) {
             const parsed = tryParsePartialJson(partialArgs)
             if (parsed) {
-              const earlyError = meta.streamValidate(parsed)
+              const earlyError = meta.streamValidate(parsed, partialArgs)
               if (earlyError) {
                 if (!run.streamEarlyFailures) run.streamEarlyFailures = new Map()
                 run.streamEarlyFailures.set(toolCallId, { toolName, error: earlyError, args: parsed })
@@ -2872,6 +2873,10 @@ export abstract class Agent {
               }
             }
           }
+
+          const now = Date.now()
+          const lastAt = toolProgressThrottle.get(toolCallId) || 0
+          if (now - lastAt < TOOL_PROGRESS_THROTTLE_MS) return
 
           const built = buildPreToolCallDisplay(toolName, partialArgs, meta)
           // 解析失败时不回退显示（保留上一次已解析内容），让用户观感上是"连续增长"

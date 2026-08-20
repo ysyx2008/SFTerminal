@@ -13,7 +13,7 @@ import { isConfigured as isWebSearchConfigured } from '../web-search/index'
 import { jinaAvailable as isJinaReaderAvailable } from '../web-fetch.service'
 import type { AgentExecutionPhase } from './types'
 import { t } from './i18n'
-import { getStreamPlaceholder } from './tool-metadata'
+import { getStreamPlaceholder, isJsonStringFieldComplete } from './tool-metadata'
 import { expandTilde } from './tools/file'
 import fs from 'fs'
 
@@ -93,9 +93,11 @@ export interface ToolMeta {
    * 避免等整段长参数（如 content）流完才在执行阶段报错。
    *
    * 返回 null 表示暂无法判定或校验通过；返回 string 为给模型的错误信息。
+   * 第二个参数是尚未结束的原始 JSON 串：tryParsePartialJson 会给未闭合字符串补引号，
+   * 校验方必须自行判断字段是否真的写完，不能把半截路径当成完整目标。
    * 抽象层只读此元数据，不感知具体工具名（OOP 边界）。
    */
-  streamValidate?: (args: Record<string, unknown>) => string | null
+  streamValidate?: (args: Record<string, unknown>, rawPartial: string) => string | null
 
   /** 是否可与其他工具并行执行（默认 false：串行执行；副作用工具默认安全） */
   parallelizable?: boolean
@@ -173,14 +175,16 @@ function writeTextFilePrefix(args: Record<string, unknown>): string {
 }
 
 /**
- * write_text_file 的流式早失败校验：path+mode 一到就检测「以 create 写已存在文件」，
- * 命中即中止生成，不等整段 content 流完。抽象层只读此元数据，不感知工具名。
+ * write_text_file 的流式早失败校验：path 在原始 JSON 里已经闭合、且 mode=create
+ * 时，才检测「写已存在文件」。半截路径（tryParsePartialJson 补引号后的前缀）
+ * 即使碰巧是已有目录，也不算命中。抽象层只读此元数据，不感知工具名。
  * 模块级函数（非内联闭包）：保持跨调用引用稳定，工具列表多次构建可深度相等。
  */
-function writeTextFileStreamValidate(args: Record<string, unknown>): string | null {
+function writeTextFileStreamValidate(args: Record<string, unknown>, rawPartial: string): string | null {
   const p = typeof args.path === 'string' ? args.path : undefined
   const mode = typeof args.mode === 'string' ? args.mode : undefined
   if (!p || mode !== 'create') return null
+  if (!rawPartial || !isJsonStringFieldComplete(rawPartial, 'path')) return null
   const full = expandTilde(p)
   if (!fs.existsSync(full)) return null
   return t('error.file_exists_cannot_create', { path: full })
@@ -751,8 +755,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           customRender: writeTextFilePrefix,
           progressFields: ['content']
         },
-        // 流式早失败：path+mode 一到就检测「以 create 写已存在文件」，命中即中止生成，
-        // 不等整段 content 流完。抽象层只读此元数据，不感知工具名。
+        // 流式早失败：path 在原始 JSON 里闭合且 mode=create 时，检测「写已存在文件」，
+        // 命中即中止生成，不等整段 content 流完。半截路径不查。抽象层只读此元数据。
         streamValidate: writeTextFileStreamValidate
       }
     } as ToolDefinitionWithMeta,

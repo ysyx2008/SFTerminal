@@ -15,6 +15,7 @@
  * - buildPreToolCallDisplay(toolName, partialArgs, meta) 流式回调入口，含 partial JSON 解析与默认兜底
  * - getMetaByName(tools, name)              从工具列表里按名查 meta
  * - tryParsePartialJson(partial)            容错解析流式中尚未结束的 JSON 字符串
+ * - isJsonStringFieldComplete(partial, key) 原始流里某个字符串字段的值是否已闭合
  */
 import type { ToolDefinition } from '../ai.service'
 import type { ToolDefinitionWithMeta, ToolMeta, ToolStreamDisplay } from './tools'
@@ -195,6 +196,70 @@ function closePartial(core: string): string | null {
   if (inString) s += '"'
   while (stack.length > 0) s += stack.pop()
   return s
+}
+
+/**
+ * 流式 JSON 里某个字符串字段的值是否已经闭合（原始串里已有结束引号）。
+ *
+ * tryParsePartialJson 会给未闭合字符串补引号，解析结果里的 path 看起来像完整路径，
+ * 其实可能只是还在往外吐的前缀。早失败校验必须用本函数看原始流，不能看补全后的对象。
+ */
+export function isJsonStringFieldComplete(partial: string, field: string): boolean {
+  if (!partial) return false
+
+  let inString = false
+  let escape = false
+  let nextStringIsKey = true
+  let readingKey = false
+  let key = ''
+  let currentKey: string | null = null
+
+  for (let i = 0; i < partial.length; i++) {
+    const c = partial[i]
+    if (escape) {
+      escape = false
+      continue
+    }
+
+    if (inString) {
+      if (c === '\\') {
+        escape = true
+        continue
+      }
+      if (c === '"') {
+        inString = false
+        if (readingKey) {
+          currentKey = key
+          readingKey = false
+        } else if (currentKey === field) {
+          return true
+        }
+        continue
+      }
+      if (readingKey) key += c
+      continue
+    }
+
+    if (c === '"') {
+      inString = true
+      if (nextStringIsKey) {
+        readingKey = true
+        key = ''
+        nextStringIsKey = false
+      }
+      continue
+    }
+
+    if (c === '{' || c === ',') {
+      nextStringIsKey = true
+      continue
+    }
+    if (c === ':') {
+      nextStringIsKey = false
+    }
+  }
+
+  return false
 }
 
 /**

@@ -29,7 +29,9 @@ import {
   buildStreamProgressSuffix,
   formatToolCallPrefixFromMeta,
   formatStreamPreCardFromMeta,
-  getMetaByName
+  getMetaByName,
+  isJsonStringFieldComplete,
+  tryParsePartialJson
 } from '../tool-metadata'
 import type { ToolDefinition } from '../../ai.service'
 import type { ToolDefinitionWithMeta, ToolMeta } from '../tools'
@@ -172,6 +174,28 @@ describe('tool-metadata helpers', () => {
 
     it('tools 列表为 undefined 时返回 undefined', () => {
       expect(getMetaByName(undefined, 'tool_a')).toBeUndefined()
+    })
+  })
+
+  describe('isJsonStringFieldComplete', () => {
+    it('字段值尚未闭合时返回 false（即使补全解析能得到前缀）', () => {
+      const raw = '{"mode":"create","path":"D:\\\\fake-stream-prefix\\\\dir'
+      expect(isJsonStringFieldComplete(raw, 'path')).toBe(false)
+      expect(tryParsePartialJson(raw)?.path).toBe('D:\\fake-stream-prefix\\dir')
+    })
+
+    it('字段值已闭合时返回 true，后续 content 还在流也不影响', () => {
+      const raw = '{"mode":"create","path":"D:\\\\fake-stream-prefix\\\\a.txt","content":"hello'
+      expect(isJsonStringFieldComplete(raw, 'path')).toBe(true)
+    })
+
+    it('字段尚未出现时返回 false', () => {
+      expect(isJsonStringFieldComplete('{"mode":"create"', 'path')).toBe(false)
+    })
+
+    it('content 正文里出现 path 字样不误判', () => {
+      const raw = '{"content":"please use \\"path\\": \\"/tmp/x\\"","path":"/tmp/y'
+      expect(isJsonStringFieldComplete(raw, 'path')).toBe(false)
     })
   })
 })
