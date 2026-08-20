@@ -12,6 +12,7 @@
  *
  * 进程托管见 exec-manager.ts。
  */
+import stripAnsi from 'strip-ansi'
 import { t } from '../i18n'
 import { assessCommandRiskDetailed, analyzeCommand } from '../risk-assessor'
 import { auditContextFromConfig } from '../audit-context-from-config'
@@ -23,6 +24,30 @@ import { getExecManager, MAX_PATTERN_LENGTH } from './exec-manager'
 import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../../services/credential.service'
 import { getUserSkillService } from '../../../services/user-skill.service'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
+
+/** 界面上的命令预览长度 */
+const COMMAND_PREVIEW = 200
+
+/**
+ * 单行预览命令，超长截断。
+ * @internal 导出仅为单元测试
+ */
+export function previewCommand(command: string): string {
+  const oneLine = command.replace(/\s+/g, ' ').trim()
+  if (oneLine.length <= COMMAND_PREVIEW) return oneLine
+  return `${oneLine.slice(0, COMMAND_PREVIEW)}…`
+}
+
+/**
+ * 等后台任务时给用户看的一行：任务编号 + 正在跑的命令（不再叠时长和输出）。
+ * @internal 导出仅为单元测试
+ */
+export function formatAwaitingTitle(taskId: string, command: string, pattern?: string): string {
+  const cmd = previewCommand(command)
+  return pattern
+    ? t('exec.awaiting_pattern', { taskId, pattern, command: cmd })
+    : t('exec.awaiting', { taskId, command: cmd })
+}
 
 const DEFAULT_WAIT_SECONDS = 60
 const MAX_WAIT_SECONDS = 600        // 单次同步等待上限（防止 Agent 设置极长 wait 卡住会话）
@@ -305,11 +330,13 @@ export async function awaitExec(
     return { success: false, output: '', error: t('exec.task_not_found', { taskId }) }
   }
 
+  const snap0 = manager.snapshot(task)
+  const patternText = typeof args.pattern === 'string' && args.pattern ? args.pattern : undefined
   executor.addStep({
     type: 'tool_call',
-    content: `⏳ ${t('exec.awaiting', { taskId })}`,
+    content: `⏳ ${formatAwaitingTitle(taskId, snap0.command, patternText)}`,
     toolName: 'await_exec',
-    toolArgs: { task_id: taskId }
+    toolArgs: { task_id: taskId, command: snap0.command },
   })
 
   const reason = await manager.wait({
