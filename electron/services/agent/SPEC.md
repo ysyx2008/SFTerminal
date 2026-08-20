@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-08-19（分屏成功后的编号就是下命令用的那个）
+> Last verified: 2026-08-20（冷启动按对话逐级压缩）
 
 ## 职责
 
@@ -174,7 +174,14 @@ run(message, context, options)
 - **`_previousRunMessages`**：`finalizeRun` 时保存 `run.messages` + 最终 assistant 回复的快照
 - **Cache path 条件**：前序快照存在 && 非唤醒 run && token 用量 < 上下文的 70%
 - **Cache path 差异**：system prompt 不重建（AI 已持有完整对话）；知识检索结果注入到 user 消息而非 system prompt（包裹在 `<sf_knowledge_refs>`，用户真实输入在 `<sf_user_message>`，避免与召回片段混淆）
-- **Cold start 降级**：首次任务、唤醒 run（Watch/Sensor）、上下文空间不足时走原有的 TaskMemory 压缩重建路径
+- **Cold start 降级**：首次任务、唤醒 run（Watch/Sensor）、上下文空间不足、以及重新打开历史对话后的首轮，走任务记忆压缩重建
+
+> **冷启动按对话逐级压缩（2026-08-20）**：
+>
+> - **问题**：重新打开一场对话再续聊，模型只记得最近一轮，再往前只剩一句摘要。人看到的是同一场对话，模型却像没看过前面写过的东西。
+> - **成功标准**：冷启动重建时，前面几轮仍按档位留对话——近的留工具摘要和回复，稍远的留问答，更早的才收成提要或一句话。不能因为重新打开就把中间档全部掉成一句话。
+> - **关键取舍**：压缩的原料是这场对话本身（发给模型的那些话），不是界面上的执行步骤。加载历史后步骤可能是空的，不得因此塌档。
+> - **明确不做**：不把整场历史原文原样塞回（窗口装不下时仍要逐级收）；这次不恢复离开前那份完整前缀（是否接上是另一件事）。
 - **进程启动时间**：`PromptBuilder` identity 段注入 `软件启动时间`（由 `process.uptime` 推算，进程内稳定，属 Tier 1 前缀，不破坏缓存）
 - **Anthropic 缓存断点**：前序消息的最后一条 assistant 上设置 `cache_control`（第 3 个断点），`_cacheBreakpoint` 标记在 `convertToAnthropicBody` 中消费
 - **DeepSeek/OpenAI**：自动前缀缓存天然命中，无需额外标记
@@ -651,7 +658,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 ## 三级记忆
 
-- **L1 TaskMemory**：当前会话的任务记忆，5 级渐进式压缩（见 `context-builder.ts`）
+- **L1 TaskMemory**：当前会话的任务记忆，5 级渐进式压缩。冷启动时按这场对话本身逐级收：近的留工具摘要和回复，稍远的留问答，更早的才收成提要或一句话。重新打开历史对话也一样，不能只剩最近一轮。
 - **L2 知识文档**：按 contextId 组织的持久化知识，每次对话自动注入 system prompt
 - **L3 对话记录**：完整历史，通过向量搜索按需检索
 

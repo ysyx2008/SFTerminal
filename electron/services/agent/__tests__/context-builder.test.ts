@@ -227,6 +227,103 @@ describe('buildRecentTasksContext', () => {
     const oldUserMsg = result.recentTaskMessages.find(m => m.role === 'user' && m.content === '看图说话')
     expect(oldUserMsg?.images).toEqual(['data:image/png;base64,AAA'])
   })
+
+  it('加载历史后步骤为空时，L1 仍从对话压出工具摘要和最终回复', () => {
+    const nineSuggestions = [
+      '已整理 9 条修改意见。',
+      '第一条：投标人资格应明确联合体责任划分。',
+      '第二条：评分细则需补齐技术分权重。',
+    ].join('')
+
+    store.saveTask('task-old', '写招标文件修改意见', [], 'success', '已写好', [
+      { role: 'user', content: '写招标文件修改意见' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{
+          id: 'c1',
+          type: 'function',
+          function: { name: 'write_text_file', arguments: '{"path":"/Users/me/Desktop/修改意见.docx"}' }
+        }]
+      },
+      { role: 'tool', content: '已写入 9 条修改意见到桌面文档', tool_call_id: 'c1' },
+      { role: 'assistant', content: nineSuggestions }
+    ])
+    store.saveTask('task-new', '核对落实情况', [], 'success', '好', [
+      { role: 'user', content: '核对落实情况' },
+      { role: 'assistant', content: '好' }
+    ])
+
+    const result = buildRecentTasksContext(store, 100000)
+
+    expect(result.stats.level1Count).toBeGreaterThanOrEqual(1)
+    const joined = result.recentTaskMessages.map(m => m.content).join('\n')
+    expect(joined).toContain('/Users/me/Desktop/修改意见.docx')
+    expect(joined).toContain('投标人资格应明确联合体责任划分')
+  })
+
+  it('加载历史后步骤为空时，L2 仍保留最终回复而不是一句话摘要', () => {
+    const longReply = '对照招标文件逐条核对后，第 3、7 条尚未落实，其余 7 条已写入新版。'
+
+    for (let i = 0; i < 3; i++) {
+      store.saveTask(`older-${i}`, `更早的任务 ${i}`, [], 'success', 'ok', [
+        { role: 'user', content: `更早的任务 ${i}` },
+        { role: 'assistant', content: `完成 ${i}` }
+      ])
+    }
+    store.saveTask('task-l2', '核对修改意见落实情况', [], 'success', '已核对', [
+      { role: 'user', content: '核对修改意见落实情况' },
+      { role: 'assistant', content: longReply }
+    ])
+    store.saveTask('mid-1', '再看一眼目录', [], 'success', '看过了', [
+      { role: 'user', content: '再看一眼目录' },
+      { role: 'assistant', content: '目录没问题' }
+    ])
+    store.saveTask('mid-2', '补充一句', [], 'success', '好', [
+      { role: 'user', content: '补充一句' },
+      { role: 'assistant', content: '好' }
+    ])
+    store.saveTask('newest', '继续', [], 'success', '继续', [
+      { role: 'user', content: '继续' },
+      { role: 'assistant', content: '继续' }
+    ])
+
+    const result = buildRecentTasksContext(store, 100000)
+
+    expect(result.stats.level2Count).toBeGreaterThanOrEqual(1)
+    const joined = result.recentTaskMessages.map(m => m.content).join('\n')
+    expect(joined).toContain('第 3、7 条尚未落实')
+  })
+
+  it('预算紧张时仍按对话逐级收，不直接掉成一句话摘要', () => {
+    const longReply = '结论：九条意见中有三条未落实。' + '核对细节。'.repeat(40)
+    store.saveTask('task-old', '写招标文件修改意见', [], 'success', '已写好', [
+      { role: 'user', content: '写招标文件修改意见' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{
+          id: 'c1',
+          type: 'function',
+          function: { name: 'write_text_file', arguments: '{"path":"/tmp/意见.docx"}' }
+        }]
+      },
+      { role: 'tool', content: 'x'.repeat(4000), tool_call_id: 'c1' },
+      { role: 'assistant', content: longReply }
+    ])
+    store.saveTask('task-new', '继续', [], 'success', '好', [
+      { role: 'user', content: '继续' },
+      { role: 'assistant', content: '好' }
+    ])
+
+    const result = buildRecentTasksContext(store, 800)
+    const allText = [
+      ...result.recentTaskMessages.map(m => m.content),
+      result.taskSummarySection
+    ].join('\n')
+
+    expect(allText).toContain('九条意见中有三条未落实')
+  })
 })
 
 // ==================== buildTaskHistoryContext ====================

@@ -220,6 +220,40 @@ function compressToolOutput(output: string, maxLength: number = 1500): string {
   return output.substring(0, maxLength) + `\n... [已截断，原长度: ${output.length}]`
 }
 
+function parseToolCallArgs(raw: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    /* 参数不是 JSON 时只保留工具名 */
+  }
+  return undefined
+}
+
+function formatToolCallSummary(name: string | undefined, args?: Record<string, unknown>): string {
+  let summary = `[${name || 'unknown'}]`
+  const command = args?.command
+  const filePath = args?.path
+  if (typeof command === 'string') {
+    summary += ` ${command.length > 80 ? command.substring(0, 80) + '...' : command}`
+  } else if (typeof filePath === 'string') {
+    summary += ` ${filePath}`
+  }
+  return summary
+}
+
+/** 从对话消息里取最后一条有正文的助手回复（系统注入不计入） */
+function extractFinalReplyFromMessages(messages: AiMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg.role !== 'assistant' || !msg.content || msg._systemInjected) continue
+    return msg.content
+  }
+  return ''
+}
+
 /**
  * 获取任务的最低压缩级别（特殊任务保护）
  * @param task 任务记忆
@@ -297,8 +331,8 @@ function compressTask(
 
 /**
  * Level 0: 获取完整消息历史
- * 
- * 从 AgentStep[] 重建 API 消息格式。需要处理两种情况：
+ *
+ * 优先使用这场对话的消息；没有消息时才从界面步骤重建。需要处理两种情况：
  * 1. debug 模式：tool_call 和 tool_result 步骤都存在
  * 2. 非 debug 模式：可能只有 tool_call 步骤，tool_result 被省略（成功的命令执行等）
  * 
@@ -420,67 +454,82 @@ function taskRequestImages(task: TaskMemory): string[] | undefined {
 }
 
 /**
- * Level 1: 获取压缩工具输出后的消息
+ * Level 1: 压缩对话（用户请求 + 压缩后的工具输出 + 最终回复）
+ * 优先从这场对话的消息压；没有消息时才退回界面步骤（老记录）。
  */
 function getCompressedMessages(task: TaskMemory): AiMessage[] {
-  const messages: AiMessage[] = []
-
-  // 用户请求（保留原图：近期任务里的图在冷启动重建后仍应可见）
   const images = taskRequestImages(task)
-  messages.push(images?.length
+  const userMsg: AiMessage = images?.length
     ? { role: 'user', content: task.userRequest, images }
-    : { role: 'user', content: task.userRequest })
-  
-  // 构建压缩后的 assistant 消息
-  let assistantContent = ''
-  
-  // 提取关键工具调用摘要
+    : { role: 'user', content: task.userRequest }
+
   const toolSummaries: string[] = []
-  for (const step of task.fullSteps) {
-    if (step.type === 'tool_call' && step.toolName) {
-      let summary = `[${step.toolName}]`
-      if (step.toolArgs?.command) {
-        const cmd = String(step.toolArgs.command)
-        summary += ` ${cmd.length > 80 ? cmd.substring(0, 80) + '...' : cmd}`
-      } else if (step.toolArgs?.path) {
-        summary += ` ${step.toolArgs.path}`
+  let assistantContent = ''
+
+  if (task.messages && task.messages.length > 0) {
+    const conversation = sanitizeToolCallSequence(task.messages.map(m => ({ ...m })))
+    const pendingById = new Map<string, number>()
+    for (const msg of conversation) {
+      if (msg.role === 'assistant') {
+        if (msg.tool_calls?.length) {
+          for (const tc of msg.tool_calls) {
+            const fn = tc.function
+            if (tc.id) pendingById.set(tc.id, toolSummaries.length)
+            toolSummaries.push(formatToolCallSummary(fn?.name, fn?.arguments ? parseToolCallArgs(fn.arguments) : undefined))
+          }
+        }
+        if (msg.content && !msg._systemInjected) {
+          assistantContent = msg.content
+        }
+      } else if (msg.role === 'tool') {
+        const idx = msg.tool_call_id != null ? pendingById.get(msg.tool_call_id) : undefined
+        if (idx !== undefined) {
+          toolSummaries[idx] += `\n→ ${compressToolOutput(msg.content || '')}`
+        }
       }
-      toolSummaries.push(summary)
-    } else if (step.type === 'tool_result' && step.toolResult) {
-      // 压缩工具输出
-      const compressed = compressToolOutput(step.toolResult)
-      if (toolSummaries.length > 0) {
-        toolSummaries[toolSummaries.length - 1] += `\n→ ${compressed}`
+    }
+  } else {
+    for (const step of task.fullSteps) {
+      if (step.type === 'tool_call' && step.toolName) {
+        toolSummaries.push(formatToolCallSummary(step.toolName, step.toolArgs))
+      } else if (step.type === 'tool_result' && step.toolResult) {
+        const compressed = compressToolOutput(step.toolResult)
+        if (toolSummaries.length > 0) {
+          toolSummaries[toolSummaries.length - 1] += `\n→ ${compressed}`
+        }
+      } else if (step.type === 'message' && step.content) {
+        assistantContent = step.content
       }
-    } else if (step.type === 'message' && step.content) {
-      assistantContent = step.content  // 保留最后一个消息
     }
   }
-  
+
   let fullAssistantContent = ''
   if (toolSummaries.length > 0) {
     fullAssistantContent = `**执行摘要:**\n${toolSummaries.join('\n')}\n\n`
   }
   fullAssistantContent += assistantContent
-  
-  messages.push({ role: 'assistant', content: fullAssistantContent || task.summary || '[no response]' })
-  
-  return messages
+
+  return [
+    userMsg,
+    { role: 'assistant', content: fullAssistantContent || task.summary || '[no response]' }
+  ]
 }
 
 /**
  * Level 2: 只保留用户请求和最终回复
  */
 function getSimplifiedMessages(task: TaskMemory): AiMessage[] {
-  const finalReply = extractFinalReply(task.fullSteps)
-  
+  const finalReply = (task.messages && task.messages.length > 0
+    ? extractFinalReplyFromMessages(task.messages)
+    : '') || extractFinalReply(task.fullSteps)
+
   let statusNote = ''
   if (task.status === 'aborted') {
     statusNote = '\n\n[任务已被用户中止]'
   } else if (task.status === 'failed') {
     statusNote = '\n\n[任务执行失败]'
   }
-  
+
   const assistantContent = finalReply + statusNote || task.summary || '[no response]'
   return [
     { role: 'user', content: task.userRequest },
@@ -510,8 +559,14 @@ function formatDigest(task: TaskMemory): string {
   }
   if (digest.keyFindings.length > 0) {
     lines.push(`• 发现: ${digest.keyFindings.slice(0, 2).join('; ')}`)
+  } else if (task.messages && task.messages.length > 0) {
+    const reply = extractFinalReplyFromMessages(task.messages)
+    if (reply) {
+      const snippet = reply.length > 200 ? reply.substring(0, 200) + '…' : reply
+      lines.push(`• 回复: ${snippet}`)
+    }
   }
-  
+
   const statusIcon = task.status === 'success' ? '✓' 
     : task.status === 'failed' ? '✗' 
     : task.status === 'pending_confirmation' ? '⏳'
