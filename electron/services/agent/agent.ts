@@ -2512,6 +2512,8 @@ export abstract class Agent {
     // 最近一次重试提示步骤的 id（用 waiting 类型，让用户知道"自动重试中"，避免误以为卡住）
     // 重试成功（首次 onChunk 到达）/ 最终失败（onError）/ 完成（onDone 兜底）时停掉 streaming 状态
     let lastRetryStepId: string | undefined
+    let lastRetryParams: Record<string, string> | undefined
+    let retryInFlightTimer: ReturnType<typeof setTimeout> | undefined
     // 每个 toolCallId 独立节流（多个 tool_call 并行流式时互不干扰）
     const toolProgressThrottle = new Map<string, number>()
     const STREAM_THROTTLE_MS = 100
@@ -2532,12 +2534,26 @@ export abstract class Agent {
       }, WAITING_FOR_MODEL_SLOW_TTFT_MS)
     }
 
-    // 把当前"正在重试"卡片定稿（关闭 spinner），保留卡片作为审计痕迹。
+    // 把当前"正在重试"卡片定稿（关闭 spinner、改成「已重试」），保留卡片作为审计痕迹。
     // 触发时机：重试成功（首次 onChunk）/ 整体完成（onDone）/ 最终失败（onError）/ 下一轮重试开始
+    const clearRetryInFlightTimer = () => {
+      if (retryInFlightTimer !== undefined) {
+        clearTimeout(retryInFlightTimer)
+        retryInFlightTimer = undefined
+      }
+    }
     const finalizeRetryStep = () => {
+      clearRetryInFlightTimer()
       if (lastRetryStepId) {
-        this.updateStep(lastRetryStepId, { isStreaming: false })
+        const doneContent = lastRetryParams
+          ? `🔄 ${t('agent.retry_done', lastRetryParams)}`
+          : undefined
+        this.updateStep(lastRetryStepId, {
+          isStreaming: false,
+          ...(doneContent ? { content: doneContent } : {})
+        })
         lastRetryStepId = undefined
+        lastRetryParams = undefined
       }
     }
     
@@ -2929,9 +2945,11 @@ export abstract class Agent {
             const i18nKey =
               retryInfo.reason === 'rate_limit' ? 'agent.retry_rate_limit' :
               retryInfo.reason === 'server_error' ? 'agent.retry_server_error' :
+              retryInfo.cause === 'timeout' ? 'agent.retry_timeout' :
               'agent.retry_network'
             const stepId = this.generateId()
             lastRetryStepId = stepId
+            lastRetryParams = params
             // 接替初始占位；上下文栏独立，删 step 不影响状态栏
             this.addStepReplacingInitial(run, {
               id: stepId,
@@ -2939,6 +2957,16 @@ export abstract class Agent {
               content: `🔄 ${t(i18nKey, params)}`,
               isStreaming: true
             }, effectiveProfileId)
+            // 退避间隔一过，请求已经发出去——改成「正在重试」，避免还停在「几秒后重试」
+            // 让用户干等下一次超时却以为只是在倒计时
+            retryInFlightTimer = setTimeout(() => {
+              retryInFlightTimer = undefined
+              if (lastRetryStepId !== stepId) return
+              this.updateStep(stepId, {
+                content: `🔄 ${t('agent.retry_in_flight', params)}`,
+                isStreaming: true
+              })
+            }, retryInfo.delayMs)
           } else {
             // retryInfo 缺失（vision-fallback 等）：不展示 waiting 卡，但仍需清理
             // 初始占位步骤，否则"正在准备..."会在无 waiting 接班时孤立显示

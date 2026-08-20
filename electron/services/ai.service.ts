@@ -71,6 +71,10 @@ function isRetryableStatusCode(statusCode: number): boolean {
   return statusCode === 429 || AI_RETRY.RETRYABLE_STATUS_CODES.includes(statusCode)
 }
 
+function isTimeoutError(error: NetworkErrorLike): boolean {
+  return getNetworkErrorCode(error) === 'ETIMEDOUT' || getNetworkErrorMessage(error).includes('ETIMEDOUT')
+}
+
 /**
  * 计算带 jitter 的指数退避延迟
  * delay = baseDelay * 2^attempt * (1 ± jitterFactor)
@@ -107,6 +111,8 @@ export interface RetryInfo {
   reason: 'network' | 'rate_limit' | 'server_error'
   /** HTTP 状态码（rate_limit / server_error 才有） */
   statusCode?: number
+  /** 网络错误里把超时单独标出来，方便界面说「请求超时」而不是笼统的「网络异常」 */
+  cause?: 'timeout'
 }
 
 function toApiRequestError(err: unknown, statusCode?: number, headers?: Record<string, string | string[] | undefined>, apiErrorCode?: string): ApiRequestError {
@@ -2329,7 +2335,13 @@ export class AiService {
         }
         const detail = [getNetworkErrorCode(error), getNetworkErrorMessage(error)].filter(Boolean).join(' ')
         getAiDebugService().logResponseError(reqId, `${detail} - 准备重试 ${retryCount}/${AI_RETRY.MAX_RETRIES} in ${(delay / 1000).toFixed(1)}s`)
-        pendingRetryInfo = { attempt: retryCount, max: AI_RETRY.MAX_RETRIES, delayMs: delay, reason: 'network' }
+        pendingRetryInfo = {
+          attempt: retryCount,
+          max: AI_RETRY.MAX_RETRIES,
+          delayMs: delay,
+          reason: 'network',
+          ...(isTimeoutError(error) ? { cause: 'timeout' as const } : {})
+        }
         resetForRetry()
         setTimeout(doRequest, delay)
         // 阻止旧请求的其他错误处理器调用 complete()
