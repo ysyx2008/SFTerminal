@@ -760,6 +760,7 @@ const translations = {
     'pdf.render_failed': 'PDF 页面渲染失败',
     'pdf.render_failed_detail': 'PDF 页面渲染失败: {error}',
     'pdf.scanned_pdf_detected': '📄 {name} 是扫描版 PDF（共 {totalPages} 页），首页已作为图片附上。如需查看更多页面，请使用 pdf_view_page 工具，路径: {path}',
+    'pdf.mixed_pdf_detected': '📄 {name} 大部分是扫描页（共 {totalPages} 页）。有文字的页已抽出；{rendered} 页扫描页已作为图片附上。如需查看更多页面，请使用 pdf_view_page 工具，路径: {path}',
 
     // Chart 技能
     'chart.unknown_tool': '未知的图表工具: {name}',
@@ -2307,6 +2308,7 @@ After saving, wrap up naturally — like friends who've finished getting to know
     'pdf.render_failed': 'PDF page rendering failed',
     'pdf.render_failed_detail': 'PDF page rendering failed: {error}',
     'pdf.scanned_pdf_detected': '📄 {name} is a scanned PDF ({totalPages} pages). First page attached as image. Use pdf_view_page tool for more pages, path: {path}',
+    'pdf.mixed_pdf_detected': '📄 {name} is mostly scanned ({totalPages} pages). Text pages extracted; {rendered} scanned page(s) attached as images. Use pdf_view_page for more pages, path: {path}',
 
     // Chart skill
     'chart.unknown_tool': 'Unknown chart tool: {name}',

@@ -1176,8 +1176,23 @@ async function readDocumentFile(
       extractImages
     })
 
+    if (result.skipped) {
+      const skipMsg = result.content || t('file.file_too_large')
+      executor.addStep({
+        type: 'tool_result',
+        content: `${t('file.read_failed')}: ${skipMsg}`,
+        toolName: 'read_file',
+        toolResult: skipMsg
+      })
+      return { success: false, output: '', error: skipMsg }
+    }
+
     const hasContent = result.content && result.content.length > 0
     const hasImages = result.images && result.images.length > 0
+    const pdfType = result.metadata?.pdfType
+    const isVisualPdf = ext === '.pdf' && (
+      pdfType === 'Scanned' || pdfType === 'ImageBased' || pdfType === 'Mixed'
+    )
 
     // 1) 扫描件 PDF：无文本，仅图片
     if (!hasContent && hasImages) {
@@ -1228,8 +1243,8 @@ async function readDocumentFile(
       docInfo.push(`${t('file.images_extracted')}: ${result.images!.length}`)
     }
 
-    // 图文混排 PDF：加载 pdf 技能以支持查看更多页
-    if (hasImages && ext === '.pdf' && executor.skillSession) {
+    // 扫描 / 混合 PDF：加载 pdf 技能以支持查看更多页
+    if ((hasImages || isVisualPdf) && ext === '.pdf' && executor.skillSession) {
       try {
         await executor.skillSession.loadSkill('pdf')
       } catch (_) { /* skill already loaded or unavailable */ }
@@ -1246,15 +1261,24 @@ async function readDocumentFile(
       return { success: false, output: '', error: budgeted.error }
     }
 
+    const output = isVisualPdf
+      ? `${t('pdf.mixed_pdf_detected', {
+          name: fileName,
+          totalPages: result.totalPages || result.pageCount || 0,
+          rendered: result.images?.length ?? 0,
+          path: filePath
+        })}\n\n${budgeted.text}`
+      : budgeted.text
+
     executor.addStep({
       type: 'tool_result',
       content: `${t('file.read_success')}: ${docInfo.join(', ')}`,
       toolName: 'read_file',
-      toolResult: truncateFromEnd(budgeted.text, 500),
+      toolResult: truncateFromEnd(output, 500),
       images: hasImages ? result.images : undefined
     })
 
-    return { success: true, output: budgeted.text, images: hasImages ? result.images : undefined }
+    return { success: true, output, images: hasImages ? result.images : undefined }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : t('file.parse_failed')
     executor.addStep({

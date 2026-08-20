@@ -83,7 +83,7 @@ export interface UploadedFile {
 
 // 文档解析选项
 export interface ParseOptions {
-  /** 最大文件大小（字节），默认 10MB */
+  /** 最大文件大小（字节），默认 10MB。PDF 不看此项，走渲图硬上限。 */
   maxFileSize?: number
   /** 最大提取文本长度（字符），默认 100000 */
   maxTextLength?: number
@@ -284,7 +284,10 @@ export class DocumentParserService {
         case 'xml':
         case 'html':
         case 'csv': {
-          if (file.size > opts.maxFileSize) {
+          const sizeLimit = fileType === 'pdf'
+            ? DocumentParserService.MAX_PDF_FILE_SIZE
+            : opts.maxFileSize
+          if (file.size > sizeLimit) {
             result.skipped = true
             result.content = t('doc.file_too_large', { name: file.name, size: this.formatFileSize(file.size) })
             break

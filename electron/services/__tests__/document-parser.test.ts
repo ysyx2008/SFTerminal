@@ -1093,6 +1093,70 @@ describe('DocumentParserService', () => {
         cleanup()
       }
     })
+
+    it('PDF 超过普通文档体积上限仍应解析，不整份跳过', async () => {
+      const { filePath, cleanup } = writeTempPdf(makeTextPdf('Hello SailFish'))
+      try {
+        const result = await service.parseDocument(
+          { name: 'big-scan.pdf', path: filePath, size: 20 * 1024 * 1024 },
+          { maxFileSize: 10 * 1024 * 1024 }
+        )
+        expect(result.skipped).not.toBe(true)
+        expect(result.error).toBeUndefined()
+        expect(result.content).toMatch(/Hello SailFish/)
+      } finally {
+        cleanup()
+      }
+    })
+
+    it('PDF 超过渲图硬上限才跳过', async () => {
+      const { filePath, cleanup } = writeTempPdf(makeTextPdf('Hello SailFish'))
+      try {
+        const result = await service.parseDocument({
+          name: 'huge.pdf',
+          path: filePath,
+          size: 1001 * 1024 * 1024
+        })
+        expect(result.skipped).toBe(true)
+        expect(result.content).toContain('文件较大')
+      } finally {
+        cleanup()
+      }
+    })
+
+    it('混合 PDF 应渲需要看图的页', async () => {
+      const { filePath, size, cleanup } = writeTempPdf(makeTextPdf('封面目录'))
+      vi.mocked(extractPdfText).mockResolvedValueOnce({
+        content: '封面目录',
+        pageCount: 78,
+        totalPages: 78,
+        pdfType: 'Mixed',
+        pagesNeedingOcr: [3, 4, 5, 6, 7, 8],
+        extractor: 'inspector',
+      })
+      const renderSpy = vi.spyOn(
+        service as unknown as { renderPdfPages: (...args: unknown[]) => Promise<unknown> },
+        'renderPdfPages'
+      ).mockResolvedValue({ images: ['data:image/jpeg;base64,QQ=='], totalPages: 78 })
+      try {
+        const result = await service.parseDocument(
+          { name: 'mixed-audit.pdf', path: filePath, size },
+          { extractImages: true }
+        )
+        expect(result.metadata?.pdfType).toBe('Mixed')
+        expect(result.content).toMatch(/封面目录/)
+        expect(result.images).toEqual(['data:image/jpeg;base64,QQ=='])
+        expect(renderSpy).toHaveBeenCalledWith(
+          filePath,
+          [3, 4, 5, 6, 7],
+          undefined,
+          expect.any(Function)
+        )
+      } finally {
+        renderSpy.mockRestore()
+        cleanup()
+      }
+    })
   })
 })
 
