@@ -6,6 +6,7 @@ import * as iconv from 'iconv-lite'
 import type { JumpHostConfig, SshConfig, SshEncoding } from '@shared/types'
 import { getUnixProbeCommands } from './host-profile.service'
 import { getSshErrorMessage } from './ssh-error'
+import { SshConnectAttempt, SshConnectCancelledError } from './ssh-connect-attempt'
 import { requestLocalNetworkAccessIfDenied } from '../utils/local-network-permission'
 import { createLogger } from '../utils/logger'
 import type { ExecuteInTerminalResult } from './pty.service'
@@ -43,35 +44,81 @@ export class SshService {
   private instances: Map<string, SshInstance> = new Map()
   // 断开连接回调
   private disconnectCallbacks: Map<string, ((event: SshDisconnectEvent) => void)[]> = new Map()
+  // 握手中的连接尝试：调用方用自带的 attemptId 中止（会话 id 此时还没生成）
+  private pendingConnects: Map<string, SshConnectAttempt> = new Map()
 
   /**
    * 建立 SSH 连接（支持跳板机）
    *
    * @param options.reuseId 重连时传入旧会话 id：卸掉仍占用该 key 的旧实例后，
    *   新连接继续使用同一 id（对外身份不变）。新开连接不传，仍分配 uuid。
+   * @param options.attemptId 调用方自带的尝试标识，握手期间可用 `cancelConnect` 中止。
    */
-  async connect(config: SshConfig, options?: { reuseId?: string }): Promise<string> {
+  async connect(
+    config: SshConfig,
+    options?: { reuseId?: string; attemptId?: string }
+  ): Promise<string> {
     const reuseId = options?.reuseId?.trim() || undefined
     const id = reuseId || uuidv4()
     if (reuseId && this.instances.has(id)) {
       this.disconnect(id)
     }
 
-    // 如果配置了跳板机，先通过跳板机建立连接
-    if (config.jumpHost) {
-      return this.connectViaJumpHost(id, config)
+    const attemptId = options?.attemptId?.trim() || undefined
+    let attempt: SshConnectAttempt | undefined
+    if (attemptId) {
+      this.cancelConnect(attemptId)
+      attempt = new SshConnectAttempt()
+      this.pendingConnects.set(attemptId, attempt)
     }
 
-    // 直接连接
-    return this.directConnect(id, config)
+    try {
+      const sessionId = config.jumpHost
+        ? await this.connectViaJumpHost(id, config, attempt)
+        : await this.directConnect(id, config, undefined, attempt)
+
+      // 取消与握手成功撞在同一瞬间（进程内直接调用才可能命中；经 IPC 的取消由
+      // 调用方在 await 之后重新校验归属并回收）：已建立的会话没人接手，必须收掉
+      if (attempt?.isCancelled) {
+        log.info(`${sessionId} connected after cancel, closing immediately`)
+        this.disconnect(sessionId)
+        throw new SshConnectCancelledError()
+      }
+
+      return sessionId
+    } finally {
+      if (attemptId && this.pendingConnects.get(attemptId) === attempt) {
+        this.pendingConnects.delete(attemptId)
+      }
+    }
+  }
+
+  /**
+   * 中止仍在握手中的连接尝试（用户放弃连接）。
+   * @returns 是否命中一个进行中的尝试
+   */
+  cancelConnect(attemptId: string): boolean {
+    const attempt = this.pendingConnects.get(attemptId)
+    if (!attempt) return false
+    log.info(`connect attempt ${attemptId} cancelled`)
+    this.pendingConnects.delete(attemptId)
+    attempt.cancel()
+    return true
   }
 
   /**
    * 直接建立 SSH 连接
    */
-  private async directConnect(id: string, config: SshConfig, sock?: NodeJS.ReadableStream): Promise<string> {
+  private async directConnect(
+    id: string,
+    config: SshConfig,
+    sock?: NodeJS.ReadableStream,
+    attempt?: SshConnectAttempt
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       const client = new Client()
+      attempt?.trackClient(client)
+      attempt?.onCancel(() => reject(new SshConnectCancelledError()))
       
       // 确定使用的编码，默认 utf-8
       const encoding = config.encoding || 'utf-8'
@@ -176,6 +223,11 @@ export class SshService {
       })
 
       client.on('error', err => {
+        // 用户已取消：这条 error 是我们自己销毁客户端引起的，Promise 也已结束
+        if (attempt?.isCancelled) {
+          log.info(`${id} error after cancel, ignore:`, err.message)
+          return
+        }
         // 仅当 Map 里已是「别的 client」时视为过期（reuseId 重连竞态）。
         // 尚未入 Map 的连接失败（current 为空）必须照常 reject。
         const current = this.instances.get(id)
@@ -207,6 +259,8 @@ export class SshService {
         this.instances.delete(id)
       })
 
+      // 已取消（Promise 在 onCancel 里已 reject）就别再发起握手，免得留下无人认领的连接
+      if (attempt?.isCancelled) return
       client.connect(connectConfig)
     })
   }
@@ -214,12 +268,18 @@ export class SshService {
   /**
    * 通过跳板机建立 SSH 连接
    */
-  private async connectViaJumpHost(id: string, config: SshConfig): Promise<string> {
+  private async connectViaJumpHost(
+    id: string,
+    config: SshConfig,
+    attempt?: SshConnectAttempt
+  ): Promise<string> {
     const jumpHost = config.jumpHost!
     log.info(`Connecting via jump host: ${jumpHost.username}@${jumpHost.host}:${jumpHost.port} -> ${config.username}@${config.host}:${config.port}`)
 
     return new Promise((resolve, reject) => {
       const jumpClient = new Client()
+      attempt?.trackClient(jumpClient)
+      attempt?.onCancel(() => reject(new SshConnectCancelledError()))
 
       let jumpPrivateKey: string | Buffer | undefined
       if (jumpHost.authType === 'privateKey' && jumpHost.privateKeyPath) {
@@ -271,7 +331,7 @@ export class SshService {
                 log.warn(`Port forwarding not supported, falling back to JumpServer direct shell mode`)
                 jumpClient.end()
                 try {
-                  const result = await this.connectViaJumpServerShell(id, config)
+                  const result = await this.connectViaJumpServerShell(id, config, attempt)
                   resolve(result)
                 } catch (shellErr) {
                   reject(shellErr)
@@ -286,7 +346,7 @@ export class SshService {
             }
 
             try {
-              await this.directConnect(id, config, stream as unknown as NodeJS.ReadableStream)
+              await this.directConnect(id, config, stream as unknown as NodeJS.ReadableStream, attempt)
 
               const instance = this.instances.get(id)
               if (instance) {
@@ -303,6 +363,10 @@ export class SshService {
       })
 
       jumpClient.on('error', err => {
+        if (attempt?.isCancelled) {
+          log.info(`${id} jump host error after cancel, ignore:`, err.message)
+          return
+        }
         log.error(`Jump host error:`, err)
         requestLocalNetworkAccessIfDenied(err, 'ssh-jump')
         const friendlyMessage = getSshErrorMessage(err)
@@ -322,6 +386,7 @@ export class SshService {
         this.instances.delete(id)
       })
 
+      if (attempt?.isCancelled) return
       jumpClient.connect(jumpConnectConfig)
     })
   }
@@ -330,7 +395,11 @@ export class SshService {
    * JumpServer 直连模式：通过 Koko SSH 代理的 shell 直接连接目标资产
    * 使用 JumpServer 的直连用户名格式: {js_user}#{target_ip} 或 {js_user}#{target_ip}#{account}
    */
-  private async connectViaJumpServerShell(id: string, config: SshConfig): Promise<string> {
+  private async connectViaJumpServerShell(
+    id: string,
+    config: SshConfig,
+    attempt?: SshConnectAttempt
+  ): Promise<string> {
     const jumpHost = config.jumpHost!
 
     // 使用 JumpServer 用户名连接 Koko，通过交互式 shell 访问目标资产
@@ -339,6 +408,8 @@ export class SshService {
 
     return new Promise((resolve, reject) => {
       const client = new Client()
+      attempt?.trackClient(client)
+      attempt?.onCancel(() => reject(new SshConnectCancelledError()))
       const encoding = config.encoding || 'utf-8'
 
       const connectConfig: Record<string, unknown> = {
@@ -434,6 +505,10 @@ export class SshService {
       })
 
       client.on('error', err => {
+        if (attempt?.isCancelled) {
+          log.info(`${id} JumpServer shell error after cancel, ignore:`, err.message)
+          return
+        }
         log.error(`JumpServer direct shell error:`, err)
         requestLocalNetworkAccessIfDenied(err, 'ssh-jumpserver')
         const friendlyMessage = getSshErrorMessage(err)
@@ -453,6 +528,7 @@ export class SshService {
         this.instances.delete(id)
       })
 
+      if (attempt?.isCancelled) return
       client.connect(connectConfig)
     })
   }

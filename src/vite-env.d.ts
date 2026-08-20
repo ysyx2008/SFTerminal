@@ -217,7 +217,9 @@ interface Window {
           passphrase?: string
         }
         encoding?: string
-      }, options?: { reuseId?: string }) => Promise<string>
+      }, options?: { reuseId?: string; attemptId?: string }) => Promise<string>
+      /** 中止仍在握手中的连接尝试，返回是否命中 */
+      cancelConnect: (attemptId: string) => Promise<boolean>
       write: (id: string, data: string) => Promise<void>
       resize: (id: string, cols: number, rows: number) => Promise<void>
       disconnect: (id: string) => Promise<void>

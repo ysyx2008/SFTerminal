@@ -167,6 +167,7 @@ export default {
     newLocalTerminal: '新建本地终端',
     loadingEnv: '正在加载环境变量...',
     connecting: '正在连接...',
+    cancelConnect: '取消连接',
     connectionFailed: '连接失败',
     connectionClosed: '连接已关闭',
     reconnect: '重新连接',

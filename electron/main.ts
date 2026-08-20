@@ -2218,13 +2218,19 @@ ipcMain.on('pty:subscribe', (event, id: string) => {
 })
 
 // SSH 相关
-ipcMain.handle('ssh:connect', async (_event, config, options?: { reuseId?: string }) => {
+ipcMain.handle('ssh:connect', async (_event, config, options?: { reuseId?: string; attemptId?: string }) => {
   try {
     const { sshService } = await rt()
     return await sshService.connect(config, options)
   } catch (err) {
     throw new Error(err instanceof Error ? err.message : String(err))
   }
+})
+
+// 用户放弃连接：掐断仍在握手中的尝试（会话 id 此时还不存在，按 attemptId 定位）
+ipcMain.handle('ssh:cancelConnect', async (_event, attemptId: string) => {
+  const { sshService } = await rt()
+  return sshService.cancelConnect(attemptId)
 })
 
 ipcMain.handle('ssh:write', async (_event, id: string, data: string) => {

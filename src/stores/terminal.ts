@@ -139,6 +139,8 @@ export interface TerminalTab {
   isLoading: boolean
   // 加载提示信息（用于显示具体的加载原因）
   loadingMessage?: string
+  /** 正在进行的 SSH 连接尝试标识：连接未完成时用它中止握手（连接完成后清空） */
+  connectAttemptId?: string
   // 连接错误信息（用于显示连接失败的具体原因）
   connectionError?: string
   // 终端输出缓冲（最近的输出）
@@ -358,6 +360,11 @@ export const useTerminalStore = defineStore('terminal', () => {
   const reconnectEpochByPtyId = ref<Record<string, number>>({})
   /** 按窗格去重：并发 reconnectSsh / 按钮+Agent 同时触发时共享同一 Promise（非响应式） */
   const inFlightReconnectByPtyId = new Map<string, Promise<{ success: boolean; needsSession?: boolean; error?: string }>>()
+  /**
+   * 握手中的重连尝试（窗格 ptyId → attemptId，非响应式）。
+   * 关窗格 / 关 tab 时据此当场掐断，不等连接超时；多窗格并发重连各记一条互不覆盖。
+   */
+  const reconnectAttemptByPtyId = new Map<string, string>()
   /** 助手 composer 聚焦请求（tabId + 递增 seq，供 AiPanel 在打开/切换会话后聚焦输入框） */
   const assistantComposerFocusTabId = ref('')
   const assistantComposerFocusSeq = ref(0)
@@ -671,11 +678,19 @@ export const useTerminalStore = defineStore('terminal', () => {
           encoding: localEncoding
         })
         reactiveTab.loadingMessage = undefined  // 清除加载提示
+        // await 期间用户可能已关掉这个 tab：此时 reactiveTab 已 detach，
+        // 写它无效且新建的 PTY 无人接手，必须显式回收
+        if (!tabs.value.some(t => t.id === id)) {
+          window.electronAPI.pty.dispose(created.id).catch(() => {})
+          return id
+        }
         reactiveTab.ptyId = created.id
         reactiveTab.isConnected = true
         reactiveTab.systemInfo = detectLocalSystemInfo(created.shellPath)
         ensureRootSplitLayoutForTab(reactiveTab)
       } else if (type === 'ssh' && sshConfig) {
+        const attemptId = uuidv4()
+        reactiveTab.connectAttemptId = attemptId
         const sshId = await window.electronAPI.ssh.connect({
           host: sshConfig.host,
           port: sshConfig.port,
@@ -687,7 +702,12 @@ export const useTerminalStore = defineStore('terminal', () => {
           encoding: sshConfig.encoding,  // 传递编码配置
           cols: 80,
           rows: 24
-        })
+        }, { attemptId })
+        // 同上：连接期间 tab 被关掉时，刚建立的会话要收掉，避免留下无人使用的连接
+        if (!tabs.value.some(t => t.id === id)) {
+          window.electronAPI.ssh.disconnect(sshId).catch(() => {})
+          return id
+        }
         reactiveTab.ptyId = sshId
         reactiveTab.isConnected = true
         // SSH 连接默认假设是 Linux/Unix 系统
@@ -700,11 +720,14 @@ export const useTerminalStore = defineStore('terminal', () => {
         ensureRootSplitLayoutForTab(reactiveTab)
       }
     } catch (error) {
+      // tab 已被关掉（含用户主动取消连接）时不报错——界面上已经没有承载它的地方了
+      if (!tabs.value.some(t => t.id === id)) return id
       console.error('Failed to create terminal:', error)
       reactiveTab.isConnected = false
       // 保存连接错误信息，便于显示给用户
       reactiveTab.connectionError = error instanceof Error ? error.message : '连接失败'
     } finally {
+      reactiveTab.connectAttemptId = undefined
       reactiveTab.isLoading = false
     }
 
@@ -983,6 +1006,17 @@ export const useTerminalStore = defineStore('terminal', () => {
       }
     }
 
+    // 连接还在握手中：先掐断，用户点关闭就该立刻停下，而不是等连接超时
+    if (tab.connectAttemptId) {
+      cancelSshHandshake(tab.connectAttemptId)
+      tab.connectAttemptId = undefined
+    }
+    if (tab.splitLayout) {
+      for (const pane of getAllTerminalPanes(tab.splitLayout)) {
+        if (pane.ptyId) cancelPaneReconnectHandshake(pane.ptyId)
+      }
+    }
+
     // 清理连接
     if (tab.type === 'assistant') {
       const hosted = tab.splitLayout
@@ -1206,6 +1240,19 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
   }
 
+  /** 掐断一次仍在握手中的 SSH 连接尝试（已完成时后端返回 false，无副作用） */
+  function cancelSshHandshake(attemptId: string): void {
+    window.electronAPI.ssh.cancelConnect(attemptId).catch(() => {})
+  }
+
+  /** 掐断该窗格正在进行的重连握手（用户关窗格 / 关 tab 时调用） */
+  function cancelPaneReconnectHandshake(ptyId: string): void {
+    const attemptId = reconnectAttemptByPtyId.get(ptyId)
+    if (!attemptId) return
+    reconnectAttemptByPtyId.delete(ptyId)
+    cancelSshHandshake(attemptId)
+  }
+
   async function doReconnectSsh(
     tab: TerminalTab,
     tabId: string,
@@ -1246,6 +1293,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
 
     let bumpPtyId: string | undefined
+    const attemptId = uuidv4()
+    reconnectAttemptByPtyId.set(oldPtyId, attemptId)
     try {
       if (oldPtyId) {
         try {
@@ -1269,7 +1318,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         encoding: session.encoding || 'utf-8',
         cols: 80,
         rows: 24
-      }, oldPtyId ? { reuseId: oldPtyId } : undefined)
+      }, oldPtyId ? { reuseId: oldPtyId, attemptId } : { attemptId })
 
       // ssh.connect 是异步的——await 期间用户可能关了窗格 / 切了 tab / 关了整个 tab。
       // 这里要重新校验 paneNode 还在 splitLayout 里、tab 还在 tabs 里，否则我们刚连上的
@@ -1332,6 +1381,12 @@ export const useTerminalStore = defineStore('terminal', () => {
       bumpPtyId = sshId
       return { success: true }
     } catch (error) {
+      // tab / 窗格已被关掉（含用户主动取消）：连接是我们自己掐断的，不算重连失败
+      const paneDetached = paneNode
+        && (!tab.splitLayout || !getAllTerminalPanes(tab.splitLayout).includes(paneNode))
+      if (!tabs.value.some(t => t.id === tabId) || paneDetached) {
+        return { success: false, error: 'pane or tab closed during reconnect' }
+      }
       console.error('Failed to reconnect SSH:', error)
       if (wholeTabReconnect) {
         tab.isConnected = false
@@ -1340,6 +1395,9 @@ export const useTerminalStore = defineStore('terminal', () => {
       return { success: false, error: msg }
     } finally {
       markPtyReconnecting(oldPtyId, false)
+      if (reconnectAttemptByPtyId.get(oldPtyId) === attemptId) {
+        reconnectAttemptByPtyId.delete(oldPtyId)
+      }
       if (wholeTabReconnect) {
         tab.isLoading = false
       }
@@ -2028,6 +2086,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     // 卡住没结果）
     if (pane.ptyId) {
       const disposePtyId = pane.ptyId
+      // 正在重连的窗格：先掐断握手，否则要等连接超时才收得掉
+      cancelPaneReconnectHandshake(disposePtyId)
       try {
         const disposePromise = pane.terminalType === 'local'
           ? window.electronAPI.pty.dispose(disposePtyId)

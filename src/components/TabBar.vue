@@ -426,17 +426,19 @@ const tasksAreaAttentionTooltip = computed(() => {
           :title="t('tabs.doubleClickToRename')"
           @dblclick.stop="startRename(tab.id, displayTabTitle(tab), $event)"
         >{{ displayTabTitle(tab) }}</span>
-        <span v-if="tab.isLoading" class="tab-loading">
-          <Loader2 class="spinner" :size="12" />
+        <!-- 连接中转圈与关闭按钮同槽：hover 时转圈让位给关闭，卡在连接中也能退出 -->
+        <span class="tab-trailing">
+          <span v-if="tab.isLoading" class="tab-loading">
+            <Loader2 class="spinner" :size="12" />
+          </span>
+          <button
+            class="tab-close"
+            @click="handleCloseTab(tab.id, $event)"
+            :title="tab.isLoading ? t('terminal.cancelConnect') : t('tabs.closeTab')"
+          >
+            <X :size="12" />
+          </button>
         </span>
-        <button
-          v-else
-          class="tab-close"
-          @click="handleCloseTab(tab.id, $event)"
-          :title="t('tabs.closeTab')"
-        >
-          <X :size="12" />
-        </button>
       </div>
     </div>
     
@@ -806,6 +808,29 @@ const tasksAreaAttentionTooltip = computed(() => {
   height: 20px;
   outline: none;
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 137, 180, 250), 0.25);
+}
+
+.tab-trailing {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.tab-trailing .tab-close {
+  position: absolute;
+  inset: 0;
+}
+
+.tab-trailing .tab-loading {
+  transition: opacity 0.2s ease;
+}
+
+.tab:hover .tab-trailing .tab-loading {
+  opacity: 0;
 }
 
 .tab-close {

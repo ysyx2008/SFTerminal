@@ -122,6 +122,10 @@ watch(terminalPanes, (panes) => {
     <div v-else-if="liveTab.isLoading" class="terminal-loading">
       <div class="loading-spinner"></div>
       <span>{{ liveTab.loadingMessage || t('terminal.connecting') }}</span>
+      <button
+        class="btn btn-sm"
+        @click="terminalStore.closeTab(liveTab.id, true)"
+      >{{ t('terminal.cancelConnect') }}</button>
     </div>
 
     <div v-else class="terminal-error">

@@ -447,8 +447,9 @@ const electronAPI = {
 
   // SSH 操作
   ssh: {
-    connect: (config: SshConfig, options?: { reuseId?: string }) =>
+    connect: (config: SshConfig, options?: { reuseId?: string; attemptId?: string }) =>
       ipcRenderer.invoke('ssh:connect', config, options),
+    cancelConnect: (attemptId: string) => ipcRenderer.invoke('ssh:cancelConnect', attemptId),
     write: (id: string, data: string) => ipcRenderer.invoke('ssh:write', id, data),
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.invoke('ssh:resize', id, cols, rows),

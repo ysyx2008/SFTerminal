@@ -167,6 +167,7 @@ export default {
     newLocalTerminal: 'New Local Terminal',
     loadingEnv: 'Loading environment variables...',
     connecting: 'Connecting...',
+    cancelConnect: 'Cancel connection',
     connectionFailed: 'Connection failed',
     connectionClosed: 'Connection closed',
     reconnect: 'Reconnect',
