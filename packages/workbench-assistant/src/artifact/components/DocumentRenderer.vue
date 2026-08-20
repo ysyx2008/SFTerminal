@@ -23,6 +23,8 @@ import {
 import { SET_COMPOSER_DRAFT_KEY, SUBMIT_COMPOSER_MESSAGE_KEY, type ArtifactComposerQuote } from '../composer-quote'
 import { registerSelectionScopeProvider } from '../selection-scope'
 import { clampContextMenuPosition, intersectViewport } from '../domain/context-menu-position'
+import { useSelectionActionHint } from '../composables/useSelectionActionHint'
+import SelectionActionHint from '../ui/SelectionActionHint.vue'
 import '../ui/quote-context-menu.css'
 
 const CTX_MENU_ESTIMATE = { width: 200, height: 200 }
@@ -54,6 +56,13 @@ const ctxX = ref(0)
 const ctxY = ref(0)
 const ctxMenuRef = ref<HTMLElement | null>(null)
 const ctxQuotePayload = ref<{ excerpt: string } | null>(null)
+const {
+  anchor: hintAnchor,
+  show: showSelectionHint,
+  hide: hideSelectionHint,
+  refresh: refreshSelectionHint,
+  hideOnTyping: hideHintOnTyping
+} = useSelectionActionHint(() => contentRef.value)
 
 function placeCtxMenu(x: number, y: number, size = CTX_MENU_ESTIMATE) {
   const placed = clampContextMenuPosition({
@@ -116,6 +125,7 @@ function pinStickyHighlight(): void {
   const el = contentRef.value
   if (!el) return
   pinSticky = true
+  hideSelectionHint()
   if (el.querySelector(`.${STICKY_MARK_CLASS}`)) {
     window.getSelection()?.removeAllRanges()
     return
@@ -129,6 +139,7 @@ function clearSticky(): void {
   pinSticky = false
   stickyRange = null
   lastExcerpt = ''
+  hideSelectionHint()
   clearStickyMarks(contentRef.value)
 }
 
@@ -168,6 +179,7 @@ function openCtxMenu(e: MouseEvent) {
   e.preventDefault()
   e.stopPropagation()
   ctxQuotePayload.value = meta
+  hideSelectionHint()
   placeCtxMenu(e.clientX, e.clientY)
   // 右键手势里 mousedown 可能晚于 contextmenu，推迟挂上以免当场被关掉
   requestAnimationFrame(() => {
@@ -189,6 +201,8 @@ function onSelectionChange() {
       window.getSelection()?.removeAllRanges()
       return
     }
+    // 选区变长/挪位时提示跟着走；mouseup 之后再来的 selectionchange 也不会把它收掉
+    refreshSelectionHint()
     clearStickyMarks(contentRef.value)
     return
   }
@@ -204,6 +218,7 @@ function onContentMouseUp(e: MouseEvent) {
     pinSticky = false
     lockRange(range)
     clearStickyMarks(contentRef.value)
+    showSelectionHint()
     return
   }
   // 点预览空白才清；点到输入框不会进这个 handler
@@ -212,6 +227,7 @@ function onContentMouseUp(e: MouseEvent) {
 }
 
 function onGlobalKeydown(e: KeyboardEvent) {
+  hideHintOnTyping(e)
   if (e.key === 'Escape') closeCtxMenu()
 }
 
@@ -221,6 +237,7 @@ function pinIfPointerLeftPreview(target: EventTarget | null): void {
   const inside = !!(rootRef.value && el && rootRef.value.contains(el))
   if (inside) {
     pinSticky = false
+    hideSelectionHint()
     clearStickyMarks(contentRef.value)
     return
   }
@@ -254,6 +271,7 @@ function onWindowKeydown(e: KeyboardEvent) {
   e.preventDefault()
   e.stopPropagation()
   setComposerDraft?.('')
+  hideSelectionHint()
   closeCtxMenu()
 }
 
@@ -343,6 +361,8 @@ onUnmounted(() => {
         </button>
       </div>
     </Teleport>
+
+    <SelectionActionHint :anchor="hintAnchor" :clip-el="rootRef" />
   </div>
 </template>
 

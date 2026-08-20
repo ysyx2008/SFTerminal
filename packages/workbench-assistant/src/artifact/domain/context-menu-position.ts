@@ -29,6 +29,48 @@ export function clampContextMenuPosition(opts: {
   return { left, top }
 }
 
+/** 选区提示：贴在选区上沿，上面放不下就落到下沿；左右居中于选区并收进可视范围 */
+export function placeSelectionHint(opts: {
+  anchor: ContextMenuBox
+  hintWidth: number
+  hintHeight: number
+  viewport: ContextMenuBox
+  gap?: number
+  pad?: number
+}): { left: number; top: number } {
+  const gap = opts.gap ?? 6
+  const pad = opts.pad ?? 8
+  const minX = opts.viewport.left + pad
+  const minY = opts.viewport.top + pad
+  const maxX = opts.viewport.right - pad
+  const maxY = opts.viewport.bottom - pad
+  let left = (opts.anchor.left + opts.anchor.right) / 2 - opts.hintWidth / 2
+  if (left + opts.hintWidth > maxX) left = maxX - opts.hintWidth
+  if (left < minX) left = minX
+  let top = opts.anchor.top - gap - opts.hintHeight
+  if (top < minY) top = opts.anchor.bottom + gap
+  if (top + opts.hintHeight > maxY) top = Math.max(minY, maxY - opts.hintHeight)
+  return { left, top }
+}
+
+export function boxFromRect(r: DOMRect): ContextMenuBox {
+  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+}
+
+/** 当前选区的外框；选区为空、或两端不在 root 内时返回 null */
+export function selectionAnchorBox(root: Node | null): ContextMenuBox | null {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null
+  if (root) {
+    const { anchorNode, focusNode } = sel
+    if (!anchorNode || !focusNode) return null
+    if (!root.contains(anchorNode) || !root.contains(focusNode)) return null
+  }
+  const rect = sel.getRangeAt(0).getBoundingClientRect()
+  if (rect.width <= 0 && rect.height <= 0) return null
+  return boxFromRect(rect)
+}
+
 export function viewportBox(): ContextMenuBox {
   return {
     left: 0,

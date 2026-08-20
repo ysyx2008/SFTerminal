@@ -19,7 +19,7 @@ export default {
     captureFeedbackReady: 'Screenshot added to input — add your comments and send',
     captureFeedbackDraft: 'Here is a screenshot of "{title}" in its current state. Please revise based on my comments: ',
     markdownSource: 'Markdown',
-    quoteHint: 'Selection locked — type your edit request',
+    selectionActionHint: 'Ask AI to edit this: type a request, or right-click',
     quoteToComposer: 'Quote to AI chat',
     quoteToAiNeedSelection: 'Select text to quote first',
     quoteActionGroup: 'Ask AI to edit this',

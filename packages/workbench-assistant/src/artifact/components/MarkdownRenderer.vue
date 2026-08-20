@@ -24,6 +24,8 @@ import { registerSelectionScopeProvider } from '../selection-scope'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 import type { MarkdownWysiwygHandle } from '../editor/markdown-wysiwyg-editor'
 import { clampContextMenuPosition, intersectViewport } from '../domain/context-menu-position'
+import { useSelectionActionHint } from '../composables/useSelectionActionHint'
+import SelectionActionHint from '../ui/SelectionActionHint.vue'
 import '../ui/quote-context-menu.css'
 
 const CTX_MENU_ESTIMATE = { width: 200, height: 200 }
@@ -47,9 +49,13 @@ const saving = ref(false)
 const mountError = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const editorWrapRef = ref<HTMLElement | null>(null)
-/** 是否存在可作作用域的选区（驱动底部状态行提示） */
-const hasSelectionScope = ref(false)
 let editorHandle: MarkdownWysiwygHandle | null = null
+const {
+  anchor: hintAnchor,
+  show: showSelectionHint,
+  hide: hideSelectionHint,
+  hideOnTyping: hideHintOnTyping
+} = useSelectionActionHint(() => editorHandle?.dom ?? null)
 /** 程序化 setContent / 初次挂载期间屏蔽 onDocChanged 回环 */
 let applyingExternal = false
 /** 编辑器异步挂载完成前到达的外部内容 */
@@ -88,10 +94,8 @@ const diskBaseline = computed(
 const isDirty = computed(() =>
   shouldReportDraftDirty(editorReady.value, draft.value, diskBaseline.value)
 )
-/** 有选区提示、未保存、或无路径时才显示底部状态行 */
-const showStatusBar = computed(
-  () => hasSelectionScope.value || (canSave.value && isDirty.value) || !canSave.value
-)
+/** 未保存或无路径时才显示底部状态行（选区提示浮在选区旁，不进状态行——否则高度跳变会打断选择） */
+const showStatusBar = computed(() => (canSave.value && isDirty.value) || !canSave.value)
 /** 本组件最近一次展示/接受的内容（accept-vs-defer 判定；store 基线在挂起时会前进，不能替代它） */
 const lastSynced = ref('')
 /** 冲突时被挂起的外部版本（store 响应式，驱动横幅） */
@@ -213,10 +217,11 @@ async function mountEditor() {
       resolveImageSrc,
       locale: locale.value === 'en-US' ? 'en-US' : 'zh-CN',
       onHasSelectionChange: (has) => {
-        hasSelectionScope.value = has
+        if (!has) hideSelectionHint()
       }
     })
     editorHandle.dom.addEventListener('contextmenu', openCtxMenu)
+    editorHandle.dom.addEventListener('mouseup', onEditorMouseUp)
     // 图片相对资源走 sailfish-artifact:// 协议，需主进程缓存条目存在（content 不用于资源映射）
     void window.electronAPI?.artifactPreview?.sync({ tabId: props.tabId, artifactId: props.artifactId, content: '' })
     // 干净态挂载：初始内容规范化回写基线（dirty 态挂载 = 恢复用户草稿，不动基线）。
@@ -339,10 +344,21 @@ function refineCtxMenu(x: number, y: number) {
   })
 }
 
+/** 松手才提示：拖选途中不闪 */
+function onEditorMouseUp(e: MouseEvent) {
+  if (e.button === 2) return
+  if (!captureQuoteMeta()?.excerpt.trim()) {
+    hideSelectionHint()
+    return
+  }
+  showSelectionHint()
+}
+
 function openCtxMenu(e: MouseEvent) {
   const meta = captureQuoteMeta()
   if (!meta || !meta.excerpt.trim()) return
   e.preventDefault()
+  hideSelectionHint()
   ctxQuotePayload.value = meta
   placeCtxMenu(e.clientX, e.clientY)
   ctxVisible.value = true
@@ -355,12 +371,14 @@ function closeCtxMenu() {
 }
 
 function onGlobalKeydown(e: KeyboardEvent) {
+  hideHintOnTyping(e)
   if (e.key === 'Escape') closeCtxMenu()
 }
 
 function onGlobalMouseDown(e: MouseEvent) {
   const t = e.target as HTMLElement
   if (t.closest?.('.md-ctx-menu')) return
+  hideSelectionHint()
   closeCtxMenu()
 }
 
@@ -410,6 +428,7 @@ function onWindowKeydown(e: KeyboardEvent) {
       e.preventDefault()
       e.stopPropagation()
       setComposerDraft?.('')
+      hideSelectionHint()
       closeCtxMenu()
       return
     }
@@ -454,6 +473,7 @@ onUnmounted(() => {
   flushDraftToStore()
   saveBridge?.unregister(props.artifactId)
   editorHandle?.dom.removeEventListener('contextmenu', openCtxMenu)
+  editorHandle?.dom.removeEventListener('mouseup', onEditorMouseUp)
   editorHandle?.destroy()
   editorHandle = null
   window.removeEventListener('keydown', onWindowKeydown, true)
@@ -486,7 +506,6 @@ onUnmounted(() => {
     </div>
 
     <div v-if="showStatusBar" class="md-status-bar" role="status">
-      <span v-if="hasSelectionScope" class="md-shortcut-hint">{{ t('canvas.quoteHint') }}</span>
       <div class="md-status-right">
         <span v-if="canSave && isDirty" class="md-dirty-hint">
           {{ t('canvas.unsavedChanges') }}
@@ -520,6 +539,8 @@ onUnmounted(() => {
         </template>
       </div>
     </Teleport>
+
+    <SelectionActionHint :anchor="hintAnchor" :clip-el="rootRef" />
   </div>
 </template>
 
@@ -543,16 +564,6 @@ onUnmounted(() => {
   padding: 3px 10px;
   border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
   font-size: 11px;
-}
-
-.md-shortcut-hint {
-  color: var(--text-tertiary, #6a6a6a);
-  font-size: 10px;
-  line-height: 1.35;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .md-status-right {
