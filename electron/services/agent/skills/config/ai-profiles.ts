@@ -377,24 +377,36 @@ export function deleteAiProfileConfig(
     }
   }
 
-  store.deleteAiProfile(profileId)
-
-  const afterDelete = store.getAiProfiles()
-  if (afterDelete.some(p => p.visionProfileId === profileId)) {
-    store.setAiProfiles(afterDelete.map(p => (
-      p.visionProfileId === profileId ? { ...p, visionProfileId: undefined } : p
-    )))
+  const referrers = profiles.filter(p => p.id !== profileId && p.visionProfileId === profileId)
+  if (referrers.length && argBool(args, 'confirmUnlink') !== true) {
+    const names = referrers.map(p => `**${p.name}**`).join('、')
+    return {
+      success: false,
+      output: '',
+      error: `**${found.name}** 还被 ${names} 当作视觉模型。删掉会解除这些关联。请先问用户是否继续；同意后再带 confirmUnlink=true 删除。`,
+    }
   }
+
+  store.setAiProfiles(
+    profiles
+      .filter(p => p.id !== profileId)
+      .map(p => (p.visionProfileId === profileId ? { ...p, visionProfileId: undefined } : p))
+  )
 
   const remaining = store.getAiProfiles()
   if (store.getActiveAiProfile() === profileId) {
     store.setActiveAiProfile(remaining[0]?.id || '')
   }
 
-  const n = store.getAiProfiles().length
+  const n = remaining.length
+  const unlinkNote = referrers.length
+    ? `已解除 ${referrers.map(p => `**${p.name}**`).join('、')} 对该模型的视觉关联。`
+    : ''
   return {
     success: true,
-    output: `✅ 已删除 AI 模型 **${found.name}**（\`${profileId}\`）。剩余 ${n} 个。`,
+    output: [`✅ 已删除 AI 模型 **${found.name}**（\`${profileId}\`）。剩余 ${n} 个。`, unlinkNote]
+      .filter(Boolean)
+      .join('\n'),
   }
 }
 

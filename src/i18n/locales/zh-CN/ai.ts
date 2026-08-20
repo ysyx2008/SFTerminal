@@ -669,7 +669,9 @@ export default {
       wecom_read: '读取企业微信消息',
       wecom_write: '发送企业微信消息',
       // PDF 技能
-      pdf_view_page: '查看 PDF 页面'
+      pdf_view_page: '查看 PDF 页面',
+      // 配置技能
+      config_ai_profile: '管理 AI 模型'
     },
     askingDefault: '默认：',
     askingDefaultHint: '（直接按回车使用默认值）',

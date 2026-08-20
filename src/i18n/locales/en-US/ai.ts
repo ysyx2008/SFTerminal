@@ -668,7 +668,9 @@ export default {
       wecom_read: 'Read WeCom Message',
       wecom_write: 'Send WeCom Message',
       // PDF skill
-      pdf_view_page: 'View PDF Page'
+      pdf_view_page: 'View PDF Page',
+      // Config skill
+      config_ai_profile: 'Manage AI Model'
     },
     askingDefault: 'Default:',
     askingDefaultHint: '(Press Enter to use default value)',

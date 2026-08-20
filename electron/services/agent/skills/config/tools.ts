@@ -2,9 +2,24 @@
  * 旗鱼配置管理技能 - 工具定义
  */
 
-import type { ToolDefinition } from '../../tools'
+import type { ToolDefinitionWithMeta } from '../../tools'
+import { t } from '../../i18n'
 
-export const configTools: ToolDefinition[] = [
+function formatAiProfileStreamTitle(args: Record<string, unknown>): string {
+  const action = typeof args.action === 'string' ? args.action : ''
+  const key = action === 'add'
+    ? 'config.ai_profile.add'
+    : action === 'update'
+      ? 'config.ai_profile.update'
+      : action === 'delete'
+        ? 'config.ai_profile.delete'
+        : 'config.ai_profile.manage'
+  const hintKeys = action === 'delete' ? ['profileId', 'id'] : ['name', 'profileId', 'id']
+  const hint = hintKeys.map(k => args[k]).find(v => typeof v === 'string' && v.trim())
+  return hint ? `${t(key)}: ${hint}` : t(key)
+}
+
+export const configTools: ToolDefinitionWithMeta[] = [
   {
     type: 'function',
     function: {
@@ -313,7 +328,7 @@ MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可
 
 **action=update**：按 profileId 部分更新。省略 apiKey 则保留原 Key。setActive=true 设为默认。保存后会试连。
 
-**action=delete**：按 profileId 删除。不能删当前对话正在用的那条，也不能删它关联的视觉模型，也不能删最后一条。删除前请与用户确认。
+**action=delete**：按 profileId 删除。不能删当前对话正在用的那条，也不能删它关联的视觉模型，也不能删最后一条。若其他模型把它当作视觉模型，先不要删——说明是谁、删了会解除关联，等用户同意后再带 confirmUnlink=true 删除。删除前请与用户确认。
 
 Key 不会回显。`,
       parameters: {
@@ -333,9 +348,15 @@ Key 不会回显。`,
           visionProfileId: { type: 'string', description: '关联的视觉模型 id（仅 general 有效）' },
           apiFormat: { type: 'string', enum: ['auto', 'openai', 'anthropic'], description: 'API 协议，默认 auto' },
           id: { type: 'string', description: 'add：唯一 id，省略则自动生成' },
-          setActive: { type: 'boolean', description: '是否设为默认模型' }
+          setActive: { type: 'boolean', description: '是否设为默认模型' },
+          confirmUnlink: { type: 'boolean', description: 'delete：其他模型仍把它当作视觉模型时，用户同意解除关联后再标 true' }
         },
         required: ['action']
+      }
+    },
+    _meta: {
+      streamDisplay: {
+        customRender: formatAiProfileStreamTitle
       }
     }
   }

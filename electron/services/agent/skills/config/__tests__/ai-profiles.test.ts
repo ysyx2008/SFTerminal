@@ -210,15 +210,44 @@ describe('update / delete', () => {
     expect(store.getAiProfiles().map(p => p.id)).toEqual(['vision', 'main', 'other'])
   })
 
-  it('clears visionProfileId refs when deleting an unlinked vision model', () => {
+  it('still refuses in-use vision even when confirmUnlink is set', () => {
+    const store = makeStore([
+      sample({ id: 'vision', name: 'V', modelType: 'vision' }),
+      sample({ id: 'main', name: 'M', visionProfileId: 'vision' }),
+      sample({ id: 'other', name: 'O', apiKey: 'o' }),
+    ], 'main')
+    const r = deleteAiProfileConfig(store, { profileId: 'vision', confirmUnlink: true }, 'main')
+    expect(r.success).toBe(false)
+    expect(r.error).toMatch(/视觉模型/)
+    expect(store.getAiProfiles().find(p => p.id === 'main')?.visionProfileId).toBe('vision')
+  })
+
+  it('refuses to delete a referenced vision model until confirmUnlink', () => {
     const store = makeStore([
       sample({ id: 'vision', name: 'V', modelType: 'vision' }),
       sample({ id: 'main', name: 'M', visionProfileId: 'vision' }),
       sample({ id: 'other', name: 'O', apiKey: 'o' }),
     ], 'other')
     const r = deleteAiProfileConfig(store, { profileId: 'vision' }, 'other')
+    expect(r.success).toBe(false)
+    expect(r.error).toMatch(/当作视觉模型/)
+    expect(r.error).toContain('M')
+    expect(store.getAiProfiles().map(p => p.id)).toEqual(['vision', 'main', 'other'])
+    expect(store.getAiProfiles().find(p => p.id === 'main')?.visionProfileId).toBe('vision')
+  })
+
+  it('unlinks referrers and deletes after confirmUnlink', () => {
+    const store = makeStore([
+      sample({ id: 'vision', name: 'V', modelType: 'vision' }),
+      sample({ id: 'main', name: 'M', visionProfileId: 'vision' }),
+      sample({ id: 'other', name: 'O', apiKey: 'o' }),
+    ], 'other')
+    const r = deleteAiProfileConfig(store, { profileId: 'vision', confirmUnlink: true }, 'other')
     expect(r.success).toBe(true)
+    expect(store.getAiProfiles().map(p => p.id)).toEqual(['main', 'other'])
     expect(store.getAiProfiles().find(p => p.id === 'main')?.visionProfileId).toBeUndefined()
+    expect(r.output).toMatch(/已解除/)
+    expect(r.output).toContain('M')
   })
 
   it('executeAiProfileAction routes by action and rejects unknown action', async () => {

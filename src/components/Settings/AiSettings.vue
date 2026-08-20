@@ -3,12 +3,12 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Pencil, Trash2, X, ExternalLink, Eye, Copy, GripVertical, RefreshCw, ChevronDown, Camera } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from '../../stores/config'
-import { showConfirm } from '../../composables/useConfirm'
+import { showAlert, showConfirm } from '../../composables/useConfirm'
 import type { FetchedAiModel } from '@shared/types'
 import { AI_TEMPLATES } from '../../config/ai-templates'
 import { v4 as uuidv4 } from 'uuid'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const configStore = useConfigStore()
 
@@ -246,14 +246,32 @@ const saveProfile = async () => {
 }
 
 const deleteProfile = async (profile: AiProfile) => {
+  if (profiles.value.length <= 1) {
+    await showAlert(t('aiSettings.deleteProfile'), t('aiSettings.cannotDeleteLast'))
+    return
+  }
+  if (profile.id === activeProfileId.value) {
+    await showAlert(t('aiSettings.deleteProfile'), t('aiSettings.cannotDeleteActive'))
+    return
+  }
+  const active = profiles.value.find(p => p.id === activeProfileId.value)
+  if (active?.visionProfileId === profile.id) {
+    await showAlert(t('aiSettings.deleteProfile'), t('aiSettings.cannotDeleteActiveVision'))
+    return
+  }
+
+  const referrers = profiles.value.filter(p => p.id !== profile.id && p.visionProfileId === profile.id)
+  const names = referrers.map(p => p.name).join(locale.value.startsWith('zh') ? '、' : ', ')
   const confirmed = await showConfirm({
     type: 'danger',
     title: t('aiSettings.deleteProfile'),
-    message: t('aiSettings.confirmDeleteProfile'),
+    message: referrers.length
+      ? t('aiSettings.confirmDeleteReferenced', { name: profile.name, names })
+      : t('aiSettings.confirmDeleteProfile'),
+    detail: referrers.length ? t('aiSettings.confirmDeleteReferencedDetail') : undefined,
   })
-  if (confirmed) {
-    await configStore.deleteAiProfile(profile.id)
-  }
+  if (!confirmed) return
+  await configStore.deleteAiProfile(profile.id)
 }
 
 const setActive = async (profileId: string) => {

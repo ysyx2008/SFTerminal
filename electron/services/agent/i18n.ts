@@ -1528,6 +1528,10 @@ const translations = {
     'web.fetch.header': '[fetched: {url}, status {status}, content-type: {contentType}, {size}, backend: {backend}]',
     'workbench.list_artifacts': '查看产出物面板',
     'workbench.manage_artifacts': '维护产出物面板',
+    'config.ai_profile.manage': '管理 AI 模型',
+    'config.ai_profile.add': '添加 AI 模型',
+    'config.ai_profile.update': '更新 AI 模型',
+    'config.ai_profile.delete': '删除 AI 模型',
 
     // dispatch_agents 并行子任务（customRender 与执行器 addStep 共享前缀，两边必须字节对齐）
     'dispatch.running': '并行执行 {count} 个子任务（{type}）',
@@ -3068,6 +3072,10 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'web.fetch.header': '[fetched: {url}, status {status}, content-type: {contentType}, {size}, backend: {backend}]',
     'workbench.list_artifacts': 'View output panel',
     'workbench.manage_artifacts': 'Manage output panel',
+    'config.ai_profile.manage': 'Manage AI model',
+    'config.ai_profile.add': 'Add AI model',
+    'config.ai_profile.update': 'Update AI model',
+    'config.ai_profile.delete': 'Delete AI model',
 
     // dispatch_agents sub-tasks (customRender and executor addStep share the same prefix; must stay byte-aligned)
     'dispatch.running': 'Dispatching {count} sub-task(s) ({type})',

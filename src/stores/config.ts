@@ -614,7 +614,9 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   async function deleteAiProfile(id: string): Promise<void> {
-    aiProfiles.value = aiProfiles.value.filter(p => p.id !== id)
+    aiProfiles.value = aiProfiles.value
+      .filter(p => p.id !== id)
+      .map(p => (p.visionProfileId === id ? { ...p, visionProfileId: undefined } : p))
     await saveAiProfiles()
 
     // 如果删除的是当前激活的，切换到第一个
