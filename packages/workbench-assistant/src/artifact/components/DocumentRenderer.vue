@@ -22,7 +22,10 @@ import {
 } from '../domain/html-sticky-selection'
 import { SET_COMPOSER_DRAFT_KEY, type ArtifactComposerQuote } from '../composer-quote'
 import { registerSelectionScopeProvider } from '../selection-scope'
+import { clampContextMenuPosition, intersectViewport } from '../domain/context-menu-position'
 import '../ui/quote-context-menu.css'
+
+const CTX_MENU_ESTIMATE = { width: 200, height: 200 }
 
 const props = defineProps<{
   tabId: string
@@ -48,7 +51,29 @@ let paintedHtml: string | null = null
 const ctxVisible = ref(false)
 const ctxX = ref(0)
 const ctxY = ref(0)
+const ctxMenuRef = ref<HTMLElement | null>(null)
 const ctxQuotePayload = ref<{ excerpt: string } | null>(null)
+
+function placeCtxMenu(x: number, y: number, size = CTX_MENU_ESTIMATE) {
+  const placed = clampContextMenuPosition({
+    x,
+    y,
+    menuWidth: size.width,
+    menuHeight: size.height,
+    viewport: intersectViewport(rootRef.value?.getBoundingClientRect())
+  })
+  ctxX.value = placed.left
+  ctxY.value = placed.top
+}
+
+function refineCtxMenu(x: number, y: number) {
+  void nextTick(() => {
+    const el = ctxMenuRef.value
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    placeCtxMenu(x, y, { width: r.width, height: r.height })
+  })
+}
 
 const artifact = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId))
 const content = computed(() => artifact.value?.content ?? '')
@@ -142,11 +167,11 @@ function openCtxMenu(e: MouseEvent) {
   e.preventDefault()
   e.stopPropagation()
   ctxQuotePayload.value = meta
-  ctxX.value = e.clientX
-  ctxY.value = e.clientY
+  placeCtxMenu(e.clientX, e.clientY)
   // 右键手势里 mousedown 可能晚于 contextmenu，推迟挂上以免当场被关掉
   requestAnimationFrame(() => {
     ctxVisible.value = true
+    refineCtxMenu(e.clientX, e.clientY)
   })
 }
 
@@ -297,6 +322,7 @@ onUnmounted(() => {
     <Teleport to="body">
       <div
         v-if="ctxVisible"
+        ref="ctxMenuRef"
         class="md-ctx-menu"
         :style="{ left: ctxX + 'px', top: ctxY + 'px' }"
         role="menu"
