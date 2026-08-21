@@ -479,8 +479,6 @@ export default {
     autoVisionModelDesc: 'Automatically switch to the linked vision model when images are present in the conversation, then switch back after processing. Requires a linked vision model in profile settings.',
     autoFailoverModel: 'Auto-switch Available Models',
     autoFailoverModelDesc: 'If the current model still fails after automatic retries, try models from the top of your list. Only this conversation changes; the default model stays the same.',
-    foldAgentProcess: 'Collapse the busywork',
-    foldAgentProcessDesc: 'Stretches where it just works away collapse into one line, leaving what it tells you and what it is doing right now. Click that line to see the full process. Strict mode always stays unfolded.',
     agentPersonality: 'Agent Personality',
     agentPersonalityDesc: 'Select the Agent personality type to influence its response style',
     noPersonality: 'Default (No specific personality)',

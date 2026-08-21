@@ -118,6 +118,25 @@ const onInstallOnQuitChange = async () => {
       </div>
     </div>
 
+    <!-- 对话显示 -->
+    <div class="settings-section">
+      <h3 class="section-title">{{ t('general.conversation') }}</h3>
+      <div class="setting-row">
+        <div>
+          <label class="form-label">{{ t('general.foldAgentProcess') }}</label>
+          <p class="setting-desc">{{ t('general.foldAgentProcessHint') }}</p>
+        </div>
+        <label class="toggle-switch">
+          <input
+            type="checkbox"
+            :checked="configStore.foldAgentProcess"
+            @change="configStore.setFoldAgentProcess(($event.target as HTMLInputElement).checked)"
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
     <!-- 语言 -->
     <div class="settings-section">
       <h3 class="section-title">{{ t('general.language') }}</h3>

@@ -479,8 +479,6 @@ export default {
     autoVisionModelDesc: '当对话中包含图片时，自动切换到关联的视觉模型处理，处理完后自动切回主模型。需要先在模型配置中设置关联的视觉模型。',
     autoFailoverModel: '自动切换可用模型',
     autoFailoverModelDesc: '当前模型按自动重试仍无法使用时，按配置列表从第一个开始改用能用的模型。只影响这场对话，不改默认模型。',
-    foldAgentProcess: '自动收起过程',
-    foldAgentProcessDesc: '它埋头干活的那几步收成一行，只留它说给你听的话和此刻正在做的事。想看全过程，点那一行就能展开。严格模式下始终摊开，不收。',
     agentPersonality: '助手性格设置',
     agentPersonalityDesc: '选择助手的性格类型，影响其回复风格',
     noPersonality: '默认（无特定性格）',
