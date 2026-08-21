@@ -842,12 +842,15 @@ export class Conversation {
   /**
    * 是否应复用 cache 前缀（buildContext 的「Cache-optimized path」判定，忠实移植）。
    * 跳过条件：无前缀、唤醒 run（wakeup）、前缀 token 超上下文 70%。
+   *
+   * `estimateTokens` 由调用方注入「锚点 + 增量」口径（见 ContextWindowManager
+   * .estimateCurrentPromptTokens）——它内部已优先采信真实用量，这里不再单独
+   * 短路 _lastPromptTokens，否则会漏算上一轮的 assistant 回复。
    */
   shouldReuseCachePrefix(contextLength: number, opts: { wakeup?: boolean; estimateTokens: (msgs: AiMessage[]) => number }): boolean {
     if (!this._cachePrefix || this._cachePrefix.length === 0) return false
     if (opts.wakeup) return false
-    const prevTokens = this._lastPromptTokens || opts.estimateTokens(this._cachePrefix)
-    return prevTokens < contextLength * 0.7
+    return opts.estimateTokens(this._cachePrefix) < contextLength * 0.7
   }
 
   /**

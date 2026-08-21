@@ -208,23 +208,27 @@ describe('ContextWindowManager.updatePressure', () => {
     expect(reportUsage).toHaveBeenCalledWith(100000, 42)
   })
 
+  // 有锚点 ⇒ 上一轮响应过 ⇒ 它的 assistant 回复必在 messages 里。
+  // 只有 [user] 而带锚点是不可能出现的状态，用例按真实序列构造。
+  const answered = () => makeRun([user('hi'), asst('ok')])
+
   it('用量 >= 85% → enabled 翻 true;< 85% 保持 false', () => {
     const low = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 1000 })) // 1000/128000 < 1%
-    low.updatePressure(makeRun([user('hi')]))
+    low.updatePressure(answered())
     expect(low.enabled).toBe(false)
 
     const high = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 110000 })) // ~86%
-    high.updatePressure(makeRun([user('hi')]))
+    high.updatePressure(answered())
     expect(high.enabled).toBe(true)
   })
 
   it('enabled 一旦 true 不回退:低用量再调仍为 true', () => {
     const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 110000 }))
-    m.updatePressure(makeRun([user('hi')]))
+    m.updatePressure(answered())
     expect(m.enabled).toBe(true)
     // 重新构造不可控的内部状态,但同一实例后续低用量不应回退
     const m2 = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 1000 }))
-    m2.updatePressure(makeRun([user('hi')]))
+    m2.updatePressure(answered())
     expect(m2.enabled).toBe(false)
     // m 仍是 true(已激活)
     expect(m.enabled).toBe(true)
@@ -232,7 +236,7 @@ describe('ContextWindowManager.updatePressure', () => {
 
   it('用量 >= 85%:注入警告消息(带 _systemInjected)', () => {
     const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 110000 }))
-    const run = makeRun([user('hi')])
+    const run = answered()
     m.updatePressure(run)
     const last = run.messages[run.messages.length - 1]
     expect(last.role).toBe('user')
@@ -243,7 +247,7 @@ describe('ContextWindowManager.updatePressure', () => {
 
   it('警告去重:连续两次 updatePressure 只注入一条警告', () => {
     const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 110000 }))
-    const run = makeRun([user('hi')])
+    const run = answered()
     m.updatePressure(run)
     m.updatePressure(run)
     const warnings = run.messages.filter(
@@ -254,9 +258,18 @@ describe('ContextWindowManager.updatePressure', () => {
 
   it('用量 < 85%:不注入警告', () => {
     const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 1000 }))
-    const run = makeRun([user('hi')])
+    const run = answered()
     m.updatePressure(run)
-    expect(run.messages.length).toBe(1) // 原样,未追加
+    expect(run.messages.length).toBe(2) // 原样,未追加
+  })
+
+  it('压力判断计入本轮新增:锚点未变但 tool 结果堆积也会触发告警', () => {
+    // 锚点 100000（78%，本身不触发）；本轮新增一大段 tool 输出后越过 85%
+    const bulk = 'x'.repeat(40000) // 40000 字节 → 10000 tokens
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 100000 }))
+    const run = makeRun([user('hi'), asst('call', [tc('c1', 'read', '{}')]), tool('c1', bulk)])
+    m.updatePressure(run)
+    expect(m.enabled).toBe(true)
   })
 })
 

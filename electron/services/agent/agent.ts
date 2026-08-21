@@ -279,6 +279,8 @@ export abstract class Agent {
       getProfileId: () => this.resolveContextBudgetProfileId(),
       getLastPromptTokens: () => this._lastPromptTokens,
       getLastCacheHitRate: () => this._lastCacheHitRate,
+      invalidateTokenAnchor: () => this._conversation?.setLastPromptTokens(undefined),
+      getTools: () => this.getAvailableTools(),
       summarizeMessages: (messages) => this.summarizeForCompression(messages),
       reportUsage: (tokens, cacheHitRate) => {
         // updatePressure 拿到 API 精确值时刷新上下文栏（不靠 lastStep）。
@@ -1506,7 +1508,8 @@ export abstract class Agent {
     // 前缀已有图则说明视觉模型接受过它，照常复用）。
     if (this._previousRunMessages && this._previousRunMessages.length > 0 && !run.context.wakeup) {
       const contextLength = this._contextWindow.getContextLength()
-      const prevTokens = this._lastPromptTokens || this._contextWindow.estimateTotalTokens(this._previousRunMessages)
+      // 锚点 + 上轮末尾新增：纯锚点会漏掉上一轮的 assistant 回复（它已进前缀）
+      const prevTokens = this._contextWindow.estimateCurrentPromptTokens(this._previousRunMessages)
       const configService = this.services.configService
       const skipVisionCache = configService
         ? shouldSkipCachePathForVision({
@@ -1552,6 +1555,10 @@ export abstract class Agent {
     }
 
     // ── Cold start path: 从零构建上下文 ──
+
+    // messages 即将被重建（历史按 L0–L4 压缩过，比上一轮短得多），上一轮的
+    // prompt_tokens 不再对应新序列——留着当锚点会把已经压掉的历史算回来。
+    this._conversation?.setLastPromptTokens(undefined)
 
     // 提前并行启动两个异步操作（均需 embedding + 向量搜索，相互独立）
     const knowledgeResultPromise = this.loadKnowledgeContextWithTimeout(message, run.context.hostId)
@@ -3678,10 +3685,10 @@ export abstract class Agent {
       getCurrentPtyId: () => run.ptyId,
       getToolOutputBudget: (currentTokensOverride?: number) => {
         const contextLength = this._contextWindow.getContextLength()
+        // 锚点 + 本轮新增：同一批工具连续写入时，只看上轮锚点会让每个工具
+        // 都以为自己面对的是空窗口，预算发超。
         const currentTokens =
-          currentTokensOverride ??
-          this._lastPromptTokens ??
-          this._contextWindow.estimateTotalTokens(run.messages)
+          currentTokensOverride ?? this._contextWindow.estimateCurrentPromptTokens(run.messages)
         return computeToolOutputBudget({ contextLength, currentTokens })
       },
     }

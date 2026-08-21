@@ -32,6 +32,17 @@ export interface ContextWindowDeps {
   /** 把 token 用量推到当前 run 的 lastStep + onStep 回调(UI 展示)。 */
   reportUsage: (tokens: number, cacheHitRate?: number) => void
   /**
+   * 作废真实用量锚点。压缩后 messages 结构已变,上一轮的 prompt_tokens 不再对应
+   * 当前序列,继续拿它当锚点会把已经释放掉的部分算进来。作废后过渡一轮全量估算,
+   * 下次 API 响应回来就有新锚点。
+   */
+  invalidateTokenAnchor?: () => void
+  /**
+   * 当前请求会带上的工具定义(冷启动全量估算用)。工具 schema 是每次请求都在的
+   * 固定开销,实测占一两万 tokens,漏算会让估算严重偏低。
+   */
+  getTools?: () => Array<unknown>
+  /**
    * 生成待归档消息的 AI 小结（proactive 路径专用：窗口将满、API 还可用时摘要质量最高）。
    * 返回 null 或抛错 → 回退固定模板。
    */
@@ -133,10 +144,53 @@ export class ContextWindowManager {
     return estimateTextTokens(text)
   }
 
-  /** 估算消息列表的总 token 数量(含 tool_calls / reasoning_content / images + 4000 基线)。 */
+  /**
+   * 全量估算一次请求的 prompt 规模:消息列表 + 工具 schema 固定开销。
+   *
+   * 仅用于够不着真实用量的场合(冷启动首轮、锚点刚被作废)。有锚点时一律走
+   * estimateCurrentPromptTokens——全量估算的系统性偏差会随历史长度累积放大。
+   */
   estimateTotalTokens(messages: AiMessage[]): number {
-    // +4000: 系统提示词/工具 schema 等固定开销的经验估值
-    return this.estimateMessagesTokens(messages) + 4000
+    return this.estimateMessagesTokens(messages) + this.estimateFixedOverheadTokens()
+  }
+
+  /**
+   * 工具 schema 的固定开销。每次请求都随行,实测（28 个内置工具）约 9.5K tokens,
+   * 装了技能/插件/MCP 后更大——按常数估会严重偏低。
+   * 拿不到工具列表时退回经验值 4000（历史缺省）。
+   */
+  private estimateFixedOverheadTokens(): number {
+    const tools = this.deps.getTools?.()
+    if (!tools || tools.length === 0) return 4000
+    return this.estimateTokens(JSON.stringify(tools))
+  }
+
+  /**
+   * 当前请求的 prompt token 数:以上一轮 API 返回的真实 prompt_tokens 为锚点,
+   * 只估算那之后新增的消息。
+   *
+   * 为什么不全量重估:估算公式的系统性偏差会乘以历史长度。锚点法把估算的作用
+   * 范围压到「上一轮响应至今」的几条消息,同时让各家 provider 的分词差异被真实
+   * 用量自动吸收,不必为每个模型分别调系数。（同 Codex Harness 的口径。）
+   *
+   * 锚点覆盖到上一轮请求发出去的全部内容;那之后新增的是「上一轮的 assistant
+   * 回复 + 其后的 tool 结果 / 新 user 消息」,所以从最后一条 assistant 消息起算。
+   */
+  estimateCurrentPromptTokens(messages: AiMessage[]): number {
+    const anchor = this.deps.getLastPromptTokens()
+    if (anchor === undefined) return this.estimateTotalTokens(messages)
+
+    let lastAssistantIdx = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') {
+        lastAssistantIdx = i
+        break
+      }
+    }
+    // 没有 assistant 消息 = 还没发生过响应,锚点无从对应,退回全量估算
+    if (lastAssistantIdx === -1) return this.estimateTotalTokens(messages)
+
+    return anchor + this.estimateMessagesTokens(messages.slice(lastAssistantIdx))
   }
 
   /** 仅估算消息列表本身的 token（不含系统提示词等固定开销） */
@@ -180,15 +234,18 @@ export class ContextWindowManager {
    */
   updatePressure(run: AgentRun): void {
     const contextLength = this.getContextLength()
-    // 优先用 API 返回的精确值,无精确值时用估算值(仅用于内部上下文管理决策)
-    const hasRealData = this.deps.getLastPromptTokens() !== undefined
-    const totalTokens = hasRealData ? this.deps.getLastPromptTokens()! : this.estimateTotalTokens(run.messages)
+    const lastPromptTokens = this.deps.getLastPromptTokens()
+    const hasRealData = lastPromptTokens !== undefined
+    // 压力判断用「真实锚点 + 本轮新增」：ReAct 循环里 tool 结果持续累积,
+    // 只看上一轮的锚点会低估,等下一次 API 响应才发现已经撑满。
+    const totalTokens = this.estimateCurrentPromptTokens(run.messages)
     const usagePercent = Math.round((totalTokens / contextLength) * 100)
     const remaining = Math.max(0, contextLength - totalTokens)
 
-    // 仅当有 API 返回的精确数据时才推送到前端,避免不准确的估算值误导用户
+    // 推给 UI 的仍是 API 确认过的原值:界面上的数字必须能对得上账单,
+    // 不掺估算（SPEC: 本轮 usage 以 API 为唯一真相源）。
     if (hasRealData) {
-      this.deps.reportUsage(totalTokens, this.deps.getLastCacheHitRate())
+      this.deps.reportUsage(lastPromptTokens, this.deps.getLastCacheHitRate())
     }
 
     // 超过阈值时激活上下文管理功能(一旦激活不会关闭,因为压缩后用量可能降低)
@@ -308,6 +365,10 @@ export class ContextWindowManager {
     // 重建 messages: system + 历史任务消息 + user + 摘要 + 保留的最近消息
     const preserved = run.messages.slice(lastUserIndex + 1 + toCompress.length)
     run.messages = [...run.messages.slice(0, lastUserIndex + 1), summaryMessage, ...preserved]
+
+    // 序列已变,上一轮的 prompt_tokens 不再对应当前 messages——继续拿它当锚点
+    // 会把刚刚释放掉的部分又算回来,压缩看起来"没生效"。
+    this.deps.invalidateTokenAnchor?.()
 
     const afterTokens = this.estimateTotalTokens(run.messages)
 
