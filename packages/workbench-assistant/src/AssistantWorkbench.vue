@@ -301,7 +301,10 @@ const deskChat = reactive({
   seated: false,
   visible: true,
 })
-watch(terminalSeated, (seated) => { deskChat.seated = seated }, { immediate: true })
+watch(terminalSeated, (seated) => {
+  deskChat.seated = seated
+  artifactStore.setCatalogOnlyOpen(seated)
+}, { immediate: true })
 watch(chatVisible, (visible) => { deskChat.visible = visible })
 
 defineExpose({

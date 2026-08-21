@@ -94,6 +94,8 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
   const lastDiskSync = ref<ArtifactDiskSyncEvent | null>(null)
   /** 最近一次 canvas open：manage 工具视为明确请文件入座，其它写入只进清单 */
   const lastCanvasOpen = ref<{ tabId: string; stealSeat: boolean } | null>(null)
+  /** 终端入座时为 true：新产出只进目录，不后台开页签 */
+  const catalogOnlyOpen = ref(false)
   /** 人机双写协同状态（session 级，不持久化）：key = coeditKey(tabId, artifactId) */
   const coeditStates = ref<Map<string, CoeditEntry>>(new Map())
   /** 只读预览上次对应的磁盘修改时间：key = filePath */
@@ -470,15 +472,17 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
 
   function handleAgentStep(tabId: string, step: AgentStep, allSteps: readonly AgentStep[] = []) {
     if (step.canvasData) {
-      if (step.canvasData.action === 'open') {
-        lastCanvasOpen.value = {
-          tabId,
-          stealSeat: step.toolName === 'manage_workbench_artifacts'
+      let data = enrichCanvasDataFromStep(step.canvasData, step, allSteps)
+      if (data.action === 'open') {
+        const stealSeat = step.toolName === 'manage_workbench_artifacts'
+        lastCanvasOpen.value = { tabId, stealSeat }
+        if (catalogOnlyOpen.value && !stealSeat && data.activate !== false) {
+          data = { ...data, activate: false }
         }
       }
-      applyCanvasDataForTab(tabId, enrichCanvasDataFromStep(step.canvasData, step, allSteps))
-      if (step.canvasData.action === 'open') {
-        const id = resolveCanvasArtifactId(step.canvasData)
+      applyCanvasDataForTab(tabId, data)
+      if (data.action === 'open') {
+        const id = resolveCanvasArtifactId(data)
         void reloadArtifactContent(tabId, id)
       }
     }
@@ -554,6 +558,9 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     splitRatio,
     lastDiskSync,
     lastCanvasOpen,
+    setCatalogOnlyOpen(value: boolean) {
+      catalogOnlyOpen.value = value
+    },
     isVisible,
     hasArtifacts: hasArtifactsForTab,
     isPanelMinimized,
