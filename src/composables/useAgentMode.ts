@@ -1147,7 +1147,8 @@ export function useAgentMode(
         const debugMode = configStore.agentDebugMode
         const visibleSteps = group.steps.filter(s => shouldShowToolResultStep(s, debugMode))
         const segments = foldProcessSteps(visibleSteps, {
-          enabled: !debugMode && configStore.foldAgentProcess,
+          // 选严格就是要盯着它每一步，这时候收起来是跟用户对着干
+          enabled: !debugMode && configStore.foldAgentProcess && executionMode.value !== 'strict',
         })
 
         let emittedFirst = false
