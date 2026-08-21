@@ -756,6 +756,9 @@ export class WatchService {
         systemInfo: { os: getLocalOS(), shell: getDefaultShell() },
         terminalType: 'assistant',
         sessionId: agentSessionId,
+        // 关切/唤醒在后台独立执行，面板只读、无回复入口：没有可同步应答的对象。
+        // 需要打扰人时走 talk_to_user 冒泡进联络，而不是原地等回答。
+        unattended: true,
         ...(watch.execution.workingDirectory ? { cwd: watch.execution.workingDirectory } : {}),
         ...(wakeupMode ? { wakeup: true } : {})
       }

@@ -3866,7 +3866,10 @@ export abstract class Agent {
   }
   
   /**
-   * 等待用户确认
+   * 等待用户确认。
+   *
+   * 无应答通道时按"未批准"返回，理由同 requestSecureInput：没有超时兜底，
+   * 缺了结论就是永久挂起。
    */
   protected waitForConfirmation(
     run: AgentRun,
@@ -3878,6 +3881,10 @@ export abstract class Agent {
     reasons?: string[],
     trustCommandOffer?: PendingConfirmationInternal['trustCommandOffer'],
   ): Promise<{ approved: boolean; modifiedArgs?: Record<string, unknown> }> {
+    if (!this.callbacks?.onNeedConfirm) {
+      log.warn(`No confirmation channel available (tool=${toolName}, risk=${riskLevel}); treating as not approved`)
+      return Promise.resolve({ approved: false })
+    }
     return new Promise((resolve) => {
       const confirmation: PendingConfirmationInternal = {
         agentId: run.id,
@@ -3909,6 +3916,9 @@ export abstract class Agent {
    *
    * 前端弹框后，用户输入的值直接经 IPC 写入加密存储，Agent 只得到"已保存/已取消"。
    * 值的明文**不经过 LLM 上下文**。
+   *
+   * 无应答通道时（后台关切/唤醒、非交互 CLI 等）立即按"已取消"返回：这个 Promise
+   * 没有超时兜底，缺了结论就是永久挂起。
    */
   protected requestSecureInput(
     run: AgentRun,
@@ -3917,6 +3927,10 @@ export abstract class Agent {
     prompt: string,
     isUpdate?: boolean
   ): Promise<boolean> {
+    if (!this.callbacks?.onNeedSecureInput) {
+      log.warn(`No secure input channel available (skill=${skillId}, env=${envName}); treating as cancelled`)
+      return Promise.resolve(false)
+    }
     return new Promise((resolve) => {
       const requestId = this.generateId()
       const request: PendingSecureInputInternal = {

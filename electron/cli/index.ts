@@ -923,23 +923,6 @@ async function sshList(): Promise<void> {
 
 // ==================== Agent Commands ====================
 
-async function promptYesNo(question: string): Promise<boolean> {
-  if (!process.stdin.isTTY) {
-    console.log('   No TTY: rejected (pass --mode free or --free to auto-approve)')
-    return false
-  }
-  const readline = await import('readline')
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-  try {
-    const answer = await new Promise<string>((resolve) => {
-      rl.question(`${question} [y/N] `, resolve)
-    })
-    return /^y(es)?$/i.test(answer.trim())
-  } finally {
-    rl.close()
-  }
-}
-
 async function agentRun(args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const task = positional.join(' ')
@@ -1042,6 +1025,107 @@ async function agentRun(args: string[]): Promise<void> {
     type === 'thinking' ? '💭' : type === 'tool_call' ? '🔧' :
     type === 'tool_result' ? '📋' : type === 'message' ? '💬' : '  '
 
+  /**
+   * stdin 单飞：同一时刻只允许一个读取者。
+   *
+   * 确认框、提问、密钥输入都各自建 readline 实例。若两个实例同时挂在 stdin 上，
+   * 隐藏输入赖以生效的回显抑制会被另一个实例的默认回显绕开，密钥就明文打到屏幕上。
+   */
+  let activeReader: { cancel: () => void } | null = null
+  /**
+   * 读取代际：登记 activeReader 只能发生在 await 之后，若此期间又有人发起读取，
+   * 先来者必须自己退场——否则它会挂在 stdin 上却不在锁里，成为失管的第二个读取者。
+   */
+  let readerGeneration = 0
+
+  /** 取消未决的 stdin 读取（任务结束时调用，避免 readline 悬挂导致终端 raw 模式泄漏） */
+  const cancelPendingRead = () => {
+    activeReader?.cancel()
+    activeReader = null
+  }
+
+  /**
+   * 读一行输入。hidden 时不回显（密钥等敏感输入用）。
+   * timeoutMs 到期或被 cancel 时返回 null，调用方据此收尾——绝不无限期挂着。
+   */
+  const readLine = async (promptText: string, opts: { hidden?: boolean; timeoutMs?: number } = {}): Promise<string | null> => {
+    const { hidden = false, timeoutMs } = opts
+    const generation = ++readerGeneration
+    cancelPendingRead()
+
+    const readline = await import('readline')
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true })
+
+    let settled = false
+    let timer: NodeJS.Timeout | undefined
+    let self: { cancel: () => void } | null = null
+    const finish = (resolve: (v: string | null) => void, value: string | null) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      if (activeReader === self) activeReader = null
+      rl.close()
+      resolve(value)
+    }
+
+    return new Promise<string | null>((resolve) => {
+      // await 期间已被后来者取代：不碰 stdin，直接退场
+      if (generation !== readerGeneration) {
+        rl.close()
+        resolve(null)
+        return
+      }
+
+      // 提示词本身要显示，所以先让 question 写完再静音；之后每次按键回显都会经过
+      // _writeToOutput，被这里吞掉。依赖 Node readline 在 raw 模式下由自己负责回显。
+      let muted = false
+      if (hidden) {
+        const anyRl = rl as any
+        anyRl._writeToOutput = (str: string) => {
+          if (!muted) anyRl.output.write(str)
+        }
+      }
+
+      self = { cancel: () => finish(resolve, null) }
+      activeReader = self
+      if (timeoutMs) timer = setTimeout(() => finish(resolve, null), timeoutMs)
+
+      rl.question(promptText, (answer) => {
+        // raw 模式不做 CRLF 翻译，光标只下移不回到行首，所以要显式回车
+        if (hidden) process.stdout.write('\r\n')
+        finish(resolve, answer)
+      })
+      muted = true
+    })
+  }
+
+  /**
+   * ask_user 应答：交互式终端下把提问接到 stdin。
+   * 非 TTY 时该工具本就不在工具列表里（context.unattended），不会走到这里。
+   */
+  const answerAsking = async (step: any) => {
+    const args = step.toolArgs || {}
+    const options: string[] = Array.isArray(args.options) ? args.options : []
+    options.forEach((opt, i) => console.log(`   ${i + 1}. ${opt}`))
+
+    // 与工具自身的等待窗口对齐（misc.ts 同款上下限），过期后不再占着 stdin
+    const deadline = Math.min(600, Math.max(30, (args.timeout as number | undefined) ?? 120)) * 1000
+    const startedAt = Date.now()
+
+    // 误按回车不该让用户失去作答机会——重新提示，直到有内容或窗口耗尽
+    while (Date.now() - startedAt < deadline) {
+      const answer = await readLine('   Your answer: ', { timeoutMs: deadline - (Date.now() - startedAt) })
+      if (answer === null) return
+      const raw = answer.trim()
+      if (!raw) continue
+      // 有选项时，纯数字按编号解释（这是列表本身的约定，不是猜测语义）
+      const index = options.length > 0 && /^\d+$/.test(raw) ? Number(raw) - 1 : -1
+      const picked = index >= 0 && index < options.length ? options[index] : undefined
+      agent.addUserMessage(ptyId, picked ?? raw)
+      return
+    }
+  }
+
   const callbacks = {
     onStart: () => {
       // initializeRun 已建会话；与桌面一样首条即异步生成标题，不阻塞 Agent
@@ -1071,6 +1155,13 @@ async function agentRun(args: string[]): Promise<void> {
       const prefix = stepPrefix(step.type)
       const content = step.content?.substring(0, 200) || ''
       console.log(`${prefix} [${step.type}] ${content}`)
+
+      // Agent 在提问：把回答接到 stdin（异步，不阻塞回调）
+      if (step.type === 'asking') {
+        void answerAsking(step)
+        return
+      }
+
       if (step.toolName) {
         console.log(`   Tool: ${step.toolName}`)
         if (step.toolArgs) {
@@ -1078,6 +1169,34 @@ async function agentRun(args: string[]): Promise<void> {
           console.log(`   Args: ${argsStr}`)
         }
       }
+    },
+    onNeedSecureInput: (request: any) => {
+      // 没有这个回调时 Agent 会永久挂起（连超时都没有），所以两种情况都必须给出结论
+      void (async () => {
+        if (!process.stdin.isTTY) {
+          console.log(`\n🔑 ${request.prompt || request.envName} — no TTY, cancelled`)
+          agent.resolveSecureInput(ptyId, request.requestId, false)
+          return
+        }
+        console.log(`\n🔑 ${request.prompt || `${request.skillId} needs ${request.envName}`}`)
+        const entered = await readLine(`   ${request.envName} (input hidden): `, { hidden: true, timeoutMs: 300_000 })
+        const value = entered?.trim()
+        if (!value) {
+          console.log('   Cancelled')
+          agent.resolveSecureInput(ptyId, request.requestId, false)
+          return
+        }
+        try {
+          const { getDefaultCredentialService } = await import('../services/credential.service')
+          await getDefaultCredentialService().setSkillEnv(request.skillId, request.envName, value)
+          agent.resolveSecureInput(ptyId, request.requestId, true)
+          console.log('   Saved')
+        } catch (err) {
+          // 存不进去也必须给出结论，否则 Agent 一直等在那里
+          console.error(`   Failed to save: ${err instanceof Error ? err.message : String(err)}`)
+          agent.resolveSecureInput(ptyId, request.requestId, false)
+        }
+      })()
     },
     onNeedConfirm: (confirmation: any) => {
       console.log(`\n⚠️  Confirmation needed: ${confirmation.toolName} (risk: ${confirmation.riskLevel})`)
@@ -1088,16 +1207,25 @@ async function agentRun(args: string[]): Promise<void> {
           agent.confirmToolCall(ptyId, confirmation.toolCallId, true)
           return
         }
-        const ok = await promptYesNo('   Allow this tool call?')
+        if (!process.stdin.isTTY) {
+          console.log('   No TTY: rejected (pass --mode free or --free to auto-approve)')
+          agent.confirmToolCall(ptyId, confirmation.toolCallId, false)
+          return
+        }
+        // 与提问/密钥输入共用同一把 stdin 锁，避免两个 readline 同时抢输入
+        const answer = await readLine('   Allow this tool call? [y/N] ')
+        const ok = /^y(es)?$/i.test((answer ?? '').trim())
         agent.confirmToolCall(ptyId, confirmation.toolCallId, ok)
         console.log(ok ? '   Approved' : '   Rejected')
       })()
     },
     onComplete: () => {
       clearInline()
+      cancelPendingRead()
     },
     onError: (_agentId: string, error: string) => {
       clearInline()
+      cancelPendingRead()
       console.error(`\n✗ Agent error: ${error}`)
     }
   }
@@ -1109,7 +1237,10 @@ async function agentRun(args: string[]): Promise<void> {
       os: getLocalOS(),
       shell: getDefaultShell()
     },
-    terminalType: 'local' as const
+    terminalType: 'local' as const,
+    // 交互式终端里有人坐在屏幕前（下面注册了 stdin 应答通道）；
+    // 管道/CI/被程序调起时无人可答，如实申报。
+    unattended: !process.stdin.isTTY
   }
 
   console.log(`Running agent task: "${task}"`)

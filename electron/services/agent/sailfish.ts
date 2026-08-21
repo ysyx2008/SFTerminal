@@ -14,7 +14,7 @@ import type {
   AgentServices,
   PromptOptions
 } from './types'
-import { getAgentTools, AgentMode } from './tools'
+import { getAgentTools, filterUnattendedTools, AgentMode } from './tools'
 import { PromptBuilder } from './prompt-builder'
 import type { SkillSession } from './skills'
 import { createLogger } from '../../utils/logger'
@@ -107,16 +107,20 @@ export class SailFish extends Agent {
       }
     }
 
+    const unattended = this.currentRun?.context?.unattended
     const baseTools = getAgentTools(this.services.mcpService, {
       mode,
       remoteChannel,
       includeContextTools: this.contextManagementEnabled,
-      mcpToolSession: this.getMcpToolSession()
+      mcpToolSession: this.getMcpToolSession(),
+      unattended
     }, this.services.pluginRegistry)
     
     if (this.currentRun?.skillSession) {
       this.currentRun.skillSession.updateCoreTools(baseTools)
-      return this.currentRun.skillSession.getAvailableTools()
+      const withSkills = this.currentRun.skillSession.getAvailableTools()
+      // 技能工具是在 SkillSession 合并后才成形的第四个来源，得单独再过一次
+      return unattended ? filterUnattendedTools(withSkills) : withSkills
     }
     
     return baseTools

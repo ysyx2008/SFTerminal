@@ -438,6 +438,11 @@ export interface GetAgentToolsOptions {
   remoteChannel?: RemoteChannel
   /** 是否包含上下文管理工具（用量超过阈值时启用，节省 token） */
   includeContextTools?: boolean
+  /**
+   * 本次执行无人值守：没有可同步应答的对象。
+   * 为真时，会阻塞等待用户输入的工具不会出现在列表里——环境里不存在的能力不该假装存在。
+   */
+  unattended?: boolean
   /** MCP 渐进披露会话（defer 时提供已 load 子集） */
   mcpToolSession?: McpToolSession
 }
@@ -1291,10 +1296,28 @@ SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不�
   if (mcpService?.shouldDeferTools()) {
     const loadedServers = options?.mcpToolSession?.getLoadedServerIds() ?? []
     const loadedDefs = mcpService.getToolDefinitionsByServerIds(loadedServers)
-    return [...filteredTools, ...loadedDefs]
+    filteredTools = [...filteredTools, ...loadedDefs]
   }
 
+  if (options?.unattended) return filterUnattendedTools(filteredTools)
+
   return filteredTools
+}
+
+/**
+ * 移除会阻塞等待用户输入的工具（无人值守时用）。
+ *
+ * 工具清单是环境描述的一部分——这个环境里确实没有可应答的人，就不该让该能力出现。
+ * 判据取 `_meta.lifecycle.blocksUntilUserInput`，不硬编码工具名：将来任何新增的
+ * 「阻塞等人回答」工具自动适用。
+ *
+ * 独立导出是因为工具有多个来源：`getAgentTools` 覆盖内置 / 插件 / MCP，而技能加载的
+ * 工具在 `SkillSession` 合并之后才成形，需要在最终列表上再过一次。
+ */
+export function filterUnattendedTools(tools: readonly ToolDefinition[]): ToolDefinition[] {
+  return tools.filter(
+    tool => !(tool as ToolDefinitionWithMeta)._meta?.lifecycle?.blocksUntilUserInput
+  )
 }
 
 /**

@@ -307,6 +307,7 @@ export class PromptBuilder {
       w('environment', this.buildWorkbenchPromptSection()),
       w('environment', this.buildSplitPanesSection()),
       w('environment', this.buildRemoteChannelContext()),
+      w('environment', this.buildUnattendedSection()),
 
       // ── Tier 3: 任务级 ──
       w('knowledge', this.buildKnowledgeDocSection()),
@@ -655,6 +656,18 @@ export class PromptBuilder {
     ].join('\n')
   }
 
+  /**
+   * 无人值守说明。
+   *
+   * 只陈述环境事实，不给应对策略——怎么处理由模型自行判断。
+   * （对应 SPEC「环境感知优先于行为指导」：harness 负责让 AI 准确感知环境，
+   * 不替 AI 决定怎么做事。）
+   */
+  private buildUnattendedSection(): string {
+    if (!this.context.unattended) return ''
+    return '**本次执行无人值守**：当前没有可同步应答的对象。'
+  }
+
   private buildRemoteChannelContext(): string {
     const channel = this.context.remoteChannel
     if (!channel || channel === 'desktop') {
@@ -831,14 +844,18 @@ export class PromptBuilder {
   }
 
   private buildBehaviorRules(): string {
-    return [
+    const rules = [
       '**行为准则**：',
       '- 调用工具前简要说明意图，执行后用通俗语言解释结果',
       '- 关键操作后主动验证，遇到问题调整策略而非机械重试',
       '- 只做用户明确要求的事，做不到就说做不到',
       '- 讨论/咨询时回答问题即可，不必执行工具',
-      '- 需要确认时**必须用 `ask_user`**，不要只在消息里问然后等回复',
-    ].join('\n')
+    ]
+    // 无人值守时 ask_user 已不在工具列表里，这条会指向一个不存在的能力
+    if (!this.context.unattended) {
+      rules.push('- 需要确认时**必须用 `ask_user`**，不要只在消息里问然后等回复')
+    }
+    return rules.join('\n')
   }
 
   private buildWatchGuide(): string {

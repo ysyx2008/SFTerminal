@@ -237,6 +237,13 @@ export interface AgentContext {
   currentPlan?: AgentPlan
   /** 唤醒模式：静默运行，不累积到会话历史 */
   wakeup?: boolean
+  /**
+   * 本次执行无人值守：没有可同步应答的对象。
+   *
+   * 由各入口如实申报当次执行的真实处境，而非入口类型——同一个 CLI 进程，
+   * 交互式跑（有人）和脚本里跑（无人）结论不同。关切/唤醒恒为 true。
+   */
+  unattended?: boolean
   /** IM 场景：Agent 之前主动发送的消息内容，作为用户回复的上下文注入 API 消息 */
   proactiveContext?: string
   /** 仅注入 API 消息的上下文提示（如首次联系提醒），不显示在 user_task 步骤中 */
