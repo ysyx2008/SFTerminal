@@ -1967,7 +1967,7 @@ export abstract class Agent {
     // 在调用 API 前主动压缩。与 catch 里的 emergencyCompress（API 报错兜底）分工：
     // - 本方法：DeepSeek 等"不报 context_length_exceeded 但会默默截断"的 provider 主力
     // - emergencyCompress：OpenAI 等"会真报错"的 provider 兜底
-    // 同一 run 只主动压缩一次（_proactiveCompressedThisRun 标记），避免连续压缩
+    // 不限次数：压缩会作废真实用量锚点，要等下一次 API 响应才可能再压，天然隔开轮次
     if (this._contextWindow.shouldProactiveCompress(run)) {
       const compressed = await this._contextWindow.proactiveCompress(run)
       if (compressed) {
@@ -2253,7 +2253,7 @@ export abstract class Agent {
    * agent.compress_summary_prompt）；返回 null 由 ContextWindowManager 回退固定模板。
    *
    * 模型与上下文预算同一 profile（resolveContextBudgetProfileId），避免按主模型
-   * 算预算却打到视觉模型。同一 run 只触发一次（_proactiveCompressedThisRun），成本可控。
+   * 算预算却打到视觉模型。压不动时会停止重试，不会反复烧摘要调用。
    */
   private async summarizeForCompression(messages: AiMessage[]): Promise<string | null> {
     const aiService = this.services.aiService

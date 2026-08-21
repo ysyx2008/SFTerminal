@@ -73,8 +73,17 @@ export interface CompressResult {
 export class ContextWindowManager {
   /** 上下文管理功能激活阈值(用量百分比)。与 85% 警告消息对齐。 */
   static readonly THRESHOLD = 85
-  /** 主动压缩阈值(基于上一轮真实 prompt_tokens 的占比)。留 10% 余量：摘要调用本身要占一次请求。 */
-  static readonly PROACTIVE_THRESHOLD = 0.90
+  /**
+   * 主动压缩阈值(基于上一轮真实 prompt_tokens 的占比)。留 5% 余量给摘要调用本身。
+   * 不再压得更早：压缩是有损的，且现在不限次数——涨回来还能再压，不必提前动手。
+   */
+  static readonly PROACTIVE_THRESHOLD = 0.95
+
+  /**
+   * 一次主动压缩至少要释放多少 token 才算有效。低于此值说明剩余结构压不动
+   * （系统提示词占主导、或历史已全是摘要），继续尝试只是反复烧摘要调用。
+   */
+  static readonly MIN_EFFECTIVE_FREED_TOKENS = 500
 
   /**
    * 主动压缩的最小可压缩范围（tokens）。真实 E2E 发现：系统提示词占主导的会话里，
@@ -108,8 +117,8 @@ export class ContextWindowManager {
   }
 
   private _enabled = false
-  /** 本轮 run 是否已主动压缩过（同一 run 只主动压缩一次，避免连续压缩） */
-  private _proactiveCompressedThisRun = false
+  /** 主动压缩已经压不动（上次几乎没释放空间），本任务内不再尝试 */
+  private _proactiveCompressStalled = false
   /** 上一轮实测的 system prompt 规模，用于预算分配（见 getFixedPrefixTokens） */
   private _lastSystemPromptTokens?: number
 
@@ -426,9 +435,14 @@ export class ContextWindowManager {
   /**
    * 是否应该主动压缩（本地触发路径，不等 API 报错）。
    *
-   * 触发条件：上一轮 API 返回的真实 prompt_tokens >= contextLength * PROACTIVE_THRESHOLD（0.90）。
-   * 仅用真实值，无真实值（首次对话 / cold start）时不触发——让 emergencyCompress
-   * 兜底，避免估算误差导致误压缩。
+   * 触发条件：上一轮 API 返回的真实 prompt_tokens >= contextLength * PROACTIVE_THRESHOLD。
+   * 仅用真实值，无真实值（首次对话 / cold start）时不触发——避免估算误差导致误压缩。
+   * 这条要求同时提供了天然的轮次间隔：压缩会作废锚点，必须等下一次 API 响应
+   * 拿到新的真实值才可能再压，不会在同一轮里连续压。
+   *
+   * 不限制次数（SPEC「一次任务里该压几次就压几次」）：长任务压完一轮照样会重新
+   * 涨满，限制次数等于把后续交给"等 API 报错"，而对超限默默截断的 provider
+   * 那条路等于没有。防抖改为要求实效——上一次压不动就不再空转（_proactiveCompressStalled）。
    *
    * 与 emergencyCompress 的分工：
    * - 本方法在 API 调用前主动压缩（基于上一轮真实值预测本轮会超限）
@@ -436,7 +450,7 @@ export class ContextWindowManager {
    * - DeepSeek 等不报错的 provider：本方法能在"超限但 API 默默截断"前主动压缩，保住上下文质量
    */
   shouldProactiveCompress(run: AgentRun): boolean {
-    if (this._proactiveCompressedThisRun) return false  // 同一 run 只主动压缩一次，避免连续压缩
+    if (this._proactiveCompressStalled) return false  // 上次压不动，不再空转
     const lastPromptTokens = this.deps.getLastPromptTokens()
     if (lastPromptTokens === undefined) return false  // 无真实值，不赌估算
     const contextLength = this.getContextLength()
@@ -448,19 +462,18 @@ export class ContextWindowManager {
    * 摘要质量最高），小结直接替换被归档的早期对话；摘要调用失败/不可用才回退
    * 固定模板。压缩动作本身复用 emergencyCompress 的激进逻辑。
    *
-   * 同一 run 只压一次（_proactiveCompressedThisRun 标记），防止绕过 shouldProactiveCompress
-   * 直接调用导致重复压缩。
+   * 不限次数（长任务压完还会涨回来），但压不动就停手——见 shouldProactiveCompress。
    *
-   * @returns 压缩结果；若已压缩过或 messages 结构不允许压缩返回 null
+   * @returns 压缩结果；若已判定压不动或 messages 结构不允许压缩返回 null
    */
   async proactiveCompress(run: AgentRun): Promise<CompressResult | null> {
-    if (this._proactiveCompressedThisRun) return null
+    if (this._proactiveCompressStalled) return null
     // 可压缩范围只算一次：摘要装配与实际归档必须用同一份消息切片，
     // 否则「摘要覆盖的内容」和「被归档的内容」可能不一致
     const range = this.findCompressibleRange(run, 2)
     if (!range) return null
     // 范围太小压缩是负收益（AI 小结 + 归档包装比原文还长），跳过；
-    // 不标记 _proactiveCompressedThisRun，等后续轮次积累更多内容仍可触发
+    // 不算"压不动"，等后续轮次积累更多内容仍可触发
     const minRange = this.deps.minProactiveRangeTokens ?? ContextWindowManager.MIN_PROACTIVE_RANGE_TOKENS
     const rangeTokens = this.estimateMessagesTokens(range.toCompress)
     if (rangeTokens < minRange) {
@@ -470,8 +483,13 @@ export class ContextWindowManager {
     const summary = await this.buildProactiveSummary(range.toCompress)
     const result = this.compressAggressively(run, summary, range)
     if (result) {
-      this._proactiveCompressedThisRun = true
       log.info(`Proactive compress: freed ${result.freedTokens} tokens, kept recent ${result.keepRecent} rounds (archive ${result.archiveId})`)
+      // 实效防抖：压完基本没释放空间，说明剩下的结构压不动了（系统提示词占
+      // 主导、或历史已全是摘要）。再压只会反复烧一次摘要调用，交给紧急压缩兜底。
+      if (result.freedTokens < ContextWindowManager.MIN_EFFECTIVE_FREED_TOKENS) {
+        this._proactiveCompressStalled = true
+        log.warn(`Proactive compress stalled: only freed ${result.freedTokens} tokens, disabling further attempts this task`)
+      }
     }
     return result
   }

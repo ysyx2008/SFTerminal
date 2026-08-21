@@ -416,8 +416,8 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 - **为什么用真实值不用估算**：`estimateTextTokens` 误差 <10% 是均值，单次可能 20%+；用上一轮真实 `prompt_tokens` 预测本轮，精度主要受本轮新增内容影响（单次写入大小由 `tool-output-budget` 限制）。
 - **为什么需要它**：DeepSeek 等provider 上下文超限时**默默截断不报错**，`emergencyCompress`（依赖 `context_length_exceeded`）对它们无效。proactiveCompress 在 API 调用前主动压缩，覆盖这类 provider。
 - **流程**：`proactiveCompress`（复用 `compressAggressively`：先 keepRecent=2，仍 >90% 降到 1）→ 注入 `_systemInjected` 提示（`agent.context_proactive_compressed`，文案区分"系统主动压缩"vs emergency 的"系统自动压缩"）→ 直接继续 `executeStep`（不重试，压缩后正常调 AI）。
-- **同一 run 只压一次**：`_proactiveCompressedThisRun` 标记，避免连续压缩。
-- **与 emergencyCompress 的配额关系**：两者独立。proactive 用 `_proactiveCompressedThisRun` 限制 1 次；emergency 用 `MAX_CONTEXT_OVERFLOW_RETRIES = 1` 限制 1 次。最坏情况：先 proactive 压一次，API 仍报错再 emergency 压一次。
+- **不限次数，但要求实效**：一次任务里该压几次就压几次（见「一次任务里该压几次就压几次」）。防抖靠两条：压缩会作废真实用量锚点，必须等下一次 API 响应拿到新真实值才可能再压，天然隔开轮次；某次压缩几乎没释放空间则判定为压不动，本任务内不再尝试，交给紧急压缩兜底。
+- **与 emergencyCompress 的配额关系**：两者独立，紧急压缩仍限 1 次。
 
 #### 上下文压缩完善（2026-08-06 设计）
 

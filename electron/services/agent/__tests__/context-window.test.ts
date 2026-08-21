@@ -558,16 +558,16 @@ describe('ContextWindowManager.shouldProactiveCompress', () => {
     expect(m.shouldProactiveCompress(run)).toBe(false)
   })
 
-  it('lastPromptTokens < 90% contextLength → false', () => {
-    // contextLength=128000, 90% = 115200；给 100000（78%）不触发
+  it('lastPromptTokens < 95% contextLength → false', () => {
+    // contextLength=128000, 95% = 121600；给 100000（78%）不触发
     const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 100000 }))
     const run = makeRun([user('do'), asst('a1')])
     expect(m.shouldProactiveCompress(run)).toBe(false)
   })
 
-  it('lastPromptTokens >= 90% contextLength → true（触发）', () => {
-    // contextLength=128000, 90% = 115200；给 116000（刚过线）触发
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 116000 }))
+  it('lastPromptTokens >= 95% contextLength → true（触发）', () => {
+    // contextLength=128000, 95% = 121600；给 122000（刚过线）触发
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
     const run = makeRun([user('do'), asst('a1'), asst('a2'), asst('a3')])
     expect(m.shouldProactiveCompress(run)).toBe(true)
   })
@@ -698,7 +698,7 @@ describe('ContextWindowManager.proactiveCompress', () => {
     expect(await m.proactiveCompress(run)).toBeNull()
   })
 
-  it('同一 run 多次调用 proactiveCompress → 第二次返回 null（已压缩标记）', async () => {
+  it('压不动（几乎没释放空间）→ 判定 stalled，不再重试', async () => {
     const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
     const run = makeRun([
       user('do'),
@@ -707,11 +707,38 @@ describe('ContextWindowManager.proactiveCompress', () => {
       asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
       asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
     ])
+    // 这批消息都很短，压完释放不了 500 tokens → stalled
     const r1 = await m.proactiveCompress(run)
     expect(r1).not.toBeNull()
-    // 第二次：即使 messages 又积累了很多（这里没加新消息，但逻辑上应被 _proactiveCompressedThisRun 挡住）
+    expect(r1!.freedTokens).toBeLessThan(ContextWindowManager.MIN_EFFECTIVE_FREED_TOKENS)
+    expect(m.shouldProactiveCompress(run)).toBe(false)
+    expect(await m.proactiveCompress(run)).toBeNull()
+  })
+
+  it('压得动 → 不设 stalled，涨回来还能再压（长任务）', async () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    // 每条工具输出 8KB → 单轮就够跨过 500 token 的实效门槛
+    const bulk = (n: string) => `${n}:${'x'.repeat(8000)}`
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', bulk('r1')),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', bulk('r2')),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', bulk('r3')),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', bulk('r4'))
+    ])
+    const r1 = await m.proactiveCompress(run)
+    expect(r1).not.toBeNull()
+    expect(r1!.freedTokens).toBeGreaterThanOrEqual(ContextWindowManager.MIN_EFFECTIVE_FREED_TOKENS)
+    // 未被标记 stalled：真实用量仍高时可以再压（不再是「一个 run 只准压一次」）
+    expect(m.shouldProactiveCompress(run)).toBe(true)
+
+    // 模拟任务继续跑、上下文又涨满
+    for (let i = 5; i <= 8; i++) {
+      run.messages.push(asst(`a${i}`, [tc(`c${i}`, 'more')]), tool(`c${i}`, bulk(`r${i}`)))
+    }
     const r2 = await m.proactiveCompress(run)
-    expect(r2).toBeNull()
+    expect(r2).not.toBeNull()
+    expect(run.compressedArchives!.length).toBeGreaterThanOrEqual(2)
   })
 
   it('proactiveCompress 与 emergencyCompress 独立（emergency 仍可触发）', async () => {
@@ -727,7 +754,7 @@ describe('ContextWindowManager.proactiveCompress', () => {
     // proactive 先压一次
     const r1 = await m.proactiveCompress(run)
     expect(r1).not.toBeNull()
-    // 模拟后续又积累，emergency 仍能压（不同入口，不受 _proactiveCompressedThisRun 限制）
+    // 模拟后续又积累，emergency 仍能压（不同入口，配额独立）
     run.messages.push(asst('a5', [tc('c5', 'extra')]), tool('c5', 'r5'))
     run.messages.push(asst('a6', [tc('c6', 'more')]), tool('c6', 'r6'))
     const r2 = m.emergencyCompress(run)
