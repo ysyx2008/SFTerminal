@@ -212,7 +212,7 @@ Agent 有四种存在方式，对应四类**互斥**的会话（`kind`）。把�
 
 ### 三种终端模式（⚠️ 开发新功能必须考虑）
 
-Agent 的运行环境分三种：`local`（本地终端）、`ssh`（SSH 远程终端）、`assistant`（无终端助手）。**核心区别是默认操作哪台机器**：命令执行和远程文件走当前终端对应的通道（本机 PTY / SSH/SFTP）；本机读写（读、写、改、搜本机文件）在三种模式都可用——连着远程时仍能在本机写文档。相对路径按本机目录理解，不拿远程当前目录往本机上拼。新增涉及文件或命令的功能时，必须明确它操作的是哪台机器，并通过 `_meta.supportedModes` 限定适用模式。详见 `tools.ts` 中各工具的 `_meta` 定义。
+Agent 的运行环境分三种：`local`（本地终端）、`ssh`（SSH 远程终端）、`assistant`（无终端助手）。**核心区别是默认操作哪台机器**：眼前窗格里的命令和远程文件走当前终端对应的通道（本机 PTY / SSH/SFTP）；本机读写和本机命令（读、写、改、搜本机文件，以及在本机跑命令）在远程会话里同样可用——不必再开一扇本地窗。相对路径按本机目录理解，不拿远程当前目录往本机上拼。新增涉及文件或命令的功能时，必须明确它操作的是哪台机器，并通过 `_meta.supportedModes` 限定适用模式。详见 `tools.ts` 中各工具的 `_meta` 定义。
 
 **异构分屏**：分屏后同一个 tab 里允许混合不同 terminalType 的窗格——本地终端、多个不同主机的 SSH 连接可以并存。每个 `SplitPane.terminalType` / `sshSessionId` 都独立，所以 tab.type 只跟 root 兼容，"操作哪台机器"的真相是当前激活窗格（或工具显式指定的 pane_id）。`splitTerminal(direction, target)` 的 `target` 参数（`inherit` / `local` / `ssh:sessionId`）控制新窗格连哪里；Agent 也能调 `list_ssh_sessions` 拿 sessionId 后主动开 SSH 窗格。
 

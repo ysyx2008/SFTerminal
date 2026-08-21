@@ -1,7 +1,7 @@
 /**
  * 轻量命令执行器（基于 child_process.spawn）
  *
- * 用于无终端的 Agent 模式（assistant），直接执行 shell 命令并返回结果。
+ * 用于无终端的助手，以及远程会话里在本机跑命令；直接执行 shell 命令并返回结果。
  * 与 PTY 版（command.ts）不同：
  * - 不需要终端会话，不追踪终端状态
  * - 不支持 sudo、续行检测等终端特有交互
@@ -22,6 +22,7 @@ import { externalizeToolOutput, externalizeFailedError } from '../tool-output-ex
 import { getExecManager, MAX_PATTERN_LENGTH, type WaitReason } from './exec-manager'
 import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../../services/credential.service'
 import { getUserSkillService } from '../../../services/user-skill.service'
+import { expandTilde } from './file'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 /**
@@ -178,7 +179,8 @@ export async function executeCommandDirect(
     userApproved = confirm.userApproved
   }
 
-  const cwd = (args.cwd as string) || undefined
+  const rawCwd = typeof args.cwd === 'string' ? args.cwd.trim() : ''
+  const cwd = rawCwd ? expandTilde(rawCwd) : undefined
   const skillId = (args.skill_id as string) || undefined
   const waitSeconds = clampNumber(args.wait_seconds, DEFAULT_WAIT_SECONDS, 1, MAX_WAIT_SECONDS)
   const maxSeconds = clampNumber(args.max_seconds, DEFAULT_MAX_SECONDS, 1, MAX_MAX_SECONDS)

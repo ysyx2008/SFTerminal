@@ -28,7 +28,7 @@ vi.mock('../../config.service', () => ({
 }))
 
 import { resolveLocalFilePath } from '../tools/file'
-import { getAgentTools } from '../tools'
+import { getAgentTools, type ToolDefinitionWithMeta } from '../tools'
 
 describe('resolveLocalFilePath', () => {
   it('绝对路径原样返回', () => {
@@ -60,14 +60,33 @@ describe('resolveLocalFilePath', () => {
   })
 })
 
-describe('SSH 模式本机文件工具可见', () => {
-  it('远程会话能看到读、写、改、搜索本机文件', () => {
+describe('SSH 模式本机能力可见', () => {
+  it('远程会话能看到本机读写和本机命令，并保留远程写入', () => {
     const names = getAgentTools(undefined, { mode: 'ssh' }).map(t => t.function.name)
     expect(names).toContain('read_file')
     expect(names).toContain('write_text_file')
     expect(names).toContain('edit_file')
     expect(names).toContain('file_search')
     expect(names).toContain('write_remote_text_file')
+    expect(names).toContain('exec')
+    expect(names).toContain('await_exec')
     expect(names).not.toContain('dispatch_agents')
+  })
+
+  it('本机读写和本机命令的可见性由元数据声明', () => {
+    const ssh = getAgentTools(undefined, { mode: 'ssh' }) as ToolDefinitionWithMeta[]
+    const local = getAgentTools(undefined, { mode: 'local' }) as ToolDefinitionWithMeta[]
+    const metaOf = (tools: ToolDefinitionWithMeta[], name: string) =>
+      tools.find(t => t.function.name === name)?._meta
+
+    expect(metaOf(ssh, 'read_file')?.supportedModes).toEqual(['local', 'assistant', 'ssh'])
+    expect(metaOf(ssh, 'file_search')?.supportedModes).toEqual(['local', 'assistant', 'ssh'])
+    expect(metaOf(ssh, 'edit_file')?.supportedModes).toEqual(['local', 'assistant', 'ssh'])
+    expect(metaOf(ssh, 'write_text_file')?.supportedModes).toEqual(['local', 'assistant', 'ssh'])
+    expect(metaOf(ssh, 'exec')?.supportedModes).toEqual(['assistant', 'ssh'])
+    expect(metaOf(ssh, 'await_exec')?.supportedModes).toEqual(['assistant', 'ssh'])
+
+    expect(local.map(t => t.function.name)).not.toContain('exec')
+    expect(local.map(t => t.function.name)).not.toContain('await_exec')
   })
 })

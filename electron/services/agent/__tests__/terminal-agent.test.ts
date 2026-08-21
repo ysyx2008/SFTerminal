@@ -178,7 +178,7 @@ describe('SailFish', () => {
       
       expect(Array.isArray(tools)).toBe(true)
       expect(toolNames(tools)).toContain('execute_command')
-      expect(toolNames(tools)).not.toContain('exec')
+      expect(toolNames(tools)).toContain('exec')
     })
 
     it('should return base tools when no unified service', () => {

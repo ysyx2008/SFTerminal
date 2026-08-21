@@ -456,14 +456,13 @@ export interface GetAgentToolsOptions {
  * @param pluginRegistry 可选的插件注册表，用于加载插件工具
  */
 export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOptions, pluginRegistry?: PluginRegistry): ToolDefinition[] {
-  // assistant 模式的轻量命令执行工具（child_process.spawn）
-  // 终端模式的 execute_command 及终端交互工具由 terminal 技能提供
-  const execTool: ToolDefinitionWithMeta | null = options?.mode === 'assistant'
-    ? {
+  // 本机命令（child_process.spawn）。可见性由 _meta.supportedModes 决定：本地终端眼前已是本机窗，不另给。
+  // 终端窗里的命令由 terminal 技能的 execute_command 提供。
+  const execTool: ToolDefinitionWithMeta = {
         type: 'function',
         function: {
           name: 'exec',
-          description: `【执行 Shell 命令】通过 shell 执行命令字符串，支持管道/&&/重定向/脚本内联。不支持交互式命令(vim/nano/tmux)。
+          description: `【在本机执行 Shell 命令】通过本机 shell 执行命令字符串，支持管道/&&/重定向/脚本内联。不支持交互式命令(vim/nano/tmux)。
 
 **安全规则（命中标为 dangerous，strict/relaxed 需确认；free 放行）**：
 - 解释器内联代码（node -e / python -c / bash -c / zsh -c / perl -e / ruby -e / php -r 等）会被标记为危险
@@ -491,7 +490,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
               },
               cwd: {
                 type: 'string',
-                description: '工作目录（可选，默认使用当前目录）'
+                description: '本机工作目录（可选）'
               },
               wait_seconds: {
                 type: 'number',
@@ -510,6 +509,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           }
         },
         _meta: {
+          supportedModes: ['assistant', 'ssh'],
           idempotencyKey: ['command'],
           // 历史摘要中"主命令"是 command 字段（task-memory.extractDigest 用得到）
           argRole: { summaryLine: 'command' },
@@ -517,11 +517,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           streamDisplay: { titleKey: 'status.executing', titleField: 'command' }
         }
       }
-    : null
 
-  // assistant 模式专属：等待已转后台的 exec 任务
-  const awaitExecTool: ToolDefinitionWithMeta | null = options?.mode === 'assistant'
-    ? {
+  const awaitExecTool: ToolDefinitionWithMeta = {
         type: 'function',
         function: {
           name: 'await_exec',
@@ -556,11 +553,11 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           }
         },
         _meta: {
+          supportedModes: ['assistant', 'ssh'],
           parallelizable: true,  // 可同时 await 多个 task_id
           streamDisplay: { titleKey: 'exec.awaiting_short', titleField: 'task_id' }
         }
       }
-    : null
 
   // 内置工具（所有模式通用）
   // ⚠️ 顺序约定：子 Agent 通用工具排在最前（前 8 个），让父/子 Agent 的工具列表共享 byte-exact 前缀，
@@ -568,7 +565,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
   // 改动顺序时请同步检查子 Agent 工具白名单。
   const builtinTools: ToolDefinition[] = [
     // ==================== 子 Agent 通用前缀（read / write 都用） ====================
-    ...(execTool ? [execTool as ToolDefinition] : []),
+    execTool,
     {
       type: 'function',
       function: {
@@ -594,6 +591,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       },
       _meta: {
+        supportedModes: ['local', 'assistant', 'ssh'],
         parallelizable: true,
         // 标题按 info_only 切换："读取文件" vs "读取文件 (仅查询信息)"，path 字段做副标题
         streamDisplay: { titleKey: readFileTitleKey, titleField: 'path' }
@@ -629,6 +627,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       },
       _meta: {
+        supportedModes: ['local', 'assistant', 'ssh'],
         parallelizable: true,
       }
     } as ToolDefinitionWithMeta,
@@ -706,6 +705,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       },
       _meta: {
+        supportedModes: ['local', 'assistant', 'ssh'],
         phase: 'writing_file',
         // 白名单键只取 path：同一文件的任意编辑操作共享「本次允许」
         idempotencyKey: ['path'],
@@ -749,6 +749,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       },
       _meta: {
+        supportedModes: ['local', 'assistant', 'ssh'],
         phase: 'writing_file',
         // 白名单键只取 path：同一路径的任意写入操作共享「本次允许」
         idempotencyKey: ['path'],
@@ -764,9 +765,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       }
     } as ToolDefinitionWithMeta,
     // ==================== 父 Agent 专用工具 ====================
-    // await_exec：仅 assistant 模式注入；放在子 Agent 白名单之后，
-    // 保持子 Agent 工具列表是父 Agent 工具列表的"连续前缀"（最大化 prompt cache 命中）。
-    ...(awaitExecTool ? [awaitExecTool as ToolDefinition] : []),
+    // await_exec 放在子 Agent 白名单之后，保持子 Agent 工具列表是父列表的连续前缀。
+    awaitExecTool,
     {
       type: 'function',
       function: {
@@ -1101,7 +1101,7 @@ Agent 类型：
 - ensure_connected：确保 SSH 窗格连通；已通则幂等；断则原地重连（成功=新 shell）。可选 pane_id。
 
 窗格唯一标识是 ptyId（SSH 重连 reuseId 保持不变）。分屏或再开一扇成功后返回的编号就是这个值，给 execute_command 等传 pane_id 时直接用，不必再 list。
-开了真终端后必须用 execute_command 打在看得见的窗里，不要用 exec 幕后执行。
+窗里的命令用 execute_command 打进指定或当前那扇窗。
 SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不自动重跑命令）；勿叫用户点按钮。
 典型：list_ssh_sessions → manage_pane(action=open, target="ssh:…") → execute_command。`,
         parameters: {
