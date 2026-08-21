@@ -1090,6 +1090,17 @@ function setupWindowServices() {
   gatewayService?.setMainWindow(mainWindow)
   imService?.setMainWindow(mainWindow)
   menuService.setMainWindow(mainWindow)
+  menuService.setCloseTabInterceptor(() => {
+    if (fileManagerWindow && !fileManagerWindow.isDestroyed()) {
+      fileManagerWindow.close()
+      return true
+    }
+    if (aiDebugWindow && !aiDebugWindow.isDestroyed()) {
+      aiDebugWindow.close()
+      return true
+    }
+    return false
+  })
   if (process.platform === 'darwin') {
     menuService.setQuitHandler(handleQuitAttempt)
   }
@@ -3270,7 +3281,9 @@ ipcMain.handle('aiDebug:openWindow', async () => {
 ipcMain.handle('aiDebug:closeWindow', async () => {
   if (aiDebugWindow && !aiDebugWindow.isDestroyed()) {
     aiDebugWindow.close()
+    return { closed: true }
   }
+  return { closed: false }
 })
 
 // 注意: aiDebug:isWindowOpen 已在 ai-debug.service.ts 中注册，这里不重复注册
@@ -3330,6 +3343,10 @@ ipcMain.handle('config:setKeyboardShortcuts', async (_event, shortcuts: Keyboard
 
 ipcMain.on('menu:setTerminalState', (_event, hasTerminal: boolean) => {
   menuService.setHasTerminal(Boolean(hasTerminal))
+})
+
+ipcMain.on('menu:setAiPanelState', (_event, available: boolean) => {
+  menuService.setHasAiPanel(Boolean(available))
 })
 
 ipcMain.handle('config:getSponsorStatus', async () => {
@@ -5580,7 +5597,9 @@ ipcMain.handle('fileManager:open', async (_event, config: {
 ipcMain.handle('fileManager:close', async () => {
   if (fileManagerWindow && !fileManagerWindow.isDestroyed()) {
     fileManagerWindow.close()
+    return { closed: true }
   }
+  return { closed: false }
 })
 
 // 获取窗口初始化参数

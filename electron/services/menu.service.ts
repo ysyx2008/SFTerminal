@@ -3,7 +3,8 @@
  * 
  * 提供完整的菜单栏功能，包括：
  * - macOS 标准菜单（应用、编辑、视图、窗口）
- * - 文件菜单（新建终端、SSH 连接等）
+ * - 前往（跟侧栏同一张地图）
+ * - 终端菜单（本机 / 远程 / 分屏等）
  * - 帮助菜单
  * - 多语言支持
  */
@@ -24,14 +25,27 @@ const menuI18n = {
     showAll: '显示全部',
     quit: '退出旗鱼',
     
-    // 文件菜单
+    // 前往
+    go: '前往',
+    goNewChat: '新对话',
+    goCompanion: '联络',
+    goTerminal: '终端',
+    openTodos: '待办',
+    openWatch: '关切',
+    navBack: '后退',
+    navForward: '前进',
+
+    // 终端菜单
     file: '终端',
-    newLocalTerminal: '新建本地终端',
-    newAssistantTab: '新建（跟随当前位置）',
-    newSshConnection: '新建 SSH 连接',
+    newLocalTerminal: '打开本机终端',
+    newSshConnection: '连接远程主机',
+    manageHosts: '管理主机',
     batchCommand: '批量操作',
     openFileManager: '打开文件管理器',
     importXshell: '导入 Xshell 会话',
+    splitHorizontal: '左右分屏',
+    splitVertical: '上下分屏',
+    closePane: '关闭当前窗格',
     closeTab: '关闭标签',
     closeWindow: '关闭窗口',
     exit: '退出',
@@ -44,13 +58,12 @@ const menuI18n = {
     copy: '复制',
     paste: '粘贴',
     selectAll: '全选',
-    find: '查找',
     clearTerminal: '清屏',
     
     // 视图菜单
     view: '视图',
-    toggleSidebar: '切换侧边栏',
-    toggleAiPanel: '切换 AI 面板',
+    toggleSidebar: '收起 / 展开最近对话',
+    toggleAiPanel: '收起 / 展开侧边栏',
     toggleKnowledge: '记忆与知识库',
     aiDebugConsole: 'AI 调试控制台',
     zoomIn: '放大',
@@ -98,14 +111,27 @@ const menuI18n = {
     showAll: 'Show All',
     quit: 'Quit SailFish',
     
-    // File menu
+    // Go
+    go: 'Go',
+    goNewChat: 'New Chat',
+    goCompanion: 'Reach',
+    goTerminal: 'Terminal',
+    openTodos: 'Todos',
+    openWatch: 'Watch',
+    navBack: 'Go Back',
+    navForward: 'Go Forward',
+
+    // Terminal menu
     file: 'Terminal',
-    newLocalTerminal: 'New Local Terminal',
-    newAssistantTab: 'New (follows current place)',
-    newSshConnection: 'New SSH Connection',
+    newLocalTerminal: 'Open Local Terminal',
+    newSshConnection: 'Connect to a Host',
+    manageHosts: 'Manage Hosts',
     batchCommand: 'Batch Command',
     openFileManager: 'Open File Manager',
     importXshell: 'Import Xshell Sessions',
+    splitHorizontal: 'Split Left / Right',
+    splitVertical: 'Split Up / Down',
+    closePane: 'Close Current Pane',
     closeTab: 'Close Tab',
     closeWindow: 'Close Window',
     exit: 'Exit',
@@ -118,13 +144,12 @@ const menuI18n = {
     copy: 'Copy',
     paste: 'Paste',
     selectAll: 'Select All',
-    find: 'Find',
     clearTerminal: 'Clear Terminal',
     
     // View menu
     view: 'View',
-    toggleSidebar: 'Toggle Sidebar',
-    toggleAiPanel: 'Toggle AI Panel',
+    toggleSidebar: 'Collapse / Expand Recent Chats',
+    toggleAiPanel: 'Collapse / Expand Sidebar',
     toggleKnowledge: 'Memory & Knowledge',
     aiDebugConsole: 'AI Debug Console',
     zoomIn: 'Zoom In',
@@ -174,8 +199,11 @@ export class MenuService {
   private mainWindow: BrowserWindow | null = null
   private shortcuts: KeyboardShortcuts = { ...DEFAULT_KEYBOARD_SHORTCUTS }
   private hasTerminal = false
+  private hasAiPanel = false
   private _updateStatus: MenuUpdateStatus = 'idle'
   private quitHandler: (() => void) | null = null
+  /** ⌘W 先关附属窗口（文件管理器等）时返回 true，主窗口就不要再关内容 */
+  private closeTabInterceptor: (() => boolean) | null = null
 
   /**
    * 获取翻译文本
@@ -210,6 +238,20 @@ export class MenuService {
    */
   setQuitHandler(handler: () => void): void {
     this.quitHandler = handler
+  }
+
+  setCloseTabInterceptor(handler: () => boolean): void {
+    this.closeTabInterceptor = handler
+  }
+
+  private handleCloseTabCommand(): void {
+    const focused = BrowserWindow.getFocusedWindow()
+    if (focused && this.mainWindow && focused !== this.mainWindow && !focused.isDestroyed()) {
+      focused.close()
+      return
+    }
+    if (this.closeTabInterceptor?.()) return
+    this.sendCommand('closeTab')
   }
 
   /**
@@ -273,7 +315,63 @@ export class MenuService {
   }
 
   /**
-   * 构建文件菜单
+   * 前往：跟侧栏同一张地图。加速键只展示——后退/前进已由页面自己接。
+   */
+  private buildGoMenu(): MenuItemConstructorOptions {
+    const places: MenuItemConstructorOptions[] = IS_STEAM_BUILD
+      ? [
+          {
+            label: this.t('goTerminal'),
+            click: () => this.sendCommand('goTerminal'),
+          },
+        ]
+      : [
+          {
+            label: this.t('goNewChat'),
+            click: () => this.sendCommand('goNewChat'),
+          },
+          {
+            label: this.t('goCompanion'),
+            click: () => this.sendCommand('goCompanion'),
+          },
+          {
+            label: this.t('goTerminal'),
+            click: () => this.sendCommand('goTerminal'),
+          },
+          { type: 'separator' },
+          {
+            label: this.t('openTodos'),
+            click: () => this.sendCommand('openTodos'),
+          },
+          {
+            label: this.t('openWatch'),
+            click: () => this.sendCommand('openWatch'),
+          },
+        ]
+
+    return {
+      label: this.t('go'),
+      submenu: [
+        ...places,
+        { type: 'separator' },
+        {
+          label: this.t('navBack'),
+          accelerator: this.shortcuts.navBack || undefined,
+          registerAccelerator: false,
+          click: () => this.sendCommand('navBack'),
+        },
+        {
+          label: this.t('navForward'),
+          accelerator: this.shortcuts.navForward || undefined,
+          registerAccelerator: false,
+          click: () => this.sendCommand('navForward'),
+        },
+      ],
+    }
+  }
+
+  /**
+   * 终端菜单：只放终端里的事
    */
   private buildFileMenu(): MenuItemConstructorOptions {
     const submenu: MenuItemConstructorOptions[] = [
@@ -283,22 +381,21 @@ export class MenuService {
         click: () => this.sendCommand('newLocalTerminal')
       },
       {
-        label: this.t('newAssistantTab'),
-        accelerator: this.shortcuts.newAssistantTab || undefined,
-        click: () => this.sendCommand('newAssistantTab')
-      },
-      {
         label: this.t('newSshConnection'),
         accelerator: this.shortcuts.newSshConnection || undefined,
         click: () => this.sendCommand('newSshConnection')
+      },
+      {
+        label: this.t('manageHosts'),
+        click: () => this.sendCommand('manageHosts')
       },
       { type: 'separator' },
       {
         label: this.t('batchCommand'),
         accelerator: this.shortcuts.batchCommand || undefined,
+        enabled: this.hasTerminal,
         click: () => this.sendCommand('batchCommand')
       },
-      { type: 'separator' },
       {
         label: this.t('openFileManager'),
         accelerator: this.shortcuts.openFileManager || undefined,
@@ -312,9 +409,31 @@ export class MenuService {
       },
       { type: 'separator' },
       {
+        label: this.t('splitHorizontal'),
+        accelerator: this.shortcuts.splitHorizontal || undefined,
+        registerAccelerator: false,
+        enabled: this.hasTerminal,
+        click: () => this.sendCommand('splitHorizontal')
+      },
+      {
+        label: this.t('splitVertical'),
+        accelerator: this.shortcuts.splitVertical || undefined,
+        registerAccelerator: false,
+        enabled: this.hasTerminal,
+        click: () => this.sendCommand('splitVertical')
+      },
+      {
+        label: this.t('closePane'),
+        accelerator: this.shortcuts.closePane || undefined,
+        registerAccelerator: false,
+        enabled: this.hasTerminal,
+        click: () => this.sendCommand('closePane')
+      },
+      { type: 'separator' },
+      {
         label: this.t('closeTab'),
         accelerator: 'CmdOrCtrl+W',
-        click: () => this.sendCommand('closeTab')
+        click: () => this.handleCloseTabCommand()
       }
     ]
 
@@ -397,6 +516,7 @@ export class MenuService {
         {
           label: this.t('toggleAiPanel'),
           accelerator: this.shortcuts.toggleAiPanel || undefined,
+          enabled: this.hasAiPanel,
           click: () => this.sendCommand('toggleAiPanel')
         },
         {
@@ -583,8 +703,9 @@ export class MenuService {
       template.push(this.buildAppMenu())
     }
 
-    // 标准菜单
+    // 标准菜单：前往跟侧栏同一张地图，终端栏只放终端的事
     template.push(
+      this.buildGoMenu(),
       this.buildFileMenu(),
       this.buildEditMenu(),
       this.buildViewMenu(),
@@ -611,6 +732,13 @@ export class MenuService {
   setHasTerminal(value: boolean): void {
     if (this.hasTerminal !== value) {
       this.hasTerminal = value
+      this.applyMenu()
+    }
+  }
+
+  setHasAiPanel(value: boolean): void {
+    if (this.hasAiPanel !== value) {
+      this.hasAiPanel = value
       this.applyMenu()
     }
   }

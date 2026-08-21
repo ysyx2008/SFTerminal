@@ -2946,7 +2946,9 @@ const electronAPI = {
     },
     // 通知菜单服务终端标签页状态
     setTerminalState: (hasTerminal: boolean) =>
-      ipcRenderer.send('menu:setTerminalState', hasTerminal)
+      ipcRenderer.send('menu:setTerminalState', hasTerminal),
+    setAiPanelState: (available: boolean) =>
+      ipcRenderer.send('menu:setAiPanelState', available)
   },
 
   // 文件管理器窗口操作
@@ -2960,7 +2962,7 @@ const electronAPI = {
     }) => ipcRenderer.invoke('fileManager:open', config),
 
     // 关闭文件管理器窗口
-    close: () => ipcRenderer.invoke('fileManager:close'),
+    close: () => ipcRenderer.invoke('fileManager:close') as Promise<{ closed: boolean }>,
 
     // 获取窗口初始化参数
     getInitParams: () => ipcRenderer.invoke('fileManager:getInitParams') as Promise<{
@@ -3492,7 +3494,7 @@ const electronAPI = {
 
   // AI Debug 调试窗口
   aiDebugOpenWindow: () => ipcRenderer.invoke('aiDebug:openWindow'),
-  aiDebugCloseWindow: () => ipcRenderer.invoke('aiDebug:closeWindow'),
+  aiDebugCloseWindow: () => ipcRenderer.invoke('aiDebug:closeWindow') as Promise<{ closed: boolean }>,
   aiDebugIsWindowOpen: () => ipcRenderer.invoke('aiDebug:isWindowOpen') as Promise<boolean>,
   aiDebugGetLogs: () => ipcRenderer.invoke('aiDebug:getLogs'),
   aiDebugClearLogs: () => ipcRenderer.invoke('aiDebug:clearLogs'),

@@ -340,6 +340,12 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
   handleSplitShortcut(event)
 }
 
+function handleMenuSplit(direction: 'horizontal' | 'vertical'): void {
+  const tab = terminalStore.activeTab
+  if (!tab || tab.type === 'assistant') return
+  void terminalStore.splitTerminal(direction)
+}
+
 function handleSplitShortcut(event: KeyboardEvent): void {
   const tab = terminalStore.activeTab
   if (!tab || tab.type === 'assistant') return
@@ -347,12 +353,12 @@ function handleSplitShortcut(event: KeyboardEvent): void {
 
   if (matchAccelerator(event, shortcuts.splitHorizontal)) {
     event.preventDefault()
-    terminalStore.splitTerminal('horizontal')
+    handleMenuSplit('horizontal')
     return
   }
   if (matchAccelerator(event, shortcuts.splitVertical)) {
     event.preventDefault()
-    terminalStore.splitTerminal('vertical')
+    handleMenuSplit('vertical')
     return
   }
   // 关闭窗格只在已分屏时生效——单屏下走 Ctrl+W / Cmd+W（handleCloseShortcut）
@@ -398,6 +404,15 @@ const handleGlobalKeyup = (event: KeyboardEvent) => {
 
 // 处理关闭快捷键
 const handleCloseShortcut = async () => {
+  if (showFileExplorer.value) {
+    closeSftp()
+    return
+  }
+  const fileManagerClosed = await window.electronAPI.fileManager.close().catch(() => ({ closed: false }))
+  if (fileManagerClosed?.closed) return
+  const aiDebugClosed = await window.electronAPI.aiDebugCloseWindow().catch(() => ({ closed: false }))
+  if (aiDebugClosed?.closed) return
+
   // 全屏覆盖面板（觉醒 / 关切 / 设置 / 控制面板）打开时，优先关闭它们
   if (showAwaken.value) {
     showAwaken.value = false
@@ -1384,6 +1399,10 @@ watch(hasTerminalTab, (val) => {
   window.electronAPI.menu.setTerminalState(val)
 }, { immediate: true })
 
+watch(showAiPanelToggle, (val) => {
+  window.electronAPI.menu.setAiPanelState(val)
+}, { immediate: true })
+
 const openConnectionSettings = (tab?: string) => {
   settingsInitialTab.value = tab || undefined
   settingsInitialSection.value = undefined
@@ -1407,16 +1426,42 @@ const restartSetup = async () => {
 const handleMenuCommand = async (command: string) => {
   // 需要主界面可见的命令，先关闭设置面板
   const requiresMainView = [
-    'newLocalTerminal', 'newAssistantTab', 'newSshConnection',
+    'goNewChat', 'goCompanion', 'goTerminal', 'openTodos', 'openWatch',
+    'newLocalTerminal', 'newAssistantTab', 'newSshConnection', 'manageHosts',
     'openFileManager', 'importXshell', 'closeTab',
     'toggleSidebar', 'toggleAiPanel',
-    'clearTerminal', 'find', 'selectAll', 'batchCommand'
+    'clearTerminal', 'selectAll', 'batchCommand',
+    'splitHorizontal', 'splitVertical', 'closePane',
+    'navBack', 'navForward',
   ]
   if (showSettings.value && requiresMainView.includes(command)) {
     closeSettings()
   }
 
   switch (command) {
+    case 'goNewChat':
+      if (!isSteamBuild && isWorkbenchAvailable('assistant')) terminalStore.goToHome()
+      break
+    case 'goCompanion':
+      if (!isSteamBuild && isWorkbenchAvailable('companion')) terminalStore.focusCompanionPlace()
+      break
+    case 'goTerminal':
+      if (isWorkbenchAvailable('local') || isWorkbenchAvailable('ssh')) {
+        terminalStore.focusTerminalPlace()
+      }
+      break
+    case 'openTodos':
+      if (!isSteamBuild) terminalStore.openTodos()
+      break
+    case 'openWatch':
+      if (!isSteamBuild) openWatchesFromWelcome()
+      break
+    case 'navBack':
+      goBack()
+      break
+    case 'navForward':
+      goForward()
+      break
     case 'newLocalTerminal':
       terminalStore.createTab('local')
       break
@@ -1424,7 +1469,11 @@ const handleMenuCommand = async (command: string) => {
       newInPlace()
       break
     case 'newSshConnection':
+      terminalStore.focusTerminalPlace()
       openHostSidebar()
+      break
+    case 'manageHosts':
+      toggleSidebar()
       break
     case 'openFileManager':
       window.dispatchEvent(new CustomEvent('menu:open-file-manager'))
@@ -1435,11 +1484,20 @@ const handleMenuCommand = async (command: string) => {
         window.dispatchEvent(new CustomEvent('menu:import-xshell'))
       }, 100)
       break
+    case 'splitHorizontal':
+      handleMenuSplit('horizontal')
+      break
+    case 'splitVertical':
+      handleMenuSplit('vertical')
+      break
+    case 'closePane':
+      closeActivePane()
+      break
     case 'closeTab':
       handleCloseShortcut()
       break
     case 'toggleSidebar':
-      toggleSidebar()
+      toggleRecallSidebarCollapsed()
       break
     case 'toggleAiPanel':
       if (!isSteamBuild) toggleAiPanel()
@@ -1469,9 +1527,6 @@ const handleMenuCommand = async (command: string) => {
       break
     case 'clearTerminal':
       window.dispatchEvent(new CustomEvent('menu:clear-terminal'))
-      break
-    case 'find':
-      window.dispatchEvent(new CustomEvent('menu:find'))
       break
     case 'selectAll':
       window.dispatchEvent(new CustomEvent('menu:select-all'))

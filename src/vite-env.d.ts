@@ -1760,6 +1760,7 @@ interface Window {
         initialLocalPath?: string
         initialRemotePath?: string
       }) => Promise<void>
+      close: () => Promise<{ closed: boolean }>
       getInitParams: () => Promise<{
         sessionId?: string
         sftpConfig?: {
@@ -1791,6 +1792,7 @@ interface Window {
     menu: {
       onCommand: (callback: (data: { command: string; args: unknown[] }) => void) => () => void
       setTerminalState: (hasTerminal: boolean) => void
+      setAiPanelState: (available: boolean) => void
     }
     // 邮箱相关
     email: {
@@ -2100,7 +2102,7 @@ interface Window {
 
     // AI Debug 调试窗口
     aiDebugOpenWindow: () => Promise<void>
-    aiDebugCloseWindow: () => Promise<void>
+    aiDebugCloseWindow: () => Promise<{ closed: boolean }>
     aiDebugIsWindowOpen: () => Promise<boolean>
     aiDebugGetLogs: () => Promise<Array<{
       id: string
