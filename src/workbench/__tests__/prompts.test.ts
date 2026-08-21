@@ -63,6 +63,7 @@ describe('resolveWorkbenchAgentPrompt', () => {
     expect(prompt).toContain('SSH 远程终端工作台')
     expect(prompt).toContain('write_remote_text_file')
     expect(prompt).toContain('Password:')
+    expect(prompt).not.toMatch(/read_file.*不可用/)
   })
 
   it('联络（companion）工作台不注入界面能力 prompt', () => {

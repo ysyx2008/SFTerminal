@@ -186,7 +186,9 @@ function writeTextFileStreamValidate(args: Record<string, unknown>, rawPartial: 
   if (!p || mode !== 'create') return null
   if (!rawPartial || !isJsonStringFieldComplete(rawPartial, 'path')) return null
   const full = expandTilde(p)
-  if (!fs.existsSync(full)) return null
+  // 相对路径此时没有终端目录，不猜基准，交给执行阶段拦截
+  const isAbsolute = full.startsWith('/') || /^[A-Za-z]:[\\/]/.test(full)
+  if (!isAbsolute || !fs.existsSync(full)) return null
   return t('error.file_exists_cannot_create', { path: full })
 }
 
@@ -571,7 +573,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       type: 'function',
       function: {
         name: 'read_file',
-        description: `读取本地文件。支持文本、PDF、Word(.doc/.docx)、WPS 文字/表格(.wps/.wpt/.et/.ett)、图片(jpg/png/gif/bmp/webp/ico，自动注入视觉上下文)。自动检测二进制文件。大文件先用 info_only 查信息，再按行范围读取。仅本地文件，SSH 远程请用命令行。`,
+        description: `读取本地文件。支持文本、PDF、Word(.doc/.docx)、WPS 文字/表格(.wps/.wpt/.et/.ett)、图片(jpg/png/gif/bmp/webp/ico，自动注入视觉上下文)。自动检测二进制文件。大文件先用 info_only 查信息，再按行范围读取。远程文件请用命令行。`,
         parameters: {
           type: 'object',
           properties: {
@@ -592,7 +594,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       },
       _meta: {
-        supportedModes: ['local', 'assistant'],
         parallelizable: true,
         // 标题按 info_only 切换："读取文件" vs "读取文件 (仅查询信息)"，path 字段做副标题
         streamDisplay: { titleKey: readFileTitleKey, titleField: 'path' }
@@ -602,7 +603,7 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
       type: 'function',
       function: {
         name: 'file_search',
-        description: `快速搜索本地文件名（基于系统索引，毫秒级）。多个关键词用空格分隔表示文件名需同时包含所有关键词（AND 关系，不要求连续，不区分大小写）。例如 "员工 奖惩" 可命中 "员工奖惩管理.docx" 和 "2024员工奖惩明细.xlsx"。仅搜文件名不搜内容，搜内容请用 grep。仅本地，不支持 SSH。`,
+        description: `快速搜索本地文件名（基于系统索引，毫秒级）。多个关键词用空格分隔表示文件名需同时包含所有关键词（AND 关系，不要求连续，不区分大小写）。例如 "员工 奖惩" 可命中 "员工奖惩管理.docx" 和 "2024员工奖惩明细.xlsx"。仅搜文件名不搜内容，搜内容请用 grep。`,
         parameters: {
           type: 'object',
           properties: {
@@ -628,7 +629,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       },
       _meta: {
-        supportedModes: ['local', 'assistant'],
         parallelizable: true,
       }
     } as ToolDefinitionWithMeta,
@@ -706,7 +706,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       },
       _meta: {
-        supportedModes: ['local', 'assistant'],
         phase: 'writing_file',
         // 白名单键只取 path：同一文件的任意编辑操作共享「本次允许」
         idempotencyKey: ['path'],
@@ -750,7 +749,6 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         }
       },
       _meta: {
-        supportedModes: ['local', 'assistant'],
         phase: 'writing_file',
         // 白名单键只取 path：同一路径的任意写入操作共享「本次允许」
         idempotencyKey: ['path'],

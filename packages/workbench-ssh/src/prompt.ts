@@ -7,10 +7,9 @@
 export const SSH_WORKBENCH_AGENT_PROMPT = [
   '# SSH 远程终端工作台',
   '',
-  '当前对话在 **SSH 远程终端工作台**中进行，Agent 操作的是**远程服务器**，不是本地机器。',
+  '当前对话在 **SSH 远程终端工作台**中进行，终端操作的是**远程服务器**。',
   '',
   '**关键限制**：',
-  '- `read_file`、`edit_file`、`write_text_file` **不可用**（只能操作本地文件）',
   '- 读取远程文件用 `cat`/`head`/`tail`，写入用 `write_remote_text_file` 或 `echo`/`cat <<EOF`',
   '- 终端状态需根据屏幕内容自行判断（看提示符、Password:、进度等）',
   '',

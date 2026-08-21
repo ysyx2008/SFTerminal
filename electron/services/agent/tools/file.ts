@@ -186,6 +186,28 @@ export function expandTilde(filePath: string): string {
 }
 
 /**
+ * 本机文件工具的相对路径基准：只认本机终端的当前目录。
+ * 远程窗格 / 没有本机终端时落到用户主目录，绝不拿远程 cwd 往本机上拼。
+ */
+export function resolveLocalFilePath(
+  rawPath: string,
+  terminal?: { type?: 'local' | 'ssh'; cwd?: string } | null,
+): string {
+  const expanded = expandTilde(rawPath.trim())
+  if (!expanded || path.isAbsolute(expanded)) return expanded
+  const base = localFileCwd(terminal)
+  return path.resolve(base, expanded)
+}
+
+function localFileCwd(terminal?: { type?: 'local' | 'ssh'; cwd?: string } | null): string {
+  if (terminal?.type === 'local' && terminal.cwd) {
+    const cwd = expandTilde(terminal.cwd)
+    return path.isAbsolute(cwd) ? cwd : os.homedir()
+  }
+  return os.homedir()
+}
+
+/**
  * 生成用于消息展示的简短路径：
  * - 在 home 之内：返回 ~/... 形式（保持可点击：前端 `isLocalFilePath` 识别 `~/`，主进程 IPC 展开 ~ 为绝对路径）
  * - 其它（含 cwd 之内）：返回原始绝对路径——避免 cwd 相对路径让 UI 失去点击打开能力
@@ -558,27 +580,10 @@ export async function fileSearch(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  const terminalType = executor.terminalService.getTerminalType(ptyId)
-  if (terminalType === 'ssh') {
-    const errorMsg = t('error.file_search_ssh_not_supported')
-    executor.addStep({
-      type: 'tool_call',
-      content: `🔍 ${t('file.searching')}...`,
-      toolName: 'file_search',
-      toolArgs: args,
-      riskLevel: 'safe'
-    })
-    executor.addStep({
-      type: 'tool_result',
-      content: `❌ ${errorMsg}`,
-      toolName: 'file_search',
-      toolResult: errorMsg
-    })
-    return { success: false, output: '', error: errorMsg }
-  }
-
   const query = args.query as string
-  const searchPath = args.path ? expandTilde(args.path as string) : undefined
+  const searchPath = args.path
+    ? resolveLocalFilePath(args.path as string, getTerminalStateService().getState(ptyId))
+    : undefined
   const type = args.type as 'file' | 'dir' | 'all' | undefined
   const limit = args.limit as number | undefined
 
@@ -1301,15 +1306,9 @@ export async function readFile(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  let filePath = expandTilde(args.path as string)
+  let filePath = resolveLocalFilePath(String(args.path ?? ''), getTerminalStateService().getState(ptyId))
   if (!filePath) {
     return { success: false, output: '', error: t('error.file_path_required') }
-  }
-
-  if (!path.isAbsolute(filePath)) {
-    const terminalStateService = getTerminalStateService()
-    const cwd = terminalStateService.getCwd(ptyId)
-    filePath = path.resolve(cwd, filePath)
   }
 
   {
@@ -1623,7 +1622,7 @@ export async function editFile(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  let filePath = expandTilde(args.path as string)
+  let filePath = resolveLocalFilePath(String(args.path ?? ''), getTerminalStateService().getState(ptyId))
   const oldText = args.old_text as string
   const newText = args.new_text as string
   const replaceAll = args.replace_all === true
@@ -1638,12 +1637,6 @@ export async function editFile(
 
   if (newText === undefined || newText === null) {
     return { success: false, output: '', error: t('error.new_text_required') }
-  }
-
-  if (!path.isAbsolute(filePath)) {
-    const terminalStateService = getTerminalStateService()
-    const cwd = terminalStateService.getCwd(ptyId)
-    filePath = path.resolve(cwd, filePath)
   }
 
   {
@@ -1817,7 +1810,7 @@ export async function writeTextFile(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  let filePath = expandTilde(args.path as string)
+  let filePath = resolveLocalFilePath(String(args.path ?? ''), getTerminalStateService().getState(ptyId))
   const content = args.content as string | undefined
   const mode = args.mode as string | undefined
   const insertAtLine = args.insert_at_line as number | undefined
@@ -1868,12 +1861,6 @@ export async function writeTextFile(
     if (replacement === undefined) {
       return { success: false, output: '', error: t('error.regex_replacement_required') }
     }
-  }
-
-  if (!path.isAbsolute(filePath)) {
-    const terminalStateService = getTerminalStateService()
-    const cwd = terminalStateService.getCwd(ptyId)
-    filePath = path.resolve(cwd, filePath)
   }
 
   {
