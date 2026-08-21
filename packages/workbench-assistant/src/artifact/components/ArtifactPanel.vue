@@ -9,7 +9,10 @@ import { useI18n } from 'vue-i18n'
 import {
   FolderOpen,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Download,
+  Smartphone,
   X
 } from 'lucide-vue-next'
 import type { CanvasArtifact } from '@shared/types'
@@ -80,6 +83,9 @@ const { hoverTip, hideTip } = useHoverTip({
 
 const artifacts = computed(() => artifactStore.getArtifacts(props.tabId))
 const openTabs = computed(() => artifactStore.getOpenArtifacts(props.tabId))
+const tabsEl = ref<HTMLElement | null>(null)
+const tabsOverflow = ref(false)
+let tabsResizeObserver: ResizeObserver | null = null
 const activeArtifact = computed(() => artifactStore.getActiveArtifact(props.tabId))
 const activeArtifactId = computed(() => activeArtifact.value?.id ?? null)
 const renderer = computed(() => activeArtifact.value?.renderer ?? null)
@@ -349,6 +355,35 @@ function closeAllArtifacts() {
 
 function selectTab(id: string) {
   artifactStore.setActiveArtifact(props.tabId, id)
+}
+
+const activeTabIndex = computed(() =>
+  openTabs.value.findIndex((tab) => tab.id === activeArtifactId.value)
+)
+const canGoPrevTab = computed(() => activeTabIndex.value > 0)
+const canGoNextTab = computed(
+  () => activeTabIndex.value >= 0 && activeTabIndex.value < openTabs.value.length - 1
+)
+
+function stepTab(delta: 1 | -1) {
+  const next = openTabs.value[activeTabIndex.value + delta]
+  if (next) selectTab(next.id)
+}
+
+// 页签条挤不下时才给左右按钮，平时不占地方
+function measureTabsOverflow() {
+  const strip = tabsEl.value
+  tabsOverflow.value = strip ? strip.scrollWidth - strip.clientWidth > 1 : false
+}
+
+// 竖滚轮在横条上等于横滚，和浏览器页签条一致
+function onTabsWheel(ev: WheelEvent) {
+  const strip = tabsEl.value
+  if (!strip || !tabsOverflow.value) return
+  const delta = Math.abs(ev.deltaY) > Math.abs(ev.deltaX) ? ev.deltaY : ev.deltaX
+  if (!delta) return
+  ev.preventDefault()
+  strip.scrollLeft += delta
 }
 
 function minimizePanel() {
@@ -628,7 +663,24 @@ watch(activeArtifactId, (next, prev) => {
     saveBridge.flush(prev)
   }
   void refreshFileStatus()
+  scrollActiveTabIntoView()
 })
+
+watch(() => openTabs.value.length, () => {
+  scrollActiveTabIntoView()
+  void nextTick(measureTabsOverflow)
+})
+
+// 页签条挤不下时会横向滚动，当前页签必须自己露出来，否则会被右侧按钮挡掉
+function scrollActiveTabIntoView() {
+  const id = activeArtifactId.value
+  if (!id) return
+  void nextTick(() => {
+    const strip = tabsEl.value
+    const tab = strip?.querySelector<HTMLElement>(`[data-artifact-id="${CSS.escape(id)}"]`)
+    tab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  })
+}
 
 watch(showSendMenu, (open) => {
   if (open) {
@@ -671,6 +723,11 @@ onMounted(() => {
   document.addEventListener('keydown', onDocumentKeyDown, true)
   window.addEventListener('focus', onWindowFocus)
   document.addEventListener('visibilitychange', onVisibilityChange)
+  if (tabsEl.value) {
+    tabsResizeObserver = new ResizeObserver(() => measureTabsOverflow())
+    tabsResizeObserver.observe(tabsEl.value)
+  }
+  measureTabsOverflow()
   void refreshFileStatus()
   const active = artifactStore.getActiveArtifact(props.tabId)
   if (active && !active.content?.trim() && active.filePath) {
@@ -679,6 +736,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  tabsResizeObserver?.disconnect()
+  tabsResizeObserver = null
   document.removeEventListener('mousedown', onDocumentMouseDown, true)
   document.removeEventListener('keydown', onDocumentKeyDown, true)
   window.removeEventListener('focus', onWindowFocus)
@@ -697,7 +756,14 @@ defineExpose({ minimizePanel })
       class="canvas-header"
       @contextmenu="openHeaderCtxMenu"
     >
-      <div class="artifact-tabs" role="tablist">
+      <div
+        ref="tabsEl"
+        class="artifact-tabs"
+        role="tablist"
+        @wheel="onTabsWheel"
+        @keydown.left.prevent="stepTab(-1)"
+        @keydown.right.prevent="stepTab(1)"
+      >
         <button
           v-for="tab in openTabs"
           :key="tab.id"
@@ -705,6 +771,7 @@ defineExpose({ minimizePanel })
           role="tab"
           class="artifact-tab"
           :class="{ active: tab.id === activeArtifactId }"
+          :data-artifact-id="tab.id"
           :aria-selected="tab.id === activeArtifactId"
           :title="artifactTabLabel(tab)"
           @click="selectTab(tab.id)"
@@ -723,6 +790,26 @@ defineExpose({ minimizePanel })
           >
             <X :size="12" />
           </span>
+        </button>
+      </div>
+      <div v-if="tabsOverflow" class="artifact-tab-nav">
+        <button
+          type="button"
+          class="artifact-tab-nav-btn"
+          :disabled="!canGoPrevTab"
+          :title="t('canvas.prevArtifactTab')"
+          @click="stepTab(-1)"
+        >
+          <ChevronLeft :size="14" />
+        </button>
+        <button
+          type="button"
+          class="artifact-tab-nav-btn"
+          :disabled="!canGoNextTab"
+          :title="t('canvas.nextArtifactTab')"
+          @click="stepTab(1)"
+        >
+          <ChevronRight :size="14" />
         </button>
       </div>
       <div class="canvas-header-actions">
@@ -795,12 +882,13 @@ defineExpose({ minimizePanel })
         <div v-if="canSendActive" ref="sendMenuRef" class="canvas-file-menu-wrap">
           <button
             type="button"
-            class="canvas-text-btn"
+            class="canvas-text-btn canvas-icon-btn"
             :aria-expanded="showSendMenu"
+            :aria-label="t('canvas.sendToPhone')"
             :title="t('canvas.sendToPhone')"
             @click="toggleSendMenu"
           >
-            {{ t('canvas.sendToPhone') }}
+            <Smartphone :size="14" />
           </button>
         </div>
       </div>
@@ -1086,13 +1174,16 @@ defineExpose({ minimizePanel })
 
 .artifact-tabs {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 3px;
   min-width: 0;
   flex: 1 1 auto;
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+  /* 挤不下时右缘渐隐，让截断看起来是「还有更多」而不是画坏了 */
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
 }
 
 .artifact-tabs::-webkit-scrollbar {
@@ -1102,30 +1193,46 @@ defineExpose({ minimizePanel })
 .artifact-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 168px;
-  min-width: 72px;
-  height: 100%;
-  padding: 0 6px 0 8px;
+  gap: 7px;
+  box-sizing: border-box;
+  min-width: 120px;
+  max-width: 220px;
+  flex: 0 1 auto;
+  height: 28px;
+  padding: 0 5px 0 9px;
   border: none;
-  border-right: 1px solid var(--border-color, rgba(255, 255, 255, 0.06));
+  border-radius: 8px;
   background: transparent;
   color: var(--text-secondary, #aaa);
   font-size: 12px;
   line-height: 1.2;
   text-align: left;
   cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+/* 中性叠加层而非固定灰：按文字色混，深浅主题都成立 */
+.artifact-tab:hover {
+  background: color-mix(in srgb, var(--text-primary, #eee) 7%, transparent);
+  color: var(--text-primary, #eee);
+}
+
+/* 挤压时先压别人：当前看的这个页签留住完整文件名 */
+.artifact-tab.active,
+.artifact-tab.active:hover {
+  background: color-mix(in srgb, var(--text-primary, #eee) 14%, transparent);
+  color: var(--text-primary, #eee);
+  font-weight: 500;
   flex-shrink: 0;
 }
 
-.artifact-tab:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.06));
-  color: var(--text-primary, #eee);
+.artifact-tab > :first-child {
+  flex-shrink: 0;
+  opacity: 0.75;
 }
 
-.artifact-tab.active {
-  background: var(--bg-primary, #1e1e1e);
-  color: var(--text-primary, #eee);
+.artifact-tab.active > :first-child {
+  opacity: 1;
 }
 
 .artifact-tab-label {
@@ -1135,20 +1242,61 @@ defineExpose({ minimizePanel })
   white-space: nowrap;
 }
 
+/* 关闭常驻会让整条页签很吵：平时透明占位，指到或选中才显形，宽度不跳 */
 .artifact-tab-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  color: var(--text-secondary, #888);
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  color: inherit;
+  opacity: 0;
   flex-shrink: 0;
+  transition: opacity 0.12s, background 0.12s;
 }
 
-.artifact-tab-close:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.12));
+.artifact-tab:hover .artifact-tab-close,
+.artifact-tab.active .artifact-tab-close,
+.artifact-tab:focus-visible .artifact-tab-close {
+  opacity: 0.55;
+}
+
+.artifact-tab-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: -6px;
+}
+
+.artifact-tab-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.artifact-tab-nav-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary, #eee) 10%, transparent);
   color: var(--text-primary, #eee);
+}
+
+.artifact-tab-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.artifact-tab .artifact-tab-close:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--text-primary, #eee) 16%, transparent);
 }
 
 .canvas-ctx-header {
@@ -1195,13 +1343,24 @@ defineExpose({ minimizePanel })
   transition: background 0.12s, border-color 0.12s;
 }
 
+.canvas-icon-btn {
+  width: 24px;
+  padding: 0;
+  justify-content: center;
+  color: var(--text-secondary, #aaa);
+}
+
+.canvas-icon-btn:hover:not(:disabled) {
+  color: var(--text-primary, #eee);
+}
+
 .canvas-text-btn:hover:not(:disabled) {
   background: var(--hover-bg, rgba(255, 255, 255, 0.08));
 }
 
 .canvas-header-actions .canvas-save-text-btn:hover:not(:disabled) {
-  color: var(--accent-primary, #89b4fa);
-  border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.35);
+  color: var(--accent-primary, #4d9eff);
+  border-color: rgba(var(--accent-rgb, 77, 158, 255), 0.35);
 }
 
 .canvas-text-btn:disabled {
@@ -1210,8 +1369,8 @@ defineExpose({ minimizePanel })
 }
 
 .canvas-save-text-btn:not(:disabled) {
-  border-color: rgba(var(--accent-rgb, 137, 180, 250), 0.35);
-  color: var(--accent-primary, #89b4fa);
+  border-color: rgba(var(--accent-rgb, 77, 158, 255), 0.35);
+  color: var(--accent-primary, #4d9eff);
 }
 
 .canvas-file-actions {

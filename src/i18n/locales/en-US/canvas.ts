@@ -4,6 +4,8 @@ export default {
     artifactUntitled: 'Untitled',
     closeArtifact: 'Close',
     removeFromDesk: 'Remove from desk',
+    prevArtifactTab: 'Previous',
+    nextArtifactTab: 'Next',
     artifactOverflow: '+{count} more',
     htmlPreview: 'Web preview',
     htmlPreviewEmpty: 'No web preview content',
