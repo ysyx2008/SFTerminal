@@ -502,6 +502,7 @@ defineExpose({
   width: 5px;
   cursor: col-resize;
   background: transparent;
+  transition: background 0.25s ease;
   z-index: 5;
 }
 
@@ -522,6 +523,16 @@ defineExpose({
 .stage-resizer:hover::after,
 .stage-resizer.resizing::after {
   opacity: 1;
+}
+
+.stage-resizer:hover,
+.stage-resizer.resizing {
+  background: linear-gradient(180deg, transparent, rgba(var(--accent-rgb, 137, 180, 250), 0.3), transparent);
+}
+
+.stage-resizer.resizing::after {
+  background: var(--accent-primary);
+  box-shadow: 0 0 10px var(--accent-primary);
 }
 
 .assistant-chat {
