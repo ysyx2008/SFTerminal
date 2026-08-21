@@ -47,7 +47,7 @@ export interface FailoverCandidate {
 }
 
 /**
- * 按列表顺序给出下一个候选：当前这条后面的，再到列表开头，跳过已试过的。
+ * 按列表顺序给出候选：从第一个开始，跳过当前这条和已试过的。
  * minContextLength：跳过窗口明显更小的（避免刚切过去就报对话太长）。
  */
 export function listFailoverCandidates<T extends FailoverCandidate>(
@@ -57,10 +57,7 @@ export function listFailoverCandidates<T extends FailoverCandidate>(
   minContextLength?: number,
 ): T[] {
   if (profiles.length <= 1) return []
-  const idx = profiles.findIndex(p => p.id === currentId)
-  const start = idx >= 0 ? idx + 1 : 0
-  const ordered = [...profiles.slice(start), ...profiles.slice(0, start)]
-  return ordered.filter(p => {
+  return profiles.filter(p => {
     if (p.id === currentId || triedIds.has(p.id)) return false
     if (
       minContextLength

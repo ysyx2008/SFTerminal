@@ -10,9 +10,9 @@ describe('listFailoverCandidates', () => {
     expect(listFailoverCandidates([profile('a')], 'a')).toEqual([])
   })
 
-  it('从当前这条后面开始，再到列表开头', () => {
+  it('从列表第一个开始，跳过当前这条', () => {
     const profiles = [profile('a'), profile('b'), profile('c')]
-    expect(listFailoverCandidates(profiles, 'b').map(p => p.id)).toEqual(['c', 'a'])
+    expect(listFailoverCandidates(profiles, 'b').map(p => p.id)).toEqual(['a', 'c'])
     expect(listFailoverCandidates(profiles, 'c').map(p => p.id)).toEqual(['a', 'b'])
     expect(listFailoverCandidates(profiles, 'a').map(p => p.id)).toEqual(['b', 'c'])
   })

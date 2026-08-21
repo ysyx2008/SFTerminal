@@ -472,7 +472,7 @@ export default {
     autoVisionModel: '自动使用视觉模型',
     autoVisionModelDesc: '当对话中包含图片时，自动切换到关联的视觉模型处理，处理完后自动切回主模型。需要先在模型配置中设置关联的视觉模型。',
     autoFailoverModel: '自动切换可用模型',
-    autoFailoverModelDesc: '当前模型按自动重试仍无法使用时，按配置列表顺序改用下一个能用的模型。只影响这场对话，不改默认模型。',
+    autoFailoverModelDesc: '当前模型按自动重试仍无法使用时，按配置列表从第一个开始改用能用的模型。只影响这场对话，不改默认模型。',
     agentPersonality: '助手性格设置',
     agentPersonalityDesc: '选择助手的性格类型，影响其回复风格',
     noPersonality: '默认（无特定性格）',

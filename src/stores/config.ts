@@ -405,7 +405,7 @@ export const useConfigStore = defineStore('config', () => {
 
   // 自动使用视觉模型
   const autoVisionModel = ref<boolean>(true)
-  // 自动切换可用模型（失败后换下一个，只改这场对话）
+  // 自动切换可用模型（失败后从列表第一个开始换，只改这场对话）
   const autoFailoverModel = ref<boolean>(true)
 
   // TTS 语音合成设置
