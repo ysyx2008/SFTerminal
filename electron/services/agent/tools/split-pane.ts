@@ -27,7 +27,10 @@ import { ensurePaneConnected, ensureConnectedToolResult } from './pane-reconnect
 /** handler 返回的 panes 项形态（与 split-pane-handler.ts::collectPanes 保持一致） */
 interface PaneInfo {
   ptyId: string
+  /** 方位（左侧 / 右上…） */
   label: string
+  /** 此刻连着哪台机器（会话名 / 登录地址 / 本地终端），随重连实时变化 */
+  connectionName?: string
   isActive: boolean
   terminalType: string
   /**
@@ -290,7 +293,7 @@ export async function listPanesTool(
     : ''
 
   return ok(
-    `当前窗格列表${healedNote}。字段 connected 仅表示主进程尚未观察到断开（非远端健康探测）。SSH 断线时调用 manage_pane(action=ensure_connected) 原地重连（成功后是新 shell）。窗格标识用 ptyId——给 pane_id 传该值即可。`,
+    `当前窗格列表${healedNote}。字段 label 是用户屏幕上的方位（左侧/右上…），connectionName 是该窗此刻连着的机器（用户屏幕上该窗格顶部就显示这个名字）——用户说"右边那台"或直接报机器名/IP 时按这两个字段对上是哪扇窗。字段 connected 仅表示主进程尚未观察到断开（非远端健康探测）。SSH 断线时调用 manage_pane(action=ensure_connected) 原地重连（成功后是新 shell）。窗格标识用 ptyId——给 pane_id 传该值即可。`,
     enriched
   )
 }

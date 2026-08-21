@@ -8,7 +8,6 @@ import { useI18n } from 'vue-i18n'
 import { AlertCircle, X } from 'lucide-vue-next'
 import { useTerminalStore } from '../stores/terminal'
 import type { SplitPane, TerminalTab } from '../stores/terminal'
-import { useConfigStore } from '../stores/config'
 import { getAllTerminalPanes } from '../stores/split-pane-tree'
 import Terminal from './Terminal.vue'
 import SplitPaneView from './SplitPaneView.vue'
@@ -16,7 +15,6 @@ import { PANE_SLOT_REGISTRY_KEY, type PaneSlotRegistry } from './pane-slot-regis
 
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
-const configStore = useConfigStore()
 
 const props = defineProps<{
   tab: { id: string }
@@ -54,22 +52,12 @@ provide<PaneSlotRegistry>(PANE_SLOT_REGISTRY_KEY, {
   unregister: () => { /* no-op */ }
 })
 
-function paneTitle(pane: SplitPane): string {
-  if (pane.terminalType === 'ssh') {
-    if (pane.sshSessionId) {
-      const session = configStore.sshSessions.find(s => s.id === pane.sshSessionId)
-      if (session?.name) return session.name
-    }
-    if (pane.sshConfig) return `${pane.sshConfig.username}@${pane.sshConfig.host}`
-    return t('tabs.sshTerminal')
-  }
-  return t('terminal.localTerminal')
-}
-
 const stageTitle = computed(() => {
   const panes = terminalPanes.value
   const active = panes.find(p => p.isActive) ?? panes[0]
-  return active ? paneTitle(active) : t('terminal.localTerminal')
+  return active
+    ? terminalStore.getPaneConnectionName(active)
+    : t('terminal.localTerminal')
 })
 
 async function closeHostedTerminal() {

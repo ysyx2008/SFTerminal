@@ -272,6 +272,8 @@ export interface AgentTerminalContextSplit {
     paneId: string
     ptyId: string
     label: string
+    /** 此刻连着谁（会话名 / 登录账号与地址 / 本地终端），与界面窗格标签同源 */
+    connectionName: string
     isActive: boolean
     terminalOutput: string[]
     terminalType: 'local' | 'ssh'
@@ -2992,6 +2994,7 @@ export const useTerminalStore = defineStore('terminal', () => {
             paneId: pane.id,
             ptyId: pane.ptyId as string,
             label: pane.label || 'Unknown',
+            connectionName: getPaneConnectionName(pane),
             isActive: pane.id === activePaneId,
             terminalOutput,
             terminalType: fallbackType
@@ -3044,6 +3047,37 @@ export const useTerminalStore = defineStore('terminal', () => {
    */
   function isSplitTab(tab: TerminalTab): boolean {
     return Boolean(tab.splitLayout)
+  }
+
+  /**
+   * 窗格此刻连着谁：远程取会话名（并带上地址便于用户按 IP 指认），本机为本地终端。
+   *
+   * 每次按当前连接现取，不缓存到窗格上——SSH 重连 / 换会话后名字要跟着变，
+   * 否则界面和 Agent 都会拿着过期的机器身份说话。窗格标签、换台标题、Agent
+   * 上下文共用这一份，保证用户说"右边那台"时双方对的是同一个名字。
+   */
+  function getPaneConnectionName(pane: {
+    terminalType?: string
+    sshSessionId?: string
+    sshConfig?: { host: string; username: string }
+  }): string {
+    const t = i18n.global.t
+    if (pane.terminalType !== 'ssh') return t('terminal.localTerminal')
+
+    const session = pane.sshSessionId
+      ? useConfigStore().sshSessions.find(s => s.id === pane.sshSessionId)
+      : undefined
+    // 有已保存会话时以会话为准：重连按会话当前的地址连，窗格上那份只是首次连接时的快照，
+    // 用户改过会话地址后它就过期了（正是"名字要跟着当前连接走"要避免的情况）
+    const host = session?.host || pane.sshConfig?.host
+    const username = session?.username || pane.sshConfig?.username
+    const address = host && username ? `${username}@${host}` : ''
+    const name = session?.name?.trim()
+
+    if (!name) return address || t('tabs.sshTerminal')
+    // 会话名本身就是地址时不重复一遍
+    if (!address || (host && name.includes(host))) return name
+    return `${name} (${address})`
   }
 
   /**
@@ -3636,6 +3670,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     tabCount,
     pendingFocusTabId,
     isSplitTab,
+    getPaneConnectionName,
     getActivePtyId,
     getAllTabPtyIds,
     getBatchPaneCount,

@@ -135,7 +135,7 @@ async function dispatch(
         data: {
           tabId,
           ptyId,
-          panes: collectPanes(latest?.splitLayout)
+          panes: collectPanes(store, latest?.splitLayout)
         }
       }
     }
@@ -156,14 +156,14 @@ async function dispatch(
           tabId,
           ptyId,
           newPaneId: ptyId, // 兼容旧字段名；值与 ptyId 相同，不是布局节点 id
-          panes: collectPanes(latest?.splitLayout)
+          panes: collectPanes(store, latest?.splitLayout)
         }
       }
     }
     case 'close': {
       log.info(`close start ptyId=${op.ptyId}`)
       // 终端页：不允许关最后一扇（等于关页）。助手页：允许，关完滑回对话台。
-      const allPanes = tab.splitLayout ? collectPanes(tab.splitLayout) : []
+      const allPanes = tab.splitLayout ? collectPanes(store, tab.splitLayout) : []
       if (allPanes.length <= 1 && tab.type !== 'assistant') {
         return {
           ok: false,
@@ -183,7 +183,7 @@ async function dispatch(
         }
       }
       const latest = store.tabs.find(t => t.id === tabId)
-      const remainingPanes = collectPanes(latest?.splitLayout)
+      const remainingPanes = collectPanes(store, latest?.splitLayout)
       return {
         ok: true,
         data: {
@@ -215,7 +215,7 @@ async function dispatch(
     }
     case 'list': {
       if (tab.splitLayout) {
-        const panes = collectPanes(tab.splitLayout)
+        const panes = collectPanes(store, tab.splitLayout)
         // mode 按叶子数量判断：root 永远是 split 容器（ensureRootSplitLayoutForTab 设计），
         // 但只有 1 个 terminal 叶子时用户体验等同单屏，应报 'single'。
         return {
@@ -236,6 +236,11 @@ async function dispatch(
             ? [{
                 ptyId: tab.ptyId,
                 label: 'Main',
+                connectionName: store.getPaneConnectionName({
+                  terminalType: tab.type === 'ssh' ? 'ssh' : 'local',
+                  sshSessionId: tab.sshSessionId,
+                  sshConfig: tab.sshConfig
+                }),
                 isActive: true,
                 terminalType: tab.type as 'local' | 'ssh'
               }]
@@ -287,6 +292,15 @@ async function dispatch(
   }
 }
 
+/** 给 Agent 看的窗格：方位（label）+ 此刻连着谁（connectionName）+ 稳定标识（ptyId） */
+interface ListedPaneInfo {
+  ptyId: string
+  label: string
+  connectionName: string
+  isActive: boolean
+  terminalType: string
+}
+
 /**
  * 给 Agent 工具看的 pane 列表。
  *
@@ -298,16 +312,18 @@ async function dispatch(
  * 只承诺 ptyId 这一种引用方式，避免 Agent 在两个等价名字之间踩坑。
  */
 function collectPanes(
+  store: ReturnType<typeof useTerminalStore>,
   layout: SplitPane | undefined
-): Array<{ ptyId: string; label: string; isActive: boolean; terminalType: string }> {
+): ListedPaneInfo[] {
   if (!layout) return []
-  const out: Array<{ ptyId: string; label: string; isActive: boolean; terminalType: string }> = []
+  const out: ListedPaneInfo[] = []
   const walk = (node: SplitPane) => {
     if (node.type === 'terminal') {
       if (!node.ptyId) return
       out.push({
         ptyId: node.ptyId,
         label: node.label || '',
+        connectionName: store.getPaneConnectionName(node),
         isActive: Boolean(node.isActive),
         terminalType: node.terminalType || 'local'
       })

@@ -193,7 +193,13 @@ export interface AttachmentInfo {
 export interface AgentPaneInfo {
   paneId: string
   ptyId: string
+  /** 方位（左侧 / 右上…）——用户按方位说话 */
   label: string
+  /**
+   * 此刻连着哪台机器（会话名 / 登录账号与地址 / 本地终端）——用户按机器指认。
+   * 按当前连接实时取值，重连或换会话后会变；老入口可能不带。
+   */
+  connectionName?: string
   isActive: boolean
   terminalOutput: string[]
   terminalType: 'local' | 'ssh'

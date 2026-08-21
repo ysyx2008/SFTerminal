@@ -57,6 +57,10 @@ const isSinglePane = computed(() => {
 // 终端窗格被激活的视觉高亮（单窗格不显示）
 const isPaneActive = computed(() => isTerminal.value && !isSinglePane.value && (props.layout.isActive ?? false))
 
+// 窗格顶部的连接名标签：只在分屏时出现——单窗格没有第二扇要区分，标签只是碍事
+const connectionName = computed(() => terminalStore.getPaneConnectionName(props.layout))
+const showConnectionLabel = computed(() => isTerminal.value && Boolean(props.layout.ptyId) && !isSinglePane.value)
+
 // ==================== 容器引用（用于拖拽时计算容器尺寸）====================
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -173,6 +177,11 @@ onUnmounted(() => {
   >
     <!-- 终端窗格：仅渲染占位 div，Terminal 由 TerminalTabView 通过 Teleport 投入 -->
     <template v-if="isTerminal">
+      <div
+        v-if="showConnectionLabel"
+        class="pane-connection-label"
+        :title="connectionName"
+      >{{ connectionName }}</div>
       <button
         v-if="layout.ptyId && !isSinglePane"
         class="pane-close-btn"
@@ -248,6 +257,34 @@ onUnmounted(() => {
   z-index: 5;
   border-radius: 2px;
   box-sizing: border-box;
+}
+
+/* 连接名标签：浮在终端内容之上（不占布局高度，不挤掉终端一行），
+   点击穿透到终端以免抢掉"点窗格切焦点" */
+.pane-connection-label {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 70%;
+  padding: 1px 8px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.42);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0.62;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  z-index: 6;
+}
+
+.split-pane.terminal:hover .pane-connection-label {
+  opacity: 1;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 /* 关闭按钮（默认隐藏，hover 时显示）*/

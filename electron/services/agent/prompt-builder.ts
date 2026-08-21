@@ -592,8 +592,11 @@ export class PromptBuilder {
 
   /**
    * 分屏多屏感知 section
-   * 当 tab 处于分屏模式时，列出所有窗格的标签、ptyId、激活状态、终端类型与最近输出末尾，
-   * 让 AI 明确"看到"多个并存的终端，并能用 ptyId 精确定位调用 terminal 工具。
+   * 当 tab 处于分屏模式时，列出所有窗格的方位、当前连的机器、ptyId、激活状态、终端类型
+   * 与最近输出末尾，让 AI 明确"看到"多个并存的终端，并能用 ptyId 精确定位调用 terminal 工具。
+   *
+   * 方位与机器身份必须同时出现：用户按方位说话（"右边那台"），按机器指认（"10.0.2.100"），
+   * 缺一边就会对不上号（历史上只有方位时，模型会误答"我看不到右边的画面"）。
    */
   private buildSplitPanesSection(): string {
     const panes = this.context.panes
@@ -610,13 +613,22 @@ export class PromptBuilder {
     panes.forEach(pane => {
       const activeMark = pane.isActive ? '🟢 激活' : '⚪ 未激活'
       const typeMark = pane.terminalType === 'ssh' ? '🌐 SSH' : '💻 本地'
-      lines.push(`- **${pane.label}**（pane_id 取值=\`${pane.ptyId}\`）: ${activeMark}, ${typeMark}`)
+      const connection = pane.connectionName ? ` → ${pane.connectionName}` : ''
+      lines.push(`- **${pane.label}**${connection}（pane_id 取值=\`${pane.ptyId}\`）: ${activeMark}, ${typeMark}`)
       const tail = (pane.terminalOutput || []).slice(-5).map(l => l.trim()).filter(Boolean)
       if (tail.length > 0) {
         lines.push('  最近输出：')
         tail.forEach(l => lines.push(`  > ${l}`))
       }
     })
+
+    if (panes.some(p => p.connectionName)) {
+      lines.push('')
+      lines.push('每扇窗后面那个名字就是它**此刻连着的机器**（远程为会话名/登录地址，本机为本地终端），'
+        + '与用户屏幕上该窗格顶部显示的标签一致。用户用方位（"左边/右边那台"）或机器名/IP 指代窗格时，'
+        + '按上面的对应关系认出是哪扇窗，直接在那扇窗里执行——**不要**回答看不到画面，也不要另开连接或反问登录方式。')
+      lines.push('该名字随重连/换会话实时变化；用户在窗里手动跳板到更深一层的机器你看不到，必要时在该窗内自行确认当前主机。')
+    }
 
     if (this.context.activePaneId) {
       lines.push('')
