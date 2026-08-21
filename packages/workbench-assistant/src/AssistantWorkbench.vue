@@ -354,6 +354,7 @@ defineExpose({
               ref="aiPanelRef"
               :tab-id="tab.id"
               :tab-active="isActive"
+              :hide-avatar="terminalSeated"
               :consume-workbench-context="consumeWorkbenchContext"
             />
             <div v-if="showDeskChrome" class="artifact-chrome artifact-chrome--cluster">

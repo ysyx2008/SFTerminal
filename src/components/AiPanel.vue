@@ -74,9 +74,12 @@ const props = withDefaults(defineProps<{
    * 助手工作台用于 Markdown 选区作用域。
    */
   consumeWorkbenchContext?: () => import('@shared/types').WorkbenchContext | undefined
+  /** 独立助手并排终端时藏头像，把对话区让出来 */
+  hideAvatar?: boolean
 }>(), {
   visible: true,
   tabActive: true,
+  hideAvatar: false,
 })
 
 // i18n
@@ -93,6 +96,8 @@ const isStandaloneAssistant = computed(() => {
   const tab = terminalStore.tabs.find(t => t.id === props.tabId)
   return tab?.type === 'assistant'
 })
+
+const showAssistantAvatar = computed(() => isStandaloneAssistant.value && !props.hideAvatar)
 
 /** 当前 tab 是否为联络（companion）tab -- 决定 WelcomePanel 走专属说明分支 */
 const isCompanionTab = computed(() => {
@@ -2299,9 +2304,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         <div
           ref="messagesRef"
           class="ai-messages"
-          :class="{ 'standalone-mode': isStandaloneAssistant, 'custom-avatar': isStandaloneAssistant && configStore.agentAvatar }"
+          :class="{ 'standalone-mode': showAssistantAvatar, 'custom-avatar': showAssistantAvatar && configStore.agentAvatar }"
           :style="{
-            '--assistant-avatar': isStandaloneAssistant ? `url(${configStore.agentAvatar || sailfishLogo})` : undefined,
+            '--assistant-avatar': showAssistantAvatar ? `url(${configStore.agentAvatar || sailfishLogo})` : undefined,
             opacity: isHistoryScrollPending ? 0 : undefined,
           }"
         >
