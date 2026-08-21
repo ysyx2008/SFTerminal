@@ -9,6 +9,14 @@ import { getAiDebugService } from './ai-debug.service'
 import type { ProviderChatParams } from './plugin/types'
 import { createLogger } from '../utils/logger'
 import { toSendableVisionImageUrl } from '../utils/vision-image'
+import {
+  classifyFailoverTrigger,
+  listFailoverCandidates,
+  type AiModelFailoverNotice,
+  type FailoverTrigger,
+} from './ai-model-failover'
+
+export type { AiModelFailoverNotice } from './ai-model-failover'
 
 const log = createLogger('AI')
 
@@ -2161,15 +2169,18 @@ export class AiService {
      * 避免用户以为应用卡住了。
      */
     onRetry?: (retryInfo?: RetryInfo) => void,
-    onToolCallReady?: (toolCall: ToolCall) => void  // 流式中某个 tool_call 参数完整时回调
+    onToolCallReady?: (toolCall: ToolCall) => void,  // 流式中某个 tool_call 参数完整时回调
+    onModelFailover?: (notice: AiModelFailoverNotice) => void,
   ): Promise<void> {
-    const profile = this.getCurrentProfile(profileId)
+    let profile = this.getCurrentProfile(profileId)
     if (!profile) {
       onError(t('error.ai_no_config'))
       return
     }
 
-    const isAnthropic = isAnthropicApi(profile)
+    let isAnthropic = isAnthropicApi(profile)
+    const triedFailoverIds = new Set<string>([profile.id])
+    let requestGeneration = 0
 
     // 创建 AbortController，使用 requestId 或生成一个唯一 ID
     const reqId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -2292,12 +2303,16 @@ export class AiService {
     }
 
     const resetIdleTimeout = () => {
+      const gen = requestGeneration
       clearTimeout(idleTimeoutId)
       idleTimeoutId = setTimeout(() => {
+        if (gen !== requestGeneration) return
         if (!isCompleted) {
           req?.destroy()
           if (!tryRetry('ETIMEDOUT', doRequest)) {
-            complete(() => onError(t('error.ai_idle_timeout')))
+            if (!tryModelFailover('retries_exhausted')) {
+              complete(() => onError(t('error.ai_idle_timeout')))
+            }
           }
         }
       }, AI_TIMEOUT.SOCKET_IDLE)
@@ -2340,6 +2355,42 @@ export class AiService {
       return false
     }
 
+    const tryModelFailover = (trigger: FailoverTrigger | null): boolean => {
+      if (!trigger || settled || abortController.signal.aborted) return false
+      if (!this.configService.get('autoFailoverModel')) return false
+      const next = listFailoverCandidates(
+        this.configService.getAiProfiles(),
+        profile.id,
+        triedFailoverIds,
+        profile.contextLength,
+      )[0]
+      if (!next) return false
+
+      triedFailoverIds.add(next.id)
+      const notice: AiModelFailoverNotice = {
+        fromId: profile.id,
+        fromName: profile.name,
+        usedId: next.id,
+        usedName: next.name,
+      }
+      log.warn(`AI model failover (${trigger}): ${notice.fromName} -> ${notice.usedName}`)
+      onModelFailover?.(notice)
+
+      profile = next
+      isAnthropic = isAnthropicApi(profile)
+      retryCount = 0
+      rateLimitRetryCount = 0
+      serverErrorRetryCount = 0
+      stripImages = false
+      requestGeneration += 1
+      isCompleted = true
+      requestBody = rebuildRequestBody()
+      closeOpenReasoningBlock()
+      resetForRetry()
+      doRequest()
+      return true
+    }
+
     // 尝试重试的辅助函数（网络错误：指数退避 + jitter；优先 err.code）
     const tryRetry = (error: NetworkErrorLike, doRequest: () => void): boolean => {
       // 已有重试在等待或请求已完成，跳过（防止 res/req 同时 emit error 导致重复重试）
@@ -2369,6 +2420,8 @@ export class AiService {
 
     const doRequest = () => {
     if (settled) return
+    const gen = requestGeneration
+    const isStale = () => gen !== requestGeneration
     // 每次（重）试开始时允许 complete() 回调
     isCompleted = false
 
@@ -2400,13 +2453,17 @@ export class AiService {
       }
 
       totalTimeoutId = setTimeout(() => {
+        if (isStale()) return
         if (!isCompleted) {
           req?.destroy()
-          complete(() => onError(t('error.ai_total_timeout')))
+          if (!tryModelFailover('retries_exhausted')) {
+            complete(() => onError(t('error.ai_total_timeout')))
+          }
         }
       }, AI_TIMEOUT.TOTAL)
 
       req = httpModule.request(options, (res) => {
+        if (isStale()) return
         // 开始接收响应，启动空闲超时
         resetIdleTimeout()
 
@@ -2418,6 +2475,7 @@ export class AiService {
             resetIdleTimeout()
           })
           res.on('end', () => {
+            if (isStale()) return
             if (settled || abortController.signal.aborted) {
               complete(() => onDone({
                 content: undefined,
@@ -2457,6 +2515,10 @@ export class AiService {
               resetForRetry()
               scheduleRetry(doRequest, retryAfterMs)
             } else if (isContextLengthApiFailure(parsed.code, parsed.message)) {
+              // 已经换过模型才继续换：避免大窗口切到小窗口后卡死。原模型对话太长不换。
+              if (triedFailoverIds.size > 1 && tryModelFailover('retries_exhausted')) {
+                return
+              }
               complete(() => onError(t('error.context_length_exceeded')))
             } else if (res.statusCode && AI_RETRY.RETRYABLE_STATUS_CODES.includes(res.statusCode) && serverErrorRetryCount < AI_RETRY.SERVER_ERROR_MAX_RETRIES) {
               serverErrorRetryCount++
@@ -2474,6 +2536,17 @@ export class AiService {
             } else if (tryVisionFallback(parsed.message)) {
               // 已降级重试
             } else {
+              const status = res.statusCode
+              const exhaustedTransient =
+                status === 429 ||
+                (status !== undefined && AI_RETRY.RETRYABLE_STATUS_CODES.includes(status))
+              if (tryModelFailover(classifyFailoverTrigger({
+                statusCode: status,
+                apiErrorCode: parsed.code,
+                retriesExhausted: exhaustedTransient,
+              }))) {
+                return
+              }
               const friendly = translateApiBusinessError(res.statusCode, parsed.code, profile.model)
               complete(() => onError(friendly || t('error.api_request_failed', { data: parsed.message })))
             }
@@ -2484,6 +2557,7 @@ export class AiService {
         let buffer = ''
 
         res.on('data', (chunk: Buffer) => {
+          if (isStale()) return
           // 收到数据，重置空闲超时
           resetIdleTimeout()
 
@@ -2641,6 +2715,7 @@ export class AiService {
         })
 
         res.on('end', () => {
+          if (isStale()) return
           // 流结束但未收到 [DONE] 或 finish_reason：检测不完整的 tool calls
           // 某些 API 在 max_tokens 截断时可能不发送 finish_reason 就断流
           if (!finishReason && toolCalls.length > 0) {
@@ -2696,6 +2771,7 @@ export class AiService {
         })
 
         res.on('error', (err) => {
+          if (isStale()) return
           if (abortController.signal.aborted) {
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
             log.debug(`Request aborted: model=${profile.model}, duration=${elapsed}s`)
@@ -2713,22 +2789,32 @@ export class AiService {
           if (!tryRetry(err, doRequest)) {
             getAiDebugService().logResponseError(reqId, err.message)
             const friendly = tryFriendlyApiError(err, profile.model)
-            complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err) })))
+            if (!tryModelFailover(classifyFailoverTrigger({
+              statusCode: (err as ApiRequestError).statusCode,
+              apiErrorCode: (err as ApiRequestError).apiErrorCode,
+              retriesExhausted: true,
+            }))) {
+              complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err) })))
+            }
           }
         })
       })
 
       // 连接超时处理
       req.on('timeout', () => {
+        if (isStale()) return
         req?.destroy()
         if (!tryRetry('ETIMEDOUT', doRequest)) {
           const errorMsg = t('error.ai_connection_timeout')
           getAiDebugService().logResponseError(reqId, errorMsg)
-          complete(() => onError(errorMsg))
+          if (!tryModelFailover('retries_exhausted')) {
+            complete(() => onError(errorMsg))
+          }
         }
       })
 
       req.on('error', (err) => {
+        if (isStale()) return
         // 只有用户主动中止时才静默处理（socket hang up 也可能是网络断开，不能一律吞掉）
         if (abortController.signal.aborted) {
           getAiDebugService().logResponseDone(reqId, { finishReason: 'aborted' })
@@ -2745,7 +2831,9 @@ export class AiService {
         if (!tryRetry(err, doRequest)) {
           getAiDebugService().logResponseError(reqId, err.message)
           const friendly = tryFriendlyApiError(err, profile.model)
-          complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err) })))
+          if (!tryModelFailover('retries_exhausted')) {
+            complete(() => onError(friendly || t('error.request_error', { message: translateNetworkError(err) })))
+          }
         }
       })
 
@@ -2785,6 +2873,7 @@ export class AiService {
       // 尝试重试网络错误
       if (!tryRetry(errorLike, doRequest)) {
         getAiDebugService().logResponseError(reqId, `Exception: ${errorMsg}`)
+        if (tryModelFailover('retries_exhausted')) return
         if (error instanceof Error) {
           const friendly = tryFriendlyApiError(error, profile.model)
           complete(() => onError(friendly || t('error.ai_request_failed', { message: translateNetworkError(error) })))

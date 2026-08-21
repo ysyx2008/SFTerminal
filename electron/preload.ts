@@ -1083,6 +1083,22 @@ const electronAPI = {
       }
     },
 
+    onModelFailover: (callback: (data: {
+      agentId: string
+      ptyId?: string
+      notice: { fromId: string; fromName: string; usedId: string; usedName: string }
+    }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: {
+        agentId: string
+        ptyId?: string
+        notice: { fromId: string; fromName: string; usedId: string; usedName: string }
+      }) => callback(data)
+      ipcRenderer.on('agent:modelFailover', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:modelFailover', handler)
+      }
+    },
+
     // 监听需要确认的工具调用（携带 ptyId 用于可靠匹配 tab）
     onNeedConfirm: (callback: (data: PendingConfirmation & { ptyId?: string }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: PendingConfirmation & { ptyId?: string }) => callback(data)
@@ -1162,6 +1178,7 @@ const electronAPI = {
         devNullExemptions: string[]
         userDataRoot: string
         userDataAllowed: string[]
+        userDataReadOnly: string[]
       }
       workspaceZones: {
         workspaceRoot: string

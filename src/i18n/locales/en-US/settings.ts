@@ -470,6 +470,8 @@ export default {
     apiFormatHint: 'Most providers use OpenAI format, Claude official uses Anthropic format',
     autoVisionModel: 'Auto Vision Model',
     autoVisionModelDesc: 'Automatically switch to the linked vision model when images are present in the conversation, then switch back after processing. Requires a linked vision model in profile settings.',
+    autoFailoverModel: 'Auto-switch Available Models',
+    autoFailoverModelDesc: 'If the current model still fails after automatic retries, switch to the next working model in your list. Only this conversation changes; the default model stays the same.',
     agentPersonality: 'Agent Personality',
     agentPersonalityDesc: 'Select the Agent personality type to influence its response style',
     noPersonality: 'Default (No specific personality)',

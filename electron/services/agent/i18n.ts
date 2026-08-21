@@ -165,6 +165,7 @@ const translations = {
     'agent.user_image_no_vision': '[系统：用户附带了 {count} 张图片，但当前 AI 配置不具备视觉能力（当前模型不是视觉模型，且未关联视觉模型，或「自动使用视觉模型」开关未开启），图片已被自动忽略。请明确告知用户：1) 你没有看到图片，无法分析图像内容；2) 建议用户在 AI 设置中切换到视觉模型（如 qwen3.5-plus、gpt-5.5），或为当前模型关联视觉模型并打开「自动使用视觉模型」开关。不要凭上下文猜测图片内容。]',
     'agent.tool_image_no_vision': '[系统：工具尝试返回 {count} 张图片，但当前 AI 配置不具备视觉能力，图片已被忽略。如果用户当前任务依赖图像内容，请明确告知用户切换到视觉模型；不要凭文件名或上下文猜测图片内容。]',
     'agent.profile_fallback': '⚠️ 指定的 AI 配置已失效，已切换到「{name}」继续。可在设置中重新选择模型。',
+    'agent.model_failover': '⚠️ 「{from}」连续无法使用，已切换到「{name}」继续。',
 
     // 上下文管理工具
     'context_tool.compress_success': '上下文已压缩。压缩前: ~{before} tokens, 压缩后: ~{after} tokens, 释放: ~{freed} tokens。归档 ID: {archiveId}（可通过 recall_compressed 找回原始内容）',
@@ -1714,6 +1715,7 @@ Requirements:
     'agent.user_image_no_vision': '[System: User attached {count} image(s), but the current AI configuration does not have vision capability (the active model is not a vision model, and either no linked vision model is configured or the "Auto Vision Model" switch is off). The images have been dropped automatically. You MUST clearly tell the user: 1) you did NOT see the image and cannot analyze its content; 2) suggest switching to a vision model (e.g. qwen3.5-plus, gpt-5.5) in AI Settings, or linking a vision model to the current profile and turning on the "Auto Vision Model" switch. Do NOT guess the image content from context.]',
     'agent.tool_image_no_vision': '[System: A tool tried to return {count} image(s), but the current AI configuration does not have vision capability. The images have been dropped. If the user task depends on visual content, clearly tell the user to switch to a vision model. Do NOT guess the content from filenames or context.]',
     'agent.profile_fallback': '⚠️ The selected AI profile is no longer available. Switched to "{name}" to continue. You can re-select a model in Settings.',
+    'agent.model_failover': '⚠️ "{from}" kept failing. Switched to "{name}" to continue.',
 
     // Context management tools
     'context_tool.compress_success': 'Context compressed. Before: ~{before} tokens, After: ~{after} tokens, Freed: ~{freed} tokens. Archive ID: {archiveId} (use recall_compressed to retrieve original content)',

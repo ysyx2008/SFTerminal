@@ -19,6 +19,7 @@ import { shouldShowToolResultStep } from '../utils/tool-display'
 import { estimateMessageStepVirtualSize } from '../utils/thinking-block'
 import { resolveWorkbenchAgentPrompt, resolveWorkbenchKind } from '../workbench'
 import { showConfirm, showAlert } from './useConfirm'
+import { toast } from './useToast'
 
 const log = createLogger('Agent')
 
@@ -224,6 +225,7 @@ export function useAgentMode(
   let cleanupStepListener: (() => void) | null = null
   let cleanupStepRemovedListener: (() => void) | null = null
   let cleanupContextBarListener: (() => void) | null = null
+  let cleanupModelFailoverListener: (() => void) | null = null
   let cleanupConfirmListener: (() => void) | null = null
   let cleanupConfirmResolvedListener: (() => void) | null = null
   let cleanupSecureInputListener: (() => void) | null = null
@@ -1949,6 +1951,14 @@ export function useAgentMode(
       terminalStore.setAgentContextBar(currentTabId.value, data.contextBar)
     })
 
+    cleanupModelFailoverListener = window.electronAPI.agent.onModelFailover((data) => {
+      if (!isEventForThisTab(data.agentId, data.ptyId)) return
+      if (data.notice.usedId) {
+        activeProfileId.value = data.notice.usedId
+      }
+      toast.warning(t('ai.modelFailover', { from: data.notice.fromName, name: data.notice.usedName }), 6000)
+    })
+
     // 监听需要确认
     cleanupConfirmListener = window.electronAPI.agent.onNeedConfirm((data) => {
       // 类型转换，添加 ptyId 支持
@@ -2075,6 +2085,10 @@ export function useAgentMode(
     if (cleanupContextBarListener) {
       cleanupContextBarListener()
       cleanupContextBarListener = null
+    }
+    if (cleanupModelFailoverListener) {
+      cleanupModelFailoverListener()
+      cleanupModelFailoverListener = null
     }
     if (cleanupConfirmListener) {
       cleanupConfirmListener()

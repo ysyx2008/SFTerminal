@@ -8,7 +8,7 @@
  * - SailFish（子类）：工具列表管理、系统提示构建、可选终端能力
  */
 
-import type { AiMessage, ToolCall, ChatWithToolsResult, ToolDefinition, RetryInfo } from '../ai.service'
+import type { AiMessage, ToolCall, ChatWithToolsResult, ToolDefinition, RetryInfo, AiModelFailoverNotice } from '../ai.service'
 import { StreamingToolExecutor } from './streaming-tool-executor'
 import type { AgentRecord, AgentStepRecord } from '../history.service'
 import type {
@@ -2604,7 +2604,7 @@ export abstract class Agent {
 
       run.requestId = run.id
       
-      const effectiveProfileId = this.resolveEffectiveProfileId(run)
+      let effectiveProfileId = this.resolveEffectiveProfileId(run)
 
       this.markWaitingForFirstToken(run)
       scheduleSlowTtftHint()
@@ -2993,7 +2993,30 @@ export abstract class Agent {
               log.info(`Streaming tool ready: ${toolCall.function.name} (id=${toolCall.id})`)
               streamingExecutor.addTool(toolCall)
             }
-          : undefined
+          : undefined,
+        (notice: AiModelFailoverNotice) => {
+          // 视觉路由的临时模型失败：只改这一轮，不把主模型绑死
+          const bindCurrent = !this.profileId || notice.fromId === this.profileId
+          if (bindCurrent) {
+            this.profileId = notice.usedId
+          }
+          effectiveProfileId = notice.usedId
+          const bar: AgentContextBar = {
+            ...this._contextBar,
+            profileId: notice.usedId,
+            cacheHitRate: undefined,
+          }
+          this.applyProfileFieldsToContextBar(bar, notice.usedId)
+          this.setContextBar(bar)
+          this.addStep({
+            type: 'message',
+            content: t('agent.model_failover', { from: notice.fromName, name: notice.usedName }),
+          })
+          if (bindCurrent) {
+            const agentKey = this._agentId || run.id
+            this.callbacks?.onModelFailover?.(agentKey, notice)
+          }
+        },
       )
     })
   }

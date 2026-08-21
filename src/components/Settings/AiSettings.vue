@@ -625,6 +625,24 @@ const openKeyUrl = (url: string) => {
         {{ t('aiSettings.autoVisionModelDesc') }}
       </p>
     </div>
+
+    <!-- 自动切换可用模型 -->
+    <div class="settings-section">
+      <div class="section-header">
+        <h4>{{ t('aiSettings.autoFailoverModel') }}</h4>
+        <label class="toggle-switch">
+          <input
+            type="checkbox"
+            :checked="configStore.autoFailoverModel"
+            @change="configStore.setAutoFailoverModel(($event.target as HTMLInputElement).checked)"
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p class="section-desc">
+        {{ t('aiSettings.autoFailoverModelDesc') }}
+      </p>
+    </div>
   </div>
 </template>
 

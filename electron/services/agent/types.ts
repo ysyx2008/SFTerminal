@@ -255,6 +255,8 @@ export interface AgentCallbacks {
   onComplete?: (agentId: string, result: string, pendingUserMessages?: string[]) => void
   onError?: (agentId: string, error: string) => void
   onTextChunk?: (agentId: string, chunk: string) => void
+  /** 当前对话因模型不可用已换到下一个（不改默认模型） */
+  onModelFailover?: (agentId: string, notice: import('../ai.service').AiModelFailoverNotice) => void
 }
 
 // 默认配置

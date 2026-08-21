@@ -405,6 +405,8 @@ export const useConfigStore = defineStore('config', () => {
 
   // 自动使用视觉模型
   const autoVisionModel = ref<boolean>(true)
+  // 自动切换可用模型（失败后换下一个，只改这场对话）
+  const autoFailoverModel = ref<boolean>(true)
 
   // TTS 语音合成设置
   const ttsSettings = ref<import('@shared/types').TtsSettings>({
@@ -439,7 +441,7 @@ export const useConfigStore = defineStore('config', () => {
         completed, onboarded, onboardingShown, lang, sponsorStatus,
         sortBy, defaultOrder, rules, personalityText,
         savedAgentName, savedAgentAvatar, savedLogLevel, savedTerminalSettings,
-        accounts, savedShortcuts, savedAutoVision, calAccounts, savedTtsSettings, savedWebSearchSettings,
+        accounts, savedShortcuts, savedAutoVision, savedAutoFailover, calAccounts, savedTtsSettings, savedWebSearchSettings,
         themeMode, sysScheme, savedPinnedConversationIds, savedConversationDisplayTitles,
       ] = await Promise.all([
         window.electronAPI.config.getAiProfiles(),
@@ -466,6 +468,7 @@ export const useConfigStore = defineStore('config', () => {
         window.electronAPI.config.get('emailAccounts') as Promise<EmailAccount[] | undefined>,
         window.electronAPI.config.get('keyboardShortcuts') as Promise<Partial<KeyboardShortcuts> | null | undefined>,
         window.electronAPI.config.get('autoVisionModel') as Promise<boolean | undefined>,
+        window.electronAPI.config.get('autoFailoverModel') as Promise<boolean | undefined>,
         window.electronAPI.config.get('calendarAccounts') as Promise<CalendarAccount[] | undefined>,
         window.electronAPI.config.get('ttsSettings') as Promise<import('@shared/types').TtsSettings | undefined>,
         window.electronAPI.config.get('webSearchSettings') as Promise<import('@shared/types').WebSearchSettings | undefined>,
@@ -512,6 +515,7 @@ export const useConfigStore = defineStore('config', () => {
         keyboardShortcuts.value = { ...DEFAULT_KEYBOARD_SHORTCUTS, ...savedShortcuts }
       }
       autoVisionModel.value = savedAutoVision ?? true
+      autoFailoverModel.value = savedAutoFailover ?? true
       calendarAccounts.value = calAccounts || []
       if (savedTtsSettings && typeof savedTtsSettings === 'object') {
         ttsSettings.value = { ...ttsSettings.value, ...savedTtsSettings }
@@ -782,6 +786,11 @@ export const useConfigStore = defineStore('config', () => {
   async function setAutoVisionModel(enabled: boolean): Promise<void> {
     autoVisionModel.value = enabled
     await window.electronAPI.config.set('autoVisionModel', enabled)
+  }
+
+  async function setAutoFailoverModel(enabled: boolean): Promise<void> {
+    autoFailoverModel.value = enabled
+    await window.electronAPI.config.set('autoFailoverModel', enabled)
   }
 
   // ==================== 首次设置向导 ====================
@@ -1166,6 +1175,7 @@ export const useConfigStore = defineStore('config', () => {
     agentMbti,
     agentDebugMode,
     autoVisionModel,
+    autoFailoverModel,
     setupCompleted,
     agentOnboardingCompleted,
     agentOnboardingShown,
@@ -1202,6 +1212,7 @@ export const useConfigStore = defineStore('config', () => {
     markAgentOnboardingShown,
     setAgentDebugMode,
     setAutoVisionModel,
+    setAutoFailoverModel,
     setSetupCompleted,
     setLanguage,
     setSponsorStatus,

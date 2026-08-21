@@ -232,6 +232,7 @@ export default {
     agentRunError: '❌ Agent run error: {error}',
     agentIpcFailed: 'Failed to communicate with the agent. Please retry; if it persists, check AI settings and network.',
     profileFallback: 'Selected AI profile is unavailable; switched to "{name}" to continue',
+    modelFailover: '"{from}" is unavailable; switched to "{name}"',
     unknownError: 'Unknown error',
     needConfirm: 'Confirmation Required',
     highRisk: 'High Risk',

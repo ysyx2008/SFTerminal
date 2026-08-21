@@ -20,7 +20,7 @@ const os = require('os')
 
 const CONFIG_FILE = 'qiyu-terminal-config.json'
 const CREDENTIAL_FILES = ['credentials.json', 'master.key']
-const BORROW_CONFIG_KEYS = ['aiProfiles', 'activeAiProfile', 'autoVisionModel', 'aiRules']
+const BORROW_CONFIG_KEYS = ['aiProfiles', 'activeAiProfile', 'autoVisionModel', 'autoFailoverModel', 'aiRules']
 
 function getDefaultUserDataPath() {
   const appName = 'SailFish'

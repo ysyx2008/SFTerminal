@@ -225,6 +225,7 @@ interface StoreSchema {
   bondLastCalculatedAt: number         // 上次计算时间
   keyboardShortcuts: KeyboardShortcuts  // 自定义快捷键
   autoVisionModel: boolean  // 自动使用视觉模型：遇到图片时自动切换到关联的视觉模型
+  autoFailoverModel: boolean  // 自动切换可用模型：当前模型重试仍失败时换下一个（只改这场对话）
   schemaVersion: number  // 数据 schema 版本号，用于迁移框架追踪已执行的 migration
   // 堡垒机（JumpServer）集成
   bastionUrl: string              // JumpServer 地址
@@ -337,6 +338,7 @@ const defaultConfig: StoreSchema = {
   bondLastCalculatedAt: 0,
   keyboardShortcuts: { ...DEFAULT_KEYBOARD_SHORTCUTS },
   autoVisionModel: true,
+  autoFailoverModel: true,
   schemaVersion: 0,
   bastionUrl: '',
   bastionUsername: '',
