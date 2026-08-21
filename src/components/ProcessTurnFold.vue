@@ -25,18 +25,62 @@ const stopTicking = () => {
   timer = undefined
 }
 
+// 思考写得比人读得快。一句话至少停留这么久再换下一句，否则整行字只是在闪。
+const MIN_LABEL_DWELL_MS = 2000
+
+const shownLiveText = ref(props.fold.liveText)
+let swapTimer: ReturnType<typeof setTimeout> | undefined
+let lastSwapAt = 0
+
+const stopSwapping = () => {
+  if (swapTimer === undefined) return
+  clearTimeout(swapTimer)
+  swapTimer = undefined
+}
+
+const showLiveText = (text: string | undefined) => {
+  shownLiveText.value = text
+  lastSwapAt = Date.now()
+}
+
+watch(
+  () => props.fold.liveText,
+  next => {
+    stopSwapping()
+    if (next === shownLiveText.value) return
+    const wait = MIN_LABEL_DWELL_MS - (Date.now() - lastSwapAt)
+    if (wait <= 0) {
+      showLiveText(next)
+      return
+    }
+    // 等够了再换，且换的是那一刻最新的一句，中间刷过去的不补播
+    swapTimer = setTimeout(() => {
+      swapTimer = undefined
+      showLiveText(props.fold.liveText)
+    }, wait)
+  },
+)
+
 watch(
   () => props.fold.live,
   live => {
     stopTicking()
-    if (!live) return
-    now.value = Date.now()
-    timer = setInterval(() => { now.value = Date.now() }, 1000)
+    if (live) {
+      now.value = Date.now()
+      timer = setInterval(() => { now.value = Date.now() }, 1000)
+      return
+    }
+    // 做完了立刻定格成结论，不让排队中的那句盖回去
+    stopSwapping()
+    shownLiveText.value = props.fold.liveText
   },
   { immediate: true },
 )
 
-onUnmounted(stopTicking)
+onUnmounted(() => {
+  stopTicking()
+  stopSwapping()
+})
 
 const actionLine = computed(() => {
   const parts: string[] = []
@@ -51,7 +95,7 @@ const actionLine = computed(() => {
 const label = computed(() => {
   const idle = props.fold.thinkingOnly ? t('ai.processFold.thought') : t('ai.processFold.working')
   if (!props.fold.live) return actionLine.value || idle
-  if (props.fold.liveText) return props.fold.liveText
+  if (shownLiveText.value) return shownLiveText.value
   if (props.fold.liveAction) return t(`ai.processFold.doing.${props.fold.liveAction}`)
   return props.fold.thinkingOnly ? t('ai.processFold.thinking') : t('ai.processFold.working')
 })

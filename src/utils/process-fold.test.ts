@@ -26,6 +26,16 @@ function thinkingMessage(id: string, reasoning: string, body = '', timestamp?: n
   })
 }
 
+/** 思考还在一个字一个字地写 */
+function streamingThinking(id: string, reasoning: string): ProcessStepLike {
+  return step({
+    id,
+    type: 'message',
+    isStreaming: true,
+    content: `<details open>\n<summary>🤔 Thinking</summary>\n<blockquote>\n\n${reasoning}`,
+  })
+}
+
 /** 展开后（或未折叠时）用户读到的步骤顺序。一条步骤拆成两半时仍只算一次 */
 function readingOrder(segments: ProcessSegment[]): string[] {
   const ids = segments.flatMap(seg => seg.steps.map(ref => ref.step.id))
@@ -75,6 +85,25 @@ describe('countActions / extractProgressLine', () => {
   it('takes the last line of the most recent thinking', () => {
     expect(extractProgressLine(longRun())).toBe('负载不高')
     expect(lastProgressLine('- 先看\n- 磁盘在排队')).toBe('磁盘在排队')
+  })
+
+  it('takes the last finished sentence out of a run-on paragraph', () => {
+    expect(lastProgressLine('先看负载。磁盘在排队。')).toBe('磁盘在排队')
+    expect(lastProgressLine('Checked load. Disk is queueing.')).toBe('Disk is queueing')
+  })
+
+  it('does not shout half a sentence while it is still being written', () => {
+    const steps = [streamingThinking('m1', '负载不高。等等，也许 192.168.31.2 是旁路由。而跑监')]
+    expect(extractProgressLine(steps)).toBe('等等，也许 192.168.31.2 是旁路由')
+  })
+
+  it('stays on the previous line until the new thought finishes a sentence', () => {
+    const steps = [
+      thinkingMessage('m1', '先看负载。负载不高。'),
+      step({ id: 't1', type: 'tool_call', toolName: 'exec' }),
+      streamingThinking('m2', '接下来我'),
+    ]
+    expect(extractProgressLine(steps)).toBe('负载不高')
   })
 })
 

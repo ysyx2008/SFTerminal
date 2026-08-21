@@ -211,26 +211,44 @@ export function countActions(steps: ReadonlyArray<ProcessStepLike>): Partial<Rec
   return counts
 }
 
+/** 一句的边界：中文句末标点、英文句末标点后跟空白、或换行 */
+const SENTENCE_BREAK = /(?<=[。！？；;…])|(?<=[.!?])\s+|\r?\n/
+/** 到最后一个句子边界为止——后面那截还在写 */
+const SETTLED_HEAD = /^[\s\S]*(?:[。！？；;…]|[.!?]\s|\r?\n)/
+
 export function lastProgressLine(text: string): string {
-  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
-  const raw = lines[lines.length - 1] || ''
-  const cleaned = raw.replace(/^(?:[-*•]|\d+\.)\s+/, '').replace(/^#{1,6}\s+/, '')
+  const parts = text.split(SENTENCE_BREAK).map(part => part.trim()).filter(Boolean)
+  const raw = parts[parts.length - 1] || ''
+  const cleaned = raw
+    .replace(/^(?:[-*•]|\d+\.)\s+/, '')
+    .replace(/^#{1,6}\s+/, '')
+    // 句号收在这行末尾没意义，后面还跟着动作数和秒数；问号叹号有语气，留着
+    .replace(/[。；;….]+$/, '')
   if (cleaned.length <= PROGRESS_MAX_CHARS) return cleaned
   return `${cleaned.slice(0, PROGRESS_MAX_CHARS - 1)}…`
 }
 
-/** 它此刻在忙什么：拿最近一次思考的尾句。跑着的时候思考还没写完也算数。 */
+/**
+ * 它此刻在忙什么：拿最近一次思考里**已经写完的那句**。
+ * 正在写的半句不算——那截跟着流一个字一个字地变，喊出来只会闪，看不清。
+ * 这一段还没写完整一句时退回上一段的收尾句，宁可慢半拍也不要一行字乱跳。
+ */
 export function extractProgressLine(steps: ReadonlyArray<ProcessStepLike>): string | undefined {
   for (let i = steps.length - 1; i >= 0; i--) {
     const step = steps[i]
     let reasoning = ''
+    let done = true
     if (step.type === 'message') {
-      reasoning = parsed(step).thinking?.reasoning || ''
+      const thinking = parsed(step).thinking
+      reasoning = thinking?.reasoning || ''
+      done = thinking?.isDone !== false
     } else if (step.type === 'thinking') {
       reasoning = step.content || ''
+      done = !step.isStreaming
     }
-    if (!reasoning.trim()) continue
-    const line = lastProgressLine(reasoning)
+    const settled = done ? reasoning : reasoning.match(SETTLED_HEAD)?.[0] || ''
+    if (!settled.trim()) continue
+    const line = lastProgressLine(settled)
     if (line) return line
   }
   return undefined
