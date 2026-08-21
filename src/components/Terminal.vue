@@ -15,6 +15,7 @@ import { TerminalScreenService, type ScreenContent } from '../services/terminal-
 import { TerminalSnapshotManager, type TerminalSnapshot, type TerminalDiff } from '../services/terminal-snapshot.service'
 import { createLogger } from '../utils/logger'
 import { matchAccelerator, formatAccelerator } from '../utils/shortcut'
+import { toast } from '../composables/useToast'
 import '@xterm/xterm/css/xterm.css'
 
 const log = createLogger('Terminal')
@@ -178,7 +179,11 @@ onMounted(async () => {
     cursorStyle: settings.cursorStyle,
     scrollback: settings.scrollback,
     allowProposedApi: true,
-    convertEol: true
+    convertEol: true,
+    // 右键必须原样保留用户选中的内容——我们自己画右键菜单，"复制/发送到 AI"
+    // 都取当前选区。xterm 这个选项（macOS 默认开）会在右键点到选区之外时改选
+    // 光标下的词：点到空白处更是把选区直接清空，用户按到的"复制"就是灰的。
+    rightClickSelectsWord: false
   })
 
   document.addEventListener('visibilitychange', syncCursorBlinkToVisibility)
@@ -329,7 +334,11 @@ onMounted(async () => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'c' && event.type === 'keydown') {
       const selection = terminal?.getSelection()
       if (selection) {
-        navigator.clipboard.writeText(selection)
+        // 这里不能 await（要同步 return false 拦掉 SIGINT），失败也得让用户知道
+        navigator.clipboard.writeText(selection).catch(err => {
+          log.warn('Copy selection to clipboard failed:', err)
+          toast.error(t('terminal.contextMenu.copyFailed'))
+        })
         return false // 阻止默认行为（不发送 SIGINT）
       }
       // 没有选中内容时，让 Ctrl+C 发送到终端（作为中断信号）
@@ -825,10 +834,17 @@ const handleTerminalClick = () => {
 }
 
 const menuCopy = async () => {
-  if (contextMenu.value.selectedText) {
-    await navigator.clipboard.writeText(contextMenu.value.selectedText)
-  }
+  const text = contextMenu.value.selectedText
+  // 先收菜单：写剪贴板万一被拒（Electron 下偶发权限/焦点问题），
+  // 菜单不该赖在屏幕上，失败也要让用户看见而不是静静地什么都没发生
   hideContextMenu()
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch (e) {
+    log.warn('Copy selection to clipboard failed:', e)
+    toast.error(t('terminal.contextMenu.copyFailed'))
+  }
 }
 
 const menuPaste = async () => {

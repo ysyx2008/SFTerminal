@@ -153,6 +153,7 @@ export default {
   terminal: {
     contextMenu: {
       copy: '复制',
+      copyFailed: '复制失败，请用 Ctrl/Cmd+C 再试',
       paste: '粘贴',
       selectAll: '全选',
       clear: '清屏',

@@ -153,6 +153,7 @@ export default {
   terminal: {
     contextMenu: {
       copy: 'Copy',
+      copyFailed: 'Copy failed, try Ctrl/Cmd+C instead',
       paste: 'Paste',
       selectAll: 'Select All',
       clear: 'Clear',
