@@ -209,7 +209,7 @@ describe('Conversation 聚合根（领域模型）', () => {
     expect(prefix[0].images).toEqual(['data:image/png;base64,BBB'])
   })
 
-  it('cache 前缀复用判定：无前缀/wakeup/超 70% 跳过', () => {
+  it('cache 前缀复用判定：无前缀 / wakeup / 前缀大到压缩都做不了才跳过', () => {
     const estimate = (msgs: AiMessage[]) => msgs.length * 100
     const conv = Conversation.create({ agentKey: 'tab-c', terminalType: 'assistant' })
 
@@ -222,11 +222,11 @@ describe('Conversation 聚合根（领域模型）', () => {
       taskStatus: 'success', result: 'a'
     })
 
-    // 有前缀且远小于 70% → true
+    // 前缀 2 条 × 100 = 200，上限 10000 → 复用（历史变长本身不构成重建理由）
     expect(conv.shouldReuseCachePrefix(10000, { estimateTokens: estimate })).toBe(true)
     // wakeup → false（内心独白不复用对话前缀）
     expect(conv.shouldReuseCachePrefix(10000, { wakeup: true, estimateTokens: estimate })).toBe(false)
-    // 前缀超 70% → false（前缀 2 条 * 100 = 200，上下文 200 → 200 < 140 为假）
+    // 上限降到 200（如换到更小窗口的模型）→ 连压缩的空间都不剩，回冷启动重建
     expect(conv.shouldReuseCachePrefix(200, { estimateTokens: estimate })).toBe(false)
   })
 
@@ -246,6 +246,51 @@ describe('Conversation 聚合根（领域模型）', () => {
     expect(conv.steps.length).toBe(0)
     expect(conv.getCachePrefix()).toBeUndefined()
     expect(conv.tokenUsage).toBeUndefined()
+  })
+
+  it('用量序列：相邻两次上报相减 = 那段消息的真实规模', () => {
+    const conv = Conversation.create({ agentKey: 'tab-l', terminalType: 'local' })
+    // 第 1 次请求带 3 条消息用了 1000；第 2 次带 5 条用了 1800
+    // → 中间新增的那 2 条消息真实占 800（固定前缀在两边约掉）
+    conv.recordPromptUsage(3, 1000)
+    conv.recordPromptUsage(5, 1800)
+    expect(conv.measureMessageRange(3, 5)).toBe(800)
+    expect(conv.lastPromptTokens).toBe(1800)
+  })
+
+  it('用量序列：端点没有真实读数时返回 undefined，交给调用方回退估算', () => {
+    const conv = Conversation.create({ agentKey: 'tab-l2', terminalType: 'local' })
+    conv.recordPromptUsage(5, 1800)
+    // 起点 5 有读数，终点 9 还没发过请求 → 不给近似值
+    expect(conv.measureMessageRange(5, 9)).toBeUndefined()
+    // 起点早于任何记录 → 同样说"不知道"
+    expect(conv.measureMessageRange(1, 5)).toBeUndefined()
+    expect(conv.measureMessageRange(5, 5)).toBe(0)
+  })
+
+  it('用量序列：作废锚点（压缩/冷启动重建）时一并清空，索引不再对不上号', () => {
+    const conv = Conversation.create({ agentKey: 'tab-l3', terminalType: 'local' })
+    conv.recordPromptUsage(3, 1000)
+    conv.recordPromptUsage(5, 1800)
+    conv.setLastPromptTokens(undefined)
+    expect(conv.measureMessageRange(3, 5)).toBeUndefined()
+  })
+
+  it('用量序列：同一位置重复上报以最后一次为准（如剥图重试）', () => {
+    const conv = Conversation.create({ agentKey: 'tab-l4', terminalType: 'local' })
+    conv.recordPromptUsage(3, 1000)
+    conv.recordPromptUsage(5, 1800)
+    conv.recordPromptUsage(5, 1500)  // 同一条数重试，读数变小
+    expect(conv.measureMessageRange(3, 5)).toBe(500)
+  })
+
+  it('用量序列：条数回退说明序列被改过，旧记录整体丢弃', () => {
+    const conv = Conversation.create({ agentKey: 'tab-l5', terminalType: 'local' })
+    conv.recordPromptUsage(5, 1800)
+    conv.recordPromptUsage(9, 3000)
+    conv.recordPromptUsage(4, 900)   // 变短了
+    expect(conv.measureMessageRange(5, 9)).toBeUndefined()
+    expect(conv.lastPromptTokens).toBe(900)
   })
 
   it('rebind：会话漫游只换 agentKey，身份/形态不变', () => {

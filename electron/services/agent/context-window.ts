@@ -49,15 +49,40 @@ export interface ContextWindowDeps {
    */
   getTools?: () => Array<unknown>
   /**
-   * 生成待归档消息的 AI 小结（proactive 路径专用：窗口将满、API 还可用时摘要质量最高）。
+   * 消息区间 [fromCount, toCount) 的真实 token 数,来自 API 逐次报告的用量序列。
+   * 返回 undefined 表示这段没有真实读数（序列刚作废 / 端点不在记录上）,
+   * 调用方回退估算。
+   */
+  measureMessageRange?: (fromCount: number, toCount: number) => number | undefined
+  /**
+   * 让 AI 写交接小结（proactive 路径专用：窗口将满、API 还可用时质量最高）。
+   *
+   * 传的是**当前完整对话**而非待归档切片：小结指令作为一条 user 消息追加在对话
+   * 末尾发出去,前缀与上一轮逐字一致,provider 的前缀缓存直接命中；模型也是在原本
+   * 的语境里写小结,而不是读一份拍平成文本、还得重新输入一遍的转录。
+   *
    * 返回 null 或抛错 → 回退固定模板。
    */
-  summarizeMessages?: (messages: AiMessage[]) => Promise<string | null>
+  summarizeMessages?: (opts: { conversation: AiMessage[]; keepRecent: number }) => Promise<string | null>
   /**
    * 主动压缩的最小可压缩范围（tokens），缺省用 MIN_PROACTIVE_RANGE_TOKENS。
    * 仅测试注入用——生产代码不要传。
    */
   minProactiveRangeTokens?: number
+}
+
+/**
+ * 已结束任务的一对：用户原话 + 最终答复。
+ *
+ * 压缩时这两样逐字保留——用户说过的话是意图的真相源、体积小且不可再生；
+ * 只留原话不留结果的话，模型会看到「用户要求了 A」却不知道做没做成，
+ * 可能整件事重做一遍，失败与中止的状态尤其要留住，否则会重踩同一个坑。
+ */
+interface TaskPair {
+  user: AiMessage
+  userIndex: number
+  reply?: AiMessage
+  replyIndex?: number
 }
 
 /** 压缩结果(供 compress_context 工具回报给 AI)。 */
@@ -74,10 +99,45 @@ export class ContextWindowManager {
   /** 上下文管理功能激活阈值(用量百分比)。与 85% 警告消息对齐。 */
   static readonly THRESHOLD = 85
   /**
-   * 主动压缩阈值(基于上一轮真实 prompt_tokens 的占比)。留 5% 余量给摘要调用本身。
-   * 不再压得更早：压缩是有损的，且现在不限次数——涨回来还能再压，不必提前动手。
+   * 压缩自身需要的空间(tokens)：压缩指令 + 小结输出 + 安全余量。
+   *
+   * 触发点按这个绝对值算,不按窗口百分比——同一个百分比在不同窗口下含义完全不同:
+   * 128K 窗口留 5% 还有 6.4K 够写小结,32K 窗口留 5% 只剩 1.6K,小结写不完就被截断,
+   * 压缩本身反倒成了信息丢失的来源。
+   *
+   * 构成：小结输出 SUMMARY_OUTPUT_BUDGET_CHARS(2000 字,按中文口径约 1.5K tokens)
+   * + 压缩指令 + 本轮可能新增的零头。
+   *
+   * 注意固定前缀(system prompt + 工具 schema)不参与这个判断:剩余空间 =
+   * 窗口 - 已用,前缀多大在两边同时出现、约掉了。压缩「压不压得动」是另一个问题,
+   * 由 MIN_PROACTIVE_RANGE_TOKENS 与实效防抖负责。
    */
-  static readonly PROACTIVE_THRESHOLD = 0.95
+  static readonly COMPACTION_RESERVE_TOKENS = 4000
+
+  /**
+   * 预留空间占窗口的上限。极小窗口(如 8K)下 4000 会占掉一半,导致刚开场就判定该压缩;
+   * 按比例封顶保证任何窗口下都先能正常干活。
+   */
+  static readonly MAX_RESERVE_RATIO = 0.25
+
+  /**
+   * 成对保留的历史任务占「可用空间」的比例。
+   *
+   * 必须从可用空间（窗口减掉压不掉的固定前缀）里切,不能按整窗切:固定前缀实测
+   * 可达 15.6K,32K 窗口下光它就占一半,按整窗切保留项必然超发。
+   *
+   * 这个上限是本次重构最关键的不变量——成对内容会累积,第二次压缩时上一次留下的
+   * 还在、再加上新结束的任务,不设上限就会一路涨到把窗口占满,等于把「压不动」
+   * 换个形式重演。有了它,压缩后的规模就与会话跑了多久无关。
+   */
+  static readonly PRESERVED_PAIRS_RATIO = 0.3
+
+  /**
+   * 保留项里单条消息的 token 下限保护。单条超长时只截断该条、不牵连整对——
+   * 用户粘进来的大段日志或 AI 写的长报告一条就能吃掉整个预算,但至少要保住
+   * 「用户提过这个要求」这件事。
+   */
+  static readonly MIN_PRESERVED_MESSAGE_TOKENS = 500
 
   /**
    * 一次主动压缩至少要释放多少 token 才算有效。低于此值说明剩余结构压不动
@@ -341,22 +401,20 @@ export class ContextWindowManager {
   }
 
   /**
-   * 计算可压缩范围：当前任务（最后一条非告警 user 消息之后）中，除最近 keepRecent 组
+   * 计算可压缩范围：当前任务（最后一条真实 user 消息之后）中，除最近 keepRecent 组
    * assistant 轮次之外的早期消息。proactive 的摘要装配与 compress 共用此计算，
    * 保证「摘要覆盖的消息」与「实际归档的消息」一致。
    */
   private findCompressibleRange(run: AgentRun, keepRecent: number): { lastUserIndex: number; toCompress: AiMessage[] } | null {
-    // 找到当前任务的消息范围(最后一条 user 消息之后的部分)
+    // 找到当前任务的起点：最后一条**用户真正说的话**。
+    //
+    // 系统注入的那些（用量告警、压缩完成通知）借用 user 角色发给模型，但不是用户
+    // 的请求，不能当任务边界——否则压过一次之后，注入的那条通知会顶替真正的请求
+    // 成为「当前任务」，真实请求被当成历史，切分整个错位。
+    // 判定看 _systemInjected 标志，不看文案：文案会随语言和措辞变，标志不会。
     let lastUserIndex = -1
     for (let i = run.messages.length - 1; i >= 0; i--) {
-      if (run.messages[i].role === 'user') {
-        // 跳过系统注入的警告消息
-        if (
-          typeof run.messages[i].content === 'string' &&
-          run.messages[i].content.includes('[系统] 上下文用量告警')
-        ) {
-          continue
-        }
+      if (run.messages[i].role === 'user' && !run.messages[i]._systemInjected) {
         lastUserIndex = i
         break
       }
@@ -385,6 +443,98 @@ export class ContextWindowManager {
     return { lastUserIndex, toCompress }
   }
 
+  /** 成对保留的历史任务预算：从可用空间（窗口 - 固定前缀）里切。 */
+  getPreservedPairsBudget(): number {
+    const available = Math.max(0, this.getContextLength() - this.getFixedPrefixTokens(this._lastSystemPromptScope))
+    return Math.floor(available * ContextWindowManager.PRESERVED_PAIRS_RATIO)
+  }
+
+  /**
+   * 把 [0, endIndex) 内的消息按真实 user 消息切成「用户原话 + 最终答复」对。
+   *
+   * 系统注入的 user 消息（用量告警之类）不构成任务边界——那不是用户说的话。
+   * 最终答复取该任务里最后一条不带 tool_calls 的 assistant 消息：带 tool_calls 的
+   * 是中间过程，只有纯文本那条才是给用户的交代。
+   */
+  private extractTaskPairs(messages: AiMessage[], endIndex: number): TaskPair[] {
+    const pairs: TaskPair[] = []
+    let current: TaskPair | undefined
+    for (let i = 0; i < endIndex; i++) {
+      const msg = messages[i]
+      if (msg.role === 'system') continue
+      if (msg.role === 'user' && !msg._systemInjected) {
+        if (current) pairs.push(current)
+        current = { user: msg, userIndex: i }
+        continue
+      }
+      if (!current) continue
+      const isPlainReply =
+        msg.role === 'assistant' &&
+        !msg.tool_calls?.length &&
+        typeof msg.content === 'string' &&
+        msg.content.trim().length > 0
+      if (isPlainReply) {
+        current.reply = msg
+        current.replyIndex = i
+      }
+    }
+    if (current) pairs.push(current)
+    return pairs
+  }
+
+  /**
+   * 按预算从最近往前选成对内容。超预算的老任务整对移出（进归档，可取回）。
+   *
+   * 被移出的老任务不等于信息丢失：AI 写小结时看得见完整对话，重要的它会写进去。
+   * 近期靠精确保留，远期靠 AI 挑重点，两者互补。
+   */
+  private selectPairsWithinBudget(
+    pairs: TaskPair[],
+    budgetTokens: number,
+    archiveId: string
+  ): { messages: AiMessage[]; keptIndices: Set<number> } {
+    const perMessageCap = Math.max(
+      ContextWindowManager.MIN_PRESERVED_MESSAGE_TOKENS,
+      Math.floor(budgetTokens / 4)
+    )
+    const messages: AiMessage[] = []
+    const keptIndices = new Set<number>()
+    let remaining = budgetTokens
+
+    for (let i = pairs.length - 1; i >= 0; i--) {
+      const pair = pairs[i]
+      const user = this.capMessage(pair.user, perMessageCap, archiveId)
+      // 任务没有最终答复（被中止/还没答就转入下一件事）时补一条状态，
+      // 既留住「这件事没有收尾」这个事实，也避免保留序列里出现连续两条 user
+      const reply = pair.reply
+        ? this.capMessage(pair.reply, perMessageCap, archiveId)
+        : { role: 'assistant' as const, content: t('agent.compress_pair_no_reply') }
+      const cost = this.estimateMessagesTokens([user, reply])
+      // 预算再紧也要留下最近一对：用户原话是意图的真相源，一条不留的话模型
+      // 连"要做什么"都不知道，压缩就把任务本身弄丢了
+      if (cost > remaining && messages.length > 0) break
+      remaining -= cost
+      messages.unshift(reply)
+      messages.unshift(user)
+      keptIndices.add(pair.userIndex)
+      if (pair.replyIndex !== undefined) keptIndices.add(pair.replyIndex)
+    }
+
+    return { messages, keptIndices }
+  }
+
+  /** 单条超长时截断保留头部，标注归档 ID 让 AI 知道去哪找全文。 */
+  private capMessage(msg: AiMessage, capTokens: number, archiveId: string): AiMessage {
+    const content = typeof msg.content === 'string' ? msg.content : ''
+    if (this.estimateTokens(content) <= capTokens) return { ...msg }
+    // 按字符数截断：中文一个字约 0.75 token，取 capTokens 个字符对任何语种都不会超预算
+    const kept = content.slice(0, capTokens)
+    return {
+      ...msg,
+      content: `${kept}\n\n[内容过长已截断，完整原文见归档 "${archiveId}"，可用 recall_compressed 取回]`
+    }
+  }
+
   /**
    * 压缩当前任务的对话上下文:将早期的 assistant + tool 消息归档,替换为 AI 提供的摘要。
    * 一组 = assistant 消息 + 对应的 tool result;从后往前保留 keepRecent 组。
@@ -411,10 +561,23 @@ export class ContextWindowManager {
     }
     const archiveId = `ca-${run.compressedArchives.length + 1}`
 
+    // 段 A：当前任务之前的历史。成对提取「用户原话 + 最终答复」，按预算从近往远
+    // 保留，其余（中间过程的 assistant/tool）连同段 B 一起进归档。
+    const systemMessages = run.messages.slice(0, lastUserIndex).filter(m => m.role === 'system')
+    const pairs = this.extractTaskPairs(run.messages, lastUserIndex)
+    const { messages: preservedHistory, keptIndices } = this.selectPairsWithinBudget(
+      pairs,
+      this.getPreservedPairsBudget(),
+      archiveId
+    )
+    const historyArchived = run.messages
+      .slice(0, lastUserIndex)
+      .filter((m, i) => m.role !== 'system' && !keptIndices.has(i))
+
     // 归档原始消息(深拷贝,防止后续 run.messages 修改影响归档)
     run.compressedArchives.push({
       id: archiveId,
-      messages: JSON.parse(JSON.stringify(toCompress)),
+      messages: JSON.parse(JSON.stringify([...historyArchived, ...toCompress])),
       summary,
       timestamp: Date.now()
     })
@@ -425,9 +588,24 @@ export class ContextWindowManager {
       content: `[早期对话已压缩，归档 ID: "${archiveId}"。如需查看原始内容，请调用 recall_compressed(archive_id: "${archiveId}")。]\n\n${summary}`
     }
 
-    // 重建 messages: system + 历史任务消息 + user + 摘要 + 保留的最近消息
+    log.info(
+      `Compress layout: ${pairs.length} history tasks → kept ${preservedHistory.length} messages ` +
+      `(budget ${this.getPreservedPairsBudget()} tokens), archived ${historyArchived.length} history + ${toCompress.length} current-task messages`
+    )
+
+    // 重建 messages: system + 成对保留的历史 + 当前 user + 摘要 + 保留的最近消息
+    //
+    // 摘要放在当前 user 之后：它主要覆盖的是这条请求之后的执行步骤（段 B），
+    // 放到请求之前会让时序错乱。这个位置同时让角色天然交替——成对历史以
+    // assistant 收尾、接 user、再接 assistant 摘要，不会出现连续同角色。
     const preserved = run.messages.slice(lastUserIndex + 1 + toCompress.length)
-    run.messages = [...run.messages.slice(0, lastUserIndex + 1), summaryMessage, ...preserved]
+    run.messages = [
+      ...systemMessages,
+      ...preservedHistory,
+      run.messages[lastUserIndex],
+      summaryMessage,
+      ...preserved
+    ]
 
     // 序列已变,上一轮的 prompt_tokens 不再对应当前 messages——继续拿它当锚点
     // 会把刚刚释放掉的部分又算回来,压缩看起来"没生效"。
@@ -465,8 +643,11 @@ export class ContextWindowManager {
   /**
    * 是否应该主动压缩（本地触发路径，不等 API 报错）。
    *
-   * 触发条件：上一轮 API 返回的真实 prompt_tokens >= contextLength * PROACTIVE_THRESHOLD。
-   * 仅用真实值，无真实值（首次对话 / cold start）时不触发——避免估算误差导致误压缩。
+   * 触发条件：窗口剩余空间已经装不下「写一份交接小结」所需的量（见
+   * COMPACTION_RESERVE_TOKENS）。常态下不因为历史变长就主动动手——不动前缀才能
+   * 把 provider 的前缀缓存吃满，压缩是接近装满时的一次性动作。
+   *
+   * 仍要求有真实用量锚点，无真实值（首次对话 / cold start）时不触发——避免估算误差导致误压缩。
    * 这条要求同时提供了天然的轮次间隔：压缩会作废锚点，必须等下一次 API 响应
    * 拿到新的真实值才可能再压，不会在同一轮里连续压。
    *
@@ -483,10 +664,34 @@ export class ContextWindowManager {
     if (this._proactiveCompressStalled) return false  // 上次压不动，不再空转
     // 必须有真实锚点：冷启动首轮不赌纯估算，避免刚建好的上下文被误压
     if (this.deps.getLastPromptTokens() === undefined) return false
-    const contextLength = this.getContextLength()
     // 判断值含本轮新增：锚点只反映上一轮请求的规模，单步塞进一大段 tool 输出时
-    // 实际已经超限而锚点还停在阈值下——只看锚点会滞后一轮，压缩赶不上超限。
-    return this.estimateCurrentPromptTokens(run.messages) >= contextLength * ContextWindowManager.PROACTIVE_THRESHOLD
+    // 实际已经装不下了而锚点还停在安全线内——只看锚点会滞后一轮，压缩赶不上超限。
+    const remaining = this.getContextLength() - this.estimateCurrentPromptTokens(run.messages)
+    return remaining < this.getCompactionReserveTokens()
+  }
+
+  /**
+   * 一段消息的规模：优先用 API 报告过的真实读数，没有才估算。
+   *
+   * 压缩决策（保留几轮、这次能释放多少）用它取代纯估算——真实读数不花钱、
+   * 不受中英文比例与工具 schema 影响，比任何系数都准。
+   */
+  measureMessages(run: AgentRun, fromCount: number, toCount: number): number {
+    const real = this.deps.measureMessageRange?.(fromCount, toCount)
+    if (real !== undefined) return real
+    return this.estimateMessagesTokens(run.messages.slice(fromCount, toCount))
+  }
+
+  /**
+   * 压缩自身需要预留的空间。取绝对值与「窗口 × 比例上限」的较小者：
+   * 绝对值保证大窗口下不会为了凑比例而过早压缩，比例上限保证小窗口下预留
+   * 不会大到刚开场就判定该压。
+   */
+  getCompactionReserveTokens(): number {
+    return Math.min(
+      ContextWindowManager.COMPACTION_RESERVE_TOKENS,
+      Math.floor(this.getContextLength() * ContextWindowManager.MAX_RESERVE_RATIO)
+    )
   }
 
   /**
@@ -507,13 +712,24 @@ export class ContextWindowManager {
     // 范围太小压缩是负收益（AI 小结 + 归档包装比原文还长），跳过；
     // 不算"压不动"，等后续轮次积累更多内容仍可触发
     const minRange = this.deps.minProactiveRangeTokens ?? ContextWindowManager.MIN_PROACTIVE_RANGE_TOKENS
-    const rangeTokens = this.estimateMessagesTokens(range.toCompress)
+    // 待归档这段有多大：优先用 API 报告过的真实读数（相邻两次用量相减），
+    // 没有才估算。压之前就知道压不动，就不该发那次写交接的调用——那是纯浪费。
+    const rangeStart = range.lastUserIndex + 1
+    const rangeTokens = this.measureMessages(run, rangeStart, rangeStart + range.toCompress.length)
     if (rangeTokens < minRange) {
       log.info(`Proactive compress skipped: compressible range too small (~${rangeTokens} tokens < ${minRange})`)
       return null
     }
-    const summary = await this.buildProactiveSummary(range.toCompress)
-    const result = this.compressAggressively(run, summary, range)
+    // 保留几轮必须在写小结**之前**定下来：提示词要如实告诉模型压完还能看到几轮，
+    // 模型据此判断哪些不必重复写。若沿用「先按 2 轮压、发现还紧张再降到 1 轮」，
+    // 承诺就与实际不符，模型以为还看得见而省略的内容会真的丢掉。
+    const keepRecent = this.decideKeepRecent(run, range)
+    const effectiveRange = keepRecent === 2 ? range : this.findCompressibleRange(run, keepRecent)
+    if (!effectiveRange) return null
+
+    const summary = await this.buildProactiveSummary(run.messages, keepRecent)
+    const result = this.compressWithRange(run, summary, keepRecent, effectiveRange)
+    if (result) this._enabled = true
     if (result) {
       log.info(`Proactive compress: freed ${result.freedTokens} tokens, kept recent ${result.keepRecent} rounds (archive ${result.archiveId})`)
       // 实效防抖：压完基本没释放空间，说明剩下的结构压不动了（系统提示词占
@@ -527,14 +743,38 @@ export class ContextWindowManager {
   }
 
   /**
-   * 主动压缩的摘要：优先让 AI 为待归档消息写小结（写给未来的自己），
+   * 压之前算好保留几轮。
+   *
+   * 压缩后的规模 ≈ 固定前缀 + 成对保留 + 小结 + 最近 N 轮，其中「最近 N 轮多大」
+   * 有真实读数可用（相邻两次用量相减），算得准，不必压完看比例再降级——事后降级
+   * 会让提示词承诺的保留轮数与实际不符。装不下就降到 1 轮。
+   */
+  private decideKeepRecent(
+    run: AgentRun,
+    range: { lastUserIndex: number; toCompress: AiMessage[] }
+  ): number {
+    const contextLength = this.getContextLength()
+    const recentStart = range.lastUserIndex + 1 + range.toCompress.length
+    const recentTokens = this.measureMessages(run, recentStart, run.messages.length)
+    const projected =
+      this.getFixedPrefixTokens(this._lastSystemPromptScope) +
+      this.getPreservedPairsBudget() +
+      ContextWindowManager.COMPACTION_RESERVE_TOKENS +
+      recentTokens
+    return projected > contextLength * 0.9 ? 1 : 2
+  }
+
+  /**
+   * 主动压缩的摘要：优先让 AI 在完整对话里写交接小结（写给未来的自己），
    * 失败/不可用才回退固定模板。
    */
-  private async buildProactiveSummary(toCompress: AiMessage[]): Promise<string> {
+  private async buildProactiveSummary(conversation: AiMessage[], keepRecent: number): Promise<string> {
     const summarize = this.deps.summarizeMessages
     if (summarize) {
       try {
-        const aiSummary = await summarize(toCompress)
+        // keepRecent 如实传给提示词：小结里说"还能看到最近几轮"必须与实际保留一致，
+        // 模型据此判断哪些内容不必重复写
+        const aiSummary = await summarize({ conversation, keepRecent })
         if (aiSummary && aiSummary.trim()) return aiSummary.trim()
       } catch (err) {
         log.warn(`AI 小结生成失败，回退固定模板: ${err}`)
@@ -544,9 +784,11 @@ export class ContextWindowManager {
   }
 
   /**
-   * 激进压缩的共享实现：先 keepRecent=2，若压缩后仍 >90% 再降到 keepRecent=1。
-   * emergencyCompress（API 报错兜底）与 proactiveCompress（本地预测触发）共用此逻辑。
-   * proactiveCompress 会传入预计算的 keepRecent=2 范围，避免与摘要装配各算一遍。
+   * 紧急压缩的实现：先 keepRecent=2，若压缩后仍 >90% 再降到 keepRecent=1。
+   *
+   * 只服务 emergencyCompress（API 已报超限）。那条路用的是固定模板摘要，事后降级
+   * 不存在「承诺与实际不符」的问题；主动压缩则必须在写小结前就定下保留轮数，
+   * 见 decideKeepRecent。
    */
   private compressAggressively(
     run: AgentRun,

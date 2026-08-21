@@ -55,6 +55,23 @@ const user = (content: string): AiMessage => ({ role: 'user', content })
 const tool = (id: string, content = 'ok'): AiMessage => ({ role: 'tool', content, tool_call_id: id })
 const tc = (id: string, name: string, args = '{}'): ToolCall => ({ id, type: 'function', function: { name, arguments: args } })
 
+/** 多轮历史 + 当前任务：前两轮已结束（各有最终答复），第三轮进行中 */
+function multiTaskRun(): AgentRun {
+  return makeRun([
+    { role: 'system', content: 'sys prompt' },
+    user('任务一：查磁盘'),
+    asst('', [tc('c1', 'exec')]), tool('c1', 'df 输出一大段'),
+    asst('任务一完成：根分区 80%'),
+    user('任务二：清日志'),
+    asst('', [tc('c2', 'exec')]), tool('c2', 'rm 输出'),
+    asst('任务二失败：权限不足'),
+    user('任务三：装依赖'),
+    asst('', [tc('c3', 'exec')]), tool('c3', 'npm 输出'),
+    asst('', [tc('c4', 'exec')]), tool('c4', 'npm 输出2'),
+    asst('', [tc('c5', 'exec')]), tool('c5', 'npm 输出3')
+  ])
+}
+
 // ==================== estimateTokens ====================
 
 describe('ContextWindowManager.estimateTokens', () => {
@@ -558,22 +575,49 @@ describe('ContextWindowManager.shouldProactiveCompress', () => {
     expect(m.shouldProactiveCompress(run)).toBe(false)
   })
 
-  it('lastPromptTokens < 95% contextLength → false', () => {
-    // contextLength=128000, 95% = 121600；给 100000（78%）不触发
+  it('剩余空间够写小结 → false（常态不动前缀，把缓存吃满）', () => {
+    // contextLength=128000，预留 4000；用了 100000 还剩 28000，远够写小结
     const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 100000 }))
     const run = makeRun([user('do'), asst('a1')])
     expect(m.shouldProactiveCompress(run)).toBe(false)
   })
 
-  it('lastPromptTokens >= 95% contextLength → true（触发）', () => {
-    // contextLength=128000, 95% = 121600；给 122000（刚过线）触发
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+  it('剩余空间装不下小结 → true（触发）', () => {
+    // contextLength=128000，预留 4000；用了 125000 只剩 3000，写不完小结
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
     const run = makeRun([user('do'), asst('a1'), asst('a2'), asst('a3')])
     expect(m.shouldProactiveCompress(run)).toBe(true)
   })
 
-  it('lastPromptTokens 远超 contextLength（如 DeepSeek 默默接受 62K 但 profile 是 64K）→ 触发', () => {
-    // 模拟 DeepSeek 场景：profile contextLength=64000，但上一轮 API 真实用了 62000（>95%）
+  it('小窗口：预留按窗口比例封顶，不会刚开场就判定该压', () => {
+    // 8000 窗口下固定预留 4000 会占掉一半 → 封顶到 8000 × 25% = 2000
+    const m = new ContextWindowManager(makeDeps({
+      config: {
+        getAiProfiles: () => [{ id: 'p1', contextLength: 8000 } as AiProfile],
+        getActiveAiProfile: () => 'p1'
+      },
+      getLastPromptTokens: () => 5000
+    }))
+    expect(m.getCompactionReserveTokens()).toBe(2000)
+    // 用了 5000 还剩 3000 > 预留 2000 → 不触发（按固定 4000 会误触发）
+    expect(m.shouldProactiveCompress(makeRun([user('do'), asst('a1')]))).toBe(false)
+  })
+
+  it('大窗口：预留取绝对值，不随窗口按比例膨胀', () => {
+    // 旧的 95% 百分比逻辑在 1M 窗口下用到 950K 就压，可那时还剩 50K，完全够用
+    const m = new ContextWindowManager(makeDeps({
+      config: {
+        getAiProfiles: () => [{ id: 'p1', contextLength: 1000000 } as AiProfile],
+        getActiveAiProfile: () => 'p1'
+      },
+      getLastPromptTokens: () => 960000
+    }))
+    expect(m.getCompactionReserveTokens()).toBe(4000)
+    expect(m.shouldProactiveCompress(makeRun([user('do'), asst('a1')]))).toBe(false)
+  })
+
+  it('lastPromptTokens 逼近 contextLength（如 DeepSeek 默默接受 62K 但 profile 是 64K）→ 触发', () => {
+    // 模拟 DeepSeek 场景：profile contextLength=64000，上一轮真实用了 62000，只剩 2000
     const m = new ContextWindowManager(makeDeps({
       config: {
         getAiProfiles: () => [{ id: 'p1', contextLength: 64000 } as AiProfile],
@@ -585,8 +629,8 @@ describe('ContextWindowManager.shouldProactiveCompress', () => {
     expect(m.shouldProactiveCompress(run)).toBe(true)
   })
 
-  it('proactiveCompress 后再调 shouldProactiveCompress → false（同一 run 只压一次）', async () => {
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+  it('压完几乎没释放空间 → 判定压不动，不再触发（实效防抖）', async () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
     const run = makeRun([
       user('do'),
       asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
@@ -605,7 +649,7 @@ describe('ContextWindowManager.shouldProactiveCompress', () => {
 
 describe('ContextWindowManager.proactiveCompress', () => {
   it('无 user 消息 → null（无法压缩）', async () => {
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
     expect(await m.proactiveCompress(makeRun([asst('hi')]))).toBeNull()
   })
 
@@ -613,7 +657,7 @@ describe('ContextWindowManager.proactiveCompress', () => {
     // 真实 E2E 发现：系统提示词占主导时可压缩消息仅几百 token，
     // AI 小结 + 归档包装比原文还长（实测 freed=-148）
     const m = new ContextWindowManager(makeDeps({
-      getLastPromptTokens: () => 122000,
+      getLastPromptTokens: () => 125000,
       minProactiveRangeTokens: 3000
     }))
     const run = makeRun([
@@ -629,7 +673,7 @@ describe('ContextWindowManager.proactiveCompress', () => {
   })
 
   it('成功压缩：归档早期对话、保留最近 2 组、enabled 翻 true', async () => {
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
     const beforeMsgCount: number[] = []
     const run = makeRun([
       user('do task'),
@@ -651,7 +695,7 @@ describe('ContextWindowManager.proactiveCompress', () => {
   })
 
   it('摘要文案含"系统主动压缩"（区分 emergency 的"系统自动压缩"）', async () => {
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
     const run = makeRun([
       user('do'),
       asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
@@ -689,7 +733,7 @@ describe('ContextWindowManager.proactiveCompress', () => {
   })
 
   it('恰好 keepRecent 组 assistant（toCompress 为空）→ null', async () => {
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
     const run = makeRun([
       user('do'),
       asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
@@ -699,7 +743,7 @@ describe('ContextWindowManager.proactiveCompress', () => {
   })
 
   it('压不动（几乎没释放空间）→ 判定 stalled，不再重试', async () => {
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
     const run = makeRun([
       user('do'),
       asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
@@ -718,7 +762,7 @@ describe('ContextWindowManager.proactiveCompress', () => {
   it('stalled 只管本任务：新任务开始后恢复主动压缩能力', async () => {
     // ContextWindowManager 跨 run 复用。若 stalled 不清零，某个任务压不动会让
     // 整个会话永久失去主动压缩，只剩紧急压缩兜底——对超限不报错的 provider 等于没有。
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
     const run = makeRun([
       user('do'),
       asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
@@ -734,7 +778,7 @@ describe('ContextWindowManager.proactiveCompress', () => {
   })
 
   it('压得动 → 不设 stalled，涨回来还能再压（长任务）', async () => {
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
     // 每条工具输出 8KB → 单轮就够跨过 500 token 的实效门槛
     const bulk = (n: string) => `${n}:${'x'.repeat(8000)}`
     const run = makeRun([
@@ -761,7 +805,7 @@ describe('ContextWindowManager.proactiveCompress', () => {
 
   it('proactiveCompress 与 emergencyCompress 独立（emergency 仍可触发）', async () => {
     // 验证：proactive 压缩后，emergency 仍能工作（两者配额独立）
-    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
     const run = makeRun([
       user('do'),
       asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
@@ -792,31 +836,34 @@ describe('ContextWindowManager.proactiveCompress — AI 小结', () => {
     asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
   ])
 
-  it('summarizeMessages 成功 → 摘要消息用 AI 小结，且收到的是待归档消息', async () => {
-    let received: AiMessage[] = []
+  it('summarizeMessages 成功 → 摘要用 AI 小结，且是在完整对话里写（前缀不变才吃得到缓存）', async () => {
+    let received: { conversation: AiMessage[]; keepRecent: number } | undefined
     const m = new ContextWindowManager(makeDeps({
-      getLastPromptTokens: () => 122000,
-      summarizeMessages: vi.fn().mockImplementation(async (msgs: AiMessage[]) => {
-        received = msgs
+      getLastPromptTokens: () => 125000,
+      summarizeMessages: vi.fn().mockImplementation(async (opts) => {
+        received = opts
         return '【任务目标】评审 57 份 PDF。【当前进度】已评审 30/57。'
       })
     }))
     const run = fourGroups()
+    const before = [...run.messages]
     const result = await m.proactiveCompress(run)
     expect(result).not.toBeNull()
     const summaryMsg = run.messages[1]
     expect(summaryMsg.role).toBe('assistant')
     expect(summaryMsg.content).toContain('已评审 30/57')
     expect(summaryMsg.content).not.toContain('系统主动压缩')  // AI 小结不用模板
-    // 摘要覆盖范围 = keepRecent=2 的待归档消息（a1..a2 组，不含 user 与最近两组）
-    expect(received.map(x => x.role)).toEqual(['assistant', 'tool', 'assistant', 'tool'])
+    // 传的是压缩前的完整对话，不是拍平的待归档切片
+    expect(received!.conversation).toEqual(before)
+    // 保留轮数如实告知，提示词里说几轮就真是几轮
+    expect(received!.keepRecent).toBe(result!.keepRecent)
     // 归档里也存了 AI 小结
     expect(run.compressedArchives![0].summary).toContain('已评审 30/57')
   })
 
   it('summarizeMessages 返回 null → 回退固定模板', async () => {
     const m = new ContextWindowManager(makeDeps({
-      getLastPromptTokens: () => 122000,
+      getLastPromptTokens: () => 125000,
       summarizeMessages: vi.fn().mockResolvedValue(null)
     }))
     const run = fourGroups()
@@ -826,7 +873,7 @@ describe('ContextWindowManager.proactiveCompress — AI 小结', () => {
 
   it('summarizeMessages 抛错 → 回退固定模板（不阻断压缩）', async () => {
     const m = new ContextWindowManager(makeDeps({
-      getLastPromptTokens: () => 122000,
+      getLastPromptTokens: () => 125000,
       summarizeMessages: vi.fn().mockRejectedValue(new Error('API timeout'))
     }))
     const run = fourGroups()
@@ -837,11 +884,213 @@ describe('ContextWindowManager.proactiveCompress — AI 小结', () => {
 
   it('summarizeMessages 返回空白 → 回退固定模板', async () => {
     const m = new ContextWindowManager(makeDeps({
-      getLastPromptTokens: () => 122000,
+      getLastPromptTokens: () => 125000,
       summarizeMessages: vi.fn().mockResolvedValue('   ')
     }))
     const run = fourGroups()
     await m.proactiveCompress(run)
     expect(run.messages[1].content).toContain('系统主动压缩')
+  })
+})
+
+// ==================== 历史成对保留与预算上界 ====================
+
+describe('ContextWindowManager — 历史任务成对保留', () => {
+  it('每轮用户原话与最终答复成对留下，中间过程移出但可从归档取回', async () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
+    const run = multiTaskRun()
+    const result = await m.proactiveCompress(run)
+    expect(result).not.toBeNull()
+
+    const contents = run.messages.map(msg => msg.content)
+    expect(contents).toContain('任务一：查磁盘')
+    expect(contents).toContain('任务一完成：根分区 80%')
+    expect(contents).toContain('任务二：清日志')
+    // 失败状态必须留住，否则之后会重踩同一个坑
+    expect(contents).toContain('任务二失败：权限不足')
+    expect(contents).toContain('任务三：装依赖')
+
+    // 历史里的工具过程已移出
+    expect(run.messages.some(msg => msg.tool_call_id === 'c1')).toBe(false)
+    expect(run.messages.some(msg => msg.tool_call_id === 'c2')).toBe(false)
+    // 但归档里找得回
+    const archived = JSON.stringify(run.compressedArchives)
+    expect(archived).toContain('df 输出一大段')
+    expect(archived).toContain('rm 输出')
+  })
+
+  it('system 消息留在最前，压缩后不出现孤儿 tool 消息', async () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
+    const run = multiTaskRun()
+    await m.proactiveCompress(run)
+
+    expect(run.messages[0].role).toBe('system')
+    const callIds = new Set(
+      run.messages.flatMap(msg => (msg.tool_calls ?? []).map(c => c.id))
+    )
+    for (const msg of run.messages) {
+      if (msg.role === 'tool') expect(callIds.has(msg.tool_call_id!)).toBe(true)
+    }
+  })
+
+  it('成对内容超预算 → 老任务整对移出（保证压缩后规模有上界）', async () => {
+    // 预算压到极小：只装得下最近一对，更老的必须让位
+    const m = new ContextWindowManager(makeDeps({
+      getLastPromptTokens: () => 125000,
+      config: {
+        getAiProfiles: () => [{ id: 'p1', contextLength: 4200 } as AiProfile],
+        getActiveAiProfile: () => 'p1'
+      }
+    }))
+    expect(m.getPreservedPairsBudget()).toBeLessThan(500)
+
+    const run = multiTaskRun()
+    await m.proactiveCompress(run)
+    const contents = run.messages.map(msg => msg.content)
+    // 最老的一轮已让位，进归档
+    expect(contents).not.toContain('任务一：查磁盘')
+    expect(JSON.stringify(run.compressedArchives)).toContain('任务一：查磁盘')
+    // 当前任务的请求本身始终在
+    expect(contents).toContain('任务三：装依赖')
+  })
+
+  it('预算再紧也留住最近一对：用户原话一条不留等于把任务本身弄丢', async () => {
+    // 窗口小到扣掉固定前缀几乎不剩，预算按比例算约等于 0
+    const m = new ContextWindowManager(makeDeps({
+      getLastPromptTokens: () => 125000,
+      config: {
+        getAiProfiles: () => [{ id: 'p1', contextLength: 4100 } as AiProfile],
+        getActiveAiProfile: () => 'p1'
+      }
+    }))
+    const run = multiTaskRun()
+    await m.proactiveCompress(run)
+    const contents = run.messages.map(msg => String(msg.content))
+    // 当前任务的请求在，且最近一个已结束任务的原话也在
+    expect(contents).toContain('任务三：装依赖')
+    expect(contents.some(c => c.startsWith('任务二：清日志'))).toBe(true)
+  })
+
+  it('任务没有最终答复 → 补一条状态，保留序列里不出现连续两条 user', async () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
+    const run = makeRun([
+      user('任务一：查磁盘'),
+      asst('', [tc('c1', 'exec')]), tool('c1', 'df 输出'),
+      user('先别管了，改做任务二'),   // 任务一没有最终答复就被打断
+      asst('任务二完成'),
+      user('任务三'),
+      asst('', [tc('c2', 'exec')]), tool('c2', 'r2'),
+      asst('', [tc('c3', 'exec')]), tool('c3', 'r3'),
+      asst('', [tc('c4', 'exec')]), tool('c4', 'r4')
+    ])
+    await m.proactiveCompress(run)
+
+    for (let i = 1; i < run.messages.length; i++) {
+      if (run.messages[i].role === 'user') {
+        expect(run.messages[i - 1].role).not.toBe('user')
+      }
+    }
+    expect(run.messages.some(msg => String(msg.content).includes('没有最终答复'))).toBe(true)
+  })
+
+  it('单条特别长 → 只截断该条并指向归档，不牵连整对', async () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
+    const huge = 'x'.repeat(200000)
+    const run = makeRun([
+      user(`帮我看这段日志：${huge}`),
+      asst('看完了，是磁盘满'),
+      user('那清一下'),
+      asst('', [tc('c1', 'exec')]), tool('c1', 'r1'),
+      asst('', [tc('c2', 'exec')]), tool('c2', 'r2'),
+      asst('', [tc('c3', 'exec')]), tool('c3', 'r3')
+    ])
+    await m.proactiveCompress(run)
+
+    const contents = run.messages.map(msg => String(msg.content))
+    // 用户那条被截断但仍在（「用户提过这个要求」这件事保住了）
+    const userMsg = contents.find(c => c.startsWith('帮我看这段日志'))
+    expect(userMsg).toBeDefined()
+    expect(userMsg!.length).toBeLessThan(huge.length)
+    expect(userMsg).toContain('recall_compressed')
+    // 配对的答复没受牵连
+    expect(contents).toContain('看完了，是磁盘满')
+  })
+
+  it('压不压得动看真实读数：真实值够大就压，哪怕估算看着不够', async () => {
+    const summarize = vi.fn().mockResolvedValue('小结')
+    const m = new ContextWindowManager(makeDeps({
+      getLastPromptTokens: () => 125000,
+      minProactiveRangeTokens: 3000,      // 这段消息很短，纯估算会判定"不值得压"
+      measureMessageRange: () => 99999,   // 但真实读数说它很大
+      summarizeMessages: summarize
+    }))
+    expect(await m.proactiveCompress(multiTaskRun())).not.toBeNull()
+    expect(summarize).toHaveBeenCalled()
+  })
+
+  it('真实读数说压不动 → 连那次写交接的调用都不发（省掉纯浪费的一次）', async () => {
+    const summarize = vi.fn()
+    const m = new ContextWindowManager(makeDeps({
+      getLastPromptTokens: () => 125000,
+      minProactiveRangeTokens: 3000,
+      measureMessageRange: () => 100,
+      summarizeMessages: summarize
+    }))
+    expect(await m.proactiveCompress(multiTaskRun())).toBeNull()
+    expect(summarize).not.toHaveBeenCalled()
+  })
+
+  it('压过一次之后再压：系统注入的通知不当作新任务的起点', async () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
+    const run = multiTaskRun()
+    await m.proactiveCompress(run)
+
+    // 压缩完成后系统会注入一条通知（借 user 角色发给模型，但不是用户说的话）
+    run.messages.push(
+      { role: 'user', content: '[系统] 已压缩早期对话', _systemInjected: true } as AiMessage,
+      asst('', [tc('e1', 'exec')]), tool('e1', 'x'.repeat(4000)),
+      asst('', [tc('e2', 'exec')]), tool('e2', 'y'.repeat(4000)),
+      asst('', [tc('e3', 'exec')]), tool('e3', 'z'.repeat(4000))
+    )
+    m.resetForNewRun()   // 第一次压得太少会触发「压不动」防抖，这里要的是真压第二次
+    await m.proactiveCompress(run)
+
+    // 通知被当成历史归档掉，而不是顶替真实请求成为「当前任务」
+    expect(run.messages.some(msg => msg._systemInjected)).toBe(false)
+    expect(run.messages.map(msg => String(msg.content))).toContain('任务三：装依赖')
+  })
+
+  it('最近轮次太大 → 压之前就定为保留 1 轮，提示词与实际一致', async () => {
+    let told: number | undefined
+    const m = new ContextWindowManager(makeDeps({
+      getLastPromptTokens: () => 125000,
+      measureMessageRange: () => 200000,   // 真实读数说最近轮次极大，2 轮装不下
+      summarizeMessages: vi.fn().mockImplementation(async (opts) => {
+        told = opts.keepRecent
+        return '小结'
+      })
+    }))
+    const result = await m.proactiveCompress(multiTaskRun())
+    expect(told).toBe(1)
+    expect(result!.keepRecent).toBe(1)
+  })
+
+  it('反复压缩不累积：第二次压缩后规模不超过第一次', async () => {
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 125000 }))
+    const run = multiTaskRun()
+    await m.proactiveCompress(run)
+    const afterFirst = m.estimateTotalTokens(run.messages)
+
+    // 模拟压缩后又跑了几轮
+    run.messages.push(
+      asst('', [tc('d1', 'exec')]), tool('d1', 'x'.repeat(4000)),
+      asst('', [tc('d2', 'exec')]), tool('d2', 'y'.repeat(4000)),
+      asst('', [tc('d3', 'exec')]), tool('d3', 'z'.repeat(4000))
+    )
+    m.resetForNewRun()   // 否则第二次会被「压不动」防抖挡掉，测不到累积与否
+    await m.proactiveCompress(run)
+    const afterSecond = m.estimateTotalTokens(run.messages)
+
+    expect(afterSecond).toBeLessThanOrEqual(afterFirst + m.getPreservedPairsBudget())
   })
 })

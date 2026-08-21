@@ -1990,11 +1990,18 @@ export class AiService {
    * 发送带工具调用的聊天请求（非流式）
    * 用于 Agent 模式，支持 function calling
    */
+  /**
+   * @param options.toolChoice 'none' 表示带着 tools 发但禁止调用。
+   *   用于「必须拿到文本回复」的场景（如让模型写上下文交接小结）：tools schema
+   *   照常带上，前缀与平时逐字一致、前缀缓存照常命中；只是这一次不允许它转头去
+   *   调工具。剔除 tools 也能达到不调用的效果，但那会改变前缀、白丢整段缓存。
+   */
   async chatWithTools(
     messages: AiMessage[],
     tools: ToolDefinition[],
     profileId?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: { toolChoice?: 'auto' | 'none' }
   ): Promise<ChatWithToolsResult> {
     const profile = this.getCurrentProfile(profileId)
     if (!profile) {
@@ -2045,7 +2052,7 @@ export class AiService {
         model: profile.model,
         messages: fmtMessages,
         tools: tools.length > 0 ? tools : undefined,
-        tool_choice: tools.length > 0 ? 'auto' : undefined,
+        tool_choice: tools.length > 0 ? (options?.toolChoice ?? 'auto') : undefined,
         temperature: resolveTemperature(profile),
         max_tokens: profile.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS
       }

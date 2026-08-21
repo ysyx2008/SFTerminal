@@ -39,7 +39,7 @@ import { TaskMemoryStore } from './task-memory'
 import { Conversation, conversationPolicy } from '../conversation'
 import { generateConversationTitle, shouldRefreshConversationTitle } from '../conversation/title-generator'
 import { ContextWindowManager } from './context-window'
-import { formatMessagesForSummary, capSummaryInput, SUMMARY_OUTPUT_BUDGET_CHARS } from './compression-summary'
+import { SUMMARY_OUTPUT_BUDGET_CHARS } from './compression-summary'
 import { resolveBudgetProfileId, shouldSkipCachePathForVision } from './vision-routing'
 import {
   splitMessagesIntoTasks as splitMessagesIntoTasksShared,
@@ -280,8 +280,9 @@ export abstract class Agent {
       getLastPromptTokens: () => this._lastPromptTokens,
       getLastCacheHitRate: () => this._lastCacheHitRate,
       invalidateTokenAnchor: () => this._conversation?.setLastPromptTokens(undefined),
+      measureMessageRange: (from, to) => this._conversation?.measureMessageRange(from, to),
       getTools: () => this.getAvailableTools(),
-      summarizeMessages: (messages) => this.summarizeForCompression(messages),
+      summarizeMessages: (opts) => this.summarizeForCompression(opts),
       reportUsage: (tokens, cacheHitRate) => {
         // updatePressure 拿到 API 精确值时刷新上下文栏（不靠 lastStep）。
         const next: AgentContextBar = {
@@ -1527,9 +1528,17 @@ export abstract class Agent {
           })
         : false
 
+      // 复用上限 = 窗口减掉压缩自身要用的空间。到这条线之前一律复用，让前缀缓存
+      // 吃满——历史变长本身不构成重建理由，接近装满时自有压缩接手（压缩按重要性
+      // 挑内容，比冷启动按新旧一刀切降级留得准）。
+      //
+      // 越过这条线才重建：那时连写一份交接小结的空间都没有了，压缩这条路已经走不通
+      // （典型场景是中途换到窗口更小的模型），只能从任务记忆重新按新窗口预算搭。
+      const maxReusableTokens = contextLength - this._contextWindow.getCompactionReserveTokens()
+
       if (skipVisionCache) {
         log.info('[Cache] Skip reuse: cross-model vision routing with images, cold start for compatibility')
-      } else if (prevTokens < contextLength * 0.7) {
+      } else if (prevTokens < maxReusableTokens) {
         // 复用前序消息，清除旧的缓存断点标记
         run.messages = this._previousRunMessages.map(m => {
           const copy = { ...m }
@@ -1554,7 +1563,7 @@ export abstract class Agent {
         return
       }
 
-      log.info(`[Cache] Reuse skipped: ~${prevTokens} tokens exceed 70% of ${contextLength} context`)
+      log.info(`[Cache] Reuse skipped: ~${prevTokens} tokens leave no room for compaction (limit ${maxReusableTokens} of ${contextLength} context)`)
     }
 
     // ── Cold start path: 从零构建上下文 ──
@@ -1974,7 +1983,7 @@ export abstract class Agent {
     if (this._contextWindow.shouldProactiveCompress(run)) {
       const compressed = await this._contextWindow.proactiveCompress(run)
       if (compressed) {
-        log.warn(`Proactive compress triggered (lastPromptTokens=${this._lastPromptTokens}, threshold=${Math.round(this._contextWindow.getContextLength() * ContextWindowManager.PROACTIVE_THRESHOLD)}), kept recent ${compressed.keepRecent}, freed ${compressed.freedTokens} tokens`)
+        log.warn(`Proactive compress triggered (lastPromptTokens=${this._lastPromptTokens}, contextLength=${this._contextWindow.getContextLength()}, reserve=${this._contextWindow.getCompactionReserveTokens()}), kept recent ${compressed.keepRecent}, freed ${compressed.freedTokens} tokens`)
         run.messages.push({
           role: 'user',
           content: t('agent.context_proactive_compressed', {
@@ -2251,29 +2260,50 @@ export abstract class Agent {
   }
 
   /**
-   * 主动压缩的 AI 小结：把待归档消息格式化为纯文字转录，调一次非流式 chat 写小结。
-   * 小结写给未来的自己（任务目标/进度/关键结论/下一步，提示词见 i18n
-   * agent.compress_summary_prompt）；返回 null 由 ContextWindowManager 回退固定模板。
+   * 主动压缩的 AI 小结：在当前完整对话后追加一条小结指令，调一次非流式 chat。
+   * 小结写给未来的自己（提示词见 i18n agent.compress_summary_prompt，只描述
+   * 归档后的处境、由模型自己判断该写什么）；返回 null 由 ContextWindowManager
+   * 回退固定模板。
    *
    * 模型与上下文预算同一 profile（resolveContextBudgetProfileId），避免按主模型
    * 算预算却打到视觉模型。压不动时会停止重试，不会反复烧摘要调用。
    */
-  private async summarizeForCompression(messages: AiMessage[]): Promise<string | null> {
+  private async summarizeForCompression(
+    opts: { conversation: AiMessage[]; keepRecent: number }
+  ): Promise<string | null> {
     const aiService = this.services.aiService
-    if (!aiService?.chat) return null
-    const transcript = formatMessagesForSummary(messages)
-    if (!transcript) return null
-    // 摘要输入预算：窗口 30%；超出保留头尾（头 = 任务起源，尾 = 最近进展）
-    const budgetTokens = Math.floor(this._contextWindow.getContextLength() * 0.3)
-    const input = capSummaryInput(transcript, budgetTokens)
-    const summary = await aiService.chat(
-      [
-        { role: 'system', content: t('agent.compress_summary_prompt', { budget: SUMMARY_OUTPUT_BUDGET_CHARS }) },
-        { role: 'user', content: input }
-      ],
-      this.resolveContextBudgetProfileId()
-    )
-    return summary?.trim() || null
+    if (!aiService?.chatWithTools) return null
+    if (opts.conversation.length === 0) return null
+    // 小结指令作为一条 user 消息追加在当前对话末尾：前缀与上一轮逐字一致，
+    // provider 的前缀缓存直接命中（实测 99%）；模型也是在原本语境里写，
+    // 不必读一份拍平的转录。这条指令不进 run.messages，只用于这一次调用。
+    //
+    // tools 照常带上：schema 是前缀的一部分，不带就等于换了前缀、白丢整段缓存。
+    // 指令末尾已说明这一步只写小结不执行操作，模型据此直接回文本（实测缓存 98%）。
+    const messages: AiMessage[] = [
+      ...opts.conversation,
+      {
+        role: 'user',
+        content: t('agent.compress_summary_prompt', {
+          budget: SUMMARY_OUTPUT_BUDGET_CHARS,
+          keepRecent: opts.keepRecent
+        })
+      }
+    ]
+    const tools = stripToolMeta(this.getAvailableTools())
+    const profileId = this.resolveContextBudgetProfileId()
+
+    const first = await aiService.chatWithTools(messages, tools, profileId)
+    if (first?.content?.trim()) return first.content.trim()
+
+    // 模型没写正文、转头去调工具了。再要一次并禁止调用——部分 provider 在
+    // tool_choice='none' 下不再把 tools 计入 prompt，这一次拿不到缓存，
+    // 但比压缩落空强。仍不给正文就交给固定模板收场。
+    log.warn('Compaction summary returned no text (model chose tools); retrying with tool calls disabled')
+    const retry = await aiService.chatWithTools(messages, tools, profileId, undefined, {
+      toolChoice: 'none'
+    })
+    return retry?.content?.trim() || null
   }
 
   /** 解析拟用 / 已确认 profile 的展示字段写入 bar（不 publish） */
@@ -2602,6 +2632,9 @@ export abstract class Agent {
 
     // 字数组成树：在 stripToolMeta 之后、真正发请求前测量，写入 contextBar（onDone 只更新总量）
     const composition = measureContextComposition(run.messages, llmTools)
+    // 本次请求带出去多少条消息——响应回来时与真实 prompt_tokens 配对记入 ledger。
+    // 必须在这里取：onDone 时 messages 可能已经追加了本轮的 assistant / tool。
+    const requestMessageCount = run.messages.length
     this.beginPendingUsage(run)
     {
       const bar: AgentContextBar = { ...this._contextBar, composition }
@@ -2728,7 +2761,7 @@ export abstract class Agent {
               run.tokenUsage.cache_miss_tokens = (run.tokenUsage.cache_miss_tokens || 0) + result.usage.cache_miss_tokens
             }
             this.commitPendingUsage(result.usage)
-            this._conversation?.setLastPromptTokens(result.usage.prompt_tokens)
+            this._conversation?.recordPromptUsage(requestMessageCount, result.usage.prompt_tokens)
           } else {
             this.commitPendingUsage()
           }

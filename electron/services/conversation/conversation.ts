@@ -112,6 +112,14 @@ export class Conversation {
   private _tokenUsage?: TokenUsage
   private _lastPromptTokens?: number
   private _lastCacheHitRate?: number
+  /**
+   * 真实用量序列：每次请求发出时的「消息条数 → 该请求真实 prompt_tokens」。
+   * 相邻两点相减即得那一段消息的真实规模，用于压缩前算准「最近几轮多大、
+   * 这次能释放多少」，替代估算。压缩 / 冷启动重建后作废（见 setLastPromptTokens）。
+   */
+  private _tokenLedger: Array<{ messageCount: number; promptTokens: number }> = []
+  /** ledger 条数上限。长任务几百轮也只是几百个小对象，留个上限防极端会话无限增长。 */
+  private static readonly MAX_TOKEN_LEDGER_ENTRIES = 500
 
   /** 恢复任务 id 的实例级单调序号，避免同毫秒多次 split 生成的 task id 碰撞（原 _restoreTaskSeq） */
   private _restoreTaskSeq = 0
@@ -840,17 +848,21 @@ export class Conversation {
   // ==================== cache 前缀（buildContext 的纯判定部分） ====================
 
   /**
-   * 是否应复用 cache 前缀（buildContext 的「Cache-optimized path」判定，忠实移植）。
-   * 跳过条件：无前缀、唤醒 run（wakeup）、前缀 token 超上下文 70%。
+   * 是否应复用 cache 前缀（buildContext 的「Cache-optimized path」判定）。
+   * 跳过条件：无前缀、唤醒 run（wakeup）、前缀大到连压缩自身的空间都不剩。
+   *
+   * `maxPrefixTokens` 由调用方按「窗口 - 压缩预留」给出：历史变长本身不是重建
+   * 理由，能复用就复用把前缀缓存吃满；真到装不下时由压缩接手，只有连压缩都做不了
+   * （典型是中途换到更小窗口的模型）才回冷启动重建。
    *
    * `estimateTokens` 由调用方注入「锚点 + 增量」口径（见 ContextWindowManager
    * .estimateCurrentPromptTokens）——它内部已优先采信真实用量，这里不再单独
    * 短路 _lastPromptTokens，否则会漏算上一轮的 assistant 回复。
    */
-  shouldReuseCachePrefix(contextLength: number, opts: { wakeup?: boolean; estimateTokens: (msgs: AiMessage[]) => number }): boolean {
+  shouldReuseCachePrefix(maxPrefixTokens: number, opts: { wakeup?: boolean; estimateTokens: (msgs: AiMessage[]) => number }): boolean {
     if (!this._cachePrefix || this._cachePrefix.length === 0) return false
     if (opts.wakeup) return false
-    return opts.estimateTokens(this._cachePrefix) < contextLength * 0.7
+    return opts.estimateTokens(this._cachePrefix) < maxPrefixTokens
   }
 
   /**
@@ -927,6 +939,7 @@ export class Conversation {
     this._tokenUsage = undefined
     this._lastPromptTokens = undefined
     this._lastCacheHitRate = undefined
+    this._tokenLedger = []
     this._taskMemory.clear()
     this._dirty = true
   }
@@ -935,6 +948,59 @@ export class Conversation {
 
   setLastPromptTokens(tokens: number | undefined): void {
     this._lastPromptTokens = tokens
+    // 作废锚点意味着消息序列已经改变（压缩 / 冷启动重建），ledger 里记的
+    // 「第 N 条消息处用了多少」全部对不上号，必须一起清掉。
+    if (tokens === undefined) this._tokenLedger = []
+  }
+
+  /**
+   * 记录一次请求的真实用量。
+   *
+   * `messageCount` 是**发出该请求时** messages 的条数，`promptTokens` 是这批消息
+   * （连同固定前缀）的真实规模。两次记录相减即得中间那段消息的真实 token 数——
+   * 固定前缀在两边同时出现、自动约掉，所以这个差值比任何估算都准，且不花钱。
+   */
+  recordPromptUsage(messageCount: number, promptTokens: number): void {
+    this._lastPromptTokens = promptTokens
+    const last = this._tokenLedger[this._tokenLedger.length - 1]
+    // 同一条数重复上报（如剥图重试）以最后一次为准，避免同一位置出现两个读数
+    if (last && last.messageCount === messageCount) {
+      last.promptTokens = promptTokens
+      return
+    }
+    // 条数回退说明序列被改过而没走作废路径，此时旧记录已不可信，丢弃后重新开始
+    if (last && messageCount < last.messageCount) {
+      this._tokenLedger = []
+    }
+    this._tokenLedger.push({ messageCount, promptTokens })
+    if (this._tokenLedger.length > Conversation.MAX_TOKEN_LEDGER_ENTRIES) {
+      this._tokenLedger.shift()
+    }
+  }
+
+  /**
+   * 消息区间 [fromCount, toCount) 的真实 token 数。
+   *
+   * 两端都必须**精确**落在记录过的位置上，任一端没有记录就返回 undefined，
+   * 由调用方回退估算。刻意不做「取最近记录点」的近似：那会把两个不同位置映射到
+   * 同一个读数，算出虚假的 0，比老实说"不知道"更危险。
+   */
+  measureMessageRange(fromCount: number, toCount: number): number | undefined {
+    if (toCount <= fromCount) return 0
+    const from = this.findLedgerPoint(fromCount)
+    const to = this.findLedgerPoint(toCount)
+    if (from === undefined || to === undefined) return undefined
+    return Math.max(0, to - from)
+  }
+
+  /** 该位置上记录过的 promptTokens；没有精确记录返回 undefined */
+  private findLedgerPoint(messageCount: number): number | undefined {
+    return this._tokenLedger.find(e => e.messageCount === messageCount)?.promptTokens
+  }
+
+  /** 已记录真实读数的消息位置（升序），供压缩决策挑可测量的切分点 */
+  getLedgerPositions(): number[] {
+    return this._tokenLedger.map(e => e.messageCount)
   }
   setLastCacheHitRate(rate: number | undefined): void {
     this._lastCacheHitRate = rate
