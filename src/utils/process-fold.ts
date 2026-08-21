@@ -243,20 +243,22 @@ export function lastProgressLine(text: string): string {
  * 它此刻在忙什么：拿最近一次思考里**已经写完的那句**。
  * 正在写的半句不算——那截跟着流一个字一个字地变，喊出来只会闪，看不清。
  * 这一段还没写完整一句时退回上一段的收尾句，宁可慢半拍也不要一行字乱跳。
+ *
+ * `thinking` 步骤是整句换上的状态提示（「深潜中」「正在准备…」），不是一个字一个字写出来的，
+ * 即使还在转圈也直接用原文，否则折叠行会丢掉启动时那句有趣的形容。
  */
 export function extractProgressLine(steps: ReadonlyArray<ProcessStepLike>): string | undefined {
   for (let i = steps.length - 1; i >= 0; i--) {
     const step = steps[i]
-    let reasoning = ''
-    let done = true
-    if (step.type === 'message') {
-      const thinking = parsed(step).thinking
-      reasoning = thinking?.reasoning || ''
-      done = thinking?.isDone !== false
-    } else if (step.type === 'thinking') {
-      reasoning = step.content || ''
-      done = !step.isStreaming
+    if (step.type === 'thinking') {
+      const label = (step.content || '').trim()
+      if (label) return label.length <= PROGRESS_MAX_CHARS ? label : `${label.slice(0, PROGRESS_MAX_CHARS - 1)}…`
+      continue
     }
+    if (step.type !== 'message') continue
+    const thinking = parsed(step).thinking
+    const reasoning = thinking?.reasoning || ''
+    const done = thinking?.isDone !== false
     const settled = done ? reasoning : reasoning.match(SETTLED_HEAD)?.[0] || ''
     if (!settled.trim()) continue
     const line = lastProgressLine(settled)

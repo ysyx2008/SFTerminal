@@ -115,6 +115,15 @@ describe('countActions / extractProgressLine', () => {
     expect(extractProgressLine(steps)).toBe('等等，也许 192.168.31.2 是旁路由')
   })
 
+  it('uses the startup waiting label even while that thinking step is still spinning', () => {
+    const steps = [step({ id: 'prep', type: 'thinking', content: '深潜中', isStreaming: true })]
+    expect(extractProgressLine(steps)).toBe('深潜中')
+    const segs = foldProcessSteps(steps, { enabled: true })
+    expect(segs[0].kind === 'fold' && segs[0].fold.live).toBe(true)
+    expect(segs[0].kind === 'fold' && segs[0].fold.thinkingOnly).toBe(true)
+    expect(segs[0].kind === 'fold' && segs[0].fold.liveText).toBe('深潜中')
+  })
+
   it('stays on the previous line until the new thought finishes a sentence', () => {
     const steps = [
       thinkingMessage('m1', '先看负载。负载不高。'),

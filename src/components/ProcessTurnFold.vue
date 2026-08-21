@@ -132,7 +132,7 @@ const elapsed = computed(() => {
       @keydown.enter.prevent="emit('toggle')"
       @keydown.space.prevent="emit('toggle')"
     >
-      <span class="process-fold__label">{{ label }}</span>
+      <span class="process-fold__label" :class="{ 'is-live-text': fold.live }">{{ label }}</span>
       <span v-if="trailing" class="process-fold__meta">{{ trailing }}</span>
       <span v-if="elapsed" class="process-fold__time">{{ elapsed }}</span>
       <span class="process-fold__marker">
@@ -182,6 +182,21 @@ const elapsed = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 跑着时跟原来 ThinkingBlock 一样：品牌色流光，不当成灰字过程摘要 */
+.process-fold__label.is-live-text {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--brand-vital-rgb), 0.55) 0%,
+    rgba(var(--brand-vital-rgb), 1) 50%,
+    rgba(var(--brand-vital-rgb), 0.55) 100%
+  );
+  background-size: 200% 100%;
+  animation: process-fold-gradient 2.4s linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .process-fold__meta,
@@ -236,6 +251,10 @@ const elapsed = computed(() => {
   to { transform: rotate(360deg); }
 }
 
+@keyframes process-fold-gradient {
+  to { background-position: -200% 0; }
+}
+
 .process-fold__drawer {
   display: grid;
   grid-template-rows: 0fr;
@@ -274,6 +293,12 @@ const elapsed = computed(() => {
   }
   .process-fold__spinner {
     animation-duration: 2s;
+  }
+  .process-fold__label.is-live-text {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: var(--brand-vital);
+    color: var(--brand-vital);
   }
   .process-fold__drawer.open .process-fold__steps {
     animation: none;
