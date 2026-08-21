@@ -65,20 +65,20 @@ describe('ContextWindowManager.estimateTokens', () => {
     expect(m.estimateTokens('')).toBe(0)
   })
 
-  it('纯中文:1.5 tokens/字', () => {
+  it('纯中文:UTF-8 每字 3 字节 → 0.75 tokens/字', () => {
     const m = new ContextWindowManager(makeDeps())
-    expect(m.estimateTokens('你好世界')).toBe(Math.ceil(4 * 1.5)) // 6
+    expect(m.estimateTokens('你好世界')).toBe(Math.ceil((4 * 3) / 4)) // 3
   })
 
-  it('纯英文/符号:0.5 tokens/字符', () => {
+  it('纯英文/符号:每字符 1 字节 → 0.25 tokens/字符', () => {
     const m = new ContextWindowManager(makeDeps())
-    expect(m.estimateTokens('hello')).toBe(Math.ceil(5 * 0.5)) // 3
+    expect(m.estimateTokens('hello')).toBe(Math.ceil(5 / 4)) // 2
   })
 
-  it('混合:中文 1.5 + 非中文 0.5', () => {
+  it('混合:按 UTF-8 字节合计', () => {
     const m = new ContextWindowManager(makeDeps())
-    // 2 中文 + 5 非中文 = ceil(3 + 2.5) = 6
-    expect(m.estimateTokens('你好hello')).toBe(6)
+    // 2 中文(6 字节) + 5 非中文(5 字节) = 11 字节 → ceil(11/4) = 3
+    expect(m.estimateTokens('你好hello')).toBe(3)
   })
 })
 
@@ -92,20 +92,20 @@ describe('ContextWindowManager.estimateTotalTokens', () => {
 
   it('单条 user:content tokens + 4 overhead + 4000 基线', () => {
     const m = new ContextWindowManager(makeDeps())
-    // 'hello' = 3 tokens; +4 overhead; +4000 = 4007
-    expect(m.estimateTotalTokens([user('hello')])).toBe(4007)
+    // 'hello' = 5 字节 → 2 tokens; +4 overhead; +4000 = 4006
+    expect(m.estimateTotalTokens([user('hello')])).toBe(4006)
   })
 
   it('含 tool_calls:累加 name + arguments 的 tokens', () => {
     const m = new ContextWindowManager(makeDeps())
     const msg: AiMessage = {
       role: 'assistant',
-      content: 'hi', // 2 chars * 0.5 = 1 token
-      tool_calls: [tc('c1', 'foo', '{"a":1}')] // 'foo'=2, '{"a":1}'=7 → ceil(1.0)+ceil(3.5)=1+4=5
+      content: 'hi', // 2 字节 → 1 token
+      tool_calls: [tc('c1', 'foo', '{"a":1}')]
     }
-    // content 1 + overhead 4 + tool_calls(estimateTokens('foo')=ceil(1.5)=2? wait 'foo'=3 chars*0.5=ceil(1.5)=2; '{"a":1}'=7 chars*0.5=ceil(3.5)=4) = 1+4+2+4 = 11; +4000 = 4011
+    // content 1 + overhead 4 + 'foo'(3 字节→1) + '{"a":1}'(7 字节→2) = 8; +4000 = 4008
     const result = m.estimateTotalTokens([msg])
-    expect(result).toBe(4011)
+    expect(result).toBe(4008)
   })
 
   it('含 reasoning_content:累加其 tokens', () => {
