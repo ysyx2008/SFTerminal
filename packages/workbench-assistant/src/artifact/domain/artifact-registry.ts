@@ -14,7 +14,10 @@ export { enrichCanvasDataFromStep, resolveSourceStepIdById, resolveVisibleSource
 export interface TabArtifactState {
   visible: boolean
   activeArtifactId: string | null
+  /** 这场对话的产出目录（清单）；关页签不会从这里拿走 */
   artifacts: CanvasArtifact[]
+  /** 面板里正在看的页签，顺序即页签顺序 */
+  openTabIds: string[]
   /** 本会话是否曾出现过产出物（用于清空后的轻量空态） */
   hadArtifacts: boolean
 }
@@ -24,7 +27,23 @@ export function createTabArtifactState(): TabArtifactState {
     visible: false,
     activeArtifactId: null,
     artifacts: [],
+    openTabIds: [],
     hadArtifacts: false
+  }
+}
+
+function normalizeOpenTabs(state: TabArtifactState): TabArtifactState {
+  const known = new Set(state.artifacts.map(a => a.id))
+  const openTabIds = state.openTabIds.filter(id => known.has(id))
+  let activeArtifactId = state.activeArtifactId
+  if (!activeArtifactId || !openTabIds.includes(activeArtifactId)) {
+    activeArtifactId = openTabIds[openTabIds.length - 1] ?? null
+  }
+  return {
+    ...state,
+    openTabIds,
+    activeArtifactId,
+    visible: state.visible && openTabIds.length > 0
   }
 }
 
@@ -32,9 +51,16 @@ export function hasArtifacts(state: TabArtifactState): boolean {
   return state.artifacts.length > 0
 }
 
-/** 面板是否展开（有产出物且未被用户最小化） */
+/** 面板是否展开（有打开的页签且未被用户最小化） */
 export function isPanelVisible(state: TabArtifactState): boolean {
-  return state.artifacts.length > 0 && state.visible
+  return state.visible && state.openTabIds.length > 0 && state.artifacts.length > 0
+}
+
+export function getOpenArtifacts(state: TabArtifactState): CanvasArtifact[] {
+  const byId = new Map(state.artifacts.map(a => [a.id, a]))
+  return state.openTabIds
+    .map(id => byId.get(id))
+    .filter((a): a is CanvasArtifact => Boolean(a))
 }
 
 /** @deprecated 产出物为空时面板自动隐藏，不再保留空态占位 */
@@ -83,13 +109,19 @@ function activateArtifact(
   artifactId: string,
   activate: boolean
 ): TabArtifactState {
-  let activeArtifactId = state.activeArtifactId
-  if (activate) {
-    activeArtifactId = artifactId
-  } else if (!activeArtifactId) {
-    activeArtifactId = artifactId
+  if (!activate) {
+    return { ...state, hadArtifacts: true }
   }
-  return { ...state, visible: true, hadArtifacts: true, activeArtifactId }
+  const openTabIds = state.openTabIds.includes(artifactId)
+    ? state.openTabIds
+    : [...state.openTabIds, artifactId]
+  return normalizeOpenTabs({
+    ...state,
+    openTabIds,
+    activeArtifactId: artifactId,
+    visible: true,
+    hadArtifacts: true
+  })
 }
 
 function artifactMetaFromData(
@@ -169,25 +201,54 @@ function updateArtifactFields(
 
 export function setActiveArtifact(state: TabArtifactState, artifactId: string): TabArtifactState {
   if (!state.artifacts.some(a => a.id === artifactId)) return state
-  return { ...state, visible: true, activeArtifactId: artifactId }
+  return activateArtifact(state, artifactId, true)
 }
 
+/** 关掉页签：目录还在。关到一个都不剩则收起面板。 */
+export function closeArtifactTab(state: TabArtifactState, artifactId: string): TabArtifactState {
+  const idx = state.openTabIds.indexOf(artifactId)
+  if (idx < 0) return state
+  const openTabIds = state.openTabIds.filter(id => id !== artifactId)
+  let activeArtifactId = state.activeArtifactId
+  if (activeArtifactId === artifactId) {
+    activeArtifactId = openTabIds[idx] ?? openTabIds[idx - 1] ?? null
+  }
+  if (openTabIds.length === 0) {
+    return { ...state, openTabIds, activeArtifactId: null, visible: false }
+  }
+  return normalizeOpenTabs({ ...state, openTabIds, activeArtifactId, visible: true })
+}
+
+export function closeOtherTabs(state: TabArtifactState, keepArtifactId: string): TabArtifactState {
+  if (!state.artifacts.some(a => a.id === keepArtifactId)) return state
+  return normalizeOpenTabs({
+    ...state,
+    openTabIds: [keepArtifactId],
+    activeArtifactId: keepArtifactId,
+    visible: true
+  })
+}
+
+export function closeAllTabs(state: TabArtifactState): TabArtifactState {
+  if (state.openTabIds.length === 0 && !state.visible) return state
+  return { ...state, openTabIds: [], activeArtifactId: null, visible: false }
+}
+
+/** 从桌上拿走：目录和页签都去掉 */
 export function removeArtifact(state: TabArtifactState, artifactId: string): TabArtifactState {
   const idx = state.artifacts.findIndex(a => a.id === artifactId)
   if (idx < 0) return state
 
   const artifacts = state.artifacts.filter(a => a.id !== artifactId)
-
-  let activeArtifactId = state.activeArtifactId
-  if (activeArtifactId === artifactId) {
-    activeArtifactId = artifacts[idx]?.id ?? artifacts[idx - 1]?.id ?? null
-  }
-
   if (artifacts.length === 0) {
     return { ...createTabArtifactState(), hadArtifacts: true }
   }
 
-  return { ...state, artifacts, activeArtifactId }
+  return normalizeOpenTabs({
+    ...state,
+    artifacts,
+    openTabIds: state.openTabIds.filter(id => id !== artifactId)
+  })
 }
 
 export function clearTabArtifacts(_state: TabArtifactState): TabArtifactState {
@@ -199,15 +260,15 @@ export function dismissEmptyPanel(_state: TabArtifactState): TabArtifactState {
   return createTabArtifactState()
 }
 
-/** 最小化面板：保留产出物数据，仅隐藏分屏区域 */
+/** 最小化面板：页签还在，只藏起分屏 */
 export function hidePanel(state: TabArtifactState): TabArtifactState {
-  if (state.artifacts.length === 0) return state
+  if (state.openTabIds.length === 0) return state
   return { ...state, visible: false }
 }
 
-/** 展开已最小化的产出物面板 */
+/** 展开已最小化的产出物面板；没有打开的页签时不撑出空栏 */
 export function showPanel(state: TabArtifactState): TabArtifactState {
-  if (state.artifacts.length === 0) return state
+  if (state.openTabIds.length === 0) return state
   return { ...state, visible: true }
 }
 
@@ -254,6 +315,9 @@ export function hydrateArtifactsFromSteps(
           : step.canvasData
       state = applyCanvasData(state, data)
     }
+  }
+  if (state.activeArtifactId) {
+    return { ...state, openTabIds: [state.activeArtifactId] }
   }
   return state
 }

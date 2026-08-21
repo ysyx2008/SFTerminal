@@ -18,6 +18,7 @@ import type { ArtifactComposerQuote } from './artifact/composer-quote'
 import { consumeSelectionScope } from './artifact/selection-scope'
 import type { WorkbenchContext } from '@shared/types'
 import { useAssistantArtifactStore } from './artifact/store'
+import { requireArtifactDesktopHost } from './artifact/host'
 import { useArtifactAgentBridge } from './artifact/composables/useArtifactAgentBridge'
 import ArtifactPanel from './artifact/components/ArtifactPanel.vue'
 import ArtifactListPopover from './artifact/components/ArtifactListPopover.vue'
@@ -104,7 +105,11 @@ const hasArtifacts = computed(() => artifactStore.hasArtifacts(props.tab.id))
 const showDeskList = computed(() =>
   hasArtifacts.value || (hasHostedTerminal.value && !terminalSeated.value)
 )
-const showArtifactFold = computed(() => hasArtifacts.value && !terminalSeated.value)
+const showArtifactFold = computed(() =>
+  !terminalSeated.value && (
+    artifactStore.isVisible(props.tab.id) || artifactStore.isPanelMinimized(props.tab.id)
+  )
+)
 const showDeskChrome = computed(() =>
   showDeskList.value || (showArtifactFold.value && !docExpanded.value)
 )
@@ -250,6 +255,15 @@ function openArtifact(artifactId: string) {
   artifactStore.setActiveArtifact(props.tab.id, artifactId)
 }
 
+function removeFromDesk(artifactId: string) {
+  artifactStore.removeArtifact(props.tab.id, artifactId)
+  persistDeskArtifacts()
+}
+
+function persistDeskArtifacts() {
+  requireArtifactDesktopHost().persistArtifacts(props.tab.id)
+}
+
 function seatTerminal() {
   if (!hasHostedTerminal.value) return
   seat.value = 'terminal'
@@ -362,6 +376,7 @@ defineExpose({
                     :terminal-active="terminalSeated"
                     @select="openArtifact"
                     @select-terminal="seatTerminal"
+                    @remove="removeFromDesk"
                     @close="listOpen = false"
                   />
                 </Transition>

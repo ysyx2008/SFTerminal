@@ -2,14 +2,15 @@
 /**
  * 助手工作台产出物面板
  *
- * 单产出物预览；换文件走对话区清单。无产出物时由工作台自动隐藏面板。
+ * 页签预览正在看的几份；关页签不从桌上拿走。换文件也可走对话区清单。
  */
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   FolderOpen,
   ChevronDown,
-  Download
+  Download,
+  X
 } from 'lucide-vue-next'
 import type { CanvasArtifact } from '@shared/types'
 import {
@@ -78,6 +79,7 @@ const { hoverTip, hideTip } = useHoverTip({
 })
 
 const artifacts = computed(() => artifactStore.getArtifacts(props.tabId))
+const openTabs = computed(() => artifactStore.getOpenArtifacts(props.tabId))
 const activeArtifact = computed(() => artifactStore.getActiveArtifact(props.tabId))
 const activeArtifactId = computed(() => activeArtifact.value?.id ?? null)
 const renderer = computed(() => activeArtifact.value?.renderer ?? null)
@@ -164,17 +166,11 @@ const ctxMenuFlags = computed(() => {
   if (!artifact) return null
   const path = artifact.filePath
   const fileExists = path ? fileExistsMap.value.get(path) !== false : false
-  return getArtifactContextMenuFlags(artifact, artifacts.value.length, {
+  return getArtifactContextMenuFlags(artifact, openTabs.value.length, {
     isDirty: saveBridge.isDirty(artifact.id),
     fileExists
   })
 })
-
-function activeTitleLabel() {
-  return activeArtifact.value
-    ? artifactTabLabel(activeArtifact.value)
-    : artifactTabLabel({ title: '', filePath: null })
-}
 
 async function updateFileExistsMap() {
   const remaining = artifactStore.getArtifacts(props.tabId)
@@ -331,6 +327,12 @@ function flushActiveDraft() {
 function closeArtifact(id: string, e?: Event) {
   e?.stopPropagation()
   saveBridge.flush(id)
+  artifactStore.closeTab(props.tabId, id)
+}
+
+function removeFromDesk(id: string, e?: Event) {
+  e?.stopPropagation()
+  saveBridge.flush(id)
   artifactStore.removeArtifact(props.tabId, id)
   desktopHost.persistArtifacts(props.tabId)
 }
@@ -338,13 +340,15 @@ function closeArtifact(id: string, e?: Event) {
 function closeOthers(keepId: string) {
   flushActiveDraft()
   artifactStore.closeOthers(props.tabId, keepId)
-  desktopHost.persistArtifacts(props.tabId)
 }
 
 function closeAllArtifacts() {
   flushActiveDraft()
   artifactStore.closeAll(props.tabId)
-  desktopHost.persistArtifacts(props.tabId)
+}
+
+function selectTab(id: string) {
+  artifactStore.setActiveArtifact(props.tabId, id)
 }
 
 function minimizePanel() {
@@ -693,20 +697,33 @@ defineExpose({ minimizePanel })
       class="canvas-header"
       @contextmenu="openHeaderCtxMenu"
     >
-      <div class="artifact-header-title">
-        <div
-          class="artifact-file-select artifact-file-select-static"
-          :title="activeTitleLabel()"
-          @contextmenu="openHeaderCtxMenu"
+      <div class="artifact-tabs" role="tablist">
+        <button
+          v-for="tab in openTabs"
+          :key="tab.id"
+          type="button"
+          role="tab"
+          class="artifact-tab"
+          :class="{ active: tab.id === activeArtifactId }"
+          :aria-selected="tab.id === activeArtifactId"
+          :title="artifactTabLabel(tab)"
+          @click="selectTab(tab.id)"
+          @contextmenu="openCtxMenu($event, { kind: 'tab', artifactId: tab.id })"
         >
           <ArtifactFileIcon
-            v-if="activeArtifact"
-            :file-path="activeArtifact.filePath"
-            :renderer="activeArtifact.renderer"
-            :size="18"
+            :file-path="tab.filePath"
+            :renderer="tab.renderer"
+            :size="16"
           />
-          <span class="artifact-file-select-label">{{ activeTitleLabel() }}</span>
-        </div>
+          <span class="artifact-tab-label">{{ artifactTabLabel(tab) }}</span>
+          <span
+            class="artifact-tab-close"
+            :title="t('canvas.closeArtifact')"
+            @click="closeArtifact(tab.id, $event)"
+          >
+            <X :size="12" />
+          </span>
+        </button>
       </div>
       <div class="canvas-header-actions">
         <button
@@ -911,6 +928,14 @@ defineExpose({ minimizePanel })
           {{ t('canvas.closeArtifact') }}
         </button>
         <button
+          v-if="ctxMenuFlags.showRemoveFromDesk"
+          type="button"
+          class="canvas-ctx-item"
+          @click="removeFromDesk(ctxArtifact.id); closeCtxMenu()"
+        >
+          {{ t('canvas.removeFromDesk') }}
+        </button>
+        <button
           v-if="ctxMenuFlags.showCloseOthers"
           type="button"
           class="canvas-ctx-item"
@@ -990,7 +1015,7 @@ defineExpose({ minimizePanel })
           class="canvas-ctx-separator"
         />
         <button
-          v-if="artifacts.length > 0"
+          v-if="openTabs.length > 0"
           type="button"
           class="canvas-ctx-item danger"
           @click="closeAllArtifacts(); closeCtxMenu()"
@@ -1059,31 +1084,71 @@ defineExpose({ minimizePanel })
   container-name: artifact-header;
 }
 
-.artifact-header-title {
+.artifact-tabs {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   min-width: 0;
-  flex: 0 1 auto;
-  max-width: min(240px, 55%);
+  flex: 1 1 auto;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
 
-/* 触发器 typography 与 AiPanel model-select-sm 对齐，见 WorkbenchShell 非 scoped 样式 */
-.artifact-file-select {
+.artifact-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.artifact-tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-width: 168px;
+  min-width: 72px;
+  height: 100%;
+  padding: 0 6px 0 8px;
+  border: none;
+  border-right: 1px solid var(--border-color, rgba(255, 255, 255, 0.06));
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.artifact-tab:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary, #eee);
+}
+
+.artifact-tab.active {
+  background: var(--bg-primary, #1e1e1e);
+  color: var(--text-primary, #eee);
+}
+
+.artifact-tab-label {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.artifact-file-select-static {
-  cursor: default;
-  padding-right: 8px;
+.artifact-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-secondary, #888);
+  flex-shrink: 0;
 }
 
-@container artifact-header (max-width: 420px) {
-  .artifact-header-title {
-    max-width: min(160px, 45%);
-  }
+.artifact-tab-close:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.12));
+  color: var(--text-primary, #eee);
 }
 
 .canvas-ctx-header {

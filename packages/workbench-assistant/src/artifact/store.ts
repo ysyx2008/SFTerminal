@@ -11,12 +11,16 @@ import { resolveCanvasArtifactId } from '@shared/types/canvas'
 import {
   applyCanvasData,
   clearTabArtifacts,
+  closeAllTabs,
+  closeArtifactTab,
+  closeOtherTabs,
   createTabArtifactState,
   dismissEmptyPanel,
   enrichCanvasDataFromStep,
   getActiveArtifact,
   getArtifactById,
   getArtifacts,
+  getOpenArtifacts,
   hasArtifacts,
   hidePanel,
   hydrateArtifactsFromSteps,
@@ -163,7 +167,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
 
   function isPanelMinimized(tabId: string): boolean {
     const state = getTabState(tabId)
-    return hasArtifacts(state) && !state.visible
+    return state.openTabIds.length > 0 && !state.visible
   }
 
   function isEmptyState(tabId: string): boolean {
@@ -364,6 +368,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
       visible: true,
       activeArtifactId,
       artifacts: [...artifacts],
+      openTabIds: [activeArtifactId],
       hadArtifacts: true
     })
     void reloadArtifactContent(tabId)
@@ -495,17 +500,17 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     window.electronAPI?.artifactPreview?.clear(tabId)
   }
 
+  function closeTab(tabId: string, artifactId: string) {
+    mutateTab(tabId, state => closeArtifactTab(state, artifactId))
+  }
+
   function closeOthers(tabId: string, keepArtifactId: string) {
-    mutateTab(tabId, (state) => {
-      const kept = state.artifacts.filter(a => a.id === keepArtifactId)
-      if (kept.length === 0) return state
-      return { ...state, artifacts: kept, activeArtifactId: keepArtifactId, visible: true }
-    })
+    mutateTab(tabId, state => closeOtherTabs(state, keepArtifactId))
   }
 
   function closeAll(tabId: string) {
     cancelPendingClose(tabId)
-    commitTabState(tabId, clearTabArtifacts(getTabState(tabId)))
+    commitTabState(tabId, closeAllTabs(getTabState(tabId)))
   }
 
   function dismissPanel(tabId: string) {
@@ -554,6 +559,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     isPanelMinimized,
     isEmptyState,
     getArtifacts: getArtifactsForTab,
+    getOpenArtifacts: (tabId: string) => getOpenArtifacts(getTabState(tabId)),
     getActiveArtifact: getActiveArtifactForTab,
     getArtifactById: getArtifactByIdForTab,
     getTabState,
@@ -579,6 +585,7 @@ export const useAssistantArtifactStore = defineStore('assistantArtifact', () => 
     syncArtifactsWithDisk,
     handleAgentStep,
     cleanup,
+    closeTab,
     closeOthers,
     closeAll,
     dismissPanel,

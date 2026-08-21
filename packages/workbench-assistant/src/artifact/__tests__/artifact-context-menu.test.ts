@@ -29,6 +29,7 @@ describe('artifact-context-menu', () => {
     expect(flags.showSave).toBe(false)
     expect(flags.showSaveAs).toBe(true)
     expect(flags.showOpen).toBe(true)
+    expect(flags.showRemoveFromDesk).toBe(true)
   })
 
   it('有 sourceStepId 时显示跳到生成处', () => {

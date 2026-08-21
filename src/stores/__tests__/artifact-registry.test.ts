@@ -4,10 +4,14 @@
 import { describe, it, expect } from 'vitest'
 import {
   applyCanvasData,
+  closeAllTabs,
+  closeArtifactTab,
+  closeOtherTabs,
   createTabArtifactState,
   getActiveArtifact,
   getArtifactById,
   getArtifacts,
+  getOpenArtifacts,
   hydrateArtifactsFromSteps,
   isArtifactEmptyState,
   isPanelVisible,
@@ -236,5 +240,97 @@ describe('artifact-registry', () => {
     })
     expect(getArtifacts(state)).toHaveLength(0)
     expect(isPanelVisible(state)).toBe(false)
+  })
+
+  it('关页签不从目录拿走，关光则收起面板', () => {
+    let state = applyCanvasData(createTabArtifactState(), {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'a',
+      filePath: '/a',
+      content: 'a'
+    })
+    state = applyCanvasData(state, {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'b',
+      filePath: '/b',
+      content: 'b'
+    })
+    expect(getOpenArtifacts(state).map(a => a.id)).toEqual(['file:/a', 'file:/b'])
+    state = closeArtifactTab(state, 'file:/b')
+    expect(getArtifacts(state)).toHaveLength(2)
+    expect(getOpenArtifacts(state).map(a => a.id)).toEqual(['file:/a'])
+    expect(getActiveArtifact(state)?.id).toBe('file:/a')
+    state = closeArtifactTab(state, 'file:/a')
+    expect(getArtifacts(state)).toHaveLength(2)
+    expect(getOpenArtifacts(state)).toHaveLength(0)
+    expect(isPanelVisible(state)).toBe(false)
+  })
+
+  it('点目录打开：未开的进页签并成为当前', () => {
+    let state = applyCanvasData(createTabArtifactState(), {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'a',
+      filePath: '/a',
+      content: 'a'
+    })
+    state = applyCanvasData(state, {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'b',
+      filePath: '/b',
+      content: 'b',
+      activate: false
+    })
+    expect(getOpenArtifacts(state).map(a => a.id)).toEqual(['file:/a'])
+    state = setActiveArtifact(state, 'file:/b')
+    expect(getOpenArtifacts(state).map(a => a.id)).toEqual(['file:/a', 'file:/b'])
+    expect(getActiveArtifact(state)?.id).toBe('file:/b')
+    expect(isPanelVisible(state)).toBe(true)
+  })
+
+  it('关闭其他/全部页签不搬目录', () => {
+    let state = applyCanvasData(createTabArtifactState(), {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'a',
+      filePath: '/a',
+      content: 'a'
+    })
+    state = applyCanvasData(state, {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'b',
+      filePath: '/b',
+      content: 'b'
+    })
+    state = closeOtherTabs(state, 'file:/a')
+    expect(getArtifacts(state)).toHaveLength(2)
+    expect(getOpenArtifacts(state).map(a => a.id)).toEqual(['file:/a'])
+    state = closeAllTabs(state)
+    expect(getArtifacts(state)).toHaveLength(2)
+    expect(isPanelVisible(state)).toBe(false)
+  })
+
+  it('从桌上拿走才从目录删除', () => {
+    let state = applyCanvasData(createTabArtifactState(), {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'a',
+      filePath: '/a',
+      content: 'a'
+    })
+    state = applyCanvasData(state, {
+      action: 'open',
+      renderer: 'markdown',
+      title: 'b',
+      filePath: '/b',
+      content: 'b'
+    })
+    state = removeArtifact(state, 'file:/b')
+    expect(getArtifacts(state).map(a => a.id)).toEqual(['file:/a'])
+    expect(getOpenArtifacts(state).map(a => a.id)).toEqual(['file:/a'])
   })
 })

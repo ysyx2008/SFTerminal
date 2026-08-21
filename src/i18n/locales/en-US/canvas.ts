@@ -2,7 +2,8 @@
 export default {
   canvas: {
     artifactUntitled: 'Untitled',
-    closeArtifact: 'Close artifact',
+    closeArtifact: 'Close',
+    removeFromDesk: 'Remove from desk',
     artifactOverflow: '+{count} more',
     htmlPreview: 'Web preview',
     htmlPreviewEmpty: 'No web preview content',
@@ -53,8 +54,8 @@ export default {
     fileMenu: 'Open',
     noPathShort: 'No file path',
     unsavedChanges: '● Unsaved',
-    closeOthers: 'Close Other Artifacts',
-    closeAll: 'Close All Artifacts',
+    closeOthers: 'Close Other Tabs',
+    closeAll: 'Close All Tabs',
     saveShortcut: 'Ctrl/Cmd+S to save',
     noPathHint: 'No file path yet—edit for preview only; saving links after Agent writes a .md file',
     savedToDisk: 'Saved',

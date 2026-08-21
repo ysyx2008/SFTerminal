@@ -4,7 +4,7 @@
  */
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Terminal } from 'lucide-vue-next'
+import { Terminal, X } from 'lucide-vue-next'
 import type { CanvasArtifact } from '@shared/types'
 import { artifactDisplayLabel, sortArtifactsByRecent } from '../index'
 import ArtifactFileIcon from './ArtifactFileIcon.vue'
@@ -20,6 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [artifactId: string]
   selectTerminal: []
+  remove: [artifactId: string]
   close: []
 }>()
 
@@ -39,6 +40,11 @@ function onSelect(id: string) {
 function onSelectTerminal() {
   emit('selectTerminal')
   emit('close')
+}
+
+function onRemove(id: string, e: Event) {
+  e.stopPropagation()
+  emit('remove', id)
 }
 
 function onDocMouseDown(e: MouseEvent) {
@@ -80,10 +86,9 @@ onUnmounted(() => {
         </span>
         <span class="artifact-list-pop-name">{{ terminalTitle }}</span>
       </button>
-      <button
+      <div
         v-for="artifact in items"
         :key="artifact.id"
-        type="button"
         role="menuitem"
         class="artifact-list-pop-item"
         :class="{ active: !terminalActive && artifact.id === activeArtifactId }"
@@ -98,7 +103,15 @@ onUnmounted(() => {
           />
         </span>
         <span class="artifact-list-pop-name">{{ labelOf(artifact) }}</span>
-      </button>
+        <button
+          type="button"
+          class="artifact-list-pop-remove"
+          :title="t('canvas.removeFromDesk')"
+          @click="onRemove(artifact.id, $event)"
+        >
+          <X :size="12" />
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -178,8 +191,32 @@ onUnmounted(() => {
 
 .artifact-list-pop-name {
   min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.artifact-list-pop-remove {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.artifact-list-pop-item:hover .artifact-list-pop-remove {
+  display: inline-flex;
+}
+
+.artifact-list-pop-remove:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.12));
+  color: var(--text-primary, #eee);
 }
 </style>

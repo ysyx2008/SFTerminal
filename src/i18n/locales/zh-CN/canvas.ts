@@ -2,7 +2,8 @@
 export default {
   canvas: {
     artifactUntitled: '未命名',
-    closeArtifact: '关闭产出物',
+    closeArtifact: '关闭',
+    removeFromDesk: '从桌上移出',
     artifactOverflow: '+{count} 更多',
     htmlPreview: '网页预览',
     htmlPreviewEmpty: '暂无网页预览内容',
@@ -53,8 +54,8 @@ export default {
     fileMenu: '打开',
     noPathShort: '无磁盘路径',
     unsavedChanges: '● 未保存',
-    closeOthers: '关闭其他产出物',
-    closeAll: '关闭全部产出物',
+    closeOthers: '关闭其他页签',
+    closeAll: '关闭全部页签',
     saveShortcut: 'Ctrl/Cmd+S 保存',
     noPathHint: '无本地文件路径时仅可编辑预览；Agent 写入 .md 后会自动关联保存',
     savedToDisk: '已保存',
