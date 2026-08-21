@@ -26,9 +26,10 @@ function thinkingMessage(id: string, reasoning: string, body = '', timestamp?: n
   })
 }
 
-/** 展开后（或未折叠时）用户读到的步骤顺序 */
+/** 展开后（或未折叠时）用户读到的步骤顺序。一条步骤拆成两半时仍只算一次 */
 function readingOrder(segments: ProcessSegment[]): string[] {
-  return segments.flatMap(seg => seg.steps.map(s => s.id))
+  const ids = segments.flatMap(seg => seg.steps.map(ref => ref.step.id))
+  return ids.filter((id, i) => id !== ids[i - 1])
 }
 
 function longRun(): ProcessStepLike[] {
@@ -128,8 +129,43 @@ describe('foldProcessSteps', () => {
       thinkingMessage('m3', '汇总', '测试结果汇总'),
     ]
     const segs = foldProcessSteps(steps, { enabled: true })
-    expect(segs.map(s => s.kind)).toEqual(['open', 'fold', 'open', 'fold', 'open'])
+    // 每句话的"想"跟着前面那截活收进折叠行，说出口的那句留在外面
+    expect(segs.map(s => s.kind)).toEqual(['fold', 'open', 'fold', 'open', 'fold', 'open'])
     expect(readingOrder(segs)).toEqual(steps.map(s => s.id))
+  })
+
+  it('folds the thinking half of a remark and leaves only what it said out loud', () => {
+    const steps = [
+      step({ id: 't1', type: 'tool_call', toolName: 'execute_command' }),
+      thinkingMessage('m1', '看起来是磁盘满了', '磁盘满了，我清一下缓存'),
+    ]
+    const segs = foldProcessSteps(steps, { enabled: true })
+    expect(segs.map(s => s.kind)).toEqual(['fold', 'open'])
+    if (segs[0].kind !== 'fold') throw new Error('expected fold')
+    expect(segs[0].steps.map(ref => [ref.step.id, ref.part])).toEqual([
+      ['t1', 'full'],
+      ['m1', 'thinking'],
+    ])
+    expect(segs[1].steps.map(ref => [ref.step.id, ref.part])).toEqual([['m1', 'body']])
+    // 只进来半截的不算收在里面：点历史来源要落到外面那句话上
+    expect(segs[0].fold.stepIds).toEqual(['t1'])
+  })
+
+  it('says it merely thought when a remark came with no work before it', () => {
+    const steps = [thinkingMessage('m1', '这个我知道', '不用查，答案是 42')]
+    const segs = foldProcessSteps(steps, { enabled: true })
+    expect(segs.map(s => s.kind)).toEqual(['fold', 'open'])
+    expect(segs[0].kind === 'fold' && segs[0].fold.thinkingOnly).toBe(true)
+    expect(segs[0].kind === 'fold' && segs[0].fold.live).toBe(false)
+  })
+
+  it('keeps a remark whole when it also hands you something', () => {
+    const steps = [
+      { ...thinkingMessage('m1', '画好了', '图在这儿'), echartsOption: {} },
+    ]
+    const segs = foldProcessSteps(steps, { enabled: true })
+    expect(segs.map(s => s.kind)).toEqual(['open'])
+    expect(segs[0].steps.map(ref => ref.part)).toEqual(['full'])
   })
 
   it('marks the stretch in flight as live and says what it is busy with', () => {
@@ -167,7 +203,7 @@ describe('foldProcessSteps', () => {
     const steps = [...longRun(), step({ id: 'err', type: 'error', content: '任务失败' })]
     const segs = foldProcessSteps(steps, { enabled: true })
     expect(segs.map(s => s.kind)).toEqual(['fold', 'open'])
-    expect(segs[1].kind === 'open' && segs[1].steps[0].id).toBe('err')
+    expect(segs[1].kind === 'open' && segs[1].steps[0].step.id).toBe('err')
   })
 
   it('keeps the fold id stable as the stretch grows, so an opened drawer stays open', () => {
@@ -184,6 +220,8 @@ describe('foldProcessSteps', () => {
 
   it('does not fold when turned off', () => {
     const steps = longRun()
-    expect(foldProcessSteps(steps, { enabled: false })).toEqual([{ kind: 'open', steps }])
+    expect(foldProcessSteps(steps, { enabled: false })).toEqual([
+      { kind: 'open', steps: steps.map(step => ({ step, part: 'full' })) },
+    ])
   })
 })

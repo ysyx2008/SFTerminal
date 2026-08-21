@@ -16,7 +16,7 @@ import { createLogger } from '../utils/logger'
 import { isAssistantConversationSurfaceVisible } from '../utils/agent-tab-ui-meta'
 import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
-import { foldProcessSteps, type ProcessFoldView } from '../utils/process-fold'
+import { foldProcessSteps, type ProcessFoldView, type ProcessStepRef, type StepPart } from '../utils/process-fold'
 import { estimateMessageStepVirtualSize } from '../utils/thinking-block'
 import { resolveWorkbenchAgentPrompt, resolveWorkbenchKind } from '../workbench'
 import { showConfirm, showAlert } from './useConfirm'
@@ -107,6 +107,8 @@ export interface VirtualItem {
   step?: AgentStep
   fold?: ProcessFoldView
   expanded?: boolean
+  /** 这一格显示这条步骤的哪一半：只想的那截 / 只说出口的那句 / 整条 */
+  part?: StepPart
   /** 折叠行点开后要显示的步骤。渲染在折叠行自己这一格里，高度才好平滑撑开 */
   children?: VirtualItem[]
   content?: string
@@ -1149,7 +1151,8 @@ export function useAgentMode(
         })
 
         let emittedFirst = false
-        const toStepItem = (step: AgentStep, isFirst: boolean): VirtualItem => {
+        const toStepItem = (ref: ProcessStepRef<AgentStep>, isFirst: boolean): VirtualItem => {
+          const { step, part } = ref
           if (step.type === 'proactive_notice') {
             return { id: step.id, type: 'proactive_notice', step, group, size: 80 }
           }
@@ -1157,17 +1160,19 @@ export function useAgentMode(
             ? estimateMessageStepVirtualSize(step)
             : step.type === 'user_supplement' ? 60
             : step.type === 'asking' ? 120 : isFirst ? 46 : 40
-          return { id: step.id, type: 'step', step, group, size, isFirstStep: isFirst }
+          // 同一条步骤拆成两半分头出场，两格的 key 不能撞
+          const id = part === 'thinking' ? `${step.id}#thinking` : step.id
+          return { id, type: 'step', step, part, group, size, isFirstStep: isFirst }
         }
-        const pushStepItem = (step: AgentStep) => {
-          const isFirst = !emittedFirst && step.type !== 'proactive_notice'
+        const pushStepItem = (ref: ProcessStepRef<AgentStep>) => {
+          const isFirst = !emittedFirst && ref.step.type !== 'proactive_notice'
           emittedFirst = true
-          items.push(toStepItem(step, isFirst))
+          items.push(toStepItem(ref, isFirst))
         }
 
         for (const seg of segments) {
           if (seg.kind === 'open') {
-            for (const s of seg.steps) pushStepItem(s as AgentStep)
+            for (const ref of seg.steps) pushStepItem(ref)
             continue
           }
           const isFirst = !emittedFirst
@@ -1179,7 +1184,7 @@ export function useAgentMode(
             fold: seg.fold,
             expanded: expandedProcessFoldIds.value.has(seg.fold.id),
             // 折叠内的步骤不平铺到列表，挂在折叠行下面，展开时高度才能平滑撑开
-            children: seg.steps.map(s => toStepItem(s as AgentStep, false)),
+            children: seg.steps.map(ref => toStepItem(ref, false)),
             size: 30,
             isFirstStep: isFirst,
           })

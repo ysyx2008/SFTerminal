@@ -86,6 +86,17 @@ export interface ProcessStepLike {
   subAgents?: unknown[]
 }
 
+/**
+ * 一条步骤在界面上出现的形态。它说给你听的话里往往还夹着"它先想了想"——
+ * 想的那截是过程、说的那句是回话，两者要分头安置，所以同一条步骤可以拆成两半各自出场。
+ */
+export type StepPart = 'full' | 'thinking' | 'body'
+
+export interface ProcessStepRef<T = ProcessStepLike> {
+  step: T
+  part: StepPart
+}
+
 export interface ProcessFoldView {
   id: string
   counts: Partial<Record<ActionKind, number>>
@@ -95,16 +106,19 @@ export interface ProcessFoldView {
   liveText?: string
   /** 没有思考可用时退回动作分类 */
   liveAction?: ActionKind
+  /** 这一截只是想了想，没动手做任何事 */
+  thinkingOnly: boolean
   /** 计时锚点：从上一步结束算起 */
   startedAt?: number
   /** 做完了共花多久；太短则不给 */
   durationMs?: number
+  /** 整条收进来的步骤（只有半截思考进来的不算，那条步骤本人还在外面） */
   stepIds: string[]
 }
 
-export type ProcessSegment =
-  | { kind: 'open'; steps: ProcessStepLike[] }
-  | { kind: 'fold'; fold: ProcessFoldView; steps: ProcessStepLike[] }
+export type ProcessSegment<T = ProcessStepLike> =
+  | { kind: 'open'; steps: ProcessStepRef<T>[] }
+  | { kind: 'fold'; fold: ProcessFoldView; steps: ProcessStepRef<T>[] }
 
 /**
  * 流式期间每来一段内容整条步骤流都要重判一遍，历史长了正则解析全部消息不划算。
@@ -131,6 +145,21 @@ export function hasSpokenBody(step: ProcessStepLike): boolean {
   return !!messageBody(step)
 }
 
+/** 这一步里有"它先想了想"那截 */
+function hasThinkingPart(step: ProcessStepLike): boolean {
+  if (step.type !== 'message') return false
+  return !!parsed(step).thinking?.reasoning.trim()
+}
+
+/** 除了"说了话"，还有别的理由留在外面吗 */
+function pinnedBesidesSpeech(step: ProcessStepLike): boolean {
+  if (PINNED_STEP_TYPES.has(step.type)) return true
+  if (step.riskLevel === 'dangerous' || step.riskLevel === 'blocked') return true
+  if (step.toolName && PINNED_TOOLS.has(step.toolName)) return true
+  if (hasRichPayload(step)) return true
+  return false
+}
+
 /**
  * 留在原处不收的步骤。除了要你动手的、任务级错误、对外发出的、带产出的，
  * **它说给你听的话也一律留在原处**——折叠行因此永远落在这段过程原来的位置，
@@ -140,18 +169,36 @@ export function hasSpokenBody(step: ProcessStepLike): boolean {
  * 这些全是过程，收进那一行里，跑着的时候由那一行代为播报。
  */
 export function isPinnedProcessStep(step: ProcessStepLike): boolean {
-  if (PINNED_STEP_TYPES.has(step.type)) return true
-  if (step.riskLevel === 'dangerous' || step.riskLevel === 'blocked') return true
-  if (step.toolName && PINNED_TOOLS.has(step.toolName)) return true
-  if (hasRichPayload(step)) return true
-  if (messageBody(step)) return true
-  return false
+  return pinnedBesidesSpeech(step) || !!messageBody(step)
 }
 
-/** 这一步还没完：工具没回，或内容还在流 */
-function isUnfinished(step: ProcessStepLike): boolean {
-  if (step.isStreaming) return true
-  return step.type === 'tool_call' && step.success === undefined
+/**
+ * 把步骤流摊成"出场单元"。说出口的那句留在外面，但同一条步骤里"它先想了想"那截是过程，
+ * 拆出来跟前面那截活收在一起——外面因此不再夹着一排只写着「思考完成」的行。
+ * 只有它自己有别的理由留在外面时（要你动手、带产出）才整条不拆。
+ */
+function toStepRefs<T extends ProcessStepLike>(steps: ReadonlyArray<T>): ProcessStepRef<T>[] {
+  const refs: ProcessStepRef<T>[] = []
+  for (const step of steps) {
+    if (!pinnedBesidesSpeech(step) && hasSpokenBody(step) && hasThinkingPart(step)) {
+      refs.push({ step, part: 'thinking' }, { step, part: 'body' })
+    } else {
+      refs.push({ step, part: 'full' })
+    }
+  }
+  return refs
+}
+
+function isPinnedRef(ref: ProcessStepRef): boolean {
+  if (ref.part === 'thinking') return false
+  return isPinnedProcessStep(ref.step)
+}
+
+/** 这一步还没完：工具没回，或内容还在流。拆出来的那截思考——正文都出来了，它早想完了。 */
+function isUnfinished(ref: ProcessStepRef): boolean {
+  if (ref.part === 'thinking') return false
+  if (ref.step.isStreaming) return true
+  return ref.step.type === 'tool_call' && ref.step.success === undefined
 }
 
 export function countActions(steps: ReadonlyArray<ProcessStepLike>): Partial<Record<ActionKind, number>> {
@@ -204,24 +251,31 @@ function pendingAction(steps: ReadonlyArray<ProcessStepLike>): ActionKind | unde
  * 下一步的创建时间就是这一截的收尾时刻，段内只有一步时也才有耗时可言。
  * 后面没有步骤了（任务就此结束）只能退回最后一步的开始时间，会少算最后一步自己跑了多久。
  */
-function toFold(steps: ProcessStepLike[], nextStepAt?: number): ProcessFoldView {
+function toFold(refs: ProcessStepRef[], nextStepAt?: number): ProcessFoldView {
+  const steps = refs.map(ref => ref.step)
   const last = steps[steps.length - 1]
-  const live = steps.some(isUnfinished)
+  const live = refs.some(isUnfinished)
   const startedAt = steps[0].timestamp
   const endedAt = nextStepAt ?? last.timestamp
   const elapsed =
     startedAt !== undefined && endedAt !== undefined ? endedAt - startedAt : 0
+  const counts = countActions(steps)
   return {
     // 只认这一截的起点：这截还在长，末尾每加一步 id 都变的话，
     // 用户刚点开就会被重新收起，虚拟列表也要跟着重建。
     id: `fold_${steps[0].id}`,
-    counts: countActions(steps),
+    counts,
     live,
+    // 没动手做任何事，只是想了想——那一行就该说"想了想"，而不是含糊的"处理中"
+    thinkingOnly:
+      Object.keys(counts).length === 0 &&
+      steps.every(step => step.type === 'message' || step.type === 'thinking'),
     liveText: live ? extractProgressLine(steps) : undefined,
     liveAction: live ? pendingAction(steps) : undefined,
     startedAt,
     durationMs: !live && elapsed >= MIN_SHOWN_DURATION_MS ? elapsed : undefined,
-    stepIds: steps.map(step => step.id),
+    // 只有半截思考进来的不算收了这条步骤——它本人还在外面，找它就该找外面那条
+    stepIds: refs.filter(ref => ref.part === 'full').map(ref => ref.step.id),
   }
 }
 
@@ -231,24 +285,26 @@ function toFold(steps: ProcessStepLike[], nextStepAt?: number): ProcessFoldView 
  * 收是从头收到尾——不是做完才收，而是压根没展开过，所以任务跑着的时候
  * 只有那一行在动，做完也不会有十几行忽然塌成一行的突变。
  */
-export function foldProcessSteps(
-  steps: ReadonlyArray<ProcessStepLike>,
+export function foldProcessSteps<T extends ProcessStepLike>(
+  steps: ReadonlyArray<T>,
   opts: { enabled: boolean },
-): ProcessSegment[] {
+): ProcessSegment<T>[] {
   if (steps.length === 0) return []
-  if (!opts.enabled) return [{ kind: 'open', steps: [...steps] }]
+  if (!opts.enabled) {
+    return [{ kind: 'open', steps: steps.map(step => ({ step, part: 'full' as const })) }]
+  }
 
-  const runs: { pinned: boolean; steps: ProcessStepLike[] }[] = []
-  for (const step of steps) {
-    const pinned = isPinnedProcessStep(step)
+  const runs: { pinned: boolean; refs: ProcessStepRef<T>[] }[] = []
+  for (const ref of toStepRefs(steps)) {
+    const pinned = isPinnedRef(ref)
     const last = runs[runs.length - 1]
-    if (last && last.pinned === pinned) last.steps.push(step)
-    else runs.push({ pinned, steps: [step] })
+    if (last && last.pinned === pinned) last.refs.push(ref)
+    else runs.push({ pinned, refs: [ref] })
   }
 
   return runs.map((run, i) => {
-    if (run.pinned) return { kind: 'open' as const, steps: run.steps }
-    const nextStepAt = runs[i + 1]?.steps[0]?.timestamp
-    return { kind: 'fold' as const, fold: toFold(run.steps, nextStepAt), steps: run.steps }
+    if (run.pinned) return { kind: 'open' as const, steps: run.refs }
+    const nextStepAt = runs[i + 1]?.refs[0]?.step.timestamp
+    return { kind: 'fold' as const, fold: toFold(run.refs, nextStepAt), steps: run.refs }
   })
 }

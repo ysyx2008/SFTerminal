@@ -238,6 +238,8 @@ export default {
       browse: 'Opened {n} pages',
       other: 'Did {n} steps',
       working: 'Working',
+      thought: 'Thought it over',
+      thinking: 'Thinking',
       seconds: '{n}s',
       minutes: '{n}m',
       minutesSeconds: '{m}m {s}s',

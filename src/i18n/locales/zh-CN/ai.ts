@@ -239,6 +239,8 @@ export default {
       browse: '打开了 {n} 个网页',
       other: '做了 {n} 步',
       working: '在忙',
+      thought: '想了想',
+      thinking: '在想',
       seconds: '{n} 秒',
       minutes: '{n} 分',
       minutesSeconds: '{m} 分 {s} 秒',

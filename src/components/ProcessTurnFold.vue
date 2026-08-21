@@ -47,12 +47,13 @@ const actionLine = computed(() => {
   return parts.join(t('ai.processFold.sep'))
 })
 
-/** 跑着时说它在忙什么，做完说做了什么 */
+/** 跑着时说它在忙什么，做完说做了什么；没动手只想了想就照实说 */
 const label = computed(() => {
-  if (!props.fold.live) return actionLine.value || t('ai.processFold.working')
+  const idle = props.fold.thinkingOnly ? t('ai.processFold.thought') : t('ai.processFold.working')
+  if (!props.fold.live) return actionLine.value || idle
   if (props.fold.liveText) return props.fold.liveText
   if (props.fold.liveAction) return t(`ai.processFold.doing.${props.fold.liveAction}`)
-  return t('ai.processFold.working')
+  return props.fold.thinkingOnly ? t('ai.processFold.thinking') : t('ai.processFold.working')
 })
 
 /** 做完之后才把「共做了什么」补在忙碌描述后面，跑着时那行已经够长 */

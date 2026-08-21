@@ -2354,9 +2354,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                 class="agent-step-virtual"
                 :class="{
                   'first-step': item.isFirstStep,
-                  'agent-step-source-highlight': item.step!.id === highlightedSourceStepId
+                  'agent-step-source-highlight': item.step!.id === highlightedSourceStepId && item.part !== 'thinking'
                 }"
-                :data-agent-step-id="item.step!.id"
+                :data-agent-step-id="item.part === 'thinking' ? undefined : item.step!.id"
               >
                 <div 
                   class="agent-step-inline"
@@ -2369,7 +2369,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     }
                   ]"
                 >
-                  <span class="step-icon">{{ isInitialPreparingStep(item.step!) ? getStepIcon('message') : getStepIcon(item.step!.type) }}</span>
+                  <span class="step-icon">{{ item.part === 'thinking' ? getStepIcon('thinking') : isInitialPreparingStep(item.step!) ? getStepIcon('message') : getStepIcon(item.step!.type) }}</span>
                   <div class="step-content">
                     <!-- 初始"正在准备..."占位：借用 message step 的整套视觉壳（agent-message-stack + ThinkingBlock 流式态），
                          切换到真正的 message step 时只是 ThinkingBlock 文字内部的"正在准备..." → "思考中 N.Ns" 变化，外层布局完全不变 -->
@@ -2383,9 +2383,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       />
                     </div>
                     <div v-else-if="item.step!.type === 'message'" class="agent-message-stack">
+                      <!-- 一句话拆成两半时：想的那截收进折叠行、说出口的那句留在外面，各只渲染自己那半 -->
                       <template v-for="(pres, presIdx) in [getMessageStepPresentation(item.step!)]" :key="presIdx">
                       <ThinkingBlock
-                        v-if="pres.thinking"
+                        v-if="pres.thinking && item.part !== 'body'"
                         :reasoning="pres.thinking.reasoning"
                         :is-streaming="pres.thinking.isStreaming"
                         :label="pres.thinking.label"
@@ -2396,7 +2397,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         @finalize="cacheThinkingDuration(item.step!.id, $event)"
                       />
                       <div
-                        v-if="pres.body"
+                        v-if="pres.body && item.part !== 'thinking'"
                         class="step-text step-analysis markdown-content"
                         :class="{ 'is-streaming': item.step!.isStreaming }"
                         v-html="renderMarkdown(pres.body)"
@@ -2409,7 +2410,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                            fade-in 动画；animationend 后 markFooterAnimated 写入 Set，后续虚拟滚动 remount
                            不再附加 class，避免动画重播闪烁 -->
                       <div
-                        v-if="shouldShowTaskCompleteFooter(item)"
+                        v-if="item.part !== 'thinking' && shouldShowTaskCompleteFooter(item)"
                         class="agent-final-footer"
                         :class="{ 'agent-final-footer--first-show': isFooterFirstShow(item.group?.id) }"
                         @animationend="markFooterAnimated(item.group?.id)"
