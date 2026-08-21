@@ -399,7 +399,7 @@ export class MenuService {
       {
         label: this.t('openFileManager'),
         accelerator: this.shortcuts.openFileManager || undefined,
-        enabled: this.hasTerminal,
+        enabled: this.hasAiPanel,
         click: () => this.sendCommand('openFileManager')
       },
       { type: 'separator' },
@@ -736,6 +736,7 @@ export class MenuService {
     }
   }
 
+  /** 人正在终端界面（侧边栏、文件管理器才有对象可开关） */
   setHasAiPanel(value: boolean): void {
     if (this.hasAiPanel !== value) {
       this.hasAiPanel = value
