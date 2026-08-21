@@ -9,12 +9,13 @@
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RotateCw, ExternalLink, Camera } from 'lucide-vue-next'
+import { RotateCw, ExternalLink, Camera, Minus, Plus } from 'lucide-vue-next'
 import type { DidFailLoadEvent, WebviewTag, WillNavigateEvent } from 'electron'
 import { buildArtifactPreviewUrl } from '@shared/types'
 import { useAssistantArtifactStore } from '../store'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 import { normalizeHtmlPreviewContent } from '../domain/html-preview'
+import { useWebviewZoom } from '../composables/useWebviewZoom'
 import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../ui/useHoverTip'
 import HoverTipOverlay from '../ui/HoverTipOverlay.vue'
 
@@ -137,6 +138,15 @@ const previewUrl = computed(() => buildArtifactPreviewUrl(props.tabId, props.art
 
 const webviewRef = ref<WebviewTag | null>(null)
 const loadFailed = ref(false)
+const {
+  zoomPercentLabel,
+  isZoomed,
+  zoomIn,
+  zoomOut,
+  resetZoom,
+  onDomReady,
+  onZoomChanged
+} = useWebviewZoom(webviewRef)
 
 /**
  * 「已加载哪个地址」的真相源是元素自身的 src，不另存标记：
@@ -272,16 +282,48 @@ onBeforeUnmount(() => {
       >
         <ExternalLink :size="14" />
       </button>
-      <button
-        v-if="previewHtml"
-        type="button"
-        class="html-tool-btn html-toolbar-feedback"
-        @mouseenter="showTip($event, t('canvas.htmlCaptureFeedback'), 'left')"
-        @mouseleave="hideTip"
-        @click="captureFeedback"
-      >
-        <Camera :size="14" />
-      </button>
+      <div class="html-toolbar-end">
+        <div v-if="previewHtml" class="html-zoom">
+          <button
+            type="button"
+            class="html-tool-btn"
+            @mouseenter="showTip($event, t('canvas.htmlZoomOut'))"
+            @mouseleave="hideTip"
+            @click="zoomOut"
+          >
+            <Minus :size="14" />
+          </button>
+          <button
+            type="button"
+            class="html-zoom-pct"
+            :class="{ 'is-zoomed': isZoomed }"
+            @mouseenter="showTip($event, t('canvas.htmlZoomReset'))"
+            @mouseleave="hideTip"
+            @click="resetZoom"
+          >
+            {{ zoomPercentLabel }}
+          </button>
+          <button
+            type="button"
+            class="html-tool-btn"
+            @mouseenter="showTip($event, t('canvas.htmlZoomIn'))"
+            @mouseleave="hideTip"
+            @click="zoomIn"
+          >
+            <Plus :size="14" />
+          </button>
+        </div>
+        <button
+          v-if="previewHtml"
+          type="button"
+          class="html-tool-btn"
+          @mouseenter="showTip($event, t('canvas.htmlCaptureFeedback'), 'left')"
+          @mouseleave="hideTip"
+          @click="captureFeedback"
+        >
+          <Camera :size="14" />
+        </button>
+      </div>
     </div>
     <div class="html-body" :class="{ 'html-body--ppt': isPptPreview }">
       <webview
@@ -292,6 +334,9 @@ onBeforeUnmount(() => {
         allowpopups
         @will-navigate="onWillNavigate"
         @did-fail-load="onWebviewFailLoad"
+        @dom-ready="onDomReady"
+        @did-finish-load="onDomReady"
+        @zoom-changed="onZoomChanged"
       />
       <div v-else-if="loadingFromDisk" class="html-empty">{{ t('canvas.htmlPreviewLoading') }}</div>
       <div v-else class="html-empty">{{ t('canvas.htmlPreviewEmpty') }}</div>
@@ -346,9 +391,40 @@ onBeforeUnmount(() => {
   color: var(--text-primary, #ddd);
 }
 
-/* 反馈动作与预览操作分区：推到工具栏右侧 */
-.html-toolbar-feedback {
+/* 缩放 + 截图靠右；比例一直显示，偏了才加粗 */
+.html-toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   margin-left: auto;
+}
+
+.html-zoom {
+  display: inline-flex;
+  align-items: center;
+}
+
+.html-zoom-pct {
+  min-width: 44px;
+  height: 28px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary, #888);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.html-zoom-pct:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary, #ddd);
+}
+
+.html-zoom-pct.is-zoomed {
+  color: var(--text-primary, #ddd);
+  font-weight: 600;
 }
 
 .html-body {

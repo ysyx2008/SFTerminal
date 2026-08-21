@@ -8,10 +8,11 @@
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RotateCw, ExternalLink, Camera, Globe } from 'lucide-vue-next'
+import { RotateCw, ExternalLink, Camera, Globe, Minus, Plus } from 'lucide-vue-next'
 import type { DidFailLoadEvent, DidNavigateEvent, WebviewTag, WillNavigateEvent } from 'electron'
 import { useAssistantArtifactStore } from '../store'
 import { useToast } from '@sailfish/workbench-sdk/toast'
+import { useWebviewZoom } from '../composables/useWebviewZoom'
 import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../ui/useHoverTip'
 import HoverTipOverlay from '../ui/HoverTipOverlay.vue'
 
@@ -37,6 +38,15 @@ const targetUrl = computed(() => artifact.value?.url ?? '')
 
 const webviewRef = ref<WebviewTag | null>(null)
 const loadFailed = ref(false)
+const {
+  zoomPercentLabel,
+  isZoomed,
+  zoomIn,
+  zoomOut,
+  resetZoom,
+  onDomReady,
+  onZoomChanged
+} = useWebviewZoom(webviewRef)
 /** 地址栏显示值（跟随导航事件更新；编辑中不打断） */
 const addressValue = ref('')
 const addressEditing = ref(false)
@@ -181,6 +191,36 @@ onBeforeUnmount(() => {
           @keydown.enter.prevent="navigateFromAddressBar"
         />
       </div>
+      <div v-if="targetUrl" class="browser-zoom">
+        <button
+          type="button"
+          class="browser-tool-btn"
+          @mouseenter="showTip($event, t('canvas.htmlZoomOut'))"
+          @mouseleave="hideTip"
+          @click="zoomOut"
+        >
+          <Minus :size="14" />
+        </button>
+        <button
+          type="button"
+          class="browser-zoom-pct"
+          :class="{ 'is-zoomed': isZoomed }"
+          @mouseenter="showTip($event, t('canvas.htmlZoomReset'))"
+          @mouseleave="hideTip"
+          @click="resetZoom"
+        >
+          {{ zoomPercentLabel }}
+        </button>
+        <button
+          type="button"
+          class="browser-tool-btn"
+          @mouseenter="showTip($event, t('canvas.htmlZoomIn'))"
+          @mouseleave="hideTip"
+          @click="zoomIn"
+        >
+          <Plus :size="14" />
+        </button>
+      </div>
       <button
         type="button"
         class="browser-tool-btn"
@@ -211,6 +251,9 @@ onBeforeUnmount(() => {
         @did-navigate="onNavigate"
         @did-navigate-in-page="onNavigate"
         @did-fail-load="onWebviewFailLoad"
+        @dom-ready="onDomReady"
+        @did-finish-load="onDomReady"
+        @zoom-changed="onZoomChanged"
       />
       <div v-else class="browser-empty">{{ t('canvas.browserPreviewEmpty') }}</div>
       <div v-if="loadFailed" class="browser-empty browser-empty--overlay">{{ t('canvas.htmlPreviewFailed') }}</div>
@@ -290,6 +333,35 @@ onBeforeUnmount(() => {
 
 .browser-address-input::placeholder {
   color: var(--text-secondary, #888);
+}
+
+.browser-zoom {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.browser-zoom-pct {
+  min-width: 44px;
+  height: 28px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary, #888);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.browser-zoom-pct:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary, #ddd);
+}
+
+.browser-zoom-pct.is-zoomed {
+  color: var(--text-primary, #ddd);
+  font-weight: 600;
 }
 
 .browser-body {
