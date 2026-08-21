@@ -6,7 +6,7 @@
 
 应用配置持久化层。提供类型安全的 key-value 存取，所有配置持久化到本地 JSON 文件（`electron-store`），服务启动时加载、修改时即时写盘。不包含业务逻辑——纯存取。
 
-CLI **默认与桌面共用** `qiyu-terminal-config.json`（及同一 userData 下历史等）。`--sandbox` / `SFT_CLI_SANDBOX=1` / 显式 `SFT_DATA_DIR` 时进入沙箱，并由 `electron/cli/cli-data.js` 从桌面借用 AI 相关字段（`aiProfiles` / `activeAiProfile` / `autoVisionModel` / `aiRules`）以及 `credentials.json` + `master.key`。回归测试用临时 `SFT_DATA_DIR`，同样会借用。
+从仓库跑的命令行默认进沙箱，只借用桌面的模型配置和密钥，不写真实历史。装机后的正式命令默认与桌面共用配置。回归测试用临时目录，同样会借用。
 
 敏感项长期存放心智模型见 credential.service。
 

@@ -14,6 +14,10 @@ for (let i = 0; i < rawArgv.length; i++) {
     process.env.SFT_CLI_SANDBOX = '1'
     continue
   }
+  if (a === '--share-desktop') {
+    process.env.SFT_CLI_SHARE_DESKTOP = '1'
+    continue
+  }
   if (a === '--free') {
     filtered.push('--mode', 'free')
     continue
@@ -25,7 +29,11 @@ process.argv = [process.argv[0], process.argv[1], ...filtered]
 // CJS 助手；vite 会打进 cli.js
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { setupCliDataDir } = require('./cli-data.js') as {
-  setupCliDataDir: () => { desktopDir: string; sandboxDir: string; shared: boolean }
+  setupCliDataDir: (opts?: { defaultSandbox?: boolean }) => {
+    desktopDir: string
+    sandboxDir: string
+    shared: boolean
+  }
 }
 setupCliDataDir()
 

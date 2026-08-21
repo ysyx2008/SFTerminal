@@ -184,7 +184,7 @@ Agent 有四种存在方式，对应四类**互斥**的会话（`kind`）。把�
 - **入口**：`electron/cli/main.js`（纯 JS）
 - **原理**：通过 `Module._resolveFilename` 拦截 `require('electron')`，替换为 `electron-shim.js`
 - **特点**：所有后端服务无需修改即可在 CLI 下运行
-- **配置/凭据**：CLI **默认与桌面共用** userData（真配置/历史/凭据）。`--sandbox` / `SFT_CLI_SANDBOX=1` 时写入 `{userData}/cli-sandbox/` 并从桌面借用 AI Profiles + credentials。回归测试强制临时 `SFT_DATA_DIR` 仍会借用。Agent 默认 `--mode relaxed`（高危需确认）；`--free` / `--mode free` 才全自动
+- **配置/凭据**：从仓库跑（`npm run sailfish` / 开发态薄壳）**默认进沙箱** `{userData}/cli-sandbox/`，只借用 AI Profiles + credentials，不写桌面真实历史。装机后的正式命令默认与桌面共用 userData；`--sandbox` 显式隔离，`--share-desktop` 开发态改用真数据。回归测试强制临时 `SFT_DATA_DIR` 仍会借用。Agent 默认 `--mode relaxed`（高危需确认）；`--free` / `--mode free` 才全自动
 - **装机命令**：macOS 可在「设置 → 数据管理」安装 `sailfish` 到 `~/.local/bin`（VS Code 式薄壳）。打包态经 `ELECTRON_RUN_AS_NODE` 加载 `dist-electron/cli.js`；开发态指向仓库 `electron/cli/main.js`
 - **用法**：`npm run sailfish -- "任务说明"` 或安装后 `sailfish "任务说明"` / `sailfish <command>`（`npm run sft` / `cli` 为别名）
 - **测试**：`bash electron/cli/test-cli.sh`（12 个功能区覆盖，含 Watch & Sensor）

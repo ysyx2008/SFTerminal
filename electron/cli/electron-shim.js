@@ -85,7 +85,7 @@ function migrateLegacyPointerIfNeeded() {
 /**
  * Resolve the effective userData path.
  * Priority: SFT_DATA_DIR env var > pointer file (data-location.json) > default.
- * CLI 默认不设 SFT_DATA_DIR（与桌面共用）；`--sandbox` / 测试临时目录才会设置。
+ * 开发入口会先设 SFT_DATA_DIR 到沙箱；装机命令默认不设（与桌面共用）。
  */
 function getUserDataPath() {
   if (process.env.SFT_DATA_DIR) return process.env.SFT_DATA_DIR

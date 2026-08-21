@@ -2,15 +2,14 @@
 /**
  * CLI 数据目录
  *
- * 默认：与桌面共用同一 userData（真配置 / 真历史 / 真凭据）。
- * 沙箱：`--sandbox` 或 `SFT_CLI_SANDBOX=1`，或显式 `SFT_DATA_DIR`（测试临时目录）。
+ * 开发入口默认进沙箱（不写桌面真实历史）；装机后的正式命令默认与桌面共用。
  * 沙箱内每次启动从桌面借用 AI Profiles + credentials（省去重配 Key）。
  *
  * 环境变量：
- *   SFT_DATA_DIR          显式数据目录（视为沙箱；测试用）
- *   SFT_CLI_SANDBOX=1     使用 `{desktop}/cli-sandbox` 并借用桌面 Key/Profiles
- *   SFT_CLI_NO_BORROW=1   沙箱内不从桌面复制
- *   SFT_CLI_SHARE_DESKTOP=1  兼容旧开关（默认已是共用，等同无操作）
+ *   SFT_DATA_DIR            显式数据目录（视为沙箱；测试用）
+ *   SFT_CLI_SANDBOX=1       使用 `{desktop}/cli-sandbox` 并借用桌面 Key/Profiles
+ *   SFT_CLI_SHARE_DESKTOP=1 开发态显式改用桌面真实数据
+ *   SFT_CLI_NO_BORROW=1     沙箱内不从桌面复制
  */
 'use strict'
 
@@ -169,30 +168,52 @@ function applySandbox(desktopDir, sandboxDir) {
 }
 
 /**
+ * 决定 CLI 写哪份数据。纯函数，便于单测。
+ *
+ * 优先级：显式目录 > 显式沙箱 > 显式共用桌面 > 入口默认。
+ *
+ * @param {{
+ *   explicitDir?: string
+ *   sandboxFlag?: boolean
+ *   shareDesktopFlag?: boolean
+ *   defaultSandbox?: boolean
+ * }} flags
+ * @returns {{ mode: 'sandbox' | 'shared', explicitDir?: string }}
+ */
+function resolveCliDataMode(flags) {
+  if (flags.explicitDir) return { mode: 'sandbox', explicitDir: flags.explicitDir }
+  if (flags.sandboxFlag) return { mode: 'sandbox' }
+  if (flags.shareDesktopFlag) return { mode: 'shared' }
+  if (flags.defaultSandbox) return { mode: 'sandbox' }
+  return { mode: 'shared' }
+}
+
+/**
  * 在加载 Electron shim / 服务之前调用。
+ * @param {{ defaultSandbox?: boolean }} [opts] 开发入口传 true：默认进沙箱
  * @returns {{ desktopDir: string, sandboxDir: string, shared: boolean }}
  */
-function setupCliDataDir() {
+function setupCliDataDir(opts) {
   const desktopDir = resolveDesktopUserData()
+  const decision = resolveCliDataMode({
+    explicitDir: process.env.SFT_DATA_DIR,
+    sandboxFlag: process.env.SFT_CLI_SANDBOX === '1',
+    shareDesktopFlag: process.env.SFT_CLI_SHARE_DESKTOP === '1',
+    defaultSandbox: opts && opts.defaultSandbox === true,
+  })
 
-  // 显式数据目录（回归测试临时目录等）→ 沙箱 + 借用
-  if (process.env.SFT_DATA_DIR) {
-    return applySandbox(desktopDir, process.env.SFT_DATA_DIR)
-  }
-
-  // --sandbox / SFT_CLI_SANDBOX=1
-  if (process.env.SFT_CLI_SANDBOX === '1') {
-    const sandboxDir = path.join(desktopDir, 'cli-sandbox')
+  if (decision.mode === 'sandbox') {
+    const sandboxDir = decision.explicitDir || path.join(desktopDir, 'cli-sandbox')
     return applySandbox(desktopDir, sandboxDir)
   }
 
-  // 默认：与桌面共用（SFT_CLI_SHARE_DESKTOP 已无必要，保留兼容）
   return { desktopDir, sandboxDir: desktopDir, shared: true }
 }
 
 module.exports = {
   resolveDesktopUserData,
   borrowDesktopData,
+  resolveCliDataMode,
   setupCliDataDir,
   BORROW_CONFIG_KEYS,
 }

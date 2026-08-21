@@ -3,9 +3,10 @@
 /**
  * SailFish CLI Entry Point
  *
- * Data layout (default):
- *   - Share desktop userData (real config / history / credentials)
- *   - --sandbox or SFT_CLI_SANDBOX=1 → {desktop}/cli-sandbox + borrow AI Profiles/keys
+ * Data layout (dev entry):
+ *   - Default: {desktop}/cli-sandbox + borrow AI Profiles/keys
+ *   - --share-desktop or SFT_CLI_SHARE_DESKTOP=1 → real desktop userData
+ *   - --sandbox or SFT_CLI_SANDBOX=1 → same as default sandbox
  *   - SFT_DATA_DIR → custom sandbox (tests use a temp dir)
  *
  * Usage:
@@ -36,13 +37,17 @@ Module._resolveFilename = function(request, parent, isMain, options) {
 
 process.env.SFT_CLI_MODE = '1'
 
-// --sandbox must be applied before services load (shim freezes userData at require time)
+// Data-dir flags must be applied before services load (shim freezes userData at require time)
 const rawArgv = process.argv.slice(2)
 const filtered = []
 for (let i = 0; i < rawArgv.length; i++) {
   const a = rawArgv[i]
   if (a === '--sandbox') {
     process.env.SFT_CLI_SANDBOX = '1'
+    continue
+  }
+  if (a === '--share-desktop') {
+    process.env.SFT_CLI_SHARE_DESKTOP = '1'
     continue
   }
   if (a === '--free') {
@@ -54,7 +59,7 @@ for (let i = 0; i < rawArgv.length; i++) {
 }
 process.argv = [process.argv[0], process.argv[1], ...filtered]
 
-require('./cli-data.js').setupCliDataDir()
+require('./cli-data.js').setupCliDataDir({ defaultSandbox: true })
 
 // ==================== Step 3: TypeScript ====================
 

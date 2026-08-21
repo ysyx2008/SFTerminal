@@ -1104,7 +1104,7 @@ export default {
     migrateErrAlreadyDefault: 'Already using the default directory',
     // Shell CLI
     shellCli: 'Command Line Tool',
-    shellCliHint: 'Install the sailfish command for your terminal (uses desktop data by default; pass --sandbox for an isolated sandbox).',
+    shellCliHint: 'Install the sailfish command. The packaged command shares desktop data; running from the repo uses a sandbox so tests do not mix with real history.',
     shellCliInstall: 'Install sailfish command',
     shellCliUninstall: 'Remove sailfish command',
     shellCliInstalled: 'Installed: {path}',

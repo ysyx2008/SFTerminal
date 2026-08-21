@@ -8,6 +8,8 @@ description: 后端代码修改后，通过 CLI 测试验证功能正确性。�
 项目提供了 CLI 模式（`npm run sailfish`，`sft`/`cli` 为别名），可在纯 Node.js 下运行所有后端服务。
 修改后端代码后，必须利用 CLI 验证功能正确性，不能只靠"能编译"就认为没问题。
 
+**数据隔离**：从仓库跑 `npm run sailfish` / `node electron/cli/main.js` **默认写沙箱**，不会进桌面真实历史。回归脚本另用一次性临时目录。不要用 `--share-desktop` 做验证。装机后的 `sailfish` 命令跟桌面共用数据，测装机命令时加 `--sandbox`。
+
 ## 何时使用本技能
 
 - 修改了 `electron/services/` 下的任何服务
@@ -41,7 +43,7 @@ bash electron/cli/test-cli.sh            # 有 API Key 时跑全量
 | watch/ 目录 | `sailfish watch:list && sailfish watch:history && sailfish watch:templates && sailfish watch:state` |
 | sensor/ 目录 | `sailfish sensor:status && sailfish sensor:heartbeat` |
 
-> `sailfish` 即已安装的 PATH 命令，或 `npm run sailfish --`；直接用 `node electron/cli/main.js` 也行。`npm run sft` 仍为别名。
+> 优先用 `npm run sailfish --` 或 `node electron/cli/main.js`（开发态默认沙箱）。PATH 里的 `sailfish` 若来自正式装机，会写桌面真实数据，须加 `--sandbox`。`npm run sft` 仍为别名。
 
 ## 新增服务或命令时
 

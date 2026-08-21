@@ -178,6 +178,7 @@ async function configInit(): Promise<void> {
   console.log('  SFT_MODEL      - AI model name')
   console.log('  SFT_DATA_DIR   - CLI sandbox directory (tests / --sandbox)')
   console.log('  SFT_CLI_SANDBOX=1 - Same as --sandbox')
+  console.log('  SFT_CLI_SHARE_DESKTOP=1 - Dev CLI: use real desktop data')
   console.log('  SFT_CLI_NO_BORROW=1 - Do not borrow AI Profiles/credentials in sandbox')
   console.log('')
   console.log('Or configure via commands:')
@@ -1808,6 +1809,7 @@ SailFish CLI v${version}
 
 全局选项:
   --sandbox                  写入 cli-sandbox，并从桌面借用 AI Profiles/凭据
+  --share-desktop            开发态改用桌面真实数据（装机命令默认已是）
   --mode <strict|relaxed|free>  执行模式（默认 relaxed）
   --free                     等同 --mode free（危险：跳过确认）
   --task / -t <text>         显式任务文本
@@ -1816,6 +1818,7 @@ SailFish CLI v${version}
   SFT_API_URL / SFT_API_KEY / SFT_MODEL
   SFT_DATA_DIR               自定义沙箱目录（测试用）
   SFT_CLI_SANDBOX=1          同 --sandbox
+  SFT_CLI_SHARE_DESKTOP=1    同 --share-desktop
   SFT_CLI_NO_BORROW=1        沙箱内不借用桌面 Key/Profiles
 
 内部命令（完整列表，冒号风格仍可用）:
@@ -1826,7 +1829,7 @@ SailFish CLI v${version}
 示例:
   ${cliName()} "列出当前目录下的 markdown 文件"
   ${cliName()} --task 备份配置 --mode relaxed
-  ${cliName()} --sandbox "试跑，别动真数据" --free
+  ${cliName()} --sandbox "装机命令试跑，别动真数据" --free
   ${cliName()} models
   ${cliName()} agent:run "重启本机 nginx" --mode free
 `)

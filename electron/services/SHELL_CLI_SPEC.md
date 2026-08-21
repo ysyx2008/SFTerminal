@@ -1,6 +1,6 @@
 # Shell CLI（`sailfish` 命令）
 
-> Last verified: 2026-07-13
+> Last verified: 2026-08-21
 
 ## 职责
 
@@ -28,4 +28,5 @@
 - 第一期仅 macOS；Windows 另议
 - 不要求 sudo（使用 `~/.local/bin` 而非 `/usr/local/bin`）
 - 薄壳导出 `SFT_CLI_NAME=sailfish`，help/usage 文案跟命令名一致
+- 开发态薄壳走仓库入口，因此默认进虚拟目录；打包态薄壳跟桌面共用真实数据
 - 升级 App 后薄壳仍指向 `.app` 路径；若用户移动 App，需重新「安装命令行工具」

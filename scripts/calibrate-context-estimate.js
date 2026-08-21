@@ -22,7 +22,7 @@ Module._resolveFilename = function (request, parent, isMain, options) {
 }
 
 process.env.SFT_CLI_MODE = '1'
-require(path.join(__dirname, '..', 'electron', 'cli', 'cli-data.js')).setupCliDataDir()
+require(path.join(__dirname, '..', 'electron', 'cli', 'cli-data.js')).setupCliDataDir({ defaultSandbox: true })
 require('tsx/cjs')
 
 const svcDir = path.join(__dirname, '..', 'electron', 'services')

@@ -1104,7 +1104,7 @@ export default {
     migrateErrAlreadyDefault: '当前已是默认目录',
     // 命令行工具
     shellCli: '命令行工具',
-    shellCliHint: '安装后可在终端使用 sailfish 命令（默认使用桌面真实数据；--sandbox 进入沙箱）。',
+    shellCliHint: '安装后可在终端使用 sailfish 命令。正式版跟桌面共用数据；从仓库跑默认进沙箱，避免测脏真实历史。',
     shellCliInstall: '安装 sailfish 命令',
     shellCliUninstall: '移除 sailfish 命令',
     shellCliInstalled: '已安装：{path}',
