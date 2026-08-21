@@ -328,7 +328,7 @@ export default {
     update: '更新',
     language: '语言',
     conversation: '对话显示',
-    foldAgentProcess: '自动收起过程',
+    foldAgentProcess: '简化显示执行步骤',
     foldAgentProcessHint: '它埋头干活的那几步收成一行，只留它说给你听的话和此刻正在做的事。想看全过程，点那一行就能展开。严格模式下始终摊开，不收。',
     launchAtLogin: '开机启动',
     launchAtLoginHint: '登录系统后自动启动旗鱼',
