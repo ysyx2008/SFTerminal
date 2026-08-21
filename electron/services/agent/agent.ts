@@ -375,16 +375,12 @@ export abstract class Agent {
       throw new Error('Agent is already running')
     }
     
-    // 如果传入了 profileId，更新 Agent 实例的配置
+    // 这场对话用哪个模型：显式传入优先；否则联络沿用界面上已选的。
+    // 从没选过就保持空，下游回落到设置里当时的默认——微信进线不能写死、也不能盖掉界面选择。
+    // 唤醒没有自己的选择器，每次未显式指定都跟默认。详见 agent/SPEC.md。
     if (options?.profileId) {
       this.profileId = options.profileId
-    } else if (
-      (this._agentId === '__companion__' || this._agentId === '__wakeup__') &&
-      this.services.configService
-    ) {
-      // 联络/唤醒是多渠道汇流的常驻单例：未显式指定 profile 时跟随全局 active，
-      // 不长期粘滞某一次的 profileId（否则微信联络切了模型仍显示 DeepSeek）。
-      // 详见 agent/SPEC.md「联络跟随全局 active 模型」。
+    } else if (this._agentId === '__wakeup__' && this.services.configService) {
       const active = this.services.configService.getActiveAiProfile()
       if (active) this.profileId = active
     }

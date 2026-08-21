@@ -79,6 +79,10 @@ class TestAgent extends Agent {
   public exposeServices() {
     return this.services
   }
+
+  public exposeProfileId() {
+    return this.profileId
+  }
   
   public exposeGetSkillSession() {
     return this.getSkillSession()
@@ -869,6 +873,58 @@ describe('Agent run method', () => {
       }
       
       expect(onError).toHaveBeenCalled()
+    })
+  })
+
+  describe('companion / wakeup profile binding', () => {
+    const completeImmediately = () => {
+      mockAiService.chatWithToolsStream.mockImplementation(
+        (_messages, _tools, _onChunk, _onToolCall, onDone) => {
+          onDone({ content: 'Done', tool_calls: undefined })
+          return Promise.resolve()
+        }
+      )
+    }
+
+    it('keeps the liaison-selected model when WeChat comes in without an explicit profile', async () => {
+      completeImmediately()
+      const config = mockServices.configService as { getActiveAiProfile: ReturnType<typeof vi.fn> }
+      config.getActiveAiProfile.mockReturnValue('local-8081')
+      agent.setAgentId('__companion__')
+      agent.updateConfig({ profileId: 'deepseek-v4-flash' })
+
+      await agent.run('from wechat', createMockContext())
+
+      expect(agent.exposeProfileId()).toBe('deepseek-v4-flash')
+      expect(mockAiService.chatWithToolsStream).toHaveBeenCalled()
+      const passedProfileId = mockAiService.chatWithToolsStream.mock.calls[0][6]
+      expect(passedProfileId).toBe('deepseek-v4-flash')
+    })
+
+    it('does not pin the default when liaison has never selected a model', async () => {
+      completeImmediately()
+      const config = mockServices.configService as { getActiveAiProfile: ReturnType<typeof vi.fn> }
+      config.getActiveAiProfile.mockReturnValue('local-8081')
+      agent.setAgentId('__companion__')
+
+      await agent.run('from wechat', createMockContext())
+
+      expect(agent.exposeProfileId()).toBeUndefined()
+      config.getActiveAiProfile.mockReturnValue('deepseek-v4-flash')
+      await agent.run('from wechat again', createMockContext())
+      expect(agent.exposeProfileId()).toBeUndefined()
+    })
+
+    it('wakeup still follows the default model when none is passed', async () => {
+      completeImmediately()
+      const config = mockServices.configService as { getActiveAiProfile: ReturnType<typeof vi.fn> }
+      config.getActiveAiProfile.mockReturnValue('local-8081')
+      agent.setAgentId('__wakeup__')
+      agent.updateConfig({ profileId: 'deepseek-v4-flash' })
+
+      await agent.run('heartbeat', createMockContext())
+
+      expect(agent.exposeProfileId()).toBe('local-8081')
     })
   })
 
