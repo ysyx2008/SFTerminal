@@ -247,11 +247,11 @@ function isDevNullPath(targetPath: string, cwd?: string): boolean {
 /**
  * 写/删类命令：根据路径分区调整风险
  *
- * userData 禁区检查对读和写都生效（读 credentials.json 也 blocked）。
- * 但只读命令（writesTo=false）不走系统路径/工作区分区判定，保持 commandLevel。
+ * userData 禁区：凭据等读+写都 blocked；日志/会话历史只拦写。
+ * 只读命令（writesTo=false）不走系统路径/工作区分区判定，保持 commandLevel。
  *
  * 写路径分级（取最严）：
- * 1. userData 禁区 -> blocked（不可恢复的应用数据，读+写都拦）
+ * 1. userData 禁区 -> blocked（写一律拦；读仅拦非只读白名单）
  * 2. 黑洞设备（/dev/null 等）-> 从写路径判定中豁免（写它们无害）
  * 3. critical 系统路径（/、/boot）-> blocked（不可逆系统灾难）
  * 4. hardened 系统路径（/etc、/dev、/sys 等）-> dangerous（弹确认放行）
@@ -276,8 +276,11 @@ export function adjustRiskByPathZones(
   const reasons: string[] = []
   const extraFreeDirs = opts?.extraFreeDirs ?? []
 
-  // userData 禁区检查：对读和写都生效（读 credentials.json 也 blocked）
-  if (allPaths.some(p => isUserDataForbidden(p, cwd))) {
+  // userData 禁区：写走写权限，读走读权限（日志/历史可读、不可改）
+  const userdataHit =
+    writePaths.some(p => isUserDataForbidden(p, cwd, 'write'))
+    || allPaths.some(p => isUserDataForbidden(p, cwd, 'read'))
+  if (userdataHit) {
     return {
       level: 'blocked',
       zones: allPaths.map(p => getWorkspaceZone(p, cwd, extraFreeDirs)),

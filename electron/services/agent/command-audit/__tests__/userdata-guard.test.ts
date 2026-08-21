@@ -70,6 +70,25 @@ describe('userdata-guard', () => {
   it('userData 外路径不拦截', () => {
     expect(isUserDataForbidden('/tmp/outside.txt')).toBe(false)
   })
+
+  it('logs 只允许读、禁止写', () => {
+    const p = path.join(mockUserData, 'logs', '2026-08-21.log')
+    expect(isUserDataForbidden(p, undefined, 'read')).toBe(false)
+    expect(isUserDataForbidden(p, undefined, 'write')).toBe(true)
+    expect(isUserDataForbidden(p)).toBe(true)
+  })
+
+  it('history 只允许读、禁止写', () => {
+    const p = path.join(mockUserData, 'history', 'agent', 'x.jsonl')
+    expect(isUserDataForbidden(p, undefined, 'read')).toBe(false)
+    expect(isUserDataForbidden(p, undefined, 'write')).toBe(true)
+  })
+
+  it('凭据即使只读也 forbidden', () => {
+    const p = path.join(mockUserData, 'credentials.json')
+    expect(isUserDataForbidden(p, undefined, 'read')).toBe(true)
+    expect(isUserDataForbidden(p, undefined, 'write')).toBe(true)
+  })
 })
 
 describe('assessCommandRisk userData forbidden paths', () => {
@@ -96,5 +115,23 @@ describe('assessCommandRisk userData forbidden paths', () => {
     const target = path.join(mockUserData, 'credentials.json')
     const level = await assessCommandRisk(`rm "${target}"`)
     expect(level).toBe('blocked')
+  })
+
+  it('cat 日志应为放行（非 blocked）', async () => {
+    const target = path.join(mockUserData, 'logs', 'today.log')
+    const level = await assessCommandRisk(`cat "${target}"`)
+    expect(level).not.toBe('blocked')
+  })
+
+  it('rm 日志应为 blocked', async () => {
+    const target = path.join(mockUserData, 'logs', 'today.log')
+    const level = await assessCommandRisk(`rm "${target}"`)
+    expect(level).toBe('blocked')
+  })
+
+  it('cat 会话历史应为放行（非 blocked）', async () => {
+    const target = path.join(mockUserData, 'history', 'agent-index.json')
+    const level = await assessCommandRisk(`cat "${target}"`)
+    expect(level).not.toBe('blocked')
   })
 })

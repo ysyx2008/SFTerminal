@@ -22,6 +22,7 @@ type BuiltInRulesView = {
     devNullExemptions: string[]
     userDataRoot: string
     userDataAllowed: string[]
+    userDataReadOnly: string[]
   }
   workspaceZones: {
     workspaceRoot: string
@@ -807,6 +808,18 @@ onUnmounted(() => {
                   <ul class="path-list">
                     <li
                       v-for="e in builtinRules.hardBlockedPaths.userDataAllowed"
+                      :key="e"
+                      class="path-list-item path-list-item--exempt"
+                    >
+                      <code>{{ e }}</code>
+                    </li>
+                  </ul>
+                </div>
+                <div class="path-list-section">
+                  <div class="path-list-label">{{ t('settings.security.builtinRules.userDataReadOnly') }}</div>
+                  <ul class="path-list">
+                    <li
+                      v-for="e in builtinRules.hardBlockedPaths.userDataReadOnly"
                       :key="e"
                       class="path-list-item path-list-item--exempt"
                     >

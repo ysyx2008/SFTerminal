@@ -18,7 +18,7 @@ import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 import type { ToolOutputBudget } from '../tool-output-budget'
 import type { CanvasData } from '@shared/types'
 import { VISION_IMAGE_EXTENSIONS, IMAGE_MIME_TYPES, CONVERTIBLE_IMAGE_EXTENSIONS } from './types'
-import { isUserDataForbidden } from '../command-audit/userdata-guard'
+import { isUserDataForbidden, type UserDataAccess } from '../command-audit/userdata-guard'
 import { isHardBlocked, riskNeedsConfirm } from '../command-audit/confirm-policy'
 import { getSystemPathSeverity, getWorkspaceZone } from '../command-audit/workspace-guard'
 import type { RiskLevel } from '@shared/types/agent'
@@ -519,9 +519,10 @@ function blockIfUserDataForbidden(
   filePath: string,
   toolName: string,
   executor: ToolExecutorConfig,
+  access: UserDataAccess = 'write',
   cwd?: string,
 ): ToolResult | null {
-  if (!isUserDataForbidden(filePath, cwd)) return null
+  if (!isUserDataForbidden(filePath, cwd, access)) return null
   return forbiddenUserDataToolResult(filePath, toolName, executor, cwd)
 }
 
@@ -586,7 +587,7 @@ export async function fileSearch(
   }
 
   if (searchPath) {
-    const blocked = blockIfUserDataForbidden(searchPath, 'file_search', executor)
+    const blocked = blockIfUserDataForbidden(searchPath, 'file_search', executor, 'read')
     if (blocked) return blocked
   }
 
@@ -1312,7 +1313,7 @@ export async function readFile(
   }
 
   {
-    const blocked = blockIfUserDataForbidden(filePath, 'read_file', executor)
+    const blocked = blockIfUserDataForbidden(filePath, 'read_file', executor, 'read')
     if (blocked) return blocked
   }
 

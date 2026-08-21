@@ -1,16 +1,15 @@
 /**
  * userData 目录访问守卫（白名单式）
  *
- * userData 下默认禁止 Agent 访问；仅显式 allow 的条目可读写。
- * 用于保护 credentials.json、agent-command-rules.json 等安全机制文件
- * （历史 agent-allowlist.json 若仍存在亦落在 userData 禁区内）。
+ * userData 下默认禁止 Agent 访问；显式 allow 的条目可读写，
+ * 只读白名单仅允许读。用于保护 credentials.json、agent-command-rules.json 等。
  */
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { resolveCommandPath } from './workspace-guard'
 
-/** userData 下显式允许 Agent 访问的条目（未列出的一律 block） */
+/** userData 下显式允许 Agent 读写的条目（未列出的一律 block） */
 export const ALLOWED_USERDATA_ENTRIES = [
   'agent-workspace',
   'skills',
@@ -18,8 +17,17 @@ export const ALLOWED_USERDATA_ENTRIES = [
   'word-styles.json',
 ] as const
 
+/** userData 下仅允许读取、禁止改删的条目 */
+export const READONLY_USERDATA_ENTRIES = [
+  'logs',
+  'history',
+] as const
+
+export type UserDataAccess = 'read' | 'write'
+
 let userDataPath: string | null = null
 let allowedAbsPaths: Set<string> = new Set()
+let readonlyAbsPaths: Set<string> = new Set()
 
 function normalizePathForCompare(p: string): string {
   let n = p.replace(/\\/g, '/')
@@ -58,30 +66,44 @@ function isUnderDirectory(filePath: string, directory: string): boolean {
   return normResolved.startsWith(normDir + '/') || normResolved === normDir
 }
 
+function rebuildAllowedPaths(root: string): void {
+  allowedAbsPaths = new Set(
+    ALLOWED_USERDATA_ENTRIES.map(e => path.join(root, e)),
+  )
+  readonlyAbsPaths = new Set(
+    READONLY_USERDATA_ENTRIES.map(e => path.join(root, e)),
+  )
+}
+
 /** 启动时调用（app.whenReady 后、bootstrap 重定向完成后） */
 export function initUserDataGuard(): void {
   const raw = app.getPath('userData')
   userDataPath = resolveRealPath(raw)
-  allowedAbsPaths = new Set(
-    ALLOWED_USERDATA_ENTRIES.map(e => path.join(userDataPath!, e)),
-  )
+  rebuildAllowedPaths(userDataPath)
 }
 
 /** 测试用：注入 userData 根路径 */
 export function setUserDataGuardForTest(root: string): void {
   userDataPath = resolveRealPath(root)
-  allowedAbsPaths = new Set(
-    ALLOWED_USERDATA_ENTRIES.map(e => path.join(userDataPath!, e)),
-  )
+  rebuildAllowedPaths(userDataPath)
 }
 
 export function resetUserDataGuardForTest(): void {
   userDataPath = null
   allowedAbsPaths = new Set()
+  readonlyAbsPaths = new Set()
 }
 
-/** 路径是否落在 userData 下且不在 allow 列表（= 禁止访问） */
-export function isUserDataForbidden(targetPath: string, cwd?: string): boolean {
+/**
+ * 路径是否落在 userData 下且当前访问方式不被允许。
+ * access 默认 write：未列入读写白名单即禁止（兼容旧调用）。
+ * 读日志 / 会话历史时传 read。
+ */
+export function isUserDataForbidden(
+  targetPath: string,
+  cwd?: string,
+  access: UserDataAccess = 'write',
+): boolean {
   if (!userDataPath) return false
 
   const abs = resolveCommandPath(targetPath, cwd)
@@ -95,6 +117,12 @@ export function isUserDataForbidden(targetPath: string, cwd?: string): boolean {
 
   for (const allowed of allowedAbsPaths) {
     if (isUnderDirectory(resolved, allowed)) return false
+  }
+
+  if (access === 'read') {
+    for (const allowed of readonlyAbsPaths) {
+      if (isUnderDirectory(resolved, allowed)) return false
+    }
   }
 
   return true

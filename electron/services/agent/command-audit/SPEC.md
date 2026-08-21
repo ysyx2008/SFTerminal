@@ -3,6 +3,12 @@
 > 命令执行风险审计模块：评估 Agent 要执行的命令是否安全。
 > 供 `exec` / `execute_command` 工具调用。
 
+## 设计目标
+
+- **日志和会话历史可以只读**：秘书要能打开应用日志和会话记录，用来回溯对话、排查消息有没有到。不能改、不能删这两处。
+- **其余应用数据仍完全不能碰**：凭据、安全规则、配置等照旧读和写都拦。不开放整个数据目录。
+- **不做第二套查询口**：已有历史搜索；再放开只读文件访问即可，不为日志另做专用接口。
+
 ## 职责
 
 1. **风险分级**：safe / moderate / dangerous / blocked
@@ -94,7 +100,7 @@ guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 stri
 
 `blocked` 表示"绝对禁止"，不受 executionMode 影响。触发条件：
 - 写 **critical 系统路径**（`/`、`/boot`）--不可逆系统灾难
-- 访问 **userData 禁区**（读+写都拦）--保护 `credentials.json` 等安全机制文件
+- 访问 **userData 禁区**（凭据等安全文件读+写都拦；日志和会话历史只允许读）
 
 写 **hardened 系统路径**（`/etc`、`/dev`、`/sys` 等）标 `dangerous`（弹确认放行），不标 `blocked`。guard 命中的间接执行模式也标 `dangerous`，不标 `blocked`。
 
@@ -124,7 +130,7 @@ Fail-Closed 的「只认绝对路径」才是可靠不变量。
 | safe | 只读，工作区内 | 确认 | 放行 | 放行 |
 | dangerous | 高危：不可逆破坏/提权/关机/防火墙/账户（dd/mkfs/sudo/reboot/iptables/userdel 等）/ 写 hardened 系统路径 / 解析失败与未知命令（strict 默认） | 确认 | 确认 | 放行 |
 | moderate | 写 protected 或 workspace 内 / 未知命令（relaxed 默认）/ 轻度写（mv/touch/chmod）/ 日常运维（pip/brew/docker/kill/systemctl/mount/crontab 等） | 确认 | 放行 | 放行 |
-| **blocked** | 写 critical 系统路径（/ /boot）或 userData 禁区 | **拒绝** | **拒绝** | **拒绝** |
+| **blocked** | 写 critical 系统路径（/ /boot）或碰 userData 禁区（含改/删日志和会话历史） | **拒绝** | **拒绝** | **拒绝** |
 
 注意：blocked 是硬墙（路径守卫），dangerous 是风险标记（guard 命中 / hardened 系统路径）。
 
@@ -156,7 +162,7 @@ Fail-Closed 的「只认绝对路径」才是可靠不变量。
 
 **黑洞设备豁免**：`/dev/null`、`/dev/stdout`、`/dev/stderr` 作为写重定向目标时直接判 safe（写它们等于丢弃或重定向输出）。命令参数中的 `/dev/null` 不受此豁免影响。
 
-**userData 禁区**：userData 下除 `agent-workspace/`、`skills/`、`excel-styles.json`、`word-styles.json` 外的路径，读+写都 blocked（保护 `credentials.json`、`agent-command-rules.json` 等安全机制文件；历史 `agent-allowlist.json` 若仍存在亦在禁区）。
+**userData 禁区**：userData 下默认读+写都 blocked（保护凭据、安全规则等）。例外：工作区与技能目录可读写；日志和会话历史只允许读，改或删仍 blocked。
 
 ## 依赖
 

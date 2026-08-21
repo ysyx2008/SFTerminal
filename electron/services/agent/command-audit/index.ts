@@ -44,9 +44,11 @@ export {
 
 export {
   ALLOWED_USERDATA_ENTRIES,
+  READONLY_USERDATA_ENTRIES,
   initUserDataGuard,
   isUserDataForbidden,
 } from './userdata-guard'
+export type { UserDataAccess } from './userdata-guard'
 
 export {
   ARGV_COMMAND_RULES,

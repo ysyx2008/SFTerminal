@@ -10,7 +10,7 @@
  * 数据源：
  * - ARGV_COMMAND_RULES（whitelist.ts）
  * - SYSTEM_PATH_PATTERNS（types.ts）
- * - ALLOWED_USERDATA_ENTRIES（userdata-guard.ts）
+ * - ALLOWED_USERDATA_ENTRIES / READONLY_USERDATA_ENTRIES（userdata-guard.ts）
  * - PROTECTED_WORKSPACE_FILES / PROTECTED_WORKSPACE_DIRS / WORKSPACE_FREE_DIRS（types.ts）
  * - 系统临时目录（workspace-guard getBuiltinTempRoots）
  * - Agent workspace 根：{userData}/agent-workspace
@@ -25,7 +25,7 @@ import {
   PROTECTED_WORKSPACE_DIRS,
   WORKSPACE_FREE_DIRS,
 } from './types'
-import { ALLOWED_USERDATA_ENTRIES } from './userdata-guard'
+import { ALLOWED_USERDATA_ENTRIES, READONLY_USERDATA_ENTRIES } from './userdata-guard'
 import { getBuiltinTempRoots } from './workspace-guard'
 import type { RiskLevel } from '@shared/types/agent'
 
@@ -54,8 +54,10 @@ export interface HardBlockedPathsView {
   devNullExemptions: string[]
   /** userData 根路径 */
   userDataRoot: string
-  /** userData 下允许 Agent 访问的条目（绝对路径） */
+  /** userData 下允许 Agent 读写的条目（绝对路径） */
   userDataAllowed: string[]
+  /** userData 下仅允许 Agent 读取的条目（绝对路径） */
+  userDataReadOnly: string[]
 }
 
 /** 工作区路径分区视图 */
@@ -113,6 +115,7 @@ export function getBuiltInRulesView(): BuiltInRulesView {
         devNullExemptions: [...DEV_NULL_EXEMPTIONS],
         userDataRoot,
         userDataAllowed: [...ALLOWED_USERDATA_ENTRIES].map(e => path.join(userDataRoot, e)),
+        userDataReadOnly: [...READONLY_USERDATA_ENTRIES].map(e => path.join(userDataRoot, e)),
       }
     })(),
     workspaceZones: (() => {
