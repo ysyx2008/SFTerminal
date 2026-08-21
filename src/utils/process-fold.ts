@@ -5,7 +5,6 @@
  * 所以不存在"冒出来又消失"。不为折叠另写摘要：动作从工具调用数出来，忙什么用它自己写下的思考。
  */
 import { parseThinking } from './thinking-block'
-import { ALWAYS_SHOW_RESULT_TOOLS, hasRichPayload } from './tool-display'
 
 export type ActionKind = 'read' | 'write' | 'edit' | 'command' | 'search' | 'browse' | 'other'
 
@@ -61,9 +60,14 @@ const PINNED_STEP_TYPES = new Set([
   'plan_archived',
 ])
 
-/** 对外发出去的：主动联系、往对话里寄东西——是产出不是过程 */
+/**
+ * 对外发出去的：主动联系、往对话里寄东西——是产出不是过程。
+ * 跟「成功结果卡是否还要画」那份名单刻意分开：那边管展开后看不看得见，这边管收不收。
+ */
 const PINNED_TOOLS = new Set<string>([
-  ...ALWAYS_SHOW_RESULT_TOOLS,
+  'talk_to_user',
+  'send_file_to_chat',
+  'send_image_to_chat',
   'send_to_chat',
 ])
 
@@ -151,21 +155,28 @@ function hasThinkingPart(step: ProcessStepLike): boolean {
   return !!parsed(step).thinking?.reasoning.trim()
 }
 
+/** 图——交给你看的东西。搜索结果、子任务进度不算，那是过程。 */
+function hasHandedOverPayload(step: ProcessStepLike): boolean {
+  if (step.images && step.images.length > 0) return true
+  if (step.echartsOption) return true
+  return false
+}
+
 /** 除了"说了话"，还有别的理由留在外面吗 */
 function pinnedBesidesSpeech(step: ProcessStepLike): boolean {
   if (PINNED_STEP_TYPES.has(step.type)) return true
   if (step.riskLevel === 'dangerous' || step.riskLevel === 'blocked') return true
   if (step.toolName && PINNED_TOOLS.has(step.toolName)) return true
-  if (hasRichPayload(step)) return true
+  if (hasHandedOverPayload(step)) return true
   return false
 }
 
 /**
- * 留在原处不收的步骤。除了要你动手的、任务级错误、对外发出的、带产出的，
+ * 留在原处不收的步骤。除了要你动手的、任务级错误、对外发出的、带图的，
  * **它说给你听的话也一律留在原处**——折叠行因此永远落在这段过程原来的位置，
  * 展开与否，读到的顺序都和它当时干活的顺序一样。
  *
- * 刻意不在此列的：过程中某次工具失败、正在跑的工具、还在流的思考——
+ * 刻意不在此列的：过程中某次工具失败、正在跑的工具、还在流的思考、搜索结果、子任务进度——
  * 这些全是过程，收进那一行里，跑着的时候由那一行代为播报。
  */
 export function isPinnedProcessStep(step: ProcessStepLike): boolean {

@@ -13,8 +13,8 @@
  * - ALWAYS_SHOW_RESULT_TOOLS: 少数 tool_result 含用户必看独立产出的工具——成功时也展示结果卡
  *
  * 失败的步骤（step.success === false）始终展示，让用户立刻看到错误。
- * 携带 images / webSearchResults / subAgents 等专用富内容字段的 step 也始终展示
- * （这些字段本身就是用户期望看到的产出）。
+ * 携带 images / webSearchResults / subAgents 等专用富内容字段的 step 也始终保留
+ * （折叠收起时不占地方，点开那一行还要画得出来）。
  *
  * 维护说明：新增工具时默认无需登记——成功 tool_result 自动隐藏。
  * 若某工具的 tool_result 有独立于 tool_call 的用户必看产出，加入 ALWAYS_SHOW_RESULT_TOOLS。
@@ -43,8 +43,8 @@ export const ALWAYS_SHOW_RESULT_TOOLS = new Set<string>([
 ])
 
 /**
- * tool_result step 是否携带了富内容字段——这些字段本身就是用户期望看到的产出，
- * 整条 step 不能因为 debugMode 关闭而被隐藏。
+ * tool_result step 是否携带了富内容字段——折叠收起时不占地方，
+ * 但点开还要画，所以不能因为 debugMode 关闭而被丢掉。
  */
 export function hasRichPayload(step: {
   images?: unknown[]
@@ -88,7 +88,7 @@ export function shouldShowToolResultStep(
   if (debugMode) return true
   // 用专用 step type 呈现的工具（如 plan / ask_user / wait）：tool_call + tool_result 都隐藏。
   if (step.toolName && TOOLS_WITH_DEDICATED_STEP_TYPE.has(step.toolName)) return false
-  // 携带富内容字段的 step 始终展示（图片视觉、搜索结果、子 Agent 卡片）
+  // 携带富内容字段的 step 始终保留（点开折叠还要画图、搜索结果、子任务进度）
   if (hasRichPayload(step)) return true
   // tool_result：非调试模式下默认隐藏（tool_call 绿条已表达成功）；仅 ALWAYS_SHOW 例外
   if (step.type === 'tool_result') {

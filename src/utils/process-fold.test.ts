@@ -60,6 +60,9 @@ describe('isPinnedProcessStep', () => {
     expect(isPinnedProcessStep(step({ id: 'd', type: 'tool_call', toolName: 'exec', riskLevel: 'dangerous' }))).toBe(true)
     expect(isPinnedProcessStep(step({ id: 'e', type: 'tool_call', toolName: 'talk_to_user' }))).toBe(true)
     expect(isPinnedProcessStep(step({ id: 'f', type: 'tool_call', toolName: 'x', echartsOption: {} }))).toBe(true)
+    expect(isPinnedProcessStep(step({ id: 'g', type: 'tool_call', toolName: 'send_file_to_chat' }))).toBe(true)
+    expect(isPinnedProcessStep(step({ id: 'h', type: 'tool_call', toolName: 'send_image_to_chat' }))).toBe(true)
+    expect(isPinnedProcessStep(step({ id: 'i', type: 'tool_call', toolName: 'send_to_chat' }))).toBe(true)
   })
 
   it('keeps out anything it says to you, so fold rows stay in place', () => {
@@ -74,6 +77,21 @@ describe('isPinnedProcessStep', () => {
   it('takes the step in flight inside — the fold row speaks for it while it runs', () => {
     expect(isPinnedProcessStep(step({ id: 'a', type: 'tool_call', toolName: 'read_file', success: undefined }))).toBe(false)
     expect(isPinnedProcessStep(step({ id: 'b', type: 'thinking', isStreaming: true }))).toBe(false)
+  })
+
+  it('takes search results and sub-task progress inside — those are process, not something it hands you', () => {
+    expect(isPinnedProcessStep(step({
+      id: 's',
+      type: 'tool_result',
+      toolName: 'web_search',
+      webSearchResults: [{ title: 'x' }],
+    }))).toBe(false)
+    expect(isPinnedProcessStep(step({
+      id: 'd',
+      type: 'tool_call',
+      toolName: 'dispatch_agents',
+      subAgents: [{ id: 'sa1', status: 'running' }],
+    }))).toBe(false)
   })
 })
 
@@ -195,6 +213,28 @@ describe('foldProcessSteps', () => {
     const segs = foldProcessSteps(steps, { enabled: true })
     expect(segs.map(s => s.kind)).toEqual(['open'])
     expect(segs[0].steps.map(ref => ref.part)).toEqual(['full'])
+  })
+
+  it('folds search results and sub-task progress with the rest of the work', () => {
+    const steps = [
+      thinkingMessage('m1', '先搜再分派'),
+      step({ id: 't1', type: 'tool_call', toolName: 'web_search' }),
+      step({
+        id: 'r1',
+        type: 'tool_result',
+        toolName: 'web_search',
+        webSearchResults: [{ title: 'a' }, { title: 'b' }],
+      }),
+      step({
+        id: 'd1',
+        type: 'tool_call',
+        toolName: 'dispatch_agents',
+        subAgents: [{ id: 'sa1', status: 'running' }],
+      }),
+    ]
+    const segs = foldProcessSteps(steps, { enabled: true })
+    expect(segs.map(s => s.kind)).toEqual(['fold'])
+    expect(readingOrder(segs)).toEqual(steps.map(s => s.id))
   })
 
   it('marks the stretch in flight as live and says what it is busy with', () => {
