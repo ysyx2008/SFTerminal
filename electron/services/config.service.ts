@@ -151,6 +151,8 @@ interface StoreSchema {
   mcpServers: McpServerConfig[]
   agentMbti: AgentMbtiType
   agentDebugMode: boolean
+  /** 助手埋头干活的那几步是否收成一行（点开仍可看全过程） */
+  foldAgentProcess: boolean
   /** 崩溃后是否主动提示（用户可在提示里勾选永久关闭） */
   crashNotifyEnabled: boolean
   knowledgeSettings: KnowledgeSettings
@@ -276,6 +278,7 @@ const defaultConfig: StoreSchema = {
   mcpServers: [],
   agentMbti: null,
   agentDebugMode: false,
+  foldAgentProcess: true,
   crashNotifyEnabled: true,
   knowledgeSettings: DEFAULT_KNOWLEDGE_SETTINGS,
   setupCompleted: false,

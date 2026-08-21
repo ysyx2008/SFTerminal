@@ -16,6 +16,7 @@ import { createLogger } from '../utils/logger'
 import { isAssistantConversationSurfaceVisible } from '../utils/agent-tab-ui-meta'
 import { useTts } from './useTts'
 import { shouldShowToolResultStep } from '../utils/tool-display'
+import { foldProcessSteps, type ProcessFoldView } from '../utils/process-fold'
 import { estimateMessageStepVirtualSize } from '../utils/thinking-block'
 import { resolveWorkbenchAgentPrompt, resolveWorkbenchKind } from '../workbench'
 import { showConfirm, showAlert } from './useConfirm'
@@ -101,9 +102,13 @@ export interface FollowUpQueueViewItem {
 
 export interface VirtualItem {
   id: string
-  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'proactive_notice' | 'confirm' | 'waiting_input'
+  type: 'user_task' | 'step' | 'final_result' | 'proactive_message' | 'proactive_notice' | 'confirm' | 'waiting_input' | 'folded_turn'
   group?: AgentTaskGroup
   step?: AgentStep
+  fold?: ProcessFoldView
+  expanded?: boolean
+  /** 折叠行点开后要显示的步骤。渲染在折叠行自己这一格里，高度才好平滑撑开 */
+  children?: VirtualItem[]
   content?: string
   size: number
   isFirstStep?: boolean
@@ -220,6 +225,7 @@ export function useAgentMode(
   const commandTimeout = ref(10)     // 命令超时时间（秒），默认 10 秒
   const activeProfileId = ref<string>(configStore.activeAiProfileId || '')  // 当前终端选择的 AI 配置档案 ID（每个终端独立，初始值继承全局设置）
   const collapsedTaskIds = ref<Set<string>>(new Set())  // 已折叠的任务 ID
+  const expandedProcessFoldIds = ref<Set<string>>(new Set())
 
   // 清理事件监听的函数
   let cleanupStepListener: (() => void) | null = null
@@ -951,6 +957,13 @@ export function useAgentMode(
     return collapsedTaskIds.value.has(taskId)
   }
 
+  const toggleProcessFold = (foldId: string) => {
+    const next = new Set(expandedProcessFoldIds.value)
+    if (next.has(foldId)) next.delete(foldId)
+    else next.add(foldId)
+    expandedProcessFoldIds.value = next
+  }
+
   // 获取当前 tab 对应的 Agent 标识符（agentKey）。
   //
   // 概念模型：一个 tab = 一个 Agent + N 个终端窗格。
@@ -1131,18 +1144,45 @@ export function useAgentMode(
         // 调试模式 OFF 时，隐藏"成功且无用户必看产出"的 tool_call / tool_result step
         const debugMode = configStore.agentDebugMode
         const visibleSteps = group.steps.filter(s => shouldShowToolResultStep(s, debugMode))
-        for (let i = 0; i < visibleSteps.length; i++) {
-          const step = visibleSteps[i]
+        const segments = foldProcessSteps(visibleSteps, {
+          enabled: !debugMode && configStore.foldAgentProcess,
+        })
+
+        let emittedFirst = false
+        const toStepItem = (step: AgentStep, isFirst: boolean): VirtualItem => {
           if (step.type === 'proactive_notice') {
-            items.push({ id: step.id, type: 'proactive_notice', step, group, size: 80 })
-            continue
+            return { id: step.id, type: 'proactive_notice', step, group, size: 80 }
           }
-          const isFirst = i === 0
           const size = step.type === 'message'
             ? estimateMessageStepVirtualSize(step)
             : step.type === 'user_supplement' ? 60
             : step.type === 'asking' ? 120 : isFirst ? 46 : 40
-          items.push({ id: step.id, type: 'step', step, group, size, isFirstStep: isFirst })
+          return { id: step.id, type: 'step', step, group, size, isFirstStep: isFirst }
+        }
+        const pushStepItem = (step: AgentStep) => {
+          const isFirst = !emittedFirst && step.type !== 'proactive_notice'
+          emittedFirst = true
+          items.push(toStepItem(step, isFirst))
+        }
+
+        for (const seg of segments) {
+          if (seg.kind === 'open') {
+            for (const s of seg.steps) pushStepItem(s as AgentStep)
+            continue
+          }
+          const isFirst = !emittedFirst
+          emittedFirst = true
+          items.push({
+            id: seg.fold.id,
+            type: 'folded_turn',
+            group,
+            fold: seg.fold,
+            expanded: expandedProcessFoldIds.value.has(seg.fold.id),
+            // 折叠内的步骤不平铺到列表，挂在折叠行下面，展开时高度才能平滑撑开
+            children: seg.steps.map(s => toStepItem(s as AgentStep, false)),
+            size: 30,
+            isFirstStep: isFirst,
+          })
         }
       }
 
@@ -2452,6 +2492,7 @@ export function useAgentMode(
     isStreamingOutput,
     toggleStepsCollapse,
     isStepsCollapsed,
+    toggleProcessFold,
     runAgent,
     abortAgent,
     followUpQueueView,

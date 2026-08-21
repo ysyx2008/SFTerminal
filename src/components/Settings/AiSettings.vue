@@ -667,6 +667,24 @@ const openKeyUrl = (url: string) => {
         {{ t('aiSettings.autoFailoverModelDesc') }}
       </p>
     </div>
+
+    <!-- 自动收起过程 -->
+    <div class="settings-section">
+      <div class="section-header">
+        <h4>{{ t('aiSettings.foldAgentProcess') }}</h4>
+        <label class="toggle-switch">
+          <input
+            type="checkbox"
+            :checked="configStore.foldAgentProcess"
+            @change="configStore.setFoldAgentProcess(($event.target as HTMLInputElement).checked)"
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p class="section-desc">
+        {{ t('aiSettings.foldAgentProcessDesc') }}
+      </p>
+    </div>
   </div>
 </template>
 

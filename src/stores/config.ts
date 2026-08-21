@@ -407,6 +407,8 @@ export const useConfigStore = defineStore('config', () => {
   const autoVisionModel = ref<boolean>(true)
   // 自动切换可用模型（失败后从列表第一个开始换，只改这场对话）
   const autoFailoverModel = ref<boolean>(true)
+  // 自动收起过程（它埋头干活的那几步收成一行，点开可看全）
+  const foldAgentProcess = ref<boolean>(true)
 
   // TTS 语音合成设置
   const ttsSettings = ref<import('@shared/types').TtsSettings>({
@@ -443,6 +445,7 @@ export const useConfigStore = defineStore('config', () => {
         savedAgentName, savedAgentAvatar, savedLogLevel, savedTerminalSettings,
         accounts, savedShortcuts, savedAutoVision, savedAutoFailover, calAccounts, savedTtsSettings, savedWebSearchSettings,
         themeMode, sysScheme, savedPinnedConversationIds, savedConversationDisplayTitles,
+        savedFoldAgentProcess,
       ] = await Promise.all([
         window.electronAPI.config.getAiProfiles(),
         window.electronAPI.config.getActiveAiProfile(),
@@ -476,6 +479,7 @@ export const useConfigStore = defineStore('config', () => {
         window.electronAPI.config.getSystemColorScheme(),
         window.electronAPI.config.get('pinnedConversationIds') as Promise<string[] | undefined>,
         window.electronAPI.config.get('conversationDisplayTitles') as Promise<Record<string, string> | undefined>,
+        window.electronAPI.config.get('foldAgentProcess') as Promise<boolean | undefined>,
       ])
 
       // 批量赋值
@@ -516,6 +520,7 @@ export const useConfigStore = defineStore('config', () => {
       }
       autoVisionModel.value = savedAutoVision ?? true
       autoFailoverModel.value = savedAutoFailover ?? true
+      foldAgentProcess.value = savedFoldAgentProcess ?? true
       calendarAccounts.value = calAccounts || []
       if (savedTtsSettings && typeof savedTtsSettings === 'object') {
         ttsSettings.value = { ...ttsSettings.value, ...savedTtsSettings }
@@ -791,6 +796,11 @@ export const useConfigStore = defineStore('config', () => {
   async function setAutoFailoverModel(enabled: boolean): Promise<void> {
     autoFailoverModel.value = enabled
     await window.electronAPI.config.set('autoFailoverModel', enabled)
+  }
+
+  async function setFoldAgentProcess(enabled: boolean): Promise<void> {
+    foldAgentProcess.value = enabled
+    await window.electronAPI.config.set('foldAgentProcess', enabled)
   }
 
   // ==================== 首次设置向导 ====================
@@ -1176,6 +1186,8 @@ export const useConfigStore = defineStore('config', () => {
     agentDebugMode,
     autoVisionModel,
     autoFailoverModel,
+    foldAgentProcess,
+    setFoldAgentProcess,
     setupCompleted,
     agentOnboardingCompleted,
     agentOnboardingShown,

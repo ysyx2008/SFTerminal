@@ -46,7 +46,7 @@ export const ALWAYS_SHOW_RESULT_TOOLS = new Set<string>([
  * tool_result step 是否携带了富内容字段——这些字段本身就是用户期望看到的产出，
  * 整条 step 不能因为 debugMode 关闭而被隐藏。
  */
-function hasRichPayload(step: {
+export function hasRichPayload(step: {
   images?: unknown[]
   echartsOption?: unknown
   webSearchResults?: unknown[]

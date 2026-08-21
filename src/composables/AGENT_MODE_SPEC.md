@@ -1,6 +1,6 @@
 # useAgentMode 组合式函数 SPEC
 
-> Last verified: 2026-07-03（agent:running 桌面同步、proactive_notice 分组）  
+> Last verified: 2026-08-21（长任务过程折叠）  
 > 文件：`src/composables/useAgentMode.ts`  
 > 职责：管理单个 AiPanel（tab）的 Agent 运行生命周期、步骤分组、IPC 事件路由。
 
@@ -96,6 +96,10 @@ isEventForThisTab = resolvedTabId === currentTabId
   confirm        → 不进入 group（由 pendingConfirm 单独管理）
   其他 step      → 追加到当前 group.steps
 ```
+
+### 过程折叠（flattenedItems）
+
+每一截埋头干活的过程就地收成一条折叠行，折叠行落在这段过程原来的位置，任何任务都收、跑着的时候也收——那一行代为播报它在忙什么并走秒，做完原地换成做了什么。留在外面的只有：要用户动手的（问问题、等密码、要确认危险命令）、任务级错误、对外发出去的、带图/搜索/子任务产出的，以及它说给用户听的每一句话；过程中某次工具失败不算，收进去。因此展开与否，读到的顺序不变。折叠内的步骤挂在折叠行这一格里而不是平铺到列表，展开时高度才能平滑撑开。调试模式或用户关掉自动收起时不折。
 
 ### isCurrentTask 标记
 

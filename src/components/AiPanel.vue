@@ -18,6 +18,9 @@ import AiComposer from './AiComposer.vue'
 import DropOverlay from './DropOverlay.vue'
 import AiProfileSelect from './AiProfileSelect.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
+import ProcessTurnFold from './ProcessTurnFold.vue'
+import { createReusableTemplate } from '../utils/reusable-template'
+import { hasSpokenBody } from '../utils/process-fold'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
 import AttachmentContextMenu from './AttachmentContextMenu.vue'
@@ -46,6 +49,7 @@ import {
   SPEECH_PACK_NOT_INSTALLED,
   toast
 } from '../composables'
+import type { VirtualItem } from '../composables/useAgentMode'
 import { mermaidSvgToDataUrl } from '../composables/useMarkdown'
 import { showConfirm, showAlert } from '../composables/useConfirm'
 import { planComposerPaste, ingestComposerAttachments } from '../composables/useComposerPaste'
@@ -95,6 +99,9 @@ const isCompanionTab = computed(() => {
   const tab = terminalStore.tabs.find(t => t.id === props.tabId)
   return tab?.type === 'assistant' && tab?.agentId === COMPANION_AGENT_KEY
 })
+
+// 步骤行模板：列表里平铺一份，折叠行内部再用一份，作用域不变
+const [DefineStepRow, ReuseStepRow] = createReusableTemplate<{ item: VirtualItem }>()
 
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
@@ -227,16 +234,19 @@ const toggleThinkingExpand = async (stepId: string, anchorEl?: HTMLElement) => {
 // 任务完成尾注的显示条件：group 完成（finalResult 存在且非失败/中断）+ 当前是 group 内最后一个
 // 可见的 message step。把"✓ 任务完成"作为最后一个 message step 的内部尾巴渲染，避免单独成 item
 // 引起列表重排跳动。
-const shouldShowTaskCompleteFooter = (item: { step?: { id: string; type: string }; group?: { finalResult?: string; steps: Array<{ id: string; type: string }> } }): boolean => {
+const shouldShowTaskCompleteFooter = (item: { step?: AgentStep; group?: { finalResult?: string; steps: AgentStep[] } }): boolean => {
   if (!item.step || !item.group) return false
   const finalResult = item.group.finalResult
   if (!finalResult) return false
   // 失败/中断有独立卡片显示错误信息，不在 message step 上重复尾注
   if (finalResult.startsWith('❌') || finalResult.startsWith('⚠️')) return false
-  // 仅在 group 内最后一个 message step 上显示尾注
+  // 尾注要挂在最后一句「它说给用户听的话」上——只在想的 message 会被收进折叠行，
+  // 挂上去就跟着藏进抽屉了。一句都没说过时退回最后一个 message step。
   const messageSteps = item.group.steps.filter(s => s.type === 'message')
   if (messageSteps.length === 0) return false
-  return messageSteps[messageSteps.length - 1].id === item.step.id
+  const spoken = messageSteps.filter(s => hasSpokenBody(s))
+  const anchor = spoken.length > 0 ? spoken[spoken.length - 1] : messageSteps[messageSteps.length - 1]
+  return anchor.id === item.step.id
 }
 
 const taskCompleteFooterLabels = new Map<string, string>()
@@ -647,6 +657,7 @@ const {
   currentPlan,
   agentTaskGroups,
   flattenedItems,
+  toggleProcessFold,
   runAgent,
   abortAgent,
   followUpQueueView,
@@ -1936,6 +1947,27 @@ const scrollHistoryToBottom = () => {
  * 由岗壳（如 AssistantWorkbench）经 ref 调用；产出物「跳到生成处」走此接口。
  */
 async function scrollToAgentStep(stepId: string) {
+  // 目标可能收在某条折叠行里：先把那行点开，再滚到它所在的那一格
+  const foldedIndex = flattenedItems.value.findIndex(
+    item => item.type === 'folded_turn' && item.fold?.stepIds.includes(stepId)
+  )
+  if (foldedIndex >= 0) {
+    const folded = flattenedItems.value[foldedIndex]
+    if (folded.fold && !folded.expanded) {
+      toggleProcessFold(folded.fold.id)
+      await nextTick()
+    }
+    await nextTick()
+    scrollerRef.value?.scrollToIndex?.(foldedIndex)
+    highlightedSourceStepId.value = stepId
+    window.setTimeout(() => {
+      if (highlightedSourceStepId.value === stepId) {
+        highlightedSourceStepId.value = null
+      }
+    }, 2500)
+    return
+  }
+
   const index = flattenedItems.value.findIndex(
     item => item.type === 'step' && item.step?.id === stepId
   )
@@ -2308,94 +2340,17 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
               @close="closeHistoryModal"
             />
 
-          <Virtualizer
-            ref="virtuaRef"
-            :data="flattenedItems"
-            :item-size="48"
-            :buffer-size="400"
-          >
-            <template #default="{ item, index }">
-              <div :key="item.id" :data-index="index">
-              <!-- 主动消息（talk_to_user）— 历史格式 user_task __proactive__ + final_result -->
-              <div v-if="item.type === 'proactive_message'" class="message assistant">
-                <div class="message-wrapper">
-                  <div class="message-content markdown-content" v-html="renderMarkdown(item.group!.finalResult!)"></div>
-                  <div v-if="canShowGroupMenu(item.group)" class="agent-final-footer agent-final-footer--proactive">
-                    <button
-                      type="button"
-                      class="agent-group-menu-trigger"
-                      :class="{ 'is-open': openGroupMenuId === item.group!.id }"
-                      :title="t('ai.fork.tooltip')"
-                      @click.stop="toggleGroupMenu(item.group, $event)"
-                    >
-                      <MoreHorizontal :size="14" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 主动消息（talk_to_user）— 新格式 proactive_notice step -->
-              <div v-else-if="item.type === 'proactive_notice'" class="message assistant">
-                <div class="message-wrapper">
-                  <div class="message-content markdown-content" v-html="renderMarkdown(item.step?.content ?? '')"></div>
-                </div>
-              </div>
-
-              <!-- 用户任务 -->
-              <div v-else-if="item.type === 'user_task'" class="message user">
-                <div class="message-wrapper">
-                  <div class="message-content">
-                    <span class="user-task-text">{{ item.group!.userTask }}</span>
-                    <div v-if="item.group!.images && item.group!.images.length > 0" class="message-images">
-                      <img
-                        v-for="(imgUrl, imgIdx) in item.group!.images"
-                        :key="imgIdx"
-                        :src="imgUrl"
-                        class="message-image"
-                        @click="openImagePreview(imgUrl)"
-                        @contextmenu="openImageContextMenu($event, imgUrl)"
-                      />
-                    </div>
-                    <div 
-                      v-for="hint in getPreviewHints(item.group!.attachments)"
-                      :key="hint.filename"
-                      class="image-preview-hint"
-                    >
-                      仅预览前 {{ hint.previewPages }} 页（共 {{ hint.totalPages }} 页）
-                    </div>
-                    <div v-if="item.group!.attachments && item.group!.attachments.length > 0" class="message-attachments">
-                      <span 
-                        v-for="(file, fileIdx) in item.group!.attachments" 
-                        :key="fileIdx" 
-                        class="attachment-chip"
-                        :class="{ clickable: !!file.filePath }"
-                        :title="file.filePath || file.filename"
-                        role="button"
-                        tabindex="0"
-                        @click="openAttachmentFile(file)"
-                        @keydown.enter.prevent="openAttachmentFile(file)"
-                        @keydown.space.prevent="openAttachmentFile(file)"
-                        @contextmenu="openAttachmentContextMenu($event, file)"
-                      >
-                        <AttachmentFileIcon :file-type="file.fileType" :filename="file.filename" :size="15" />
-                        <span class="attachment-name">{{ file.filename }}</span>
-                        <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!--
-                单个步骤
-                tool_call 步骤的左竖条按"执行结果"着色：
-                  - success === undefined  → 灰色占位（risk-pending），覆盖"流式生成 + 工具执行中"整段未完成期
-                  - success === true       → 绿色（exec-success）
-                  - success === false      → 红色（exec-failed）
-                其他步骤类型保持现有风险色。
-              -->
+          <!--
+            单个步骤。同一段模板既要平铺在列表里、也要出现在折叠行内部，所以定义一次、两处复用；
+            拆成独立组件的话，得把上百个局部函数与状态当 props 外挂。
+            tool_call 步骤的左竖条按"执行结果"着色：
+              - success === undefined  → 灰色占位（risk-pending），覆盖"流式生成 + 工具执行中"整段未完成期
+              - success === true       → 绿色（exec-success）
+              - success === false      → 红色（exec-failed）
+            其他步骤类型保持现有风险色。
+          -->
+          <DefineStepRow v-slot="{ item }">
               <div
-                v-else-if="item.type === 'step'"
                 class="agent-step-virtual"
                 :class="{
                   'first-step': item.isFirstStep,
@@ -2649,6 +2604,102 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                   </div>
                 </div>
               </div>
+          </DefineStepRow>
+
+          <Virtualizer
+            ref="virtuaRef"
+            :data="flattenedItems"
+            :item-size="48"
+            :buffer-size="400"
+          >
+            <template #default="{ item, index }">
+              <div :key="item.id" :data-index="index">
+              <!-- 主动消息（talk_to_user）— 历史格式 user_task __proactive__ + final_result -->
+              <div v-if="item.type === 'proactive_message'" class="message assistant">
+                <div class="message-wrapper">
+                  <div class="message-content markdown-content" v-html="renderMarkdown(item.group!.finalResult!)"></div>
+                  <div v-if="canShowGroupMenu(item.group)" class="agent-final-footer agent-final-footer--proactive">
+                    <button
+                      type="button"
+                      class="agent-group-menu-trigger"
+                      :class="{ 'is-open': openGroupMenuId === item.group!.id }"
+                      :title="t('ai.fork.tooltip')"
+                      @click.stop="toggleGroupMenu(item.group, $event)"
+                    >
+                      <MoreHorizontal :size="14" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 主动消息（talk_to_user）— 新格式 proactive_notice step -->
+              <div v-else-if="item.type === 'proactive_notice'" class="message assistant">
+                <div class="message-wrapper">
+                  <div class="message-content markdown-content" v-html="renderMarkdown(item.step?.content ?? '')"></div>
+                </div>
+              </div>
+
+              <!-- 用户任务 -->
+              <div v-else-if="item.type === 'user_task'" class="message user">
+                <div class="message-wrapper">
+                  <div class="message-content">
+                    <span class="user-task-text">{{ item.group!.userTask }}</span>
+                    <div v-if="item.group!.images && item.group!.images.length > 0" class="message-images">
+                      <img
+                        v-for="(imgUrl, imgIdx) in item.group!.images"
+                        :key="imgIdx"
+                        :src="imgUrl"
+                        class="message-image"
+                        @click="openImagePreview(imgUrl)"
+                        @contextmenu="openImageContextMenu($event, imgUrl)"
+                      />
+                    </div>
+                    <div 
+                      v-for="hint in getPreviewHints(item.group!.attachments)"
+                      :key="hint.filename"
+                      class="image-preview-hint"
+                    >
+                      仅预览前 {{ hint.previewPages }} 页（共 {{ hint.totalPages }} 页）
+                    </div>
+                    <div v-if="item.group!.attachments && item.group!.attachments.length > 0" class="message-attachments">
+                      <span 
+                        v-for="(file, fileIdx) in item.group!.attachments" 
+                        :key="fileIdx" 
+                        class="attachment-chip"
+                        :class="{ clickable: !!file.filePath }"
+                        :title="file.filePath || file.filename"
+                        role="button"
+                        tabindex="0"
+                        @click="openAttachmentFile(file)"
+                        @keydown.enter.prevent="openAttachmentFile(file)"
+                        @keydown.space.prevent="openAttachmentFile(file)"
+                        @contextmenu="openAttachmentContextMenu($event, file)"
+                      >
+                        <AttachmentFileIcon :file-type="file.fileType" :filename="file.filename" :size="15" />
+                        <span class="attachment-name">{{ file.filename }}</span>
+                        <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-else-if="item.type === 'folded_turn' && item.fold"
+                class="agent-step-virtual"
+                :class="{ 'first-step': item.isFirstStep }"
+              >
+                <ProcessTurnFold
+                  :fold="item.fold"
+                  :expanded="item.expanded"
+                  @toggle="toggleProcessFold(item.fold.id)"
+                >
+                  <ReuseStepRow v-for="child in item.children" :key="child.id" :item="child" />
+                </ProcessTurnFold>
+              </div>
+
+              <ReuseStepRow v-else-if="item.type === 'step'" :item="item" />
+
 
               <!-- 最终结果：仅失败 / 中断时渲染独立卡片（含错误信息）；
                    成功时不渲染——message step 已经完整呈现思考块 + 正文，
@@ -3435,6 +3486,16 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .agent-step-virtual {
   padding: 0 14px 4px;
   border-left: 2px solid rgba(255, 255, 255, 0.06);
+}
+
+/* 折叠行内部的步骤：竖线与缩进已由折叠行自己画，这里不再重复。
+   写成两条同级选择器是为了压过后面 .standalone-mode 的 margin-left。 */
+.process-fold__steps .agent-step-virtual,
+.standalone-mode .process-fold__steps .agent-step-virtual {
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: 0;
+  border-left: none;
 }
 
 .agent-step-virtual.agent-step-source-highlight {
