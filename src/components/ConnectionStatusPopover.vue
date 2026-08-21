@@ -382,13 +382,16 @@ const closePopover = () => {
   if (gatewayPollTimer) { clearInterval(gatewayPollTimer); gatewayPollTimer = null }
 }
 
-const handleClickOutside = (e: MouseEvent) => {
+/** 捕获阶段听按下：秘书菜单等处的 stop 拦不住，进设置也能收起来 */
+const handlePointerDownOutside = (e: PointerEvent) => {
   if (!showPopover.value) return
-  const target = e.target as Node
-  if (popoverRef.value && !popoverRef.value.contains(target) &&
-      buttonRef.value && !buttonRef.value.contains(target)) {
+  const target = e.target
+  if (!(target instanceof Node)) {
     closePopover()
+    return
   }
+  if (popoverRef.value?.contains(target) || buttonRef.value?.contains(target)) return
+  closePopover()
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
@@ -424,7 +427,7 @@ onMounted(async () => {
     applyBrowserBridgeStatus(next)
   })
 
-  document.addEventListener('click', handleClickOutside)
+  document.addEventListener('pointerdown', handlePointerDownOutside, true)
   document.addEventListener('keydown', handleKeydown)
 })
 
@@ -435,7 +438,7 @@ onUnmounted(() => {
   unsubMcpError?.()
   unsubBrowserBridge?.()
   if (gatewayPollTimer) clearInterval(gatewayPollTimer)
-  document.removeEventListener('click', handleClickOutside)
+  document.removeEventListener('pointerdown', handlePointerDownOutside, true)
   document.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('resize', updateSidebarPosition)
 })
