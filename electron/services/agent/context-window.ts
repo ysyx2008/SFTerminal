@@ -121,6 +121,21 @@ export class ContextWindowManager {
   private _proactiveCompressStalled = false
   /** 上一轮实测的 system prompt 规模，用于预算分配（见 getFixedPrefixTokens） */
   private _lastSystemPromptTokens?: number
+  /** _lastSystemPromptTokens 是在哪个 profile + 模式下测的（换了就作废） */
+  private _lastSystemPromptScope?: string
+
+  /**
+   * 新任务开始时重置逐任务状态。
+   *
+   * 本对象由 Agent 持有、跨所有 run 复用,「压不动」这类判定必须按任务清零——
+   * 否则某个任务压不动会让**整个会话**永久失去主动压缩能力,只剩紧急压缩兜底,
+   * 而对超限默默截断的 provider 那条兜底等于没有。
+   *
+   * `_enabled`（上下文管理工具是否可用）刻意不清:它一旦激活就不回退。
+   */
+  resetForNewRun(): void {
+    this._proactiveCompressStalled = false
+  }
 
   constructor(private deps: ContextWindowDeps) {}
 
@@ -188,14 +203,29 @@ export class ContextWindowManager {
    *
    * system prompt 自身含历史摘要,与预算互为因果,所以取**上一轮实测值**打破
    * 循环——同一 Agent 内它高度稳定,首轮用保守缺省。
+   *
+   * 注意这里对历史留了双重余量:读数含 system prompt 里的历史摘要,而预算又单独
+   * 给历史切了一份。刻意不去精确拆分——方向是保守的(历史宁可少塞不超发),而按
+   * 段落拆解 system prompt 只会换来易错的复杂度。别当 bug 修。
    */
-  getFixedPrefixTokens(): number {
-    return this.estimateFixedOverheadTokens() + (this._lastSystemPromptTokens ?? DEFAULT_SYSTEM_PROMPT_TOKENS)
+  getFixedPrefixTokens(scope?: string): number {
+    const systemPromptTokens =
+      this._lastSystemPromptTokens !== undefined && this._lastSystemPromptScope === scope
+        ? this._lastSystemPromptTokens
+        : DEFAULT_SYSTEM_PROMPT_TOKENS
+    return this.estimateFixedOverheadTokens() + systemPromptTokens
   }
 
-  /** 记下本轮 system prompt 的实测规模,供下一轮预算分配使用。 */
-  recordSystemPromptTokens(systemPrompt: string): void {
+  /**
+   * 记下本轮 system prompt 的规模（估算值,非 API 真值）,供下一轮预算分配使用。
+   *
+   * `scope` 标识这个读数是在哪个 profile + 终端模式下取的。换了 profile 或模式
+   * （local/ssh/assistant 的 system prompt 规模差异可达数千 tokens）后读数不再适用,
+   * 下次会退回缺省值重新自校准,而不是拿旧配置的规模去切新配置的预算。
+   */
+  recordSystemPromptTokens(systemPrompt: string, scope?: string): void {
     this._lastSystemPromptTokens = this.estimateTokens(systemPrompt)
+    this._lastSystemPromptScope = scope
   }
 
   /**
@@ -451,10 +481,12 @@ export class ContextWindowManager {
    */
   shouldProactiveCompress(run: AgentRun): boolean {
     if (this._proactiveCompressStalled) return false  // 上次压不动，不再空转
-    const lastPromptTokens = this.deps.getLastPromptTokens()
-    if (lastPromptTokens === undefined) return false  // 无真实值，不赌估算
+    // 必须有真实锚点：冷启动首轮不赌纯估算，避免刚建好的上下文被误压
+    if (this.deps.getLastPromptTokens() === undefined) return false
     const contextLength = this.getContextLength()
-    return lastPromptTokens >= contextLength * ContextWindowManager.PROACTIVE_THRESHOLD
+    // 判断值含本轮新增：锚点只反映上一轮请求的规模，单步塞进一大段 tool 输出时
+    // 实际已经超限而锚点还停在阈值下——只看锚点会滞后一轮，压缩赶不上超限。
+    return this.estimateCurrentPromptTokens(run.messages) >= contextLength * ContextWindowManager.PROACTIVE_THRESHOLD
   }
 
   /**

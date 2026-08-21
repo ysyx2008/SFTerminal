@@ -1500,6 +1500,9 @@ export abstract class Agent {
    * 构建执行上下文
    */
   protected async buildContext(run: AgentRun, message: string): Promise<void> {
+    // 逐任务状态清零（如「主动压缩压不动」的判定）——ContextWindowManager 跨 run 复用
+    this._contextWindow.resetForNewRun()
+
     // ── Cache-optimized path ──
     // 同一 session 内，直接沿用上一个任务的完整 messages 作为前缀，只追加新 user 消息。
     // LLM 的前缀缓存（Anthropic explicit / DeepSeek·OpenAI automatic）可命中整段前缀。
@@ -1595,7 +1598,7 @@ export abstract class Agent {
       const contextLength = this._contextWindow.getContextLength()
       // wakeup：广度优先 + 强制 L4（一句话概要），最多 30 条。见 SPEC。
       // 历史预算在「窗口减去固定开销（工具 schema + system prompt）」的剩余空间里分配
-      const fixedPrefixTokens = this._contextWindow.getFixedPrefixTokens()
+      const fixedPrefixTokens = this._contextWindow.getFixedPrefixTokens(this.systemPromptScope(run.context))
       const historyOptions: TaskHistoryOptions = run.context.wakeup
         ? { maxTasks: 30, minCompressionLevel: 4, fixedPrefixTokens }
         : { fixedPrefixTokens }
@@ -1652,8 +1655,8 @@ export abstract class Agent {
     }
     
     const systemPrompt = this.buildSystemPrompt(run.context, promptOptions)
-    // 实测本轮规模，供下一轮预算分配（打破「预算→摘要→system prompt→预算」的循环）
-    this._contextWindow.recordSystemPromptTokens(systemPrompt)
+    // 量下本轮规模，供下一轮预算分配（打破「预算→摘要→system prompt→预算」的循环）
+    this._contextWindow.recordSystemPromptTokens(systemPrompt, this.systemPromptScope(run.context))
     run.messages.push({ role: 'system', content: systemPrompt })
     
     if (recentTaskMessages.length > 0) {
@@ -2316,9 +2319,18 @@ export abstract class Agent {
     this._consumedUsage.total_tokens += usage.total_tokens
   }
 
+  /**
+   * system prompt 规模读数的适用范围：同一 profile + 终端模式下才可复用。
+   * 换了模型或模式（local/ssh/assistant 的提示词规模差数千 tokens）就得重新量。
+   */
+  private systemPromptScope(context: AgentContext): string {
+    return `${this.resolveContextBudgetProfileId() ?? 'default'}:${context.terminalType ?? 'local'}`
+  }
+
   /** 本轮请求开始：先把 prompt 估算挂上，数字立刻跳起来，等流式输出再往上加。 */
   private beginPendingUsage(run: AgentRun): void {
-    const promptEst = this._contextWindow.estimateTotalTokens(run.messages)
+    // 与压力判断同口径（锚点 + 增量），避免这里独自走全量重估
+    const promptEst = this._contextWindow.estimateCurrentPromptTokens(run.messages)
     this._pendingUsage = {
       prompt_tokens: promptEst,
       completion_tokens: 0,

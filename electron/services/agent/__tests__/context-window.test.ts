@@ -715,6 +715,24 @@ describe('ContextWindowManager.proactiveCompress', () => {
     expect(await m.proactiveCompress(run)).toBeNull()
   })
 
+  it('stalled 只管本任务：新任务开始后恢复主动压缩能力', async () => {
+    // ContextWindowManager 跨 run 复用。若 stalled 不清零，某个任务压不动会让
+    // 整个会话永久失去主动压缩，只剩紧急压缩兜底——对超限不报错的 provider 等于没有。
+    const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
+    const run = makeRun([
+      user('do'),
+      asst('a1', [tc('c1', 'foo')]), tool('c1', 'r1'),
+      asst('a2', [tc('c2', 'bar')]), tool('c2', 'r2'),
+      asst('a3', [tc('c3', 'baz')]), tool('c3', 'r3'),
+      asst('a4', [tc('c4', 'qux')]), tool('c4', 'r4')
+    ])
+    await m.proactiveCompress(run)
+    expect(m.shouldProactiveCompress(run)).toBe(false) // 已 stalled
+
+    m.resetForNewRun()
+    expect(m.shouldProactiveCompress(run)).toBe(true)
+  })
+
   it('压得动 → 不设 stalled，涨回来还能再压（长任务）', async () => {
     const m = new ContextWindowManager(makeDeps({ getLastPromptTokens: () => 122000 }))
     // 每条工具输出 8KB → 单轮就够跨过 500 token 的实效门槛

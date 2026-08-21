@@ -97,7 +97,7 @@ export function calculateBudget(contextLength: number, fixedPrefixTokens = 0): C
 
   return {
     total,
-    systemPrompt: fixedPrefixTokens || 3000,      // 已实测则用实测值
+    systemPrompt: 3000,                           // 固定约 3000 tokens
     knowledge: Math.floor(total * 0.15),          // 15% 给知识库
     recentTasks: Math.floor(total * 0.40),        // 40% 给最近任务（按预算填充）
     nearTasks: Math.floor(total * 0.10),          // 10% 给较近任务摘要

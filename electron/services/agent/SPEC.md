@@ -413,7 +413,7 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 `ContextWindowManager.proactiveCompress` 是「本地预测触发」的前置压缩，与 `emergencyCompress`（API 报错兜底）分工互补：
 
 - **触发**：`executeStep` 开头，`shouldProactiveCompress` 检测到上一轮 API 返回的真实 `prompt_tokens >= contextLength * 95%`（`PROACTIVE_THRESHOLD = 0.95`，留 5% 余量给本轮新增）。
-- **为什么用真实值不用估算**：`estimateTextTokens` 误差 <10% 是均值，单次可能 20%+；用上一轮真实 `prompt_tokens` 预测本轮，精度主要受本轮新增内容影响（单次写入大小由 `tool-output-budget` 限制）。
+- **为什么必须有真实值才触发**：冷启动首轮没有真实用量可依，此时上下文刚按预算建好，纯凭估算触发压缩等于刚建好就拆——所以没有真实锚点时一律不触发，交给紧急压缩兜底。有锚点后，判断值要把本轮新增算进去：锚点只反映上一轮请求的规模，单步写入一大段工具输出时实际已经超限而锚点还停在阈值下，只看锚点会滞后一轮、压缩赶不上超限。
 - **为什么需要它**：DeepSeek 等provider 上下文超限时**默默截断不报错**，`emergencyCompress`（依赖 `context_length_exceeded`）对它们无效。proactiveCompress 在 API 调用前主动压缩，覆盖这类 provider。
 - **流程**：`proactiveCompress`（复用 `compressAggressively`：先 keepRecent=2，仍 >90% 降到 1）→ 注入 `_systemInjected` 提示（`agent.context_proactive_compressed`，文案区分"系统主动压缩"vs emergency 的"系统自动压缩"）→ 直接继续 `executeStep`（不重试，压缩后正常调 AI）。
 - **不限次数，但要求实效**：一次任务里该压几次就压几次（见「一次任务里该压几次就压几次」）。防抖靠两条：压缩会作废真实用量锚点，必须等下一次 API 响应拿到新真实值才可能再压，天然隔开轮次；某次压缩几乎没释放空间则判定为压不动，本任务内不再尝试，交给紧急压缩兜底。
