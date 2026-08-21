@@ -108,6 +108,8 @@ export interface ProcessFoldView {
   live: boolean
   /** 跑着的时候它在忙什么——它自己写下的那句思考 */
   liveText?: string
+  /** 这一句还是启动等待提示（「深潜中」），不是它正在写的思考 */
+  waitingHint?: boolean
   /** 没有思考可用时退回动作分类 */
   liveAction?: ActionKind
   /** 这一截只是想了想，没动手做任何事 */
@@ -247,12 +249,19 @@ export function lastProgressLine(text: string): string {
  * `thinking` 步骤是整句换上的状态提示（「深潜中」「正在准备…」），不是一个字一个字写出来的，
  * 即使还在转圈也直接用原文，否则折叠行会丢掉启动时那句有趣的形容。
  */
-export function extractProgressLine(steps: ReadonlyArray<ProcessStepLike>): string | undefined {
+function clipProgressLabel(text: string): string {
+  if (text.length <= PROGRESS_MAX_CHARS) return text
+  return `${text.slice(0, PROGRESS_MAX_CHARS - 1)}…`
+}
+
+function extractLiveCaption(
+  steps: ReadonlyArray<ProcessStepLike>,
+): { text: string; waitingHint: boolean } | undefined {
   for (let i = steps.length - 1; i >= 0; i--) {
     const step = steps[i]
     if (step.type === 'thinking') {
       const label = (step.content || '').trim()
-      if (label) return label.length <= PROGRESS_MAX_CHARS ? label : `${label.slice(0, PROGRESS_MAX_CHARS - 1)}…`
+      if (label) return { text: clipProgressLabel(label), waitingHint: step.isStreaming === true }
       continue
     }
     if (step.type !== 'message') continue
@@ -262,9 +271,13 @@ export function extractProgressLine(steps: ReadonlyArray<ProcessStepLike>): stri
     const settled = done ? reasoning : reasoning.match(SETTLED_HEAD)?.[0] || ''
     if (!settled.trim()) continue
     const line = lastProgressLine(settled)
-    if (line) return line
+    if (line) return { text: line, waitingHint: false }
   }
   return undefined
+}
+
+export function extractProgressLine(steps: ReadonlyArray<ProcessStepLike>): string | undefined {
+  return extractLiveCaption(steps)?.text
 }
 
 /** 跑着的时候手上这件事属于哪一类动作 */
@@ -291,6 +304,7 @@ function toFold(refs: ProcessStepRef[], nextStepAt?: number): ProcessFoldView {
   const elapsed =
     startedAt !== undefined && endedAt !== undefined ? endedAt - startedAt : 0
   const counts = countActions(steps)
+  const caption = live ? extractLiveCaption(steps) : undefined
   return {
     // 只认这一截的起点：这截还在长，末尾每加一步 id 都变的话，
     // 用户刚点开就会被重新收起，虚拟列表也要跟着重建。
@@ -301,7 +315,8 @@ function toFold(refs: ProcessStepRef[], nextStepAt?: number): ProcessFoldView {
     thinkingOnly:
       Object.keys(counts).length === 0 &&
       steps.every(step => step.type === 'message' || step.type === 'thinking'),
-    liveText: live ? extractProgressLine(steps) : undefined,
+    liveText: caption?.text,
+    waitingHint: caption?.waitingHint,
     liveAction: live ? pendingAction(steps) : undefined,
     startedAt,
     durationMs: !live && elapsed >= MIN_SHOWN_DURATION_MS ? elapsed : undefined,

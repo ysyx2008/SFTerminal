@@ -122,6 +122,18 @@ describe('countActions / extractProgressLine', () => {
     expect(segs[0].kind === 'fold' && segs[0].fold.live).toBe(true)
     expect(segs[0].kind === 'fold' && segs[0].fold.thinkingOnly).toBe(true)
     expect(segs[0].kind === 'fold' && segs[0].fold.liveText).toBe('深潜中')
+    expect(segs[0].kind === 'fold' && segs[0].fold.waitingHint).toBe(true)
+  })
+
+  it('drops the waiting hint once it starts writing real thoughts', () => {
+    const steps = [
+      step({ id: 'prep', type: 'thinking', content: '深潜中', isStreaming: true }),
+      streamingThinking('m1', '先看负载。磁盘在排队。'),
+    ]
+    expect(extractProgressLine(steps)).toBe('磁盘在排队')
+    const segs = foldProcessSteps(steps, { enabled: true })
+    expect(segs[0].kind === 'fold' && segs[0].fold.liveText).toBe('磁盘在排队')
+    expect(segs[0].kind === 'fold' && segs[0].fold.waitingHint).toBe(false)
   })
 
   it('stays on the previous line until the new thought finishes a sentence', () => {

@@ -29,6 +29,7 @@ const stopTicking = () => {
 const MIN_LABEL_DWELL_MS = 2000
 
 const shownLiveText = ref(props.fold.liveText)
+const shownWaitingHint = ref(props.fold.waitingHint === true)
 let swapTimer: ReturnType<typeof setTimeout> | undefined
 let lastSwapAt = 0
 
@@ -38,25 +39,28 @@ const stopSwapping = () => {
   swapTimer = undefined
 }
 
-const showLiveText = (text: string | undefined) => {
+const showLiveText = (text: string | undefined, waitingHint: boolean) => {
   shownLiveText.value = text
+  shownWaitingHint.value = waitingHint
   lastSwapAt = Date.now()
 }
 
 watch(
-  () => props.fold.liveText,
-  next => {
+  () => [props.fold.liveText, props.fold.waitingHint === true] as const,
+  ([next, nextHint]) => {
     stopSwapping()
-    if (next === shownLiveText.value) return
-    const wait = MIN_LABEL_DWELL_MS - (Date.now() - lastSwapAt)
+    if (next === shownLiveText.value && nextHint === shownWaitingHint.value) return
+    // 等待提示让位给真正的思考：立刻换色，别让流光再停两秒
+    const leavingHint = shownWaitingHint.value && !nextHint
+    const wait = leavingHint ? 0 : MIN_LABEL_DWELL_MS - (Date.now() - lastSwapAt)
     if (wait <= 0) {
-      showLiveText(next)
+      showLiveText(next, nextHint)
       return
     }
     // 等够了再换，且换的是那一刻最新的一句，中间刷过去的不补播
     swapTimer = setTimeout(() => {
       swapTimer = undefined
-      showLiveText(props.fold.liveText)
+      showLiveText(props.fold.liveText, props.fold.waitingHint === true)
     }, wait)
   },
 )
@@ -73,6 +77,7 @@ watch(
     // 做完了立刻定格成结论，不让排队中的那句盖回去
     stopSwapping()
     shownLiveText.value = props.fold.liveText
+    shownWaitingHint.value = false
   },
   { immediate: true },
 )
@@ -132,7 +137,7 @@ const elapsed = computed(() => {
       @keydown.enter.prevent="emit('toggle')"
       @keydown.space.prevent="emit('toggle')"
     >
-      <span class="process-fold__label" :class="{ 'is-live-text': fold.live }">{{ label }}</span>
+      <span class="process-fold__label" :class="{ 'is-waiting-hint': fold.live && shownWaitingHint }">{{ label }}</span>
       <span v-if="trailing" class="process-fold__meta">{{ trailing }}</span>
       <span v-if="elapsed" class="process-fold__time">{{ elapsed }}</span>
       <span class="process-fold__marker">
@@ -184,8 +189,8 @@ const elapsed = computed(() => {
   white-space: nowrap;
 }
 
-/* 跑着时跟原来 ThinkingBlock 一样：品牌色流光，不当成灰字过程摘要 */
-.process-fold__label.is-live-text {
+/* 只有启动等待提示跟原来 ThinkingBlock 一样流光；思考正文出来就回到次要色 */
+.process-fold__label.is-waiting-hint {
   background: linear-gradient(
     90deg,
     rgba(var(--brand-vital-rgb), 0.55) 0%,
@@ -294,7 +299,7 @@ const elapsed = computed(() => {
   .process-fold__spinner {
     animation-duration: 2s;
   }
-  .process-fold__label.is-live-text {
+  .process-fold__label.is-waiting-hint {
     animation: none;
     background: none;
     -webkit-text-fill-color: var(--brand-vital);
