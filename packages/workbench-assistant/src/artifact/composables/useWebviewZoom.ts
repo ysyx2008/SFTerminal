@@ -2,8 +2,6 @@ import { computed, ref, type Ref } from 'vue'
 import type { WebviewTag } from 'electron'
 import {
   WEBVIEW_ZOOM_DEFAULT,
-  WEBVIEW_ZOOM_MAX,
-  WEBVIEW_ZOOM_MIN,
   clampWebviewZoom,
   formatWebviewZoomPercent,
   stepWebviewZoom
@@ -23,7 +21,6 @@ export function useWebviewZoom(webviewRef: Ref<WebviewTag | null>) {
     if (!wv) return
     try {
       wv.setZoomFactor(zoomFactor.value)
-      void wv.setVisualZoomLevelLimits(WEBVIEW_ZOOM_MIN, WEBVIEW_ZOOM_MAX)
     } catch {
       /* guest 未 attach */
     }
@@ -54,7 +51,7 @@ export function useWebviewZoom(webviewRef: Ref<WebviewTag | null>) {
     const wv = webviewRef.value
     if (!wv) return
     try {
-      zoomFactor.value = clampWebviewZoom(wv.getZoomFactor())
+      setZoom(wv.getZoomFactor())
     } catch {
       /* guest 未 attach */
     }
