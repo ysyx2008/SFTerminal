@@ -1586,14 +1586,26 @@ app.whenReady().then(async () => {
 
   // 设置媒体设备权限处理器（用于语音识别等功能）
   // Windows 上必须显式授权麦克风访问，否则会报 "Requested device not found"
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    // 允许麦克风、音频和剪贴板相关权限
-    const allowedPermissions = ['media', 'microphone', 'audioCapture', 'clipboard-read', 'clipboard-write']
-    if (allowedPermissions.includes(permission)) {
-      callback(true)
-    } else {
-      callback(false)
+  // 自家界面（主窗、文件管理器、登录窗等）能拿到的权限。麦克风走 'media'
+  // （'microphone' / 'audioCapture' 不是 Electron 的权限名，永远不会命中，留着只是历史包袱）。
+  // ⚠️ 写剪贴板的权限名是 clipboard-sanitized-write，不是看起来更顺眼的 clipboard-write
+  // （后者同样不是合法权限名，写错等于没授权）。授权漏了不会报错、不会抛异常，只是前端
+  // 每次 navigator.clipboard.writeText 都被拒 —— 全应用的「复制」静静失效。
+  const APP_PERMISSIONS = ['media', 'microphone', 'audioCapture', 'clipboard-read', 'clipboard-sanitized-write']
+  // 产出物预览的 <webview> 与主界面共用同一个会话，但里面可能是用户打开的任意外部网页，
+  // 不能让它借这条通道读走剪贴板或打开麦克风/摄像头。写剪贴板仍然放行——预览里（含我们
+  // 自己生成的 HTML 产出物）的「复制」按钮要能用，且浏览器本身就要求用户手势才给写。
+  const WEBVIEW_PERMISSIONS = ['clipboard-sanitized-write']
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const from = webContents?.getType?.() ?? 'unknown'
+    const granted = from === 'webview'
+      ? WEBVIEW_PERMISSIONS.includes(permission)
+      : from === 'window' && APP_PERMISSIONS.includes(permission)
+    // 留痕带上来源：否则下一个「某个按钮点了没反应」还得从头查一遍
+    if (!granted) {
+      log.info(`[permission] denied: ${permission} (from ${from} ${details?.requestingUrl ?? ''})`)
     }
+    callback(granted)
   })
 
   // 设置设备权限检查（用于 navigator.mediaDevices.enumerateDevices 等）
