@@ -421,6 +421,14 @@ export default {
     browserBridgeFirefox: 'Firefox 浏览器',
   },
 
+  skills: {
+    title: '技能',
+    loaded: '{enabled}/{total} 已加载',
+    none: '还没有技能',
+    emptyFilter: '没有匹配的技能',
+    search: '筛选技能',
+  },
+
   shell: {
     newChat: '新对话',
     companion: '联络',

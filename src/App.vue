@@ -1616,7 +1616,7 @@ onUnmounted(() => {
             @open-watch="openWatchesFromWelcome"
             @open-awaken="showWatchPanel = false; showAwaken = true"
             @open-connection="openConnectionSettings"
-            @open-settings="showSettings = true"
+            @open-settings="openConnectionSettings"
             @logout="onSsoSoftLogout"
           />
         </div>

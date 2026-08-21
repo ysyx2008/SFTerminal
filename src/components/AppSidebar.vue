@@ -19,6 +19,7 @@ import { useTodoOverdueCount } from '../composables/useTodoOverdueCount'
 import { useWatchAnomalyCount } from '../composables/useWatchAnomalyCount'
 import RecentConversationsPanel from './RecentConversationsPanel.vue'
 import ConnectionStatusPopover from './ConnectionStatusPopover.vue'
+import SkillStatusPopover from './SkillStatusPopover.vue'
 
 const props = defineProps<{
   awakened: boolean
@@ -30,7 +31,7 @@ const emit = defineEmits<{
   'open-awaken': []
   /** tab：连接面板里「去设置」指向的具体页（渠道 / MCP / 浏览器助手） */
   'open-connection': [tab?: string]
-  'open-settings': []
+  'open-settings': [tab?: string]
   logout: []
 }>()
 
@@ -179,12 +180,14 @@ function pick(action: 'open-todos' | 'open-watch' | 'open-awaken' | 'open-settin
             <span v-if="secretarySub" class="secretary-sub">{{ secretarySub }}</span>
           </span>
         </button>
-        <!-- 装备位：连接了多少外部系统。将来的技能也落在这一格。
-             点这里先收起秘书菜单，避免两个浮层同时挂着 -->
+        <!-- 装备位：上面连接、下面技能。点这里先收起秘书菜单，避免浮层叠在一起 -->
         <span v-if="canShowAssistant" class="equip-slot" @click="closeMenu">
           <ConnectionStatusPopover
             variant="sidebar"
             @open-settings="(tab?: string) => emit('open-connection', tab)"
+          />
+          <SkillStatusPopover
+            @open-settings="emit('open-settings', 'skills')"
           />
         </span>
       </div>
@@ -287,8 +290,15 @@ function pick(action: 'open-todos' | 'open-watch' | 'open-awaken' | 'open-settin
 
 .equip-slot {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   flex-shrink: 0;
+}
+
+.equip-slot :deep(.conn-wrapper),
+.equip-slot :deep(.skill-wrapper) {
+  width: 100%;
 }
 
 .secretary-btn {

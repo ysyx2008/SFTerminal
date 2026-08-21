@@ -454,7 +454,9 @@ onUnmounted(() => {
       :title="statusTooltip"
       @click="togglePopover"
     >
-      <Radio :size="props.variant === 'sidebar' ? 13 : 18" />
+      <span class="equip-icon">
+        <Radio :size="props.variant === 'sidebar' ? 13 : 18" />
+      </span>
       <span class="status-badge" :class="statusClass">
         <span v-if="statusType === 'connecting'" class="spinner"></span>
         <span v-else class="status-dot">{{ statusIcon }}</span>
@@ -626,10 +628,28 @@ onUnmounted(() => {
 
 /* 秘书行右部的装备胶囊：整体收窄，让出空间给秘书名字 */
 .conn-btn--sidebar {
+  width: 100%;
   height: 22px;
   gap: 3px;
   padding: 0 5px;
   border-radius: 6px;
+  flex-shrink: 0;
+  justify-content: flex-start;
+}
+
+.conn-btn--sidebar .equip-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.conn-btn--sidebar .status-dot,
+.conn-btn--sidebar .spinner {
+  width: 8px;
+  text-align: center;
   flex-shrink: 0;
 }
 

@@ -422,6 +422,14 @@ export default {
     browserBridgeFirefox: 'Firefox browser',
   },
 
+  skills: {
+    title: 'Skills',
+    loaded: '{enabled}/{total} loaded',
+    none: 'No skills yet',
+    emptyFilter: 'No matching skills',
+    search: 'Filter skills',
+  },
+
   shell: {
     newChat: 'New Chat',
     companion: 'Reach',
