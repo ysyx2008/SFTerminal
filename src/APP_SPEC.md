@@ -1,6 +1,6 @@
 # App.vue 全局交互规则 SPEC
 
-> Last verified: 2026-08-20  
+> Last verified: 2026-08-21  
 > 涵盖范围：桌面壳的导航、快捷键、覆盖层、窗口生命周期。  
 > Hub 助手模型见 `src/workbench/assistant/HUB_SPEC.md`。
 
@@ -96,6 +96,9 @@ Windows 的三个窗口按钮同样浮在第一排右侧，该排自己让位，
 ```
 1. 有全屏覆盖层（觉醒 / 设置 / 智能巡检）
       └→ 关闭覆盖层，结束
+
+1.5 产出物正被看着，且焦点在产出物上
+      └→ 关掉当前这份页签（文件留在清单），结束
 
 2. 有 activeTab（TabBar 可见 Tab）
    ├─ tab.agentId === '__companion__'（联络常驻 tab，不可关闭）

@@ -27,8 +27,11 @@ import {
   type ArtifactSaveDeps,
   getArtifactContextMenuFlags,
   artifactHasFileActions,
+  closeFocusedArtifact,
   createArtifactSaveBridge,
+  isCloseArtifactShortcut,
   provideArtifactSaveBridge,
+  registerFocusedArtifactCloser,
   useAssistantArtifactStore
 } from '../index'
 import { getRendererComponent } from '../renderers/ui-registry'
@@ -83,6 +86,8 @@ const { hoverTip, hideTip } = useHoverTip({
 
 const artifacts = computed(() => artifactStore.getArtifacts(props.tabId))
 const openTabs = computed(() => artifactStore.getOpenArtifacts(props.tabId))
+const panelRoot = ref<HTMLElement | null>(null)
+const panelHasFocus = ref(false)
 const tabsEl = ref<HTMLElement | null>(null)
 const tabsOverflow = ref(false)
 let tabsResizeObserver: ResizeObserver | null = null
@@ -334,6 +339,30 @@ function closeArtifact(id: string, e?: Event) {
   e?.stopPropagation()
   saveBridge.flush(id)
   artifactStore.closeTab(props.tabId, id)
+}
+
+function tryCloseFocusedTab(): boolean {
+  if (!panelHasFocus.value) return false
+  if (!artifactStore.isVisible(props.tabId)) return false
+  const id = activeArtifactId.value
+  if (!id) return false
+  closeArtifact(id)
+  return true
+}
+
+function isArtifactOwnedTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Node)) return false
+  if (panelRoot.value?.contains(target)) return true
+  // 右键菜单 / 发送菜单 teleport 到 body，点它们仍算产出物有焦点
+  if (fileMenuRef.value?.contains(target)) return true
+  if (sendMenuRef.value?.contains(target)) return true
+  if (sendMenuDropdownRef.value?.contains(target)) return true
+  if (ctxMenuRef.value?.contains(target)) return true
+  return false
+}
+
+function setPanelFocusedFromEvent(target: EventTarget | null) {
+  panelHasFocus.value = isArtifactOwnedTarget(target)
 }
 
 function removeFromDesk(id: string, e?: Event) {
@@ -620,6 +649,7 @@ function closeCtxMenu() {
 }
 
 function onDocumentMouseDown(e: MouseEvent) {
+  setPanelFocusedFromEvent(e.target)
   const target = e.target as Node
   if (showFileMenuDropdown.value) {
     const el = fileMenuRef.value
@@ -643,7 +673,16 @@ function onDocumentMouseDown(e: MouseEvent) {
   }
 }
 
+function onDocumentFocusIn(e: FocusEvent) {
+  setPanelFocusedFromEvent(e.target)
+}
+
 function onDocumentKeyDown(e: KeyboardEvent) {
+  if (isCloseArtifactShortcut(e) && closeFocusedArtifact()) {
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
   if (e.key !== 'Escape') return
   if (ctxMenu.value.show) {
     closeCtxMenu()
@@ -719,7 +758,9 @@ function onVisibilityChange() {
 }
 
 onMounted(() => {
+  registerFocusedArtifactCloser(tryCloseFocusedTab)
   document.addEventListener('mousedown', onDocumentMouseDown, true)
+  document.addEventListener('focusin', onDocumentFocusIn, true)
   document.addEventListener('keydown', onDocumentKeyDown, true)
   window.addEventListener('focus', onWindowFocus)
   document.addEventListener('visibilitychange', onVisibilityChange)
@@ -738,7 +779,9 @@ onMounted(() => {
 onUnmounted(() => {
   tabsResizeObserver?.disconnect()
   tabsResizeObserver = null
+  registerFocusedArtifactCloser(null)
   document.removeEventListener('mousedown', onDocumentMouseDown, true)
+  document.removeEventListener('focusin', onDocumentFocusIn, true)
   document.removeEventListener('keydown', onDocumentKeyDown, true)
   window.removeEventListener('focus', onWindowFocus)
   window.removeEventListener('visibilitychange', onVisibilityChange)
@@ -751,7 +794,7 @@ defineExpose({ minimizePanel })
 </script>
 
 <template>
-  <div class="canvas-panel">
+  <div ref="panelRoot" class="canvas-panel">
     <div
       class="canvas-header"
       @contextmenu="openHeaderCtxMenu"

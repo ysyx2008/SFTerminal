@@ -1,4 +1,10 @@
 export {
+  closeFocusedArtifact,
+  isCloseArtifactShortcut,
+  registerFocusedArtifactCloser
+} from './domain/artifact-close-shortcut'
+
+export {
   applyCanvasData,
   clearTabArtifacts,
   closeAllTabs,

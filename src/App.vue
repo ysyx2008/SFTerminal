@@ -34,6 +34,7 @@ import type { SftpConnectionConfig } from './composables/useSftp'
 import { uiThemes } from './themes/ui-themes'
 import { createLogger } from './utils/logger'
 import { matchAccelerator, formatAccelerator } from './utils/shortcut'
+import { closeFocusedArtifact } from '@sailfish/workbench-assistant/artifact'
 import { isAssistantConversationSurfaceVisible } from './utils/agent-tab-ui-meta'
 import { useAppUpdaterPrompts } from './composables/useAppUpdaterPrompts'
 import { useShellNavigation } from './composables/useShellNavigation'
@@ -414,6 +415,9 @@ const handleCloseShortcut = async () => {
     showSmartPatrol.value = false
     return
   }
+
+  // 产出物有焦点：先关当前页签，不关对话
+  if (closeFocusedArtifact()) return
 
   const activeTab = terminalStore.activeTab
   if (activeTab) {
