@@ -261,7 +261,7 @@ function extractLiveCaption(
     const step = steps[i]
     if (step.type === 'thinking') {
       const label = (step.content || '').trim()
-      if (label) return { text: clipProgressLabel(label), waitingHint: step.isStreaming === true }
+      if (label) return { text: clipProgressLabel(label), waitingHint: true }
       continue
     }
     if (step.type !== 'message') continue

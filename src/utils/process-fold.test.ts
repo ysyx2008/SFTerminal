@@ -116,13 +116,15 @@ describe('countActions / extractProgressLine', () => {
   })
 
   it('uses the startup waiting label even while that thinking step is still spinning', () => {
-    const steps = [step({ id: 'prep', type: 'thinking', content: '深潜中', isStreaming: true })]
-    expect(extractProgressLine(steps)).toBe('深潜中')
-    const segs = foldProcessSteps(steps, { enabled: true })
-    expect(segs[0].kind === 'fold' && segs[0].fold.live).toBe(true)
-    expect(segs[0].kind === 'fold' && segs[0].fold.thinkingOnly).toBe(true)
-    expect(segs[0].kind === 'fold' && segs[0].fold.liveText).toBe('深潜中')
-    expect(segs[0].kind === 'fold' && segs[0].fold.waitingHint).toBe(true)
+    for (const phrase of ['深潜中', '灵感加载中']) {
+      const steps = [step({ id: 'prep', type: 'thinking', content: phrase, isStreaming: true })]
+      expect(extractProgressLine(steps)).toBe(phrase)
+      const segs = foldProcessSteps(steps, { enabled: true })
+      expect(segs[0].kind === 'fold' && segs[0].fold.live).toBe(true)
+      expect(segs[0].kind === 'fold' && segs[0].fold.thinkingOnly).toBe(true)
+      expect(segs[0].kind === 'fold' && segs[0].fold.liveText).toBe(phrase)
+      expect(segs[0].kind === 'fold' && segs[0].fold.waitingHint).toBe(true)
+    }
   })
 
   it('drops the waiting hint once it starts writing real thoughts', () => {
