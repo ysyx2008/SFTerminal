@@ -11,6 +11,14 @@
  * 更新模板时只需修改本文件，两处 UI 都会同步。
  */
 
+/**
+ * 低于这个上下文窗口就在配置时提醒一次（见 AISERVICE_SPEC「上下文窗口偏小的模型」）。
+ *
+ * 当代主流模型基本从这里起步，拿窗口大小粗略判断「这模型能不能干多步任务」够用。
+ * 只提醒、不禁止：本地离线、断网、省钱都是真实需求，用户有权自己权衡。
+ */
+export const RECOMMENDED_MIN_CONTEXT = 128_000
+
 export interface AiTemplate {
   /** 模板名称（用于展示 & 作为 profile name） */
   name: string

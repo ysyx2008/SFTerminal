@@ -3,9 +3,9 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ExternalLink, FolderInput, Database, Plug, Check, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import { useConfigStore, type AiProfile } from '../stores/config'
-import { AI_TEMPLATES, type AiTemplate } from '../config/ai-templates'
+import { AI_TEMPLATES, RECOMMENDED_MIN_CONTEXT, type AiTemplate } from '../config/ai-templates'
 import { v4 as uuidv4 } from 'uuid'
-import { showAlert } from '../composables/useConfirm'
+import { showAlert, showConfirm } from '../composables/useConfirm'
 
 const { t } = useI18n()
 
@@ -94,6 +94,20 @@ const openKeyUrl = (url: string, event: Event) => {
 }
 
 const saveTemplateConfig = async (template: typeof aiTemplates.value[0]) => {
+  // 窗口偏小的模型在这里确认一次，规则与 AI 设置页保持一致：
+  // 首次配置的人最需要提前知道，跑一半才发现不好用代价最大
+  if (template.contextLength && template.contextLength < RECOMMENDED_MIN_CONTEXT) {
+    const confirmed = await showConfirm({
+      type: 'warning',
+      title: t('aiSettings.confirmSmallContextTitle'),
+      message: t('aiSettings.confirmSmallContext', { size: Math.round(template.contextLength / 1000) }),
+      detail: t('aiSettings.confirmSmallContextDetail'),
+      confirmText: t('aiSettings.confirmSmallContextConfirm'),
+      cancelText: t('aiSettings.confirmSmallContextCancel'),
+    })
+    if (!confirmed) return false
+  }
+
   // 自定义模板使用自定义表单数据
   if (template.isCustom) {
     if (!customFormData.value.name || !customFormData.value.apiUrl || !customFormData.value.model) {
@@ -460,6 +474,9 @@ onMounted(async () => {
                 
                 <!-- 展开区域：API Key 输入 / 自定义表单 -->
                 <div v-if="selectedTemplateIndex === template.index && !isTemplateConfigured(template.name)" class="ai-template-body">
+                  <div v-if="template.contextLength && template.contextLength < RECOMMENDED_MIN_CONTEXT" class="context-small-note">
+                    {{ t('aiSettings.contextLengthTooSmall') }}
+                  </div>
                   <!-- 自定义模板：完整表单 -->
                   <template v-if="template.isCustom">
                     <div class="custom-form">
@@ -1015,6 +1032,17 @@ onMounted(async () => {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border-radius: 6px;
+}
+
+.context-small-note {
+  font-size: 12px;
+  color: var(--color-warning);
+  line-height: 1.5;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: rgba(var(--color-warning-rgb), 0.06);
+  border-radius: 6px;
+  border-left: 3px solid rgba(var(--color-warning-rgb), 0.4);
 }
 
 .btn-save {

@@ -5,7 +5,7 @@ import { Plus, Pencil, Trash2, X, ExternalLink, Eye, Copy, GripVertical, Refresh
 import { useConfigStore, type AiProfile, type AiModelType, type ApiFormat } from '../../stores/config'
 import { showAlert, showConfirm } from '../../composables/useConfirm'
 import type { FetchedAiModel } from '@shared/types'
-import { AI_TEMPLATES } from '../../config/ai-templates'
+import { AI_TEMPLATES, RECOMMENDED_MIN_CONTEXT } from '../../config/ai-templates'
 import { v4 as uuidv4 } from 'uuid'
 
 const { t, locale } = useI18n()
@@ -82,6 +82,11 @@ const contextLengthInK = computed({
   set: (val: number | undefined) => {
     formData.value.contextLength = val ? val * 1000 : undefined
   }
+})
+
+const contextLengthTooSmall = computed(() => {
+  const v = formData.value.contextLength
+  return typeof v === 'number' && v > 0 && v < RECOMMENDED_MIN_CONTEXT
 })
 
 const openNewProfile = () => {
@@ -217,6 +222,22 @@ const saveProfile = async () => {
       title: t('aiSettings.confirmNoApiKeyTitle'),
       message: t('aiSettings.confirmNoApiKey'),
       detail: t('aiSettings.confirmNoApiKeyDetail'),
+    })
+    if (!confirmed) {
+      return
+    }
+  }
+
+  // 窗口偏小时拦一下。只在「这次保存才把它配成小窗口」时打断——已经在用小模型的人
+  // 回来改个 temperature 不该被反复拦（见 AISERVICE_SPEC）
+  if (contextLengthTooSmall.value && editingProfile.value?.contextLength !== formData.value.contextLength) {
+    const confirmed = await showConfirm({
+      type: 'warning',
+      title: t('aiSettings.confirmSmallContextTitle'),
+      message: t('aiSettings.confirmSmallContext', { size: contextLengthInK.value }),
+      detail: t('aiSettings.confirmSmallContextDetail'),
+      confirmText: t('aiSettings.confirmSmallContextConfirm'),
+      cancelText: t('aiSettings.confirmSmallContextCancel'),
     })
     if (!confirmed) {
       return
@@ -536,7 +557,10 @@ const openKeyUrl = (url: string) => {
                 <div class="form-group flex-1">
                   <label class="form-label">{{ t('aiSettings.contextLength') }}（K）</label>
                   <input v-model.number="contextLengthInK" type="number" class="input" placeholder="128" min="1" max="2000" />
-                  <span class="form-hint">DeepSeek/Qwen/Claude/Gemini(1000)、GPT-5.5(1050)</span>
+                  <span v-if="contextLengthTooSmall" class="form-hint context-too-small">
+                    {{ t('aiSettings.contextLengthTooSmall') }}
+                  </span>
+                  <span v-else class="form-hint">DeepSeek/Qwen/Claude/Gemini(1000)、GPT-5.5(1050)</span>
                 </div>
                 <div class="form-group flex-1">
                   <label class="form-label">{{ t('aiSettings.maxOutputTokens') }}（{{ t('aiSettings.maxOutputTokensHint') }}）</label>
@@ -969,6 +993,11 @@ const openKeyUrl = (url: string) => {
   margin-top: 4px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.context-too-small {
+  color: var(--color-warning);
+  line-height: 1.5;
 }
 
 .form-footer {
