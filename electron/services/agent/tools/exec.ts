@@ -12,41 +12,32 @@
  *
  * 进程托管见 exec-manager.ts。
  */
-import stripAnsi from 'strip-ansi'
 import { t } from '../i18n'
 import { assessCommandRiskDetailed, analyzeCommand } from '../risk-assessor'
 import { auditContextFromConfig } from '../audit-context-from-config'
 import { commandNeedsConfirm, isSubAgentBlocked } from '../command-audit/confirm-policy'
 import { resolveCommandToolConfirmation } from '../allowlist/resolve-command-confirm'
-import { truncateFromEnd, EXEC_MAX_COMMAND_LENGTH } from './utils'
+import { truncateFromEnd, EXEC_MAX_COMMAND_LENGTH, formatTotalTime } from './utils'
 import { externalizeToolOutput, externalizeFailedError } from '../tool-output-externalize'
-import { getExecManager, MAX_PATTERN_LENGTH } from './exec-manager'
+import { getExecManager, MAX_PATTERN_LENGTH, type WaitReason } from './exec-manager'
 import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../../services/credential.service'
 import { getUserSkillService } from '../../../services/user-skill.service'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
-/** 界面上的命令预览长度 */
-const COMMAND_PREVIEW = 200
-
 /**
- * 单行预览命令，超长截断。
+ * 等后台任务时给用户看的一行：任务编号 + 已运行多久。
  * @internal 导出仅为单元测试
  */
-export function previewCommand(command: string): string {
-  const oneLine = command.replace(/\s+/g, ' ').trim()
-  if (oneLine.length <= COMMAND_PREVIEW) return oneLine
-  return `${oneLine.slice(0, COMMAND_PREVIEW)}…`
+export function formatAwaitingTitle(taskId: string, elapsed: string): string {
+  return t('exec.awaiting', { taskId, elapsed })
 }
 
-/**
- * 等后台任务时给用户看的一行：任务编号 + 正在跑的命令（不再叠时长和输出）。
- * @internal 导出仅为单元测试
- */
-export function formatAwaitingTitle(taskId: string, command: string, pattern?: string): string {
-  const cmd = previewCommand(command)
-  return pattern
-    ? t('exec.awaiting_pattern', { taskId, pattern, command: cmd })
-    : t('exec.awaiting', { taskId, command: cmd })
+function elapsedSince(startedAt: number): string {
+  return formatTotalTime(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)))
+}
+
+function awaitingContent(taskId: string, startedAt: number): string {
+  return `⏳ ${formatAwaitingTitle(taskId, elapsedSince(startedAt))}`
 }
 
 const DEFAULT_WAIT_SECONDS = 60
@@ -331,20 +322,30 @@ export async function awaitExec(
   }
 
   const snap0 = manager.snapshot(task)
-  const patternText = typeof args.pattern === 'string' && args.pattern ? args.pattern : undefined
-  executor.addStep({
+  const step = executor.addStep({
     type: 'tool_call',
-    content: `⏳ ${formatAwaitingTitle(taskId, snap0.command, patternText)}`,
+    content: awaitingContent(taskId, snap0.startedAt),
     toolName: 'await_exec',
-    toolArgs: { task_id: taskId, command: snap0.command },
+    toolArgs: { task_id: taskId },
   })
 
-  const reason = await manager.wait({
-    task,
-    waitSeconds,
-    pattern,
-    isAborted: () => executor.isAborted(),
-  })
+  const ticker = setInterval(() => {
+    executor.updateStep(step.id, {
+      content: awaitingContent(taskId, snap0.startedAt),
+    })
+  }, 1000)
+
+  let reason: WaitReason
+  try {
+    reason = await manager.wait({
+      task,
+      waitSeconds,
+      pattern,
+      isAborted: () => executor.isAborted(),
+    })
+  } finally {
+    clearInterval(ticker)
+  }
 
   const snap = manager.snapshot(task)
   const output = await formatTaskOutput(snap.output, executor)

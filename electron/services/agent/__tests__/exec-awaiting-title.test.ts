@@ -1,5 +1,5 @@
 /**
- * 等后台任务时的卡片文案：必须写清在等哪条命令，而不是只剩一个任务编号
+ * 等后台任务时的卡片文案：任务编号 + 已运行多久，不抄命令、不亮内部等待记号
  */
 import { describe, it, expect, vi } from 'vitest'
 
@@ -19,31 +19,17 @@ vi.mock('electron', () => ({
   ipcMain: { on: vi.fn(), handle: vi.fn() },
 }))
 
-import { previewCommand, formatAwaitingTitle } from '../tools/exec'
-
-describe('previewCommand', () => {
-  it('压成单行', () => {
-    expect(previewCommand('  npm   run \n build  ')).toBe('npm run build')
-  })
-
-  it('超长截断并留省略号', () => {
-    const preview = previewCommand('x'.repeat(250))
-    expect(preview.endsWith('…')).toBe(true)
-    expect(preview.length).toBe(201)
-  })
-})
+import { formatAwaitingTitle } from '../tools/exec'
 
 describe('formatAwaitingTitle', () => {
-  it('带上任务编号和正在跑的命令', () => {
-    const text = formatAwaitingTitle('exec-58', 'npm run build')
+  it('带上任务编号和已运行时长', () => {
+    const text = formatAwaitingTitle('exec-58', '3秒')
     expect(text).toContain('exec-58')
-    expect(text).toContain('npm run build')
+    expect(text).toContain('3秒')
   })
 
-  it('等关键日志时写明在等什么', () => {
-    const text = formatAwaitingTitle('exec-2', 'npm start', 'Listening on')
-    expect(text).toContain('exec-2')
-    expect(text).toContain('npm start')
-    expect(text).toContain('Listening on')
+  it('不把命令或内部等待记号写进标题', () => {
+    const text = formatAwaitingTitle('exec-2', '1分钟')
+    expect(text).not.toMatch(/npm|python|Listening|🍕/i)
   })
 })
