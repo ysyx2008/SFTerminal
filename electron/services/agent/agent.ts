@@ -1594,9 +1594,11 @@ export abstract class Agent {
     if (this.taskMemory.getTaskCount() > 0) {
       const contextLength = this._contextWindow.getContextLength()
       // wakeup：广度优先 + 强制 L4（一句话概要），最多 30 条。见 SPEC。
-      const historyOptions: TaskHistoryOptions | undefined = run.context.wakeup
-        ? { maxTasks: 30, minCompressionLevel: 4 }
-        : undefined
+      // 历史预算在「窗口减去固定开销（工具 schema + system prompt）」的剩余空间里分配
+      const fixedPrefixTokens = this._contextWindow.getFixedPrefixTokens()
+      const historyOptions: TaskHistoryOptions = run.context.wakeup
+        ? { maxTasks: 30, minCompressionLevel: 4, fixedPrefixTokens }
+        : { fixedPrefixTokens }
       const contextResult = buildTaskHistoryContext(this.taskMemory, contextLength, message, historyOptions)
       
       recentTaskMessages = contextResult.recentTaskMessages
@@ -1650,6 +1652,8 @@ export abstract class Agent {
     }
     
     const systemPrompt = this.buildSystemPrompt(run.context, promptOptions)
+    // 实测本轮规模，供下一轮预算分配（打破「预算→摘要→system prompt→预算」的循环）
+    this._contextWindow.recordSystemPromptTokens(systemPrompt)
     run.messages.push({ role: 'system', content: systemPrompt })
     
     if (recentTaskMessages.length > 0) {

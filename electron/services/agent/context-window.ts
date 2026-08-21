@@ -16,6 +16,12 @@ import { createLogger } from '../../utils/logger'
 
 const log = createLogger('ContextWindow')
 
+/**
+ * 首轮尚无实测时 system prompt 的缺省估值。实测（26 个技能、无用户规则）约 4K，
+ * 取整数量级即可——第二轮起就被真实值替换。
+ */
+const DEFAULT_SYSTEM_PROMPT_TOKENS = 4000
+
 /** Agent 注入的最小只读依赖面。 */
 export interface ContextWindowDeps {
   /** AI 配置(取 profiles / active profile)。缺省时回退 128000。 */
@@ -104,6 +110,8 @@ export class ContextWindowManager {
   private _enabled = false
   /** 本轮 run 是否已主动压缩过（同一 run 只主动压缩一次，避免连续压缩） */
   private _proactiveCompressedThisRun = false
+  /** 上一轮实测的 system prompt 规模，用于预算分配（见 getFixedPrefixTokens） */
+  private _lastSystemPromptTokens?: number
 
   constructor(private deps: ContextWindowDeps) {}
 
@@ -163,6 +171,22 @@ export class ContextWindowManager {
     const tools = this.deps.getTools?.()
     if (!tools || tools.length === 0) return 4000
     return this.estimateTokens(JSON.stringify(tools))
+  }
+
+  /**
+   * 一次请求里雷打不动的部分:工具 schema + system prompt。历史预算必须在
+   * 「窗口减去它」的剩余空间里分配。
+   *
+   * system prompt 自身含历史摘要,与预算互为因果,所以取**上一轮实测值**打破
+   * 循环——同一 Agent 内它高度稳定,首轮用保守缺省。
+   */
+  getFixedPrefixTokens(): number {
+    return this.estimateFixedOverheadTokens() + (this._lastSystemPromptTokens ?? DEFAULT_SYSTEM_PROMPT_TOKENS)
+  }
+
+  /** 记下本轮 system prompt 的实测规模,供下一轮预算分配使用。 */
+  recordSystemPromptTokens(systemPrompt: string): void {
+    this._lastSystemPromptTokens = this.estimateTokens(systemPrompt)
   }
 
   /**

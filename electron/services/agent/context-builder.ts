@@ -80,15 +80,24 @@ export interface ContextBuildResult {
 // ==================== 预算计算 ====================
 
 /**
- * 根据模型上下文长度计算预算分配
+ * 根据模型上下文长度计算预算分配。
+ *
+ * `fixedPrefixTokens` 是每次请求都随行、不可压缩的固定开销（system prompt +
+ * 工具 schema）。实测最小配置就有 1.3 万 tokens，装了技能/插件/MCP 后更大——
+ * 必须先扣掉再分配，否则各分区之和加上它会超出窗口：32K 模型上原先切出的
+ * 预算合计 39.7K，已经超发 24%。
+ *
+ * 不传 fixedPrefixTokens 时退回原有的「按窗口切百分比」，仅供不掌握前缀信息
+ * 的调用方（如单测）使用。
  */
-export function calculateBudget(contextLength: number): ContextBudget {
-  // 总预算为上下文长度的 80%（预留 20% 给当前对话的工具调用等）
-  const total = Math.floor(contextLength * 0.8)
-  
+export function calculateBudget(contextLength: number, fixedPrefixTokens = 0): ContextBudget {
+  // 固定开销之外的可支配空间；再留 20% 给当前对话的工具调用等
+  const available = Math.max(0, contextLength - fixedPrefixTokens)
+  const total = Math.floor(available * 0.8)
+
   return {
     total,
-    systemPrompt: 3000,                           // 固定约 3000 tokens
+    systemPrompt: fixedPrefixTokens || 3000,      // 已实测则用实测值
     knowledge: Math.floor(total * 0.15),          // 15% 给知识库
     recentTasks: Math.floor(total * 0.40),        // 40% 给最近任务（按预算填充）
     nearTasks: Math.floor(total * 0.10),          // 10% 给较近任务摘要
@@ -625,6 +634,11 @@ export interface TaskHistoryOptions {
   maxTasks?: number
   /** 强制最低压缩级别（默认按 getMinCompressionLevel 规则） */
   minCompressionLevel?: CompressionLevel
+  /**
+   * 本次请求的固定开销（system prompt + 工具 schema）实测值。
+   * 传入后历史预算在「窗口减去它」的剩余空间里分配，避免超发。
+   */
+  fixedPrefixTokens?: number
 }
 
 // ==================== 核心构建函数 ====================
@@ -758,7 +772,7 @@ export function buildTaskHistoryContext(
   userMessage: string,
   options?: TaskHistoryOptions
 ): ContextBuildResult {
-  const budget = calculateBudget(contextLength)
+  const budget = calculateBudget(contextLength, options?.fixedPrefixTokens)
   return buildRecentTasksContext(taskMemoryStore, budget.recentTasks, userMessage, options)
 }
 
