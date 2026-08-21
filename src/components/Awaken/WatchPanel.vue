@@ -450,6 +450,11 @@ const selectWatch = (w: WatchDefinition) => {
     activeTab.value = 'watches'
     try { localStorage.setItem(LAST_TAB_STORAGE_KEY, 'watches') } catch { /* ignore */ }
   }
+  // 总览可连续重试多条；进详情时接到正在跑的这条，后续独白才能续上
+  if (runningWatches.value.has(w.id) && liveExecutionWatchId.value !== w.id) {
+    liveExecutionWatchId.value = w.id
+    liveSteps.value = []
+  }
   loadWatchRecentHistory(w.id)
 }
 
@@ -609,9 +614,10 @@ const cancelWatchById = async (id: string) => {
 const RUNNING_TIMEOUT_MS = 10 * 60 * 1000
 const watchTimeouts = new Map<string, NodeJS.Timeout>()
 
-const triggerWatch = async (w: WatchDefinition) => {
-  // 跳到该关切详情，便于看运行态 / 独白
-  selectWatch(w)
+const triggerWatch = async (w: WatchDefinition, opts?: { stayOnCurrentPage?: boolean }) => {
+  // 关切列表/详情里手动触发：跳到该关切，便于看运行态 / 独白
+  // 总览「重试」只触发，不切页
+  if (!opts?.stayOnCurrentPage) selectWatch(w)
 
   // 关切一律助手执行并推 agent:step；手动触发必开内心独白
   liveExecutionWatchId.value = w.id
@@ -873,7 +879,7 @@ onUnmounted(() => {
                 :running-watches="runningWatches"
                 @select-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) selectWatch(w) }"
                 @view-history-detail="viewHistoryDetail"
-                @retry-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) triggerWatch(w) }"
+                @retry-watch="(id) => { const w = userWatches.find(x => x.id === id); if (w) triggerWatch(w, { stayOnCurrentPage: true }) }"
                 @disable-watch="disableWatchById"
                 @cancel-watch="cancelWatchById"
                 @focus-anomalies="focusAnomalies"
