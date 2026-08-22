@@ -14,6 +14,7 @@ import { isOemFeatureEnabled } from '@shared/oem-features'
 import { isWorkbenchAvailable } from '../workbench/registry'
 import { useTerminalStore } from '../stores/terminal'
 import { useAuthStore } from '../stores/auth'
+import { useConfigStore } from '../stores/config'
 import { resolveAssistantName } from '../utils/assistant-name'
 import { useTodoOverdueCount } from '../composables/useTodoOverdueCount'
 import { useWatchAnomalyCount } from '../composables/useWatchAnomalyCount'
@@ -38,6 +39,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const terminalStore = useTerminalStore()
 const authStore = useAuthStore()
+const configStore = useConfigStore()
 const { overdueCount, hasUnseenOverdue } = useTodoOverdueCount()
 const { anomalyCount: watchAnomalyCount } = useWatchAnomalyCount()
 
@@ -52,6 +54,7 @@ const canShowWatch = !isSteamBuild && isOemFeatureEnabled('watch')
 const secretaryName = computed(() => resolveAssistantName())
 
 const secretaryInitial = computed(() => secretaryName.value.slice(0, 1))
+const secretaryAvatar = computed(() => configStore.agentAvatar?.trim() || '')
 
 const appVersion = ref('')
 
@@ -172,7 +175,8 @@ function pick(action: 'open-todos' | 'open-watch' | 'open-awaken' | 'open-settin
       <div class="secretary-row">
         <button type="button" class="secretary-btn" :title="secretaryTitle" @click.stop="menuOpen = !menuOpen">
           <span class="avatar" :class="{ awakened: props.awakened }">
-            {{ secretaryInitial }}
+            <img v-if="secretaryAvatar" :src="secretaryAvatar" class="avatar-img" alt="" />
+            <template v-else>{{ secretaryInitial }}</template>
             <span v-if="secretaryHasBadge" class="avatar-dot" />
           </span>
           <span class="secretary-meta">
@@ -337,6 +341,14 @@ function pick(action: 'open-todos' | 'open-watch' | 'open-awaken' | 'open-settin
 .avatar.awakened {
   color: var(--brand-vital, #3d9a6a);
   box-shadow: 0 0 0 1px var(--brand-vital, #3d9a6a);
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
 }
 
 /* 待办逾期 / 关切异常打在头像上，右侧让给装备位 */
