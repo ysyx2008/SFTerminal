@@ -1,6 +1,6 @@
 # 崩溃诊断与一键上报（P0：可诊断）设计
 
-> 2026-08-16。一次性 plan 文档。完成后取舍升华进 `electron/services/diagnostics/SPEC.md`，本文件删除。
+> 2026-08-16。**已完成。** 取舍已升华进 `electron/services/diagnostics/SPEC.md`。
 
 ## 1. 背景
 
@@ -172,12 +172,12 @@ exitCode 这类信息一眼就能判定是原生访问违例，而不是 JS 异�
 
 ## 8. 任务拆解（commit 粒度）
 
-1. **SPEC + 崩溃记录内核**：`diagnostics/SPEC.md`（设计目标）、`crash-recorder.ts` + 单测（异常退出判定、连续计数、JSONL 滚动）。验收：`npx vitest run electron/services/diagnostics`。
-2. **接入主进程采集**：`main.ts` 的 crashReporter 启动、三类崩溃事件监听、quit 标记。验收：手动 `process.crash()` / 杀掉 utility 进程后确认 `crash-events.jsonl` 与 crashDumps 有产出。
-3. **摘要与诊断包生成**：`redact.ts` + `summary.ts` + `diagnostics.service.ts` + IPC + preload + 类型，含脱敏与摘要单测。验收：单测生成一份摘要文本与一个 zip，检查内容与脱敏结果。
-4. **崩溃提示**：`crash-notifier.ts` + 节流规则单测 + 渲染进程崩溃的原生 dialog（含「重新加载界面」）+ 前端提示组件。验收：手动触发渲染进程崩溃（devtools kill / `process.crash()`），确认弹窗出现、能复制摘要、能重载界面；连续触发确认节流生效。
-5. **前端诊断页**：UI + 提示开关 + 中英文案。验收：手动点一次，拿到摘要与 zip。
-6. **回归**：`bash electron/cli/test-cli.sh --no-ai`，claude-review 审查。
+1. ✅ **SPEC + 崩溃记录内核**：`diagnostics/SPEC.md`（设计目标）、`crash-recorder.ts` + 单测（异常退出判定、连续计数、JSONL 滚动）。验收：`npx vitest run electron/services/diagnostics`。
+2. ✅ **接入主进程采集**：`main.ts` 的 crashReporter 启动、三类崩溃事件监听、quit 标记。验收：手动 `process.crash()` / 杀掉 utility 进程后确认 `crash-events.jsonl` 与 crashDumps 有产出。
+3. ✅ **摘要与诊断包生成**：`redact.ts` + `summary.ts` + `diagnostics.service.ts` + IPC + preload + 类型，含脱敏与摘要单测。验收：单测生成一份摘要文本与一个 zip，检查内容与脱敏结果。
+4. ✅ **崩溃提示**：`crash-notifier.ts` + 节流规则单测 + 渲染进程崩溃的原生 dialog（含「重新加载界面」）+ 前端提示组件。验收：手动触发渲染进程崩溃（devtools kill / `process.crash()`），确认弹窗出现、能复制摘要、能重载界面；连续触发确认节流生效。
+5. ✅ **前端诊断页**：UI + 提示开关 + 中英文案。验收：手动点一次，拿到摘要与 zip。
+6. ✅ **回归**：`bash electron/cli/test-cli.sh --no-ai`，claude-review 审查。
 
 ## 9. 风险
 

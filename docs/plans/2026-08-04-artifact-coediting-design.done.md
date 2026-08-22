@@ -1,6 +1,6 @@
 # 产出物人机双写（Markdown 先行）设计方案
 
-> 2026-08-04。触发：WorkBuddy「人机双写」体验评估后的落地决策——不做全套 Office 双写（编辑器成本 80% 在腾讯文档肩上），先做 markdown 闭环。协议结论：旗鱼双许可（AGPL+商业），第三方 AGPL 编辑器（PPTist/SuperDoc）会污染商业版分发，故一律不引依赖，基于现有产出物面板自建。
+> 2026-08-04。**已完成。** 触发：WorkBuddy「人机双写」体验评估后的落地决策——不做全套 Office 双写（编辑器成本 80% 在腾讯文档肩上），先做 markdown 闭环。协议结论：旗鱼双许可（AGPL+商业），第三方 AGPL 编辑器（PPTist/SuperDoc）会污染商业版分发，故一律不引依赖，基于现有产出物面板自建。
 
 ## 目标
 
@@ -106,15 +106,15 @@
 
 ## 任务拆解（原子任务 + 验收）
 
-| # | 任务 | 文件 | 验收 |
-|---|---|---|---|
-| 1 | SPEC 写入设计目标 | `packages/workbench-assistant/src/artifact/SPEC.md` | 每句话用户可验收，无实现名 |
-| 2 | 磁盘基线 + dirty 提升进 store | `artifact/store.ts`、`domain/`（新 pure 模块）、`artifact-save-bridge.ts` 写穿 | 单测：三处基线更新点、dirty 重定义 |
-| 3 | 冲突保护 | `domain/coedit-conflict.ts`（新）、`MarkdownRenderer.vue` | 单测 accept/defer 全分支；手测：面板改字不保存 → AI 改盘 → 草稿保留 + 横幅两动作 |
-| 4 | 快照 dirty + Agent 提醒 | `shared/types`、`snapshot.ts`、`workbench-handler.ts`、`tools/file.ts` | 单测快照字段；CLI 手测 dirty 提醒输出 |
-| 5 | 快捷指令菜单 | `MarkdownRenderer.vue`、`composer-quote.ts`（新 provide）、`ArtifactPanel.vue`、i18n | 手测五个指令 = 引用 + 模板填入 |
-| 6 | prompt 双写规则 | `packages/workbench-assistant/src/prompt.ts` | CLI 跑一个「改这段」任务验证作用域行为 |
-| 7 | 回归 + 审查 | — | `test-cli.sh --no-ai` 绿；claude-review 问题清零 |
+| # | 任务 | 状态 | 文件 | 验收 |
+|---|---|---|---|---|
+| 1 | SPEC 写入设计目标 | ✅ | `packages/workbench-assistant/src/artifact/SPEC.md` | 每句话用户可验收，无实现名 |
+| 2 | 磁盘基线 + dirty 提升进 store | ✅ | `artifact/store.ts`、`domain/`（新 pure 模块）、`artifact-save-bridge.ts` 写穿 | 单测：三处基线更新点、dirty 重定义 |
+| 3 | 冲突保护 | ✅ | `domain/coedit-conflict.ts`（新）、`MarkdownRenderer.vue` | 单测 accept/defer 全分支；手测：面板改字不保存 → AI 改盘 → 草稿保留 + 横幅两动作 |
+| 4 | 快照 dirty + Agent 提醒 | ✅ | `shared/types`、`snapshot.ts`、`workbench-handler.ts`、`tools/file.ts` | 单测快照字段；CLI 手测 dirty 提醒输出 |
+| 5 | 快捷指令菜单 | ✅ | `MarkdownRenderer.vue`、`composer-quote.ts`（新 provide）、`ArtifactPanel.vue`、i18n | 手测五个指令 = 引用 + 模板填入 |
+| 6 | prompt 双写规则 | ✅ | `packages/workbench-assistant/src/prompt.ts` | CLI 跑一个「改这段」任务验证作用域行为 |
+| 7 | 回归 + 审查 | ✅ | — | `test-cli.sh --no-ai` 绿；claude-review 问题清零 |
 
 commit 粒度：任务 2-3 一个（前端地基+保护）、4 一个（后端感知）、5 一个（UX）、6 一个（prompt），SPEC 随首个代码 commit。
 
