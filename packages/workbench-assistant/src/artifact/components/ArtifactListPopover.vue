@@ -152,6 +152,7 @@ onUnmounted(() => {
 }
 
 .artifact-list-pop-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -197,8 +198,17 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.artifact-list-pop-item:hover .artifact-list-pop-name,
+.artifact-list-pop-item:focus-within .artifact-list-pop-name {
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent);
+}
+
 .artifact-list-pop-remove {
-  display: none;
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 1;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 22px;
@@ -208,11 +218,16 @@ onUnmounted(() => {
   background: transparent;
   color: var(--text-secondary, #888);
   cursor: pointer;
-  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
-.artifact-list-pop-item:hover .artifact-list-pop-remove {
-  display: inline-flex;
+.artifact-list-pop-item:hover .artifact-list-pop-remove,
+.artifact-list-pop-item:focus-within .artifact-list-pop-remove {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .artifact-list-pop-remove:hover {
