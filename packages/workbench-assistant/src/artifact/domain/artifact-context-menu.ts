@@ -11,7 +11,6 @@ export interface ArtifactContextMenuFlags {
   showOpen: boolean
   showJumpToSource: boolean
   showCloseOthers: boolean
-  showRemoveFromDesk: boolean
 }
 
 export function getArtifactContextMenuFlags(
@@ -30,8 +29,7 @@ export function getArtifactContextMenuFlags(
     showSaveAs: canSaveAsArtifact(artifact),
     showOpen: hasPath && options.fileExists,
     showJumpToSource: Boolean(artifact.sourceStepId),
-    showCloseOthers: openTabCount > 1,
-    showRemoveFromDesk: true
+    showCloseOthers: openTabCount > 1
   }
 }
 

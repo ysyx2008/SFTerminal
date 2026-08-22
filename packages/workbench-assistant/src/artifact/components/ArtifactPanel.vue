@@ -38,6 +38,7 @@ import { getRendererComponent } from '../renderers/ui-registry'
 import ArtifactFileIcon from './ArtifactFileIcon.vue'
 import { resolveSourceStepIdById } from '../domain/artifact-source'
 import { requireArtifactDesktopHost } from '../host'
+import { clampContextMenuPosition, viewportBox } from '../domain/context-menu-position'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../ui/useHoverTip'
 import HoverTipOverlay from '../ui/HoverTipOverlay.vue'
@@ -341,6 +342,33 @@ function closeArtifact(id: string, e?: Event) {
   artifactStore.closeTab(props.tabId, id)
 }
 
+const CTX_MENU_ESTIMATE = { width: 280, height: 360 }
+
+function placeCtxMenu(x: number, y: number, size = CTX_MENU_ESTIMATE) {
+  if (!ctxMenu.value.show) return
+  const placed = clampContextMenuPosition({
+    x,
+    y,
+    menuWidth: size.width,
+    menuHeight: size.height,
+    viewport: viewportBox()
+  })
+  ctxMenu.value = {
+    ...ctxMenu.value,
+    x: placed.left,
+    y: placed.top
+  }
+}
+
+function refineCtxMenu(x: number, y: number) {
+  void nextTick(() => {
+    const el = ctxMenuRef.value
+    if (!el || !ctxMenu.value.show) return
+    const r = el.getBoundingClientRect()
+    placeCtxMenu(x, y, { width: r.width, height: r.height })
+  })
+}
+
 function tryCloseFocusedTab(): boolean {
   if (!panelHasFocus.value) return false
   if (!artifactStore.isVisible(props.tabId)) return false
@@ -363,13 +391,6 @@ function isArtifactOwnedTarget(target: EventTarget | null): boolean {
 
 function setPanelFocusedFromEvent(target: EventTarget | null) {
   panelHasFocus.value = isArtifactOwnedTarget(target)
-}
-
-function removeFromDesk(id: string, e?: Event) {
-  e?.stopPropagation()
-  saveBridge.flush(id)
-  artifactStore.removeArtifact(props.tabId, id)
-  desktopHost.persistArtifacts(props.tabId)
 }
 
 function closeOthers(keepId: string) {
@@ -626,13 +647,20 @@ function openCtxMenu(e: MouseEvent, target: ContextTarget) {
   e.preventDefault()
   e.stopPropagation()
   closeFileMenu()
-  closeCtxMenu()
-  ctxMenu.value = {
-    show: true,
+  const placed = clampContextMenuPosition({
     x: e.clientX,
     y: e.clientY,
+    menuWidth: CTX_MENU_ESTIMATE.width,
+    menuHeight: CTX_MENU_ESTIMATE.height,
+    viewport: viewportBox()
+  })
+  ctxMenu.value = {
+    show: true,
+    x: placed.left,
+    y: placed.top,
     target
   }
+  refineCtxMenu(e.clientX, e.clientY)
 }
 
 function openHeaderCtxMenu(e: MouseEvent) {
@@ -1059,14 +1087,6 @@ defineExpose({ minimizePanel })
           {{ t('canvas.closeArtifact') }}
         </button>
         <button
-          v-if="ctxMenuFlags.showRemoveFromDesk"
-          type="button"
-          class="canvas-ctx-item"
-          @click="removeFromDesk(ctxArtifact.id); closeCtxMenu()"
-        >
-          {{ t('canvas.removeFromDesk') }}
-        </button>
-        <button
           v-if="ctxMenuFlags.showCloseOthers"
           type="button"
           class="canvas-ctx-item"
@@ -1350,6 +1370,7 @@ defineExpose({ minimizePanel })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 
 .canvas-ctx-path {
@@ -1564,7 +1585,12 @@ defineExpose({ minimizePanel })
 .canvas-ctx-menu {
   position: fixed;
   z-index: 9999;
+  box-sizing: border-box;
   min-width: 168px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 4px 0;
   background: var(--bg-secondary, #252525);
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));

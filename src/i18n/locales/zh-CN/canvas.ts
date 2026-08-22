@@ -3,7 +3,7 @@ export default {
   canvas: {
     artifactUntitled: '未命名',
     closeArtifact: '关闭',
-    removeFromDesk: '从桌上移出',
+    removeFromList: '从清单移出',
     prevArtifactTab: '上一个',
     nextArtifactTab: '下一个',
     artifactOverflow: '+{count} 更多',

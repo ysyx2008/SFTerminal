@@ -106,7 +106,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="artifact-list-pop-remove"
-          :title="t('canvas.removeFromDesk')"
+          :title="t('canvas.removeFromList')"
           @click="onRemove(artifact.id, $event)"
         >
           <X :size="12" />

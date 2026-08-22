@@ -3,7 +3,7 @@ export default {
   canvas: {
     artifactUntitled: 'Untitled',
     closeArtifact: 'Close',
-    removeFromDesk: 'Remove from desk',
+    removeFromList: 'Remove from list',
     prevArtifactTab: 'Previous',
     nextArtifactTab: 'Next',
     artifactOverflow: '+{count} more',
