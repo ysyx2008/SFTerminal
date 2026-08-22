@@ -23,7 +23,7 @@ import { sftpPut, sftpGet } from './sftp'
 import { searchKnowledge, getKnowledgeDoc } from './knowledge'
 import { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 import { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
-import { compressContext, recallCompressed, manageMemory } from './context'
+import { checkContext, compressContext, recallCompressed, manageMemory } from './context'
 import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, awaitFileTransfer, messageUser, executeMcpTool, loadMcpServer, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 import { dispatchSubAgents } from './sub-agent'
 import { executeWebSearch } from './web-search'
@@ -59,7 +59,7 @@ export { sftpPut, sftpGet } from './sftp'
 export { searchKnowledge, getKnowledgeDoc } from './knowledge'
 export { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 export { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
-export { compressContext, recallCompressed, manageMemory } from './context'
+export { checkContext, compressContext, recallCompressed, manageMemory } from './context'
 export { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, awaitFileTransfer, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
 export { dispatchSubAgents, getSubAgentTools } from './sub-agent'
 export { executeWebSearch } from './web-search'
@@ -231,6 +231,9 @@ export async function executeTool(
       return recallTask(args, executor, id)
     case 'deep_recall':
       return deepRecall(args, executor, id)
+
+    case 'check_context':
+      return checkContext(executor)
 
     case 'compress_context':
       return compressContext(args, executor)

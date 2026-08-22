@@ -7,6 +7,49 @@ import type { ToolExecutorConfig, ToolResult } from './types'
 import type { CompressionLevel } from '../context-builder'
 
 /**
+ * check_context: 查询当前上下文用量
+ *
+ * 只报数，不附带"该压缩了""还很宽裕"之类的判断——怎么应对由模型自己定。
+ */
+export function checkContext(executor: ToolExecutorConfig): ToolResult {
+  executor.addStep({
+    type: 'tool_call',
+    content: t('context_tool.check_step'),
+    toolName: 'check_context',
+    toolArgs: {},
+    riskLevel: 'safe'
+  })
+
+  if (!executor.getContextUsage) {
+    const error = 'check_context is not available in this context'
+    executor.addStep({
+      type: 'tool_result',
+      content: error,
+      toolName: 'check_context',
+      toolResult: error
+    })
+    return { success: false, output: '', error }
+  }
+
+  const usage = executor.getContextUsage()
+  const output = t('context_tool.check_result', {
+    used: usage.used.toLocaleString(),
+    total: usage.total.toLocaleString(),
+    remaining: usage.remaining.toLocaleString(),
+    percent: usage.total > 0 ? Math.round((usage.used / usage.total) * 100) : 0
+  })
+
+  executor.addStep({
+    type: 'tool_result',
+    content: output,
+    toolName: 'check_context',
+    toolResult: output
+  })
+
+  return { success: true, output }
+}
+
+/**
  * compress_context: 压缩当前对话中较早的工具调用和结果
  */
 export function compressContext(

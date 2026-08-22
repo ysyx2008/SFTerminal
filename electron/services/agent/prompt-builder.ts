@@ -364,21 +364,6 @@ export class PromptBuilder {
     }))
   }
 
-  /**
-   * 构建上下文管理章节（AI 自我认知）
-   */
-  static buildContextManagementSection(): string {
-    return [
-      '# 运行环境',
-      '',
-      '你运行在 ReAct 循环中，工具调用会追加到上下文（有容量上限）。',
-      '',
-      '**记忆层次**：当前对话 → 任务记忆（`recall`）→ 压缩归档（`recall_compressed`）',
-      '',
-      '**上下文管理**：用量超 70% 时用 `compress_context` 压缩较早内容（归档可找回）；任务完成后用 `manage_memory` 调整历史任务压缩级别或丢弃。',
-    ].join('\n')
-  }
-
   // ==================== 私有方法：派生状态 ====================
 
   private computeDerivedState(): void {

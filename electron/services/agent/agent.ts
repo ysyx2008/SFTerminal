@@ -3707,6 +3707,13 @@ export abstract class Agent {
       getTaskMemory: () => this.taskMemory,
       getSftpService: () => this.services.sftpService,
       getSshConfig: (terminalId) => this.services.sshService?.getConfig(terminalId) || null,
+      // 上下文余量自查：与压力判断同源（真实锚点 + 本轮新增），
+      // 免得模型查到的数跟系统自己的判断对不上
+      getContextUsage: () => {
+        const total = this._contextWindow.getContextLength()
+        const used = this._contextWindow.estimateCurrentPromptTokens(run.messages)
+        return { used, total, remaining: Math.max(0, total - used) }
+      },
       // 上下文管理
       compressCurrentContext: (summary: string, keepRecent: number) => {
         return this._contextWindow.compress(run, summary, keepRecent)

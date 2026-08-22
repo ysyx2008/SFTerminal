@@ -450,6 +450,47 @@ export interface GetAgentToolsOptions {
 }
 
 /**
+ * 窗格类工具（manage_pane / list_ssh_sessions）的说明按形态分版。
+ *
+ * 助手页与终端页对「能不能关掉最后一扇窗」的规矩正好相反，两条并排摆着模型得先猜
+ * 自己算哪一种。裁剪只依据形态——它在一次会话里不变，说明才不会变成变量把前缀缓存
+ * 每轮打掉（见 SPEC「给模型看的说明必须与它当下的处境一致」）。
+ */
+interface PaneToolDescriptions {
+  open: string
+  close: string
+  sshUsage: string
+}
+
+/** 本机与远程终端共用一版：眼前都已经有一扇窗，差别只在连着谁 */
+const TERMINAL_PANE_DESC: PaneToolDescriptions = {
+  open: '- open：不分屏、直接连一台真终端。可选 target：不传/local 开本机、ssh:<sessionId>（先 list_ssh_sessions）。已有终端时再开一扇。',
+  close: '- close：关掉一扇（必填 pane_id=ptyId）。不能关掉最后一扇。',
+  sshUsage: '用途：当你想连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 manage_pane(action="open", target="ssh:<sessionId>") 开一扇连过去（要并排对比就用 split）。无需用户手工切换或输入凭证。',
+}
+
+/**
+ * 直接以运行形态为键，不另起一套分类词汇——形态的真相源是 AgentMode。
+ * 新增一种形态时这张表会缺 key、当场编译不过，逼人明确决定它该看哪一版说明。
+ *
+ * `unspecified` 是没指明形态时的保守版本（两边规矩都留着），不是第四种形态。
+ */
+const PANE_TOOL_DESC: Record<AgentMode | 'unspecified', PaneToolDescriptions> = {
+  local: TERMINAL_PANE_DESC,
+  ssh: TERMINAL_PANE_DESC,
+  assistant: {
+    open: '- open：不分屏、直接连一台真终端。可选 target：不传/local 开本机、ssh:<sessionId>（先 list_ssh_sessions）。没有终端时用这个请终端入座（左边终端、右边这场对话）；正在看文件时开终端，文件让开进清单。已有终端时再开一扇。',
+    close: '- close：关掉一扇（必填 pane_id=ptyId）。可以关掉最后一扇，终端离座、回到对话独占，不自动把文件请回来。',
+    sshUsage: '用途：当你想连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 manage_pane(action="open", target="ssh:<sessionId>") 请真终端入座（没有终端时用 open；已有终端再开一扇可用 split）。无需用户手工切换或输入凭证。',
+  },
+  unspecified: {
+    open: '- open：不分屏、直接连一台真终端。可选 target：不传/local 开本机、ssh:<sessionId>（先 list_ssh_sessions）。助手没有终端时用这个请终端入座（左边终端、右边这场对话）；正在看文件时开终端，文件让开进清单。已有终端时再开一扇。',
+    close: '- close：关掉一扇（必填 pane_id=ptyId）。终端页不能关最后一扇；助手可以关最后一扇，终端离座、回到对话独占，不自动把文件请回来。',
+    sshUsage: '用途：当你想连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 manage_pane(action="open", target="ssh:<sessionId>") 请真终端入座（助手没有终端时用 open；已有终端再开一扇可用 split）。无需用户手工切换或输入凭证。',
+  },
+}
+
+/**
  * 获取可用工具定义
  * @param mcpService 可选的 MCP 服务，用于动态加载 MCP 工具
  * @param options 可选配置，如终端类型
@@ -558,6 +599,9 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
           streamDisplay: { titleKey: 'exec.awaiting_short', titleField: 'task_id' }
         }
       }
+
+  const { open: paneOpenDesc, close: paneCloseDesc, sshUsage: sshUsageDesc } =
+    PANE_TOOL_DESC[options?.mode ?? 'unspecified']
 
   // 内置工具（所有模式通用）
   // ⚠️ 顺序约定：子 Agent 通用工具排在最前（前 8 个），让父/子 Agent 的工具列表共享 byte-exact 前缀，
@@ -1094,9 +1138,9 @@ Agent 类型：
         description: `管理当前会话的终端窗格与连通。用 action 区分操作：
 
 - list：列出窗格（ptyId / label / isActive / terminalType / connected）。connected 仅表示主进程尚未观察到断开，不是远端健康探测。
-- open：不分屏、直接连一台真终端。可选 target：不传/local 开本机、ssh:<sessionId>（先 list_ssh_sessions）。助手没有终端时用这个请终端入座（左边终端、右边这场对话）；正在看文件时开终端，文件让开进清单。已有终端时再开一扇。
+${paneOpenDesc}
 - split：再开一扇（须已有终端）。必填 direction=horizontal|vertical；可选 target：不传/inherit 复用激活窗格、local、ssh:<sessionId>。成功后返回的 ptyId 就是之后 execute_command / focus / close 用的编号，与 list 里那扇窗相同。
-- close：关掉一扇（必填 pane_id=ptyId）。终端页不能关最后一扇；助手可以关最后一扇，终端离座、回到对话独占，不自动把文件请回来。
+${paneCloseDesc}
 - focus：切焦点并切换 Agent 默认操作窗格（必填 pane_id）。
 - ensure_connected：确保 SSH 窗格连通；已通则幂等；断则原地重连（成功=新 shell）。可选 pane_id。
 
@@ -1141,7 +1185,7 @@ SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不�
         name: 'list_ssh_sessions',
         description: `列出用户已配置好的 SSH 会话清单（不含密码 / 私钥等敏感字段），返回每个会话的 sessionId、name、host、port、username、group、lastUsedAt。
 
-用途：当你想连接到某台已配置的服务器时，先调本工具拿 sessionId，再调 manage_pane(action="open", target="ssh:<sessionId>") 请真终端入座（助手没有终端时用 open；已有终端再开一扇可用 split）。无需用户手工切换或输入凭证。
+${sshUsageDesc}
 
 适用场景：
 - 多机巡检 / 灰度对比（dev/staging/prod 平铺为多窗格）
@@ -1181,6 +1225,26 @@ SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不�
       },
       _meta: {
         streamDisplay: { titleKey: 'im.tool_send_notification', titleField: 'message' }
+      }
+    } as ToolDefinitionWithMeta,
+
+    // ==================== 上下文余量自查（常驻） ====================
+    // 常驻而非跟着压缩工具在高水位才出现：它的用处正在水位线之下——模型准备读大文件、
+    // 铺开多步任务之前想先掂量一下。等告警推到面前时数字已在告警里写着，反而不需要它了。
+    // 每轮往对话里塞用量数字是另一条路，但那些数字会永久沉淀成一串过期读数（见 SPEC
+    // 「给模型看的说明必须与它当下的处境一致」）。
+    {
+      type: 'function',
+      function: {
+        name: 'check_context',
+        description: `查询当前上下文窗口的用量，返回已用、上限、剩余 token 数。剩余量为估算值，本轮已产生的内容也计算在内。`,
+        parameters: {
+          type: 'object',
+          properties: {}
+        }
+      },
+      _meta: {
+        parallelizable: true,
       }
     } as ToolDefinitionWithMeta
   ]
