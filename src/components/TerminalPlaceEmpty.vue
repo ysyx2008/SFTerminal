@@ -243,7 +243,7 @@ function formatHost(session: SshSession): string {
   text-overflow: ellipsis;
 }
 
-/* 已存主机 */
+/* 最近连接 */
 .hosts {
   margin-top: 26px;
   animation: riseIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;

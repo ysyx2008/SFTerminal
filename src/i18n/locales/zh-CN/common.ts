@@ -448,7 +448,7 @@ export default {
     settings: '控制面板',
     openLocal: '打开本机终端',
     newRemote: '连接远程主机',
-    savedHosts: '已存主机',
+    savedHosts: '最近连接',
     manageHosts: '管理主机',
     emptyTerminal: '还没有打开的终端',
     emptyTerminalHint: '打开本机，或连一台远程主机。',

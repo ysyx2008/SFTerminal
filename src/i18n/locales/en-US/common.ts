@@ -449,7 +449,7 @@ export default {
     settings: 'Control Panel',
     openLocal: 'Open local terminal',
     newRemote: 'Connect to a host',
-    savedHosts: 'Saved hosts',
+    savedHosts: 'Recent connections',
     manageHosts: 'Manage hosts',
     emptyTerminal: 'No terminal open',
     emptyTerminalHint: 'Open a local terminal, or connect to a host.',
