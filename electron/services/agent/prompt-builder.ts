@@ -774,9 +774,13 @@ export class PromptBuilder {
   private buildPlanRule(): string {
     return [
       '**任务计划**：',
-      '- 简单任务：直接执行，不要创建 plan',
-      '- 复杂任务且步骤间存在依赖关系：使用 `plan(action="create")`，执行时用 `plan(action="update")` 更新状态',
-      '- 用户说"直接做"/"快速帮我"：不要创建 plan',
+      '- 简单任务、或用户说「直接做」/「快速帮我」：不要创建 plan',
+      '- 复杂且步骤有先后：先 `plan(action="create")`',
+      '- 有计划时，计划就是给用户看的进度，必须当场走：',
+      '  - 开始某一步：先 `plan(action="update", status="in_progress")`，再动手',
+      '  - 这一步的活做完：立刻 `plan(action="update", status="completed")`（可带一句 result），再开下一步',
+      '  - 禁止把多步攒到收工一次性勾完',
+      '  - 同时最多一个 in_progress',
     ].join('\n')
   }
 
