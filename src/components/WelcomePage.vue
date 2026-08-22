@@ -5,7 +5,7 @@
  */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, SquareTerminal, Monitor, Eye, Upload } from 'lucide-vue-next'
+import { Bot, SquareTerminal, Monitor, Eye, Upload, Lightbulb } from 'lucide-vue-next'
 import { useConfigStore, type SshSession } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import MatrixRain from './EasterEgg/MatrixRain.vue'
@@ -300,12 +300,9 @@ onUnmounted(() => {
       <div class="welcome-header">
         <div class="logo-container" @click="handleLogoClick">
           <div class="logo">
-            <img
-              :src="sailfishLogo"
-              alt="Sailfish"
-              class="sailfish-logo"
-              :class="{ 'is-greeting': showOnboardingInvite }"
-            />
+            <span class="logo-float" :class="{ 'is-greeting': showOnboardingInvite }">
+              <img :src="sailfishLogo" alt="Sailfish" class="sailfish-logo" />
+            </span>
           </div>
         </div>
         <!-- 首次运行：先显示默认文案；3s 后 logo 原地左右摆，标题交叉淡入「初次见面」，
@@ -356,7 +353,8 @@ onUnmounted(() => {
       <!-- 查看示例入口 -->
       <div v-if="canShowAssistant" class="examples-hint">
         <button type="button" class="examples-hint-btn" @click="openAssistant">
-          💡 {{ t('welcome.viewExamples') }}
+          <Lightbulb :size="13" :stroke-width="1.75" />
+          <span>{{ t('welcome.viewExamples') }}</span>
         </button>
       </div>
 
@@ -454,7 +452,7 @@ onUnmounted(() => {
       <!-- 提示信息（非 Steam 版有对话入口，为节省纵向空间隐藏 tips） -->
       <div v-if="isSteamBuild" class="tips" @click="nextTip" :title="t('welcome.clickToSwitchTip')">
         <div class="tip-item">
-          <span class="tip-icon">💡</span>
+          <span class="tip-icon"><Lightbulb :size="15" :stroke-width="1.75" /></span>
           <span class="tip-text">{{ currentTip }}</span>
           <span class="tip-next">↻</span>
         </div>
@@ -479,7 +477,7 @@ onUnmounted(() => {
 }
 
 .welcome-content {
-  max-width: 780px;
+  max-width: 760px;
   width: 100%;
   margin: 0 auto;
   animation: pageEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -673,27 +671,35 @@ onUnmounted(() => {
   align-items: center;
 }
 
+/* 动画落在这层不带滤镜的包裹上，drop-shadow 留在 img 上保持静态。
+   带滤镜的元素自己做 transform 动画时每帧都要重算滤镜、走不了合成器；
+   拆成两层后位移纯走合成器，而光晕依旧贴着旗鱼的轮廓。
+   不能放 .logo 上：那一层会被 enter-done 强制 animation:none，动画会提前掐掉。 */
+.logo-float {
+  display: flex;
+  will-change: transform;
+  animation: float 3s ease-in-out infinite;
+}
+
+/* 首次运行：先浮动 3s，之后开始持续挥手——只要邀请还在（用户没点按钮）就一直挥。
+   每轮「挥几下 + 停一拍」循环，像真的在打招呼。 */
+.logo-float.is-greeting {
+  transform-origin: 50% 88%;
+  animation:
+    float 3s ease-in-out 1,
+    logoGreet 2.6s ease-in-out 3s infinite;
+}
+
 .sailfish-logo {
   width: 88px;
   height: 88px;
   object-fit: contain;
   filter: drop-shadow(0 4px 16px rgba(var(--accent-decorative-rgb), 0.4));
   transition: filter 0.3s ease;
-  /* 浮动放在 img 上：.logo 会被 enter-done 强制 animation:none，放父级会提前掐掉 */
-  animation: float 3s ease-in-out infinite;
 }
 
 .logo-container:hover .sailfish-logo {
   filter: drop-shadow(0 6px 30px rgba(var(--accent-decorative-rgb), 0.6));
-}
-
-/* 首次运行：先浮动 3s，之后开始持续挥手——只要邀请还在（用户没点按钮）就一直挥。
-   每轮「挥几下 + 停一拍」循环，像真的在打招呼；动画在 img 上，避开 .logo 的 enter-done 重置。 */
-.sailfish-logo.is-greeting {
-  transform-origin: 50% 88%;
-  animation:
-    float 3s ease-in-out 1,
-    logoGreet 2.6s ease-in-out 3s infinite;
 }
 
 @keyframes logoGreet {
@@ -713,44 +719,32 @@ onUnmounted(() => {
   50% { transform: translate3d(0, -10px, 0); }
 }
 
+/* 纯色而非渐变：渐变文字一旦在某套主题下失效会整段透明变不可读，
+   而 12 套主题里此前只验证过 dark / light 两套。 */
 .welcome-title {
-  font-size: 26px;
-  font-weight: 800;
+  font-size: 22px;
+  font-weight: 600;
   color: var(--text-primary);
   margin: 0 0 4px 0;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.2px;
   white-space: nowrap;
-  /* 渐变文字效果 */
-  background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-primary) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* 浅色主题：调整标题渐变 */
-[data-color-scheme="light"] .welcome-title {
-  background: linear-gradient(135deg, var(--text-primary) 20%, var(--accent-primary) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
 }
 
 .welcome-subtitle {
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: 13px;
+  color: var(--text-secondary);
   margin: 0;
-  opacity: 0.85;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
 }
 
-/* Section Title */
+/* Section Title —— 与侧栏分组标签、设置面板分组标题同一套排版。
+   不用 text-transform: uppercase：对中文是空操作，只会留下多余字距。 */
 .section-title {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text-secondary);
   margin: 0 0 10px 0;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  opacity: 0.8;
+  letter-spacing: 0.05em;
 }
 
 /* 查看示例入口 */
@@ -762,21 +756,22 @@ onUnmounted(() => {
 }
 
 .examples-hint-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   cursor: pointer;
   padding: 3px 8px;
   border-radius: 4px;
-  opacity: 0.75;
-  transition: opacity 0.15s ease, color 0.15s ease;
+  transition: color 0.15s ease;
   font-family: inherit;
 }
 
 .examples-hint-btn:hover {
-  opacity: 1;
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 /* Quick Start Cards */
@@ -814,61 +809,44 @@ onUnmounted(() => {
   }
 }
 
-/* 每张卡片继承自己图标的品牌色，让 hover 时整张卡片以自己的品牌色"被点亮"——
-   AI 卡 → 橙色氛围、本地卡 → 绿色氛围、SSH 卡 → 蓝色氛围。
-   原先所有卡片共用 --accent-decorative-*（浅色下是蓝色 accent），与橙/绿图标
-   产生色相冲突（橙图标 + 蓝外晕看着不和谐），新方案让 hover 时图标、边框、
-   外晕、底色全部围绕同一品牌色，整张卡片像"亮起来"，告别浅色下的暗淡感。 */
+/* 静态态全中性（底色、边框、图标都不带色相），品牌色只在 hover 时透出一圈边框。
+   卡片本体不再参与"氛围"——整屏的色彩预算留给真正的主行动（输入框）。 */
 .action-card {
-  --card-glow-rgb: var(--accent-decorative-rgb);
   --card-glow-color: var(--accent-decorative-primary);
   position: relative;
-  background: var(--bg-secondary);
+  background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 16px 12px;
   cursor: pointer;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
-              border-color 0.3s ease, 
-              border-width 0.3s ease,
-              background 0.3s ease,
-              box-shadow 0.3s ease;
+  /* 立体感交给卡片本体的高度阴影，而不是图标色块底下的彩色投影——
+     后者是"悬浮的实体物件"观感的来源，但也是糖果色的重量来源。 */
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease,
+              border-color 0.2s ease,
+              background 0.2s ease,
+              box-shadow 0.2s ease;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
   gap: 8px;
-  /* 填满宽度时每张约 175px，height 150px 维持不过扁的比例 */
+  /* 让内容定高度，不再硬撑出半屏空白 */
   min-width: 0;
-  height: 150px;
+  min-height: 104px;
   overflow: hidden;
   /* 入场动画只用 opacity，让 hover transform 正常工作 */
   animation: cardFadeIn 0.25s ease-out both;
 }
 
-/* 通过 :has() 让卡片继承自己图标的品牌色（不需要改模板加 class） */
-.action-card:has(.card-icon.assistant) {
-  --card-glow-rgb: var(--brand-assistant-rgb);
-  --card-glow-color: var(--brand-assistant);
-}
-.action-card:has(.card-icon.local) {
-  --card-glow-rgb: var(--brand-local-rgb);
-  --card-glow-color: var(--brand-local);
-}
-.action-card:has(.card-icon.ssh) {
-  --card-glow-rgb: var(--brand-ssh-rgb);
-  --card-glow-color: var(--brand-ssh);
-}
-.action-card:has(.card-icon.patrol) {
-  --card-glow-rgb: var(--brand-patrol-rgb);
-  --card-glow-color: var(--brand-patrol);
-}
-/* 关切：橙色品牌色（与 ssh 蓝/local 绿/assistant 紫错开），呼应"运营监控"语义 */
-.action-card:has(.card-icon.watch) {
-  --card-glow-rgb: 245, 158, 11;
-  --card-glow-color: #f59e0b;
-}
+/* 通过 :has() 让卡片继承自己图标的品牌色（不需要改模板加 class）。
+   现在只用于 hover 的边框与极轻底色，静态态不透出任何色相。 */
+.action-card:has(.card-icon.assistant) { --card-glow-color: var(--brand-assistant); }
+.action-card:has(.card-icon.local) { --card-glow-color: var(--brand-local); }
+.action-card:has(.card-icon.ssh) { --card-glow-color: var(--brand-ssh); }
+.action-card:has(.card-icon.patrol) { --card-glow-color: var(--brand-patrol); }
+.action-card:has(.card-icon.watch) { --card-glow-color: #f59e0b; }
 
 .action-card:nth-child(1) { animation-delay: 0.10s; }
 .action-card:nth-child(2) { animation-delay: 0.16s; }
@@ -880,62 +858,19 @@ onUnmounted(() => {
   to { opacity: 1; }
 }
 
-/* ::before 是绕卡片外延 2px 的"边缘柔光环"（z-index:-1 在卡片背后，
-   只露出 inset:-2px 这一圈）。配合卡片自己的品牌色，hover 时变成
-   一圈与图标同色的发光描边。 */
-.action-card::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: 18px;
-  background: linear-gradient(135deg,
-    rgba(var(--card-glow-rgb), 1),
-    rgba(var(--card-glow-rgb), 0.55));
-  opacity: 0;
-  z-index: -1;
-  transition: opacity 0.3s ease;
-}
-
-.action-card:hover:not(.disabled)::before {
-  opacity: 0.55;
-}
-
-/* 卡片内部光晕 */
-.action-card::after {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, transparent 60%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-}
-
-.action-card:hover:not(.disabled)::after {
-  opacity: 1;
-}
-
-/* hover：让"整张卡片"看起来被自己的品牌色点亮——
-   - 边框：本卡品牌色实色（橙/绿/蓝），不再是统一的主题蓝
-   - 底色：基础灰底叠 8% 品牌色（color-mix）→ 从中性灰变成"暖灰/森林灰/湖蓝灰"，
-     这是解决"按钮还是很暗淡"的关键：卡片本体也参与了氛围
-   - 外晕：38px 品牌色发光，强度 0.32（比原来的 0.2 主题色更显眼） */
+/* hover：上浮 + 抬高阴影（这两者一起才有"被拿起来"的手感）+ 品牌色边框 + 极轻底色。
+   边框宽度保持 1px 不变（1px→2px 会引起亚像素重排，内容跟着抖）。 */
 .action-card:hover:not(.disabled) {
   border-color: var(--card-glow-color);
-  border-width: 2px;
-  transform: translateY(-4px) scale(1.03);
-  background: color-mix(in srgb, var(--card-glow-color) 8%, var(--bg-secondary));
-  box-shadow: 
-    0 14px 28px rgba(0, 0, 0, 0.16),
-    0 0 28px rgba(var(--card-glow-rgb), 0.28);
+  transform: translateY(-3px);
+  background: color-mix(in srgb, var(--card-glow-color) 5%, var(--bg-surface));
+  box-shadow: var(--shadow-lg);
 }
 
 .action-card:active:not(.disabled) {
-  transform: translateY(-2px) scale(0.97);
-  transition: transform 0.15s ease;
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 .action-card.disabled {
@@ -943,23 +878,23 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-/* card-icon 直接继承父级 .action-card 上的 --card-glow-rgb 品牌色变量，
-   不需要每个 .assistant/.local/.ssh 单独定义。静态阴影和 hover 增强阴影
-   都从这条变量取色，与卡片整体氛围保持同一色相。 */
+/* 线稿 + 品牌色前景，配一层极淡的同色底板。
+   问题从来不是"有颜色"，而是色彩的载体：同一个色相铺在实心渐变块上是噪音，
+   落在 1.5px 的线条上是点缀——识别性（紫=助手/绿=本地/蓝=SSH/橙=关切）留下，
+   重量只有原来的零头。 */
 .card-icon {
-  --icon-glow-rgb: var(--card-glow-rgb, var(--accent-decorative-rgb));
-  width: 46px;
-  height: 46px;
-  min-width: 46px;
-  min-height: 46px;
   flex-shrink: 0;
-  border-radius: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  box-shadow: 0 4px 15px rgba(var(--icon-glow-rgb), 0.3);
-  transition: transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
+  color: var(--card-glow-color);
+  background: color-mix(in srgb, var(--card-glow-color) 12%, transparent);
+  /* 发丝边给底板一个清晰轮廓——不靠加重底色就能站住 */
+  border: 1px solid color-mix(in srgb, var(--card-glow-color) 24%, transparent);
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
 /* 关切异常角标：定位在卡片右上角，像 app 图标角标一样自然 */
@@ -989,37 +924,10 @@ onUnmounted(() => {
   to   { transform: scale(1);   opacity: 1; }
 }
 
-/* hover：让图标"活过来"的三件套——
-   1. filter 提亮+提色：图标本身从静态色变得更鲜艳，这是"有活力"的核心反馈
-   2. 加强品牌色光晕（0.6 强度，30px 扩散）：四周染上同色的氛围光
-   3. 柔和环境暗影：保留上浮层次感
-   原先单一的 rgba(0,0,0,0.35) 阴影在浅色主题下会把鲜艳图标"拍灰"，故彻底替换。 */
 .action-card:hover:not(.disabled) .card-icon {
-  transform: scale(1.05) translateY(-2px);
-  filter: saturate(1.2) brightness(1.08);
-  box-shadow:
-    0 12px 24px rgba(var(--icon-glow-rgb), 0.5),
-    0 4px 10px rgba(0, 0, 0, 0.12);
-}
-
-.card-icon.assistant {
-  background: linear-gradient(135deg, var(--brand-assistant), var(--brand-assistant-end));
-}
-
-.card-icon.local {
-  background: linear-gradient(135deg, var(--brand-local), var(--brand-local-end));
-}
-
-.card-icon.ssh {
-  background: linear-gradient(135deg, var(--brand-ssh), var(--brand-ssh-end));
-}
-
-.card-icon.patrol {
-  background: linear-gradient(135deg, var(--brand-patrol), var(--brand-patrol-end));
-}
-
-.card-icon.watch {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
+  background: color-mix(in srgb, var(--card-glow-color) 20%, transparent);
+  border-color: color-mix(in srgb, var(--card-glow-color) 40%, transparent);
+  transform: scale(1.04);
 }
 
 /* 标题 hover 不再变色：
@@ -1034,8 +942,8 @@ onUnmounted(() => {
 }
 
 .card-desc {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: 12px;
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
@@ -1080,63 +988,41 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: var(--bg-secondary);
+  background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-xs);
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   position: relative;
-  overflow: hidden;
 }
 
-/* 会话卡片光效 */
-.session-item::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
-  transition: left 0.5s ease;
-}
-
-.session-item:hover::before {
-  left: 100%;
-}
-
-/* border-color 走 --accent-decorative-primary 纯色：
-   深色下是清晰白边（不再是孤立的 accent 蓝边），
-   其他主题下是各自装饰色（= accent）。和 action-card hover 观感一致。 */
+/* 与卡片 hover 同向：底色只能往"更浮起"走。
+   原先 hover 换 --bg-tertiary，而它在多数主题里比 --bg-surface 更暗，
+   手感上是"被按下去"，方向正好反了。 */
 .session-item:hover {
-  border-color: var(--accent-decorative-primary);
-  background: var(--bg-tertiary);
-  transform: translateX(4px);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  border-color: var(--brand-ssh);
+  background: color-mix(in srgb, var(--brand-ssh) 5%, var(--bg-surface));
+  box-shadow: var(--shadow-sm);
 }
 
-/* 静态态：图标前景也走 text-secondary 中性灰，避免深色下的"蓝色屏幕图标孤岛"；
-   底板继续用装饰色半透明淡衬。整组 session 入口走"纯中性"风格，让
-   主题色只在真正的功能锚点（btn-primary、激活 tab 条等）出现。 */
+/* 与卡片图标同一套语言：线稿 + 淡底板。取 SSH 品牌色，
+   和「SSH 连接」卡片形成呼应——这一组入口通向同一件事。 */
 .session-icon {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.2), rgba(var(--accent-decorative-rgb), 0.1));
+  width: 30px;
+  height: 30px;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary);
+  color: var(--brand-ssh);
+  background: color-mix(in srgb, var(--brand-ssh) 12%, transparent);
   flex-shrink: 0;
-  transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+  transition: background 0.2s ease;
 }
 
-/* hover 反馈：图标放大 + 底板加亮 + 前景提亮到 text-primary；
-   不再使用饱和 accent 渐变底板（那在深色下是孤立的蓝色方块）。 */
 .session-item:hover .session-icon {
-  transform: scale(1.1);
-  background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.35), rgba(var(--accent-decorative-rgb), 0.2));
-  color: var(--text-primary);
+  background: color-mix(in srgb, var(--brand-ssh) 20%, transparent);
 }
 
 .session-info {
@@ -1183,48 +1069,23 @@ onUnmounted(() => {
   transform: translateX(4px);
 }
 
-/* Tips */
+/* Tips（仅 Steam 版）：与卡片同一套表面语言，不再用渐变底 + 闪光 + 缩放 */
 .tips {
   padding: 12px 16px;
   margin-top: 38px;
-  background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.08), rgba(var(--accent-decorative-secondary-rgb), 0.05));
-  border: 1px solid rgba(var(--accent-decorative-rgb), 0.15);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: border-color 0.2s ease;
   user-select: none;
   animation: sectionEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.25s forwards;
   opacity: 0;
   position: relative;
-  overflow: hidden;
-}
-
-/* 提示框闪光效果 */
-.tips::after {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.1) 0%, transparent 50%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.tips:hover::after {
-  opacity: 1;
 }
 
 .tips:hover {
-  background: linear-gradient(135deg, rgba(var(--accent-decorative-rgb), 0.12), rgba(var(--accent-decorative-secondary-rgb), 0.08));
-  border-color: rgba(var(--accent-decorative-rgb), 0.25);
-  transform: scale(1.01);
-  box-shadow: 0 4px 20px rgba(var(--accent-decorative-rgb), 0.1);
-}
-
-.tips:active {
-  transform: scale(0.99);
+  border-color: var(--accent-decorative-primary);
 }
 
 .tip-item {
@@ -1238,9 +1099,9 @@ onUnmounted(() => {
 }
 
 .tip-icon {
-  font-size: 18px;
+  display: flex;
   flex-shrink: 0;
-  animation: tipPulse 2s ease-in-out 1;
+  color: var(--text-secondary);
 }
 
 /* 回首页时跳过入场动画（组件用 v-show 保持挂载，否则会反复重播） */
@@ -1252,8 +1113,7 @@ onUnmounted(() => {
 .welcome-page.enter-done .recent-sessions,
 .welcome-page.enter-done .tips,
 .welcome-page.enter-done .action-card,
-.welcome-page.enter-done .logo,
-.welcome-page.enter-done .tip-icon {
+.welcome-page.enter-done .logo {
   animation: none !important;
   opacity: 1 !important;
   transform: none !important;
@@ -1261,9 +1121,8 @@ onUnmounted(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .logo,
-  .tip-icon,
-  .sailfish-logo,
-  .sailfish-logo.is-greeting,
+  .logo-float,
+  .logo-float.is-greeting,
   .onboarding-invite-meet {
     animation: none !important;
   }
@@ -1278,11 +1137,6 @@ onUnmounted(() => {
   animation: none !important;
   opacity: 1 !important;
   transform: none !important;
-}
-
-@keyframes tipPulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
 }
 
 .tip-text {
