@@ -8,8 +8,15 @@ import {
   isFirefoxBridgeConnection,
   type BrowserBridgeStatus,
 } from '@shared/types/browser-bridge'
+import HoverTipOverlay from './HoverTipOverlay.vue'
+import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../composables/useHoverTip'
 
 const { t } = useI18n()
+const { hoverTip, showTip, hideTip } = useHoverTip({
+  placement: 'bottom',
+  delayMs: BUTTON_HOVER_TIP_DELAY_MS,
+  wrap: true,
+})
 
 // ==================== 类型 ====================
 
@@ -41,6 +48,8 @@ interface IMChannelState {
   connected: boolean
   hasCredentials: boolean
   autoConnect: boolean
+  /** 该渠道是否已有可回投的会话（微信连上但还没聊过时为 false） */
+  hasContact: boolean
 }
 
 // ==================== Props / Emits ====================
@@ -105,6 +114,13 @@ const isMcpPending = (server: McpServerConfig): boolean =>
 
 const mcpFailedCount = computed(() => mcpEnabledServers.value.filter(isMcpFailed).length)
 const mcpPendingCount = computed(() => mcpEnabledServers.value.filter(isMcpPending).length)
+
+const isWechatWaitingSession = (ch: IMChannelState) =>
+  ch.platform === 'wechat' && ch.connected && !ch.hasContact
+
+const wechatWaitingSession = computed(() =>
+  imChannels.value.some(isWechatWaitingSession)
+)
 
 const showGateway = computed(() => gatewayRunning.value)
 
@@ -190,9 +206,10 @@ const platformLabels: Record<IMPlatform, () => string> = {
 }
 
 const loadIMData = async () => {
-  const [status, config] = await Promise.all([
+  const [status, config, sendTargets] = await Promise.all([
     window.electronAPI.im.getStatus(),
     window.electronAPI.im.getConfig(),
+    window.electronAPI.im.getChannelSendTargets(),
   ])
 
   const credCheck: Record<IMPlatform, boolean> = {
@@ -213,6 +230,10 @@ const loadIMData = async () => {
     wechat: config.wechat?.autoConnect !== false,
   }
 
+  const hasContactByPlatform = new Map(
+    sendTargets.map(t => [t.platform, t.hasContact])
+  )
+
   const platforms: IMPlatform[] = ['dingtalk', 'feishu', 'slack', 'telegram', 'wecom', 'wechat']
   imChannels.value = platforms
     .map(p => ({
@@ -222,6 +243,7 @@ const loadIMData = async () => {
       connected: status[p].connected,
       hasCredentials: credCheck[p],
       autoConnect: autoConnectCheck[p],
+      hasContact: hasContactByPlatform.get(p) ?? false,
     }))
     .filter(c => c.hasCredentials)
 }
@@ -369,14 +391,19 @@ const togglePopover = async () => {
       window.addEventListener('resize', updateSidebarPosition)
     }
     await loadAll()
-    gatewayPollTimer = setInterval(loadGatewayData, 5000)
+    gatewayPollTimer = setInterval(async () => {
+      await loadGatewayData()
+      if (wechatWaitingSession.value) await loadIMData()
+    }, 5000)
   } else {
+    hideTip()
     window.removeEventListener('resize', updateSidebarPosition)
     if (gatewayPollTimer) { clearInterval(gatewayPollTimer); gatewayPollTimer = null }
   }
 }
 
 const closePopover = () => {
+  hideTip()
   showPopover.value = false
   window.removeEventListener('resize', updateSidebarPosition)
   if (gatewayPollTimer) { clearInterval(gatewayPollTimer); gatewayPollTimer = null }
@@ -487,8 +514,21 @@ onUnmounted(() => {
                 <span>{{ t('conn.noChannels') }}</span>
                 <button class="btn-link" @click="openSettings('im')">{{ t('conn.goSetup') }}</button>
               </div>
-              <div v-for="ch in imChannels" :key="ch.platform" class="item" :class="{ connected: ch.connected }">
-                <span class="item-dot" :class="ch.connected ? 'dot-on' : 'dot-off'">{{ ch.connected ? '●' : '○' }}</span>
+              <div
+                v-for="ch in imChannels" :key="ch.platform"
+                class="item"
+                :class="{ connected: ch.connected, waiting: isWechatWaitingSession(ch) }"
+                @mouseenter="isWechatWaitingSession(ch) && showTip($event, t('conn.wechatNeedMessageTip'))"
+                @mouseleave="hideTip"
+              >
+                <span
+                  class="item-dot"
+                  :class="{
+                    'dot-on': ch.connected && !isWechatWaitingSession(ch),
+                    'dot-wait': isWechatWaitingSession(ch),
+                    'dot-off': !ch.connected
+                  }"
+                >{{ ch.connected ? '●' : '○' }}</span>
                 <span class="item-name">{{ ch.label }}</span>
                 <div class="item-actions">
                   <button v-if="!ch.connected" class="btn-sm btn-connect" :disabled="imConnecting === ch.platform" @click="connectIM(ch)">
@@ -594,6 +634,7 @@ onUnmounted(() => {
         </div>
       </div>
     </Teleport>
+    <HoverTipOverlay :tip="hoverTip" />
   </div>
 </template>
 
@@ -814,6 +855,7 @@ onUnmounted(() => {
 }
 
 .dot-on { color: var(--brand-vital); }
+.dot-wait { color: var(--color-warning); }
 .dot-off { color: var(--text-muted); }
 .dot-disabled { color: var(--text-muted); opacity: 0.5; }
 

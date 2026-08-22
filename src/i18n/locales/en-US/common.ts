@@ -420,6 +420,7 @@ export default {
     browserBridge: 'Browser Assistant',
     browserBridgeChromium: 'Chromium browser',
     browserBridgeFirefox: 'Firefox browser',
+    wechatNeedMessageTip: 'WeChat won’t let the assistant message you first. Send the assistant a message in WeChat on your phone, then it can send things to your WeChat. If you haven’t chatted in a while, send another message.',
   },
 
   skills: {

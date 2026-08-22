@@ -1215,6 +1215,10 @@ button:focus-visible {
   transform: translate(-50%, 0);
 }
 
+.hover-tip-floating--wrap {
+  white-space: normal;
+}
+
 /* ============================= */
 /* 🎬 动画效果库                   */
 /* ============================= */

@@ -7,17 +7,21 @@ export interface HoverTipState {
   x: number
   y: number
   placement: HoverTipPlacement
+  wrap?: boolean
 }
 
 export interface HoverTipShowOptions {
   placement?: HoverTipPlacement
   /** 0 = 即时（文件图标）；按钮建议 500–700ms，接近系统 title 延迟 */
   delayMs?: number
+  /** 较长说明换行，避免被单行截断 */
+  wrap?: boolean
 }
 
 export interface UseHoverTipOptions {
   placement?: HoverTipPlacement
   delayMs?: number
+  wrap?: boolean
 }
 
 function resolveOptions(
@@ -25,11 +29,12 @@ function resolveOptions(
   override?: HoverTipPlacement | HoverTipShowOptions
 ): Required<HoverTipShowOptions> {
   if (typeof override === 'string') {
-    return { placement: override, delayMs: defaults.delayMs ?? 0 }
+    return { placement: override, delayMs: defaults.delayMs ?? 0, wrap: defaults.wrap ?? false }
   }
   return {
     placement: override?.placement ?? defaults.placement ?? 'left',
-    delayMs: override?.delayMs ?? defaults.delayMs ?? 0
+    delayMs: override?.delayMs ?? defaults.delayMs ?? 0,
+    wrap: override?.wrap ?? defaults.wrap ?? false
   }
 }
 
@@ -78,10 +83,10 @@ export function useHoverTip(options: UseHoverTipOptions | HoverTipPlacement = 'l
     clearShowTimer()
     hoverTip.value = null
 
-    const { placement, delayMs } = resolveOptions(defaults, override)
+    const { placement, delayMs, wrap } = resolveOptions(defaults, override)
     const reveal = () => {
       showTimer = null
-      hoverTip.value = { text, ...computeTipPosition(el, placement) }
+      hoverTip.value = { text, wrap, ...computeTipPosition(el, placement) }
     }
 
     if (delayMs <= 0) {

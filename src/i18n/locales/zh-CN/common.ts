@@ -419,6 +419,7 @@ export default {
     browserBridge: '浏览器助手',
     browserBridgeChromium: 'Chromium 浏览器',
     browserBridgeFirefox: 'Firefox 浏览器',
+    wechatNeedMessageTip: '微信规定助手不能先给你发消息。请先用手机微信给助手发一句话，之后助手才能发到你的微信上。好久没聊过，再发一句就行。',
   },
 
   skills: {
