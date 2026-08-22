@@ -5,6 +5,25 @@ export type ContextMenuBox = {
   bottom: number
 }
 
+/** 锚点弹出时，左右/上下哪边空间更大就按那边收；给菜单定上限，避免伸出可视范围被裁 */
+export function availableMenuExtent(opts: {
+  anchor: ContextMenuBox
+  viewport: ContextMenuBox
+  gap?: number
+  pad?: number
+}): { maxWidth: number; maxHeight: number } {
+  const gap = opts.gap ?? 6
+  const pad = opts.pad ?? 8
+  const minX = opts.viewport.left + pad
+  const maxX = opts.viewport.right - pad
+  const minY = opts.viewport.top + pad
+  const maxY = opts.viewport.bottom - pad
+  return {
+    maxWidth: Math.max(0, maxX - minX),
+    maxHeight: Math.max(0, maxY - (opts.anchor.bottom + gap), opts.anchor.top - gap - minY)
+  }
+}
+
 /** 右键菜单落在可视范围内：下方不够就翻到指针上方 */
 export function clampContextMenuPosition(opts: {
   x: number

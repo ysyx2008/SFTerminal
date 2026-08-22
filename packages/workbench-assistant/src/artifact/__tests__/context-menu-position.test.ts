@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampContextMenuPosition } from '../domain/context-menu-position'
+import { availableMenuExtent, clampContextMenuPosition } from '../domain/context-menu-position'
 
 const viewport = { left: 0, top: 0, right: 1000, bottom: 600 }
 
@@ -32,5 +32,21 @@ describe('clampContextMenuPosition', () => {
       menuHeight: 200,
       viewport
     })).toEqual({ left: 812, top: 80 })
+  })
+})
+
+describe('availableMenuExtent', () => {
+  it('宽度不超过可视范围', () => {
+    expect(availableMenuExtent({
+      anchor: { left: 200, top: 40, right: 222, bottom: 62 },
+      viewport
+    })).toEqual({ maxWidth: 984, maxHeight: 524 })
+  })
+
+  it('贴底时高度按上方空间算', () => {
+    expect(availableMenuExtent({
+      anchor: { left: 40, top: 540, right: 62, bottom: 562 },
+      viewport
+    })).toEqual({ maxWidth: 984, maxHeight: 526 })
   })
 })

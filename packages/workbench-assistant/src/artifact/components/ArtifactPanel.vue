@@ -9,8 +9,6 @@ import { useI18n } from 'vue-i18n'
 import {
   FolderOpen,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Download,
   Smartphone,
   X
@@ -38,7 +36,13 @@ import { getRendererComponent } from '../renderers/ui-registry'
 import ArtifactFileIcon from './ArtifactFileIcon.vue'
 import { resolveSourceStepIdById } from '../domain/artifact-source'
 import { requireArtifactDesktopHost } from '../host'
-import { clampContextMenuPosition, viewportBox } from '../domain/context-menu-position'
+import {
+  availableMenuExtent,
+  boxFromRect,
+  clampContextMenuPosition,
+  intersectViewport,
+  viewportBox
+} from '../domain/context-menu-position'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../ui/useHoverTip'
 import HoverTipOverlay from '../ui/HoverTipOverlay.vue'
@@ -91,6 +95,10 @@ const panelRoot = ref<HTMLElement | null>(null)
 const panelHasFocus = ref(false)
 const tabsEl = ref<HTMLElement | null>(null)
 const tabsOverflow = ref(false)
+const tabPickerRef = ref<HTMLElement | null>(null)
+const tabPickerMenuRef = ref<HTMLElement | null>(null)
+const showTabPicker = ref(false)
+const tabPickerPos = ref({ top: 0, left: 0, maxWidth: 280, maxHeight: 360 })
 let tabsResizeObserver: ResizeObserver | null = null
 const activeArtifact = computed(() => artifactStore.getActiveArtifact(props.tabId))
 const activeArtifactId = computed(() => activeArtifact.value?.id ?? null)
@@ -202,6 +210,7 @@ function toggleFileMenu() {
   if (next) {
     closeCtxMenu()
     closeSendMenu()
+    closeTabPicker()
   }
 }
 
@@ -261,6 +270,7 @@ async function toggleSendMenu() {
   showSendMenu.value = true
   closeFileMenu()
   closeCtxMenu()
+  closeTabPicker()
   void nextTick(syncSendMenuPosition)
   void refreshSendTargets()
   // 菜单打开期间跟随连接状态变化自刷新（启动后渠道可能稍后才连上）
@@ -386,6 +396,7 @@ function isArtifactOwnedTarget(target: EventTarget | null): boolean {
   if (sendMenuRef.value?.contains(target)) return true
   if (sendMenuDropdownRef.value?.contains(target)) return true
   if (ctxMenuRef.value?.contains(target)) return true
+  if (tabPickerMenuRef.value?.contains(target)) return true
   return false
 }
 
@@ -410,20 +421,59 @@ function selectTab(id: string) {
 const activeTabIndex = computed(() =>
   openTabs.value.findIndex((tab) => tab.id === activeArtifactId.value)
 )
-const canGoPrevTab = computed(() => activeTabIndex.value > 0)
-const canGoNextTab = computed(
-  () => activeTabIndex.value >= 0 && activeTabIndex.value < openTabs.value.length - 1
-)
 
 function stepTab(delta: 1 | -1) {
   const next = openTabs.value[activeTabIndex.value + delta]
   if (next) selectTab(next.id)
 }
 
-// 页签条挤不下时才给左右按钮，平时不占地方
+function toggleTabPicker() {
+  const next = !showTabPicker.value
+  showTabPicker.value = next
+  if (next) {
+    closeFileMenu()
+    closeSendMenu()
+    closeCtxMenu()
+  }
+}
+
+function closeTabPicker() {
+  showTabPicker.value = false
+}
+
+function syncTabPickerPosition() {
+  if (!showTabPicker.value) return
+  const anchorEl = tabPickerRef.value
+  if (!anchorEl) return
+  const anchor = boxFromRect(anchorEl.getBoundingClientRect())
+  const view = intersectViewport(panelRoot.value?.getBoundingClientRect())
+  const extent = availableMenuExtent({ anchor, viewport: view })
+  const maxWidth = Math.min(560, extent.maxWidth)
+  const maxHeight = Math.min(360, extent.maxHeight)
+  const menu = tabPickerMenuRef.value
+  const menuWidth = menu ? Math.min(menu.offsetWidth, maxWidth) : Math.min(280, maxWidth)
+  const menuHeight = menu ? Math.min(menu.offsetHeight, maxHeight) : Math.min(160, maxHeight)
+  const placed = clampContextMenuPosition({
+    x: anchor.left,
+    y: anchor.bottom + 6,
+    menuWidth,
+    menuHeight,
+    viewport: view
+  })
+  tabPickerPos.value = { top: placed.top, left: placed.left, maxWidth, maxHeight }
+}
+
+function pickTab(id: string) {
+  selectTab(id)
+  closeTabPicker()
+}
+
+// 页签条挤不下时才给下拉，平时不占地方
 function measureTabsOverflow() {
   const strip = tabsEl.value
-  tabsOverflow.value = strip ? strip.scrollWidth - strip.clientWidth > 1 : false
+  const overflow = strip ? strip.scrollWidth - strip.clientWidth > 1 : false
+  tabsOverflow.value = overflow
+  if (!overflow) closeTabPicker()
 }
 
 // 竖滚轮在横条上等于横滚，和浏览器页签条一致
@@ -632,6 +682,7 @@ function closeOverlayMenus() {
   closeFileMenu()
   closeSendMenu()
   closeCtxMenu()
+  closeTabPicker()
 }
 
 function closeAllMenus() {
@@ -640,13 +691,14 @@ function closeAllMenus() {
 
 /** 任意浮层菜单打开时屏蔽 canvas-body 的指针事件，防止 iframe 合成层吞掉点击，导致菜单无法关闭 */
 const anyMenuOpen = computed(() =>
-  ctxMenu.value.show || showFileMenuDropdown.value || showSendMenu.value
+  ctxMenu.value.show || showFileMenuDropdown.value || showSendMenu.value || showTabPicker.value
 )
 
 function openCtxMenu(e: MouseEvent, target: ContextTarget) {
   e.preventDefault()
   e.stopPropagation()
   closeFileMenu()
+  closeTabPicker()
   const placed = clampContextMenuPosition({
     x: e.clientX,
     y: e.clientY,
@@ -682,6 +734,16 @@ function onDocumentMouseDown(e: MouseEvent) {
   if (showFileMenuDropdown.value) {
     const el = fileMenuRef.value
     if (el && !el.contains(target)) closeFileMenu()
+  }
+  if (showTabPicker.value) {
+    const anchor = tabPickerRef.value
+    const menu = tabPickerMenuRef.value
+    if (
+      anchor && !anchor.contains(target) &&
+      menu && !menu.contains(target)
+    ) {
+      closeTabPicker()
+    }
   }
   if (showSendMenu.value) {
     const anchor = sendMenuRef.value
@@ -722,6 +784,10 @@ function onDocumentKeyDown(e: KeyboardEvent) {
   }
   if (showFileMenuDropdown.value) {
     closeFileMenu()
+    return
+  }
+  if (showTabPicker.value) {
+    closeTabPicker()
   }
 }
 
@@ -748,6 +814,18 @@ function scrollActiveTabIntoView() {
     tab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   })
 }
+
+watch(showTabPicker, (open) => {
+  if (open) {
+    syncTabPickerPosition()
+    void nextTick(syncTabPickerPosition)
+    window.addEventListener('resize', syncTabPickerPosition)
+    window.addEventListener('scroll', syncTabPickerPosition, true)
+  } else {
+    window.removeEventListener('resize', syncTabPickerPosition)
+    window.removeEventListener('scroll', syncTabPickerPosition, true)
+  }
+})
 
 watch(showSendMenu, (open) => {
   if (open) {
@@ -815,6 +893,8 @@ onUnmounted(() => {
   window.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('resize', syncSendMenuPosition)
   window.removeEventListener('scroll', syncSendMenuPosition, true)
+  window.removeEventListener('resize', syncTabPickerPosition)
+  window.removeEventListener('scroll', syncTabPickerPosition, true)
   offImConnectionChange?.()
 })
 
@@ -863,24 +943,16 @@ defineExpose({ minimizePanel })
           </span>
         </button>
       </div>
-      <div v-if="tabsOverflow" class="artifact-tab-nav">
+      <div v-if="tabsOverflow" ref="tabPickerRef" class="artifact-tab-picker">
         <button
           type="button"
           class="artifact-tab-nav-btn"
-          :disabled="!canGoPrevTab"
-          :title="t('canvas.prevArtifactTab')"
-          @click="stepTab(-1)"
+          :class="{ 'artifact-tab-nav-btn--open': showTabPicker }"
+          :aria-expanded="showTabPicker"
+          :title="t('canvas.openTabsMenu')"
+          @click="toggleTabPicker"
         >
-          <ChevronLeft :size="14" />
-        </button>
-        <button
-          type="button"
-          class="artifact-tab-nav-btn"
-          :disabled="!canGoNextTab"
-          :title="t('canvas.nextArtifactTab')"
-          @click="stepTab(1)"
-        >
-          <ChevronRight :size="14" />
+          <ChevronDown :size="14" />
         </button>
       </div>
       <div class="canvas-header-actions">
@@ -966,6 +1038,43 @@ defineExpose({ minimizePanel })
     </div>
 
     <Teleport to="body">
+      <div
+        v-if="showTabPicker"
+        ref="tabPickerMenuRef"
+        class="artifact-tab-picker-menu"
+        role="menu"
+        :aria-label="t('canvas.openTabsMenu')"
+        :style="{
+          top: `${tabPickerPos.top}px`,
+          left: `${tabPickerPos.left}px`,
+          maxWidth: `${tabPickerPos.maxWidth}px`,
+          maxHeight: `${tabPickerPos.maxHeight}px`
+        }"
+        @click.stop
+      >
+        <div class="artifact-tab-picker-head">{{ t('canvas.openTabsMenu') }}</div>
+        <div class="artifact-tab-picker-body">
+          <button
+            v-for="tab in openTabs"
+            :key="tab.id"
+            type="button"
+            role="menuitem"
+            class="artifact-tab-picker-item"
+            :class="{ active: tab.id === activeArtifactId }"
+            :title="artifactTabLabel(tab)"
+            @click="pickTab(tab.id)"
+          >
+            <span class="artifact-tab-picker-icon">
+              <ArtifactFileIcon
+                :file-path="tab.filePath"
+                :renderer="tab.renderer"
+                :size="20"
+              />
+            </span>
+            <span class="artifact-tab-picker-label">{{ artifactTabLabel(tab) }}</span>
+          </button>
+        </div>
+      </div>
       <div
         v-if="showSendMenu"
         ref="sendMenuDropdownRef"
@@ -1326,10 +1435,8 @@ defineExpose({ minimizePanel })
   opacity: 0.55;
 }
 
-.artifact-tab-nav {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+.artifact-tab-picker {
+  position: relative;
   flex-shrink: 0;
   margin-left: -6px;
 }
@@ -1348,14 +1455,89 @@ defineExpose({ minimizePanel })
   transition: background 0.12s, color 0.12s;
 }
 
-.artifact-tab-nav-btn:hover:not(:disabled) {
+.artifact-tab-nav-btn:hover,
+.artifact-tab-nav-btn--open {
   background: color-mix(in srgb, var(--text-primary, #eee) 10%, transparent);
   color: var(--text-primary, #eee);
 }
 
-.artifact-tab-nav-btn:disabled {
-  opacity: 0.3;
-  cursor: default;
+.artifact-tab-picker-menu {
+  position: fixed;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: min(240px, 100%);
+  padding: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  background: var(--bg-secondary, #252525);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
+}
+
+.artifact-tab-picker-head {
+  padding: 6px 8px 8px;
+  color: var(--text-secondary, #aaa);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.artifact-tab-picker-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.artifact-tab-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary, #eee);
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.artifact-tab-picker-item:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.07));
+}
+
+.artifact-tab-picker-item.active {
+  background: rgba(var(--accent-rgb, 137, 180, 250), 0.12);
+}
+
+.artifact-tab-picker-item.active .artifact-tab-picker-label {
+  color: var(--accent-primary, #89b4fa);
+}
+
+.artifact-tab-picker-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+}
+
+.artifact-tab-picker-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .artifact-tab .artifact-tab-close:hover {
@@ -1396,10 +1578,11 @@ defineExpose({ minimizePanel })
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  box-sizing: border-box;
   height: 22px;
   padding: 0 8px;
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.14));
-  border-radius: 4px;
+  border-radius: 5px;
   background: transparent;
   color: var(--text-primary, #eee);
   font-size: 11px;
@@ -1409,9 +1592,10 @@ defineExpose({ minimizePanel })
 }
 
 .canvas-icon-btn {
-  width: 24px;
+  width: 22px;
   padding: 0;
   justify-content: center;
+  border-radius: 5px;
   color: var(--text-secondary, #aaa);
 }
 
