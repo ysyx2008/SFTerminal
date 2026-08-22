@@ -195,9 +195,6 @@ const encodingOptions: LocalEncoding[] = [
 /* 卡片本身做 grid 容器：第一列宽度 = 整卡内最长 label 的宽度，
    配合内部 form-group 的 subgrid，让所有标签列统一对齐。 */
 .settings-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
   display: grid;
   grid-template-columns: max-content 1fr;
   column-gap: 16px;

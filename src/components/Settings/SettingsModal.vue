@@ -468,8 +468,8 @@ const tabGroups = computed(() => {
         { id: 'browserBridge' as const, label: t('settings.tabs.browserBridge'), icon: '🌍' },
         { id: 'email' as const, label: t('settings.tabs.email'), icon: '📧' },
         { id: 'calendar' as const, label: t('settings.tabs.calendar'), icon: '📅' },
-        { id: 'bastion' as const, label: t('settings.tabs.bastion'), icon: '🛡️' },
-        { id: 'plugins' as const, label: t('settings.tabs.plugins'), icon: '🧩' }
+        { id: 'bastion' as const, label: t('settings.tabs.bastion'), icon: '🛡️' }
+        // 插件页先不进菜单：生态没起来之前给用户看空列表没意义。页面和后端都留着。
       ]
     }
   ]
@@ -955,6 +955,16 @@ const onQrImageError = (event: Event) => {
   overflow-y: auto;
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* 内容限宽居中：面板是整窗铺满的，不限宽时设置行会随窗口无限拉伸，
+   项目名钉最左、控件钉最右，中间几百像素空白，眼睛要横跨整屏才能把两者关联起来。
+   限宽加在直接子元素（各设置页的根节点）而非容器本身，
+   是为了让滚动条保持贴在窗口右边缘，而不是跟着内容缩进来。 */
+.settings-content > * {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* 关于页面 */

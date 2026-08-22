@@ -458,11 +458,6 @@ const formatRelativeTime = (timestamp?: number): string => {
   gap: 20px;
 }
 
-.settings-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
 
 .section-header {
   display: flex;

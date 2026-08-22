@@ -104,19 +104,20 @@ const getUiThemeAccentStyle = (themeName: UiThemeName) => {
       <h4>{{ t('themeSettings.uiTheme') }}</h4>
       <p class="section-desc">{{ t('themeSettings.selectUiTheme') }}</p>
 
-      <!-- 跟随系统外观开关 -->
+      <!-- 跟随系统外观：整块可点，保留独立卡片外观以示可交互 -->
       <label class="follow-system-toggle">
-        <span class="toggle-label">
-          <span class="toggle-title">{{ t('themeSettings.followSystem') }}</span>
-          <span class="toggle-desc">{{ t('themeSettings.followSystemDesc') }}</span>
+        <span class="follow-system-text">
+          <span class="form-label">{{ t('themeSettings.followSystem') }}</span>
+          <span class="setting-desc">{{ t('themeSettings.followSystemDesc') }}</span>
         </span>
-        <input
-          type="checkbox"
-          class="toggle-input"
-          :checked="followSystem"
-          @change="followSystem = ($event.target as HTMLInputElement).checked"
-        />
-        <span class="toggle-slider"></span>
+        <span class="toggle-switch">
+          <input
+            type="checkbox"
+            :checked="followSystem"
+            @change="followSystem = ($event.target as HTMLInputElement).checked"
+          />
+          <span class="toggle-slider"></span>
+        </span>
       </label>
 
       <div class="ui-theme-grid" :class="{ 'is-dimmed': followSystem }">
@@ -171,11 +172,6 @@ const getUiThemeAccentStyle = (themeName: UiThemeName) => {
   gap: 20px;
 }
 
-.settings-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
 
 .settings-section h4 {
   display: flex;
@@ -193,7 +189,8 @@ const getUiThemeAccentStyle = (themeName: UiThemeName) => {
   line-height: 1.5;
 }
 
-/* 跟随系统开关 */
+/* 跟随系统开关：开关本体走 main.css 的 .settings-scope 规范，
+   这里只保留"整块可点"的卡片外观——它是个交互控件，不是普通设置行。 */
 .follow-system-toggle {
   display: flex;
   align-items: center;
@@ -206,7 +203,6 @@ const getUiThemeAccentStyle = (themeName: UiThemeName) => {
   border-radius: 8px;
   cursor: pointer;
   user-select: none;
-  position: relative;
   transition: border-color 0.2s ease;
 }
 
@@ -214,61 +210,11 @@ const getUiThemeAccentStyle = (themeName: UiThemeName) => {
   border-color: var(--text-muted);
 }
 
-.toggle-label {
+.follow-system-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   flex: 1;
   min-width: 0;
-}
-
-.toggle-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.toggle-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.toggle-input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.toggle-slider {
-  flex-shrink: 0;
-  position: relative;
-  width: 36px;
-  height: 20px;
-  background: var(--bg-hover);
-  border-radius: 10px;
-  transition: background 0.2s ease;
-}
-
-.toggle-slider::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  background: #ffffff;
-  border-radius: 50%;
-  transition: transform 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-}
-
-.toggle-input:checked ~ .toggle-slider {
-  background: var(--accent-primary);
-}
-
-.toggle-input:checked ~ .toggle-slider::after {
-  transform: translateX(16px);
 }
 
 /* UI 主题网格 */

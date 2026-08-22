@@ -291,11 +291,6 @@ async function copyToClipboard(text: string, label: string) {
 }
 
 /* ==================== 通用区块 ==================== */
-.settings-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
 
 .section-header {
   display: flex;
@@ -396,70 +391,7 @@ async function copyToClipboard(text: string, label: string) {
   cursor: not-allowed;
 }
 
-/* 设置行（标签 + 开关） */
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
-}
-
-.setting-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin: 2px 0 0;
-}
-
-/* 开关组件 */
-.toggle-switch {
-  position: relative;
-  display: inline-block;
-  width: 44px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
-.toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 24px;
-  transition: 0.3s;
-}
-
-.toggle-slider:before {
-  position: absolute;
-  content: "";
-  height: 18px;
-  width: 18px;
-  left: 2px;
-  bottom: 2px;
-  background-color: var(--text-muted);
-  border-radius: 50%;
-  transition: 0.3s;
-}
-
-.toggle-switch input:checked + .toggle-slider {
-  background-color: var(--accent-primary);
-  border-color: var(--accent-primary);
-}
-
-.toggle-switch input:checked + .toggle-slider:before {
-  transform: translateX(20px);
-  background-color: white;
-}
+/* 设置行、描述文字、开关走 main.css 的 .settings-scope 规范，本页不再重复定义 */
 
 .btn-icon-sm {
   display: inline-flex;

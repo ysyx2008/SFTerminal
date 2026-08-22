@@ -749,11 +749,6 @@ function openWebSearchKeyUrl() {
   gap: 20px;
 }
 
-.settings-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
 
 .section-header {
   display: flex;
@@ -830,54 +825,8 @@ function openWebSearchKeyUrl() {
   color: var(--text-muted);
 }
 
-/* Toggle Switch */
-.toggle-switch {
-  position: relative;
-  display: inline-block;
-  width: 44px;
-  height: 24px;
-}
-
-.toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 24px;
-  transition: 0.3s;
-}
-
-.toggle-slider:before {
-  position: absolute;
-  content: "";
-  height: 18px;
-  width: 18px;
-  left: 2px;
-  bottom: 2px;
-  background-color: var(--text-muted);
-  border-radius: 50%;
-  transition: 0.3s;
-}
-
-.toggle-switch input:checked + .toggle-slider {
-  background-color: var(--accent-primary);
-  border-color: var(--accent-primary);
-}
-
-.toggle-switch input:checked + .toggle-slider:before {
-  transform: translateX(20px);
-  background-color: white;
-}
+/* 开关基础样式走 main.css 的 .settings-scope 规范；
+   本页仅保留 -sm / is-disabled 两个页面自有的修饰变体（见下方） */
 
 /* 语音包 */
 .speech-pack-row {

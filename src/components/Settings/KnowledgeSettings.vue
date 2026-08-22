@@ -779,9 +779,9 @@ onUnmounted(() => {
         <div class="bottom-settings">
           <div class="bottom-item">
             <label class="setting-label">{{ t('knowledgeSettings.autoSaveUploads') }}</label>
-            <label class="switch">
+            <label class="toggle-switch">
               <input type="checkbox" v-model="settings.autoSaveUploads" @change="saveSettings" />
-              <span class="slider"></span>
+              <span class="toggle-slider"></span>
             </label>
           </div>
           <div class="bottom-item">
@@ -812,11 +812,6 @@ onUnmounted(() => {
   gap: 20px;
 }
 
-.settings-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
 
 .section-header {
   display: flex;
@@ -877,19 +872,7 @@ onUnmounted(() => {
 .setting-label { font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: 4px; }
 .setting-desc { font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.5; }
 
-/* Toggle switch */
-.switch { position: relative; display: inline-block; width: 44px; height: 24px; }
-.switch input { opacity: 0; width: 0; height: 0; }
-.slider {
-  position: absolute; cursor: pointer; inset: 0;
-  background-color: var(--bg-tertiary); transition: 0.3s; border-radius: 24px;
-}
-.slider:before {
-  position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
-  background-color: white; transition: 0.3s; border-radius: 50%;
-}
-input:checked + .slider { background-color: var(--accent-primary); }
-input:checked + .slider:before { transform: translateX(20px); }
+/* 开关走 main.css 的 .settings-scope 规范，本页不再重复定义 */
 
 .select {
   padding: 8px 12px; font-size: 13px;

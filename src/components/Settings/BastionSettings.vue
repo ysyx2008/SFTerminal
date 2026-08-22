@@ -240,11 +240,6 @@ async function syncAssets() {
   gap: 20px;
 }
 
-.settings-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
 
 .section-header {
   display: flex;
@@ -316,28 +311,10 @@ async function syncAssets() {
   border-color: var(--accent-primary);
 }
 
-/* 设置行 */
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0;
-}
-
+/* 设置行与描述文字走 main.css 的 .settings-scope 规范，本页只保留自有的文本/控件容器 */
 .setting-text {
   flex: 1;
   min-width: 0;
-}
-
-.setting-text .form-label {
-  margin-bottom: 2px;
-}
-
-.setting-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.4;
 }
 
 .setting-controls {
@@ -366,48 +343,7 @@ async function syncAssets() {
   text-align: center;
 }
 
-/* 开关 */
-.toggle-switch {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-slider {
-  position: absolute;
-  cursor: pointer;
-  inset: 0;
-  background: var(--border-color);
-  border-radius: 20px;
-  transition: 0.2s;
-}
-
-.toggle-slider::before {
-  content: '';
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  left: 2px;
-  bottom: 2px;
-  background: white;
-  border-radius: 50%;
-  transition: 0.2s;
-}
-
-.toggle-switch input:checked + .toggle-slider {
-  background: var(--accent-primary);
-}
-
-.toggle-switch input:checked + .toggle-slider::before {
-  transform: translateX(16px);
-}
+/* 开关走 main.css 的 .settings-scope 规范，本页不再重复定义 */
 
 /* 操作按钮 */
 .action-row {
