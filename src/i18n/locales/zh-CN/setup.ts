@@ -50,7 +50,7 @@ export default {
       customNamePlaceholder: '如：内网 GPT',
       customUrlPlaceholder: '如：http://192.168.1.100:8000/v1/chat/completions',
       customKeyPlaceholder: '如无需验证可留空',
-      customModelPlaceholder: '如：gpt-5.5'
+      customModelPlaceholder: '如：gpt-5.6'
     },
     import: {
       title: '导入 SSH 主机',

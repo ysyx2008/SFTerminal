@@ -13,12 +13,12 @@ description: '管理多个 AI 模型配置，了解关联视觉模型和高级�
 
 | 服务商 | 说明 | 推荐模型 |
 |--------|------|---------|
-| DeepSeek | 国产推理模型，性价比极高 | deepseek-v4-flash / deepseek-reasoner |
-| 通义千问 (Qwen) | 阿里云大模型 | qwen-plus / qwen-max |
-| OpenAI | GPT 系列，全球领先 | gpt-4o / gpt-4o-mini / o1 |
-| Claude | Anthropic 出品，擅长长文本和代码 | claude-sonnet-4-6 / claude-3.5-haiku |
-| Gemini | Google 出品，多模态能力强 | gemini-2.0-flash |
-| Ollama | 本地部署，完全免费离线 | 支持所有 Ollama 模型 |
+| DeepSeek | 国产推理模型，性价比极高，默认能看图 | deepseek-v4-flash-vision-exp / deepseek-v4-pro |
+| 通义千问 (Qwen) | 阿里云大模型 | qwen3.7-plus / qwen3.8-max |
+| OpenAI | GPT 系列，全球领先 | gpt-5.6 / gpt-5.6-terra / gpt-5.6-luna |
+| Claude | Anthropic 出品，擅长长文本和复杂任务 | claude-sonnet-5 / claude-opus-5 |
+| Gemini | Google 出品，多模态能力强 | gemini-3.7-flash |
+| Ollama | 本地部署，完全免费离线 | qwen3.5:9b 等 |
 
 还支持豆包、智谱、Kimi、Grok、Mistral 等更多兼容 OpenAI 接口的服务商。
 
@@ -36,7 +36,7 @@ description: '管理多个 AI 模型配置，了解关联视觉模型和高级�
 | 名称 | ✅ | 自定义名称，方便区分（如「日常 DeepSeek」「复杂任务 Claude」） |
 | API 地址 | ✅ | 服务商的 API 端点，选模板后自动填充 |
 | API Key | ⚠️ | 服务商提供的密钥（Ollama 等本地部署可留空） |
-| 模型 | ✅ | 要使用的模型名称（如 `gpt-4o`、`deepseek-v4-flash`） |
+| 模型 | ✅ | 要使用的模型名称（如 `gpt-5.6`、`deepseek-v4-flash`） |
 | 模型类型 | ✅ | 通用 或 视觉，影响多模态路由 |
 | 关联视觉模型 | — | 为纯文本模型关联一个能看图的模型 |
 | 代理 | — | 该配置专用的 HTTP/SOCKS 代理，可选 |
@@ -50,10 +50,10 @@ description: '管理多个 AI 模型配置，了解关联视觉模型和高级�
 
 | 场景 | 推荐模型 | 原因 |
 |------|---------|------|
-| 日常使用 | DeepSeek Chat / Qwen Plus | 便宜、速度快、中文好 |
-| 复杂推理 | DeepSeek R1 / Claude / o1 | 思维链推理能力强 |
-| 看图分析 | GPT-4o / Claude Sonnet / Gemini | 视觉能力好 |
-| 离线使用 | Ollama (Qwen2.5/Llama) | 完全免费、不联网 |
+| 日常使用 | DeepSeek V4 Flash Vision / Qwen 3.7 Plus / Gemini 3.7 Flash | 便宜、速度快、中文好；DeepSeek 默认就能看图 |
+| 复杂推理 | DeepSeek V4 Pro / Claude Opus 5 / GPT-5.6 / Grok 4.6 | 长推理、多步骤任务更稳 |
+| 看图分析 | 豆包 Seed 2.1 / Qwen 3.7 Plus / GPT-5.6 / Gemini 3.7 Flash / Claude Sonnet 5 | 视觉能力好 |
+| 离线使用 | Ollama（`qwen3.5:9b`） | 完全免费、不联网 |
 
 在对话区顶部的模型选择器中可以随时切换，不会丢失当前对话上下文。
 
@@ -115,7 +115,7 @@ description: '管理多个 AI 模型配置，了解关联视觉模型和高级�
 2. 打开终端，拉取模型：
 
 ```bash
-ollama pull qwen2.5:7b    # 推荐，中文能力好
+ollama pull qwen3.5:9b    # 推荐，中文与看图都不错
 ollama pull llama3.1:8b    # 英文能力强
 ```
 
@@ -124,7 +124,7 @@ ollama pull llama3.1:8b    # 英文能力强
 1. 新增 AI 配置，选择 Ollama 模板
 2. API 地址会自动填充为 `http://localhost:11434`
 3. API Key 留空
-4. 模型名称填写你拉取的模型名（如 `qwen2.5:7b`）
+4. 模型名称填写你拉取的模型名（如 `qwen3.5:9b`）
 
 > **注意**：本地模型的能力取决于模型大小和你的硬件配置。7B 参数模型适合日常使用，复杂任务建议配合云端大模型。
 
@@ -137,7 +137,7 @@ ollama pull llama3.1:8b    # 英文能力强
 
 **模型名称填什么？**
 - 使用服务商文档中列出的模型 ID（区分大小写）
-- 如 `gpt-4o`（非 `GPT-4o`）、`deepseek-v4-flash`（非 `DeepSeek Chat`）
+- 如 `gpt-5.6`（非 `GPT-5.6`）、`deepseek-v4-flash`（非 `DeepSeek Chat`）
 
 **切换模型后 AI 行为不同了**
 - 不同模型的能力差异很大，这是正常的

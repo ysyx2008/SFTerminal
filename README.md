@@ -145,17 +145,17 @@ SailFish does not ship a model — you bring an API key. Settings include one-cl
   "name": "Daily DeepSeek",
   "apiUrl": "https://api.deepseek.com/chat/completions",
   "apiKey": "sk-xxx",
-  "model": "deepseek-v4-flash"
+  "model": "deepseek-v4-flash-vision-exp"
 }
 ```
 
 **Recommended models** (Function Calling required):
 
-- **Daily** (fast, affordable): DeepSeek V4 Flash · Qwen 3.5 Plus · Claude Sonnet 4.6 · Gemini Flash
-- **Complex** (long reasoning, multi-step): DeepSeek V4 Pro · GPT-5.5 · Claude Opus 4.7 · Gemini 3.1 Pro
-- **Vision** (screenshots, images, scanned PDFs): Doubao Seed 2.0 · Qwen 3.5 Plus · GPT-5.5 · Gemini Flash · Claude Sonnet 4.6
-- **Local / offline**: Ollama (preset in Settings; small context windows struggle with multi-step work)
-- **More**: Doubao, Zhipu GLM-5, Kimi K2.6, MiniMax M2.7, Grok, Mistral, and any OpenAI-compatible endpoint
+- **Daily** (fast, affordable, and can see images): DeepSeek V4 Flash Vision · Qwen 3.7 Plus · Claude Sonnet 5 · Gemini 3.7 Flash
+- **Complex** (long reasoning, multi-step): DeepSeek V4 Pro · GPT-5.6 · Claude Opus 5 · Grok 4.6
+- **Vision** (screenshots, images, scanned PDFs): DeepSeek V4 Flash Vision (enough as the default) · Doubao Seed 2.1 · Qwen 3.7 Plus · GPT-5.6 · Gemini 3.7 Flash · Claude Sonnet 5
+- **Local / offline**: Ollama (preset `qwen3.5:9b`; small context windows struggle with multi-step work)
+- **More**: Zhipu GLM-5.3, Kimi K3, MiniMax M3, Mistral Large, and any OpenAI-compatible endpoint
 
 A text-only model can be paired with a vision model: pictures go there, then conversation returns. For web search, Bocha is a good default in China. Step-by-step: [First setup](https://www.sfterm.com/en/docs/getting-started/first-setup/).
 

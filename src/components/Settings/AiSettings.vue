@@ -360,6 +360,9 @@ const applyTemplate = (template: typeof templates.value[0]) => {
   formData.value.name = template.name
   formData.value.apiUrl = template.apiUrl
   formData.value.model = template.model
+  formData.value.contextLength = template.contextLength
+  formData.value.modelType = template.modelType || 'general'
+  formData.value.visionProfileId = undefined
 }
 
 // 当前选中的模板对应的 keyUrl
@@ -560,7 +563,7 @@ const openKeyUrl = (url: string) => {
                   <span v-if="contextLengthTooSmall" class="form-hint context-too-small">
                     {{ t('aiSettings.contextLengthTooSmall') }}
                   </span>
-                  <span v-else class="form-hint">DeepSeek/Qwen/Claude/Gemini(1000)、GPT-5.5(1050)</span>
+                  <span v-else class="form-hint">DeepSeek/Qwen/Claude/Gemini(1000)、GPT-5.6(1050)</span>
                 </div>
                 <div class="form-group flex-1">
                   <label class="form-label">{{ t('aiSettings.maxOutputTokens') }}（{{ t('aiSettings.maxOutputTokensHint') }}）</label>

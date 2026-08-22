@@ -13,12 +13,12 @@ SailFish includes preset templates for these providers — click to auto-fill th
 
 | Provider | Description | Recommended Models |
 |----------|-------------|-------------------|
-| DeepSeek | Chinese reasoning model, excellent value | deepseek-v4-flash / deepseek-reasoner |
-| Qwen (Tongyi) | Alibaba Cloud LLM | qwen-plus / qwen-max |
-| OpenAI | GPT series, industry leader | gpt-4o / gpt-4o-mini / o1 |
-| Claude | By Anthropic, strong at long text and code | claude-sonnet-4-6 / claude-3.5-haiku |
-| Gemini | By Google, strong multimodal | gemini-2.0-flash |
-| Ollama | Local deployment, free & offline | Any Ollama model |
+| DeepSeek | Chinese reasoning model, excellent value, vision by default | deepseek-v4-flash-vision-exp / deepseek-v4-pro |
+| Qwen (Tongyi) | Alibaba Cloud LLM | qwen3.7-plus / qwen3.8-max |
+| OpenAI | GPT series, industry leader | gpt-5.6 / gpt-5.6-terra / gpt-5.6-luna |
+| Claude | By Anthropic, strong at long text and complex work | claude-sonnet-5 / claude-opus-5 |
+| Gemini | By Google, strong multimodal | gemini-3.7-flash |
+| Ollama | Local deployment, free & offline | qwen3.5:9b and others |
 
 Also supports Doubao, Zhipu, Kimi, Grok, Mistral, and any other provider with an OpenAI-compatible API.
 
@@ -36,7 +36,7 @@ Also supports Doubao, Zhipu, Kimi, Grok, Mistral, and any other provider with an
 | Name | ✅ | Custom label to distinguish configs (e.g. "Daily DeepSeek", "Complex Tasks Claude") |
 | API URL | ✅ | Provider's API endpoint; auto-filled from template |
 | API Key | ⚠️ | Secret key from the provider (leave blank for Ollama / local) |
-| Model | ✅ | Model identifier (e.g. `gpt-4o`, `deepseek-v4-flash`) |
+| Model | ✅ | Model identifier (e.g. `gpt-5.6`, `deepseek-v4-flash`) |
 | Type | ✅ | General or Vision — affects multimodal routing |
 | Linked Vision Model | — | Associate a vision-capable model for image handling |
 | Proxy | — | Per-config HTTP/SOCKS proxy, optional |
@@ -50,10 +50,10 @@ We recommend configuring 2–3 models and switching by scenario:
 
 | Scenario | Recommended | Why |
 |----------|-------------|-----|
-| Everyday use | DeepSeek Chat / Qwen Plus | Cheap, fast, good at Chinese |
-| Complex reasoning | DeepSeek R1 / Claude / o1 | Strong chain-of-thought reasoning |
-| Image analysis | GPT-4o / Claude Sonnet / Gemini | Best vision capabilities |
-| Offline use | Ollama (Qwen2.5 / Llama) | Completely free, no internet needed |
+| Everyday use | DeepSeek V4 Flash Vision / Qwen 3.7 Plus / Gemini 3.7 Flash | Cheap, fast, good at Chinese; DeepSeek sees images by default |
+| Complex reasoning | DeepSeek V4 Pro / Claude Opus 5 / GPT-5.6 / Grok 4.6 | Stronger on long, multi-step work |
+| Image analysis | Doubao Seed 2.1 / Qwen 3.7 Plus / GPT-5.6 / Gemini 3.7 Flash / Claude Sonnet 5 | Best vision capabilities |
+| Offline use | Ollama (`qwen3.5:9b`) | Completely free, no internet needed |
 
 Switch models anytime using the selector at the top of the chat area — the current conversation context is preserved.
 
@@ -115,7 +115,7 @@ Run AI models locally for free, with no internet required:
 2. Pull a model in your terminal:
 
 ```bash
-ollama pull qwen2.5:7b    # recommended for Chinese
+ollama pull qwen3.5:9b    # recommended — Chinese and vision
 ollama pull llama3.1:8b    # strong for English
 ```
 
@@ -124,7 +124,7 @@ ollama pull llama3.1:8b    # strong for English
 1. Add a new AI configuration, select the Ollama template
 2. API URL auto-fills to `http://localhost:11434`
 3. Leave API Key blank
-4. Enter the model name you pulled (e.g. `qwen2.5:7b`)
+4. Enter the model name you pulled (e.g. `qwen3.5:9b`)
 
 > **Note**: Local model capability depends on model size and your hardware. 7B models work well for everyday tasks; for complex operations, pair with a cloud model.
 
@@ -137,7 +137,7 @@ ollama pull llama3.1:8b    # strong for English
 
 **What model name should I enter?**
 - Use the model ID from the provider's documentation (case-sensitive)
-- e.g. `gpt-4o` (not `GPT-4o`), `deepseek-v4-flash` (not `DeepSeek Chat`)
+- e.g. `gpt-5.6` (not `GPT-5.6`), `deepseek-v4-flash` (not `DeepSeek Chat`)
 
 **AI behavior changed after switching models**
 - Different models have very different capabilities — this is expected

@@ -75,6 +75,7 @@ const aiTemplates = computed(() => {
     keyUrl: tpl.keyUrl,
     contextLength: tpl.contextLength,
     needsApiKey: tpl.needsApiKey,
+    modelType: tpl.modelType,
     isCustom: tpl.isCustom
   }))
 })
@@ -151,7 +152,8 @@ const saveTemplateConfig = async (template: typeof aiTemplates.value[0]) => {
       apiUrl: template.apiUrl,
       apiKey: apiKey,
       model: template.model,
-      contextLength: template.contextLength
+      contextLength: template.contextLength,
+      modelType: template.modelType || 'general',
     } as AiProfile)
     // 清空输入并收起
     templateApiKeys.value[template.index] = ''

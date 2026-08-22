@@ -46,7 +46,7 @@ API Key 是 AI 服务商提供给你的一串密钥，用来验证你的身份�
 4. 点击 **「新增」** 按钮
 5. 在服务商列表中选择 **「DeepSeek」** — 系统会自动填入 API 地址和默认模型
 6. 在 **API Key** 输入框中，粘贴你刚才复制的 API Key
-7. 模型选择 `deepseek-v4-flash`（默认已选好）
+7. 模型选择 `deepseek-v4-flash-vision-exp`（默认已选好，能看图）
 8. 点击 **「保存」**
 
 ## 第三步：设为当前使用
@@ -97,23 +97,23 @@ API Key 是 AI 服务商提供给你的一串密钥，用来验证你的身份�
 
 | 服务商 | 特点 | 模型推荐 | 是否需要翻墙 |
 |--------|------|---------|-------------|
-| DeepSeek | 高性价比，推理强 | deepseek-v4-flash | 否 |
-| 通义千问 (Qwen) | 阿里云出品，免费额度大 | qwen-plus | 否 |
-| OpenAI | 全球最知名 | gpt-4o | 是 |
-| Claude | 长文本、复杂推理 | claude-sonnet-4-6 | 是 |
-| Gemini | Google 出品 | gemini-2.0-flash | 是 |
-| Ollama | 本地部署，完全免费 | 按需选择 | 否 |
+| DeepSeek | 高性价比，推理强，也能看图 | deepseek-v4-flash-vision-exp | 否 |
+| 通义千问 (Qwen) | 阿里云出品，免费额度大 | qwen3.7-plus | 否 |
+| OpenAI | 全球最知名 | gpt-5.6 | 是 |
+| Claude | 长文本、复杂推理 | claude-sonnet-5 | 是 |
+| Gemini | Google 出品，能看图 | gemini-3.7-flash | 是 |
+| Ollama | 本地部署，完全免费 | qwen3.5:9b | 否 |
 
-> 你可以配置多个模型，日常用便宜的（DeepSeek），复杂任务切换到强力模型（Claude、GPT-4o），在旗鱼顶部的模型选择器中一键切换。
+> 你可以配置多个模型，日常用便宜的（DeepSeek），复杂任务切换到强力模型（Claude Opus 5、GPT-5.6），在旗鱼顶部的模型选择器中一键切换。
 
 ## 本地部署（Ollama）
 
 如果你想完全免费、不联网使用 AI，可以用 Ollama 在本地运行模型：
 
 1. 前往 [ollama.com](https://ollama.com/) 下载并安装 Ollama
-2. 在终端中运行 `ollama run qwen2.5` 下载并启动一个模型
+2. 在终端中运行 `ollama run qwen3.5:9b` 下载并启动一个模型
 3. 在旗鱼中新增 AI 配置，选择「Ollama」模板
-4. API Key 留空，模型填 `qwen2.5`
+4. API Key 留空，模型填 `qwen3.5:9b`
 5. 保存并设为当前使用
 
 > 本地模型的效果取决于你的电脑配置。建议至少 16GB 内存。GPU 加速能显著提升体验。

@@ -1,3 +1,5 @@
+import type { AiModelType } from '@shared/types'
+
 /**
  * 内置 AI 供应商预设模板（单一数据源）
  *
@@ -36,23 +38,26 @@ export interface AiTemplate {
   isLocal: boolean
   /** 是否需要 API Key */
   needsApiKey: boolean
+  /** 预设时标成视觉模型，用户不必再关联另一个 */
+  modelType?: AiModelType
 }
 
 export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'DeepSeek',
     apiUrl: 'https://api.deepseek.com/chat/completions',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-v4-flash-vision-exp',
     descKey: 'aiSettings.templates.deepseek',
     keyUrl: 'https://platform.deepseek.com/api_keys',
     contextLength: 1_000_000,
     isLocal: false,
     needsApiKey: true,
+    modelType: 'vision',
   },
   {
     name: 'Qwen',
     apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-    model: 'qwen3.5-plus-2026-02-15',
+    model: 'qwen3.7-plus',
     descKey: 'aiSettings.templates.qwen',
     keyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
     contextLength: 1_000_000,
@@ -62,7 +67,7 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'Doubao',
     apiUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
-    model: 'doubao-seed-2-0-pro-260215',
+    model: 'doubao-seed-2-1-pro-260628',
     descKey: 'aiSettings.templates.doubao',
     keyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
     contextLength: 256_000,
@@ -72,37 +77,37 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'Zhipu',
     apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    model: 'glm-5',
+    model: 'glm-5.3',
     descKey: 'aiSettings.templates.zhipu',
     keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
-    contextLength: 200_000,
+    contextLength: 1_000_000,
     isLocal: false,
     needsApiKey: true,
   },
   {
     name: 'Kimi',
     apiUrl: 'https://api.moonshot.cn/v1/chat/completions',
-    model: 'kimi-k2.6',
+    model: 'kimi-k3',
     descKey: 'aiSettings.templates.kimi',
     keyUrl: 'https://platform.moonshot.cn/console/api-keys',
-    contextLength: 256_000,
+    contextLength: 1_000_000,
     isLocal: false,
     needsApiKey: true,
   },
   {
     name: 'MiniMax',
     apiUrl: 'https://api.minimaxi.com/v1/chat/completions',
-    model: 'MiniMax-M2.7',
+    model: 'MiniMax-M3',
     descKey: 'aiSettings.templates.minimax',
     keyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
-    contextLength: 204_800,
+    contextLength: 1_000_000,
     isLocal: false,
     needsApiKey: true,
   },
   {
     name: 'OpenAI',
     apiUrl: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-5.5',
+    model: 'gpt-5.6',
     descKey: 'aiSettings.templates.openai',
     keyUrl: 'https://platform.openai.com/api-keys',
     contextLength: 1_050_000,
@@ -112,7 +117,7 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'Claude',
     apiUrl: 'https://api.anthropic.com/v1/messages',
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-5',
     descKey: 'aiSettings.templates.claude',
     keyUrl: 'https://console.anthropic.com/settings/keys',
     contextLength: 1_000_000,
@@ -122,7 +127,7 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'Gemini',
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    model: 'gemini-3.1-pro-preview',
+    model: 'gemini-3.7-flash',
     descKey: 'aiSettings.templates.gemini',
     keyUrl: 'https://aistudio.google.com/apikey',
     contextLength: 1_000_000,
@@ -132,10 +137,10 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'Grok',
     apiUrl: 'https://api.x.ai/v1/chat/completions',
-    model: 'grok-4.20-0309-reasoning',
+    model: 'grok-4.6',
     descKey: 'aiSettings.templates.grok',
     keyUrl: 'https://console.x.ai/team/default/api-keys',
-    contextLength: 2_000_000,
+    contextLength: 500_000,
     isLocal: false,
     needsApiKey: true,
   },
@@ -152,10 +157,10 @@ export const AI_TEMPLATES: AiTemplate[] = [
   {
     name: 'Ollama',
     apiUrl: 'http://localhost:11434/v1/chat/completions',
-    model: 'qwen2.5:7b',
+    model: 'qwen3.5:9b',
     descKey: 'aiSettings.templates.ollama',
     keyUrl: 'https://ollama.com/',
-    contextLength: 32_000,
+    contextLength: 256_000,
     isLocal: true,
     needsApiKey: false,
   },

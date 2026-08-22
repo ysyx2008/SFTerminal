@@ -46,7 +46,7 @@ If this is your first time using an AI API, we recommend starting with **DeepSee
 4. Click **"Add"**
 5. Select **"DeepSeek"** in the provider list — the system will fill in the API URL and default model
 6. In the **API Key** field, paste the API Key you copied
-7. Choose model `deepseek-v4-flash` (usually selected by default)
+7. Choose model `deepseek-v4-flash-vision-exp` (selected by default; can see images)
 8. Click **"Save"**
 
 ## Step 3: Set as Active
@@ -97,23 +97,23 @@ Besides DeepSeek, here are other common AI providers you can configure in SailFi
 
 | Provider | Highlights | Recommended Model | VPN Required |
 |----------|------------|-------------------|--------------|
-| DeepSeek | Cost-effective, strong reasoning | deepseek-v4-flash | No |
-| Qwen | Alibaba Cloud, generous free tier | qwen-plus | No |
-| OpenAI | Widely used globally | gpt-4o | Yes |
-| Claude | Long documents, complex reasoning | claude-sonnet-4-6 | Yes |
-| Gemini | Google | gemini-2.0-flash | Yes |
-| Ollama | Local deployment, free | Choose as needed | No |
+| DeepSeek | Cost-effective, strong reasoning, can see images | deepseek-v4-flash-vision-exp | No |
+| Qwen | Alibaba Cloud, generous free tier | qwen3.7-plus | No |
+| OpenAI | Widely used globally | gpt-5.6 | Yes |
+| Claude | Long documents, complex reasoning | claude-sonnet-5 | Yes |
+| Gemini | Google, strong vision | gemini-3.7-flash | Yes |
+| Ollama | Local deployment, free | qwen3.5:9b | No |
 
-> You can configure multiple models: use a cheaper one for daily tasks (e.g., DeepSeek) and switch to a stronger one (Claude, GPT-4o) for complex work. Switch in the top model selector in SailFish.
+> You can configure multiple models: use a cheaper one for daily tasks (e.g., DeepSeek) and switch to a stronger one (Claude Opus 5, GPT-5.6) for complex work. Switch in the top model selector in SailFish.
 
 ## Local Deployment (Ollama)
 
 If you want fully free, offline AI, you can run a model locally with Ollama:
 
 1. Go to [ollama.com](https://ollama.com/) and download/install Ollama
-2. Run `ollama run qwen2.5` in a terminal to download and start a model
+2. Run `ollama run qwen3.5:9b` in a terminal to download and start a model
 3. In SailFish, add a new AI config and select the **"Ollama"** template
-4. Leave API Key empty; set model to `qwen2.5`
+4. Leave API Key empty; set model to `qwen3.5:9b`
 5. Save and set as active
 
 > Local model quality depends on your hardware. At least 16GB RAM is recommended. A GPU improves performance noticeably.

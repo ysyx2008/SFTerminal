@@ -50,7 +50,7 @@ export default {
       customNamePlaceholder: 'e.g., Internal GPT',
       customUrlPlaceholder: 'e.g., http://192.168.1.100:8000/v1/chat/completions',
       customKeyPlaceholder: 'Leave empty if not required',
-      customModelPlaceholder: 'e.g., gpt-5.5'
+      customModelPlaceholder: 'e.g., gpt-5.6'
     },
     import: {
       title: 'Import SSH Hosts',
