@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ExecutionMode, IMProcessMode } from '@shared/types'
 import { useTerminalStore } from '../../stores/terminal'
 import WeChatQrConnect from '../WeChatQrConnect.vue'
+import { SettingsPage, SettingsGroup, SettingRow, SettingToggle, SettingSegmented, SettingHelp } from './kit'
 
 const { t, locale } = useI18n()
 const terminalStore = useTerminalStore()
@@ -97,6 +98,18 @@ const processMode = ref<IMProcessMode>('messages')
 const sendThinkingProcess = ref(false)
 // 自由模式二次确认弹窗
 const showFreeModeConfirm = ref(false)
+
+const executionModeOptions = computed(() => [
+  { value: 'strict', label: t('settings.im.modeStrict'), title: t('settings.im.modeStrictDesc') },
+  { value: 'relaxed', label: t('settings.im.modeRelaxed'), title: t('settings.im.modeRelaxedDesc') },
+  { value: 'free', label: t('settings.im.modeFree'), title: t('settings.im.modeFreeDesc'), tone: 'danger' as const },
+])
+
+const processModeOptions = computed(() => [
+  { value: 'final', label: t('settings.im.processModeFinal'), title: t('settings.im.processModeFinalDesc') },
+  { value: 'messages', label: t('settings.im.processModeMessages'), title: t('settings.im.processModeMessagesDesc') },
+  { value: 'all', label: t('settings.im.processModeAll'), title: t('settings.im.processModeAllDesc') },
+])
 
 let cleanupImListener: (() => void) | null = null
 
@@ -492,6 +505,15 @@ function requestFreeMode() {
   showFreeModeConfirm.value = true
 }
 
+// 自由模式意味着放弃逐条确认，切过去前必须先过一道二次确认
+function onExecutionModeSelect(mode: string) {
+  if (mode === 'free') {
+    if (executionMode.value !== 'free') requestFreeMode()
+    return
+  }
+  changeExecutionMode(mode as ExecutionMode)
+}
+
 async function confirmEnableFreeMode() {
   showFreeModeConfirm.value = false
   await changeExecutionMode('free')
@@ -503,13 +525,18 @@ function cancelFreeMode() {
 </script>
 
 <template>
-  <div class="im-settings">
-
-    <div class="settings-section">
-      <div class="section-header">
-        <h4>{{ t('settings.im.title') }}</h4>
-      </div>
-      <p class="section-desc">{{ t('settings.im.description') }}</p>
+  <SettingsPage>
+    <!-- 平台卡片各自成盒，外面不再套一层卡片 -->
+    <SettingsGroup
+      variant="plain"
+      :title="t('settings.im.title')"
+      :desc="t('settings.im.description')"
+    >
+      <template #actions>
+        <a class="guide-doc-link" :href="t('settings.im.guideDocUrl')" target="_blank" rel="noopener noreferrer">
+          {{ t('settings.im.guideDocLink') }} ↗
+        </a>
+      </template>
 
       <!-- 微信 -->
       <div class="im-platform-card" :class="{ expanded: wechatExpanded, connected: wxConnected }">
@@ -588,15 +615,24 @@ function cancelFreeMode() {
               <p class="hint-summary">{{ t('settings.im.feishuHint') }}</p>
               <div class="im-hint-actions">
                 <button class="btn-ai-setup" @click="requestAiSetup('feishu')" :disabled="fsConnected">🤖 {{ t('settings.im.aiSetupBtn') }}</button>
+                <SettingHelp
+                  :label="t('settings.im.guideTitle')"
+                  :title="t('settings.im.guideFeishuTitle')"
+                >
+                  <ol>
+                    <li>{{ t('settings.im.guideFeishuStep1') }}</li>
+                    <li>{{ t('settings.im.guideFeishuStep2') }}</li>
+                    <li>{{ t('settings.im.guideFeishuStep3') }}</li>
+                    <li>{{ t('settings.im.guideFeishuStep4') }}</li>
+                    <li>{{ t('settings.im.guideFeishuStep5') }}</li>
+                    <li>{{ t('settings.im.guideFeishuStep6') }}</li>
+                    <li>{{ t('settings.im.guideFeishuStep7') }}</li>
+                    <li>{{ t('settings.im.guideFeishuStep8') }}</li>
+                  </ol>
+                </SettingHelp>
                 <a class="im-channel-help-link" :href="t('settings.im.guideDocUrlFeishu')" target="_blank" rel="noopener noreferrer">{{ t('settings.im.guideDetailLink') }} ↗</a>
               </div>
             </div>
-            <ol class="setup-steps">
-              <li>{{ t('settings.im.feishuStep1') }}</li>
-              <li>{{ t('settings.im.feishuStep2') }}</li>
-              <li>{{ t('settings.im.feishuStep3') }}</li>
-              <li>{{ t('settings.im.feishuStep4') }}</li>
-            </ol>
           </div>
 
           <div class="form-group">
@@ -679,15 +715,21 @@ function cancelFreeMode() {
               <p class="hint-summary">{{ t('settings.im.dingtalkHint') }}</p>
               <div class="im-hint-actions">
                 <button class="btn-ai-setup" @click="requestAiSetup('dingtalk')" :disabled="dtConnected">🤖 {{ t('settings.im.aiSetupBtn') }}</button>
+                <SettingHelp
+                  :label="t('settings.im.guideTitle')"
+                  :title="t('settings.im.guideDingtalkTitle')"
+                >
+                  <ol>
+                    <li>{{ t('settings.im.guideDingtalkStep1') }}</li>
+                    <li>{{ t('settings.im.guideDingtalkStep2') }}</li>
+                    <li>{{ t('settings.im.guideDingtalkStep3') }}</li>
+                    <li>{{ t('settings.im.guideDingtalkStep4') }}</li>
+                    <li>{{ t('settings.im.guideDingtalkStep5') }}</li>
+                  </ol>
+                </SettingHelp>
                 <a class="im-channel-help-link" :href="t('settings.im.guideDocUrlDingtalk')" target="_blank" rel="noopener noreferrer">{{ t('settings.im.guideDetailLink') }} ↗</a>
               </div>
             </div>
-            <ol class="setup-steps">
-              <li>{{ t('settings.im.dingtalkStep1') }}</li>
-              <li>{{ t('settings.im.dingtalkStep2') }}</li>
-              <li>{{ t('settings.im.dingtalkStep3') }}</li>
-              <li>{{ t('settings.im.dingtalkStep4') }}</li>
-            </ol>
           </div>
 
           <div class="form-group">
@@ -750,14 +792,21 @@ function cancelFreeMode() {
               <p class="hint-summary">{{ t('settings.im.wecomHint') }}</p>
               <div class="im-hint-actions">
                 <button class="btn-ai-setup" @click="requestAiSetup('wecom')" :disabled="wcConnected">🤖 {{ t('settings.im.aiSetupBtn') }}</button>
+                <SettingHelp
+                  :label="t('settings.im.guideTitle')"
+                  :title="t('settings.im.guideWecomTitle')"
+                >
+                  <ol>
+                    <li>{{ t('settings.im.guideWecomStep1') }}</li>
+                    <li>{{ t('settings.im.guideWecomStep2') }}</li>
+                    <li>{{ t('settings.im.guideWecomStep3') }}</li>
+                    <li>{{ t('settings.im.guideWecomStep4') }}</li>
+                    <li>{{ t('settings.im.guideWecomStep5') }}</li>
+                  </ol>
+                </SettingHelp>
                 <a class="im-channel-help-link" :href="t('settings.im.guideDocUrlWecom')" target="_blank" rel="noopener noreferrer">{{ t('settings.im.guideDetailLink') }} ↗</a>
               </div>
             </div>
-            <ol class="setup-steps">
-              <li>{{ t('settings.im.wecomStep1') }}</li>
-              <li>{{ t('settings.im.wecomStep2') }}</li>
-              <li>{{ t('settings.im.wecomStep3') }}</li>
-            </ol>
           </div>
 
           <div class="form-group">
@@ -820,15 +869,21 @@ function cancelFreeMode() {
               <p class="hint-summary">{{ t('settings.im.slackHint') }}</p>
               <div class="im-hint-actions">
                 <button class="btn-ai-setup" @click="requestAiSetup('slack')" :disabled="slConnected">🤖 {{ t('settings.im.aiSetupBtn') }}</button>
+                <SettingHelp
+                  :label="t('settings.im.guideTitle')"
+                  :title="t('settings.im.guideSlackTitle')"
+                >
+                  <ol>
+                    <li>{{ t('settings.im.guideSlackStep1') }}</li>
+                    <li>{{ t('settings.im.guideSlackStep2') }}</li>
+                    <li>{{ t('settings.im.guideSlackStep3') }}</li>
+                    <li>{{ t('settings.im.guideSlackStep4') }}</li>
+                    <li>{{ t('settings.im.guideSlackStep5') }}</li>
+                  </ol>
+                </SettingHelp>
                 <a class="im-channel-help-link" :href="t('settings.im.guideDocUrlSlack')" target="_blank" rel="noopener noreferrer">{{ t('settings.im.guideDetailLink') }} ↗</a>
               </div>
             </div>
-            <ol class="setup-steps">
-              <li>{{ t('settings.im.slackStep1') }}</li>
-              <li>{{ t('settings.im.slackStep2') }}</li>
-              <li>{{ t('settings.im.slackStep3') }}</li>
-              <li>{{ t('settings.im.slackStep4') }}</li>
-            </ol>
           </div>
 
           <div class="form-group">
@@ -892,14 +947,19 @@ function cancelFreeMode() {
               <p class="hint-summary">{{ t('settings.im.telegramHint') }}</p>
               <div class="im-hint-actions">
                 <button class="btn-ai-setup" @click="requestAiSetup('telegram')" :disabled="tgConnected">🤖 {{ t('settings.im.aiSetupBtn') }}</button>
+                <SettingHelp
+                  :label="t('settings.im.guideTitle')"
+                  :title="t('settings.im.guideTelegramTitle')"
+                >
+                  <ol>
+                    <li>{{ t('settings.im.guideTelegramStep1') }}</li>
+                    <li>{{ t('settings.im.guideTelegramStep2') }}</li>
+                    <li>{{ t('settings.im.guideTelegramStep3') }}</li>
+                  </ol>
+                </SettingHelp>
                 <a class="im-channel-help-link" :href="t('settings.im.guideDocUrlTelegram')" target="_blank" rel="noopener noreferrer">{{ t('settings.im.guideDetailLink') }} ↗</a>
               </div>
             </div>
-            <ol class="setup-steps">
-              <li>{{ t('settings.im.telegramStep1') }}</li>
-              <li>{{ t('settings.im.telegramStep2') }}</li>
-              <li>{{ t('settings.im.telegramStep3') }}</li>
-            </ol>
           </div>
 
           <div class="form-group">
@@ -938,172 +998,69 @@ function cancelFreeMode() {
       <div class="security-note">
         {{ t('settings.im.securityNote') }}
       </div>
-    </div>
+    </SettingsGroup>
 
-    <!-- 运行模式（独立区块） -->
-    <div class="settings-section">
-      <div class="execution-mode-section">
-        <span class="execution-mode-title">{{ t('settings.im.executionMode') }}</span>
-        <div class="execution-mode-selector">
-          <button
-            class="mode-option"
-            :class="{ active: executionMode === 'strict' }"
-            @click="changeExecutionMode('strict')"
-            :title="t('settings.im.modeStrictDesc')"
-          >{{ t('settings.im.modeStrict') }}</button>
-          <button
-            class="mode-option"
-            :class="{ active: executionMode === 'relaxed' }"
-            @click="changeExecutionMode('relaxed')"
-            :title="t('settings.im.modeRelaxedDesc')"
-          >{{ t('settings.im.modeRelaxed') }}</button>
-          <button
-            class="mode-option mode-option-free"
-            :class="{ active: executionMode === 'free' }"
-            @click="executionMode === 'free' ? changeExecutionMode('strict') : requestFreeMode()"
-            :title="t('settings.im.modeFreeDesc')"
-          >{{ t('settings.im.modeFree') }}</button>
-        </div>
-        <span class="execution-mode-desc">{{ t('settings.im.executionModeDesc') }}</span>
-      </div>
+    <!-- 运行模式 -->
+    <SettingsGroup>
+      <SettingRow
+        :label="t('settings.im.executionMode')"
+        :desc="t('settings.im.executionModeDesc')"
+      >
+        <SettingSegmented
+          :model-value="executionMode"
+          :options="executionModeOptions"
+          @update:model-value="onExecutionModeSelect"
+        />
+      </SettingRow>
 
-      <div class="process-messages-section">
-        <div class="execution-mode-section">
-          <span class="execution-mode-title">{{ t('settings.im.processMode') }}</span>
-          <div class="execution-mode-selector">
-            <button
-              class="mode-option"
-              :class="{ active: processMode === 'final' }"
-              @click="changeProcessMode('final')"
-              :title="t('settings.im.processModeFinalDesc')"
-            >{{ t('settings.im.processModeFinal') }}</button>
-            <button
-              class="mode-option"
-              :class="{ active: processMode === 'messages' }"
-              @click="changeProcessMode('messages')"
-              :title="t('settings.im.processModeMessagesDesc')"
-            >{{ t('settings.im.processModeMessages') }}</button>
-            <button
-              class="mode-option"
-              :class="{ active: processMode === 'all' }"
-              @click="changeProcessMode('all')"
-              :title="t('settings.im.processModeAllDesc')"
-            >{{ t('settings.im.processModeAll') }}</button>
+      <SettingRow
+        :label="t('settings.im.processMode')"
+        :desc="t('settings.im.processModeDesc')"
+      >
+        <SettingSegmented
+          :model-value="processMode"
+          :options="processModeOptions"
+          @update:model-value="changeProcessMode($event as IMProcessMode)"
+        />
+      </SettingRow>
+
+      <SettingRow
+        clickable
+        :label="t('settings.im.sendThinkingProcess')"
+        :desc="t('settings.im.sendThinkingProcessDesc')"
+      >
+        <SettingToggle v-model="sendThinkingProcess" @update:model-value="toggleSendThinkingProcess" />
+      </SettingRow>
+    </SettingsGroup>
+
+    <!-- 连接之后怎么用：与平台无关，留在页面上常驻可查 -->
+    <SettingsGroup variant="plain" :title="t('settings.im.guideUsageTitle')">
+      <div class="usage-card">
+        <p class="usage-desc">{{ t('settings.im.guideUsageDesc') }}</p>
+        <div class="command-list">
+          <div class="command-item">
+            <code>/help</code>
+            <span>{{ t('settings.im.guideCommandHelp') }}</span>
           </div>
-          <span class="execution-mode-desc">{{ t('settings.im.processModeDesc') }}</span>
-        </div>
-      </div>
-
-      <div class="process-messages-section">
-        <label class="process-messages-label">
-          <input type="checkbox" v-model="sendThinkingProcess" @change="toggleSendThinkingProcess" />
-          <span class="process-messages-title">{{ t('settings.im.sendThinkingProcess') }}</span>
-        </label>
-        <span class="process-messages-desc">{{ t('settings.im.sendThinkingProcessDesc') }}</span>
-      </div>
-    </div>
-
-    <!-- 配置说明 -->
-    <div class="settings-section guide-section">
-      <div class="section-header">
-        <h4>📖 {{ t('settings.im.guideTitle') }}</h4>
-        <a class="guide-doc-link" :href="t('settings.im.guideDocUrl')" target="_blank" rel="noopener noreferrer">
-          {{ t('settings.im.guideDocLink') }} ↗
-        </a>
-      </div>
-      <p class="section-desc">{{ t('settings.im.guideDesc') }}</p>
-
-      <div class="guide-grid">
-        <!-- 钉钉机器人配置 -->
-        <div class="guide-card">
-          <h5 class="guide-card-title">🔧 {{ t('settings.im.guideDingtalkTitle') }}</h5>
-          <ol class="guide-steps">
-            <li>{{ t('settings.im.guideDingtalkStep1') }}</li>
-            <li>{{ t('settings.im.guideDingtalkStep2') }}</li>
-            <li>{{ t('settings.im.guideDingtalkStep3') }}</li>
-            <li>{{ t('settings.im.guideDingtalkStep4') }}</li>
-            <li>{{ t('settings.im.guideDingtalkStep5') }}</li>
-          </ol>
-        </div>
-
-        <!-- 飞书机器人配置 -->
-        <div class="guide-card">
-          <h5 class="guide-card-title">🔧 {{ t('settings.im.guideFeishuTitle') }}</h5>
-          <ol class="guide-steps">
-            <li>{{ t('settings.im.guideFeishuStep1') }}</li>
-            <li>{{ t('settings.im.guideFeishuStep2') }}</li>
-            <li>{{ t('settings.im.guideFeishuStep3') }}</li>
-            <li>{{ t('settings.im.guideFeishuStep4') }}</li>
-            <li>{{ t('settings.im.guideFeishuStep5') }}</li>
-            <li>{{ t('settings.im.guideFeishuStep6') }}</li>
-            <li>{{ t('settings.im.guideFeishuStep7') }}</li>
-            <li>{{ t('settings.im.guideFeishuStep8') }}</li>
-          </ol>
-        </div>
-
-        <!-- Slack 配置 -->
-        <div class="guide-card">
-          <h5 class="guide-card-title">🔧 {{ t('settings.im.guideSlackTitle') }}</h5>
-          <ol class="guide-steps">
-            <li>{{ t('settings.im.guideSlackStep1') }}</li>
-            <li>{{ t('settings.im.guideSlackStep2') }}</li>
-            <li>{{ t('settings.im.guideSlackStep3') }}</li>
-            <li>{{ t('settings.im.guideSlackStep4') }}</li>
-            <li>{{ t('settings.im.guideSlackStep5') }}</li>
-          </ol>
-        </div>
-
-        <!-- Telegram 配置 -->
-        <div class="guide-card">
-          <h5 class="guide-card-title">🔧 {{ t('settings.im.guideTelegramTitle') }}</h5>
-          <ol class="guide-steps">
-            <li>{{ t('settings.im.guideTelegramStep1') }}</li>
-            <li>{{ t('settings.im.guideTelegramStep2') }}</li>
-            <li>{{ t('settings.im.guideTelegramStep3') }}</li>
-          </ol>
-        </div>
-
-        <!-- 企业微信配置 -->
-        <div class="guide-card">
-          <h5 class="guide-card-title">🔧 {{ t('settings.im.guideWecomTitle') }}</h5>
-          <ol class="guide-steps">
-            <li>{{ t('settings.im.guideWecomStep1') }}</li>
-            <li>{{ t('settings.im.guideWecomStep2') }}</li>
-            <li>{{ t('settings.im.guideWecomStep3') }}</li>
-            <li>{{ t('settings.im.guideWecomStep4') }}</li>
-            <li>{{ t('settings.im.guideWecomStep5') }}</li>
-          </ol>
-        </div>
-
-        <!-- 使用提示 -->
-        <div class="guide-card">
-          <h5 class="guide-card-title">💡 {{ t('settings.im.guideUsageTitle') }}</h5>
-          <p class="guide-card-desc">{{ t('settings.im.guideUsageDesc') }}</p>
-          <div class="command-list">
-            <div class="command-item">
-              <code>/help</code>
-              <span>{{ t('settings.im.guideCommandHelp') }}</span>
-            </div>
-            <div class="command-item">
-              <code>/status</code>
-              <span>{{ t('settings.im.guideCommandStatus') }}</span>
-            </div>
-            <div class="command-item">
-              <code>/clear</code>
-              <span>{{ t('settings.im.guideCommandClear') }}</span>
-            </div>
-            <div class="command-item">
-              <code class="confirm-approve">{{ t('settings.im.guideConfirmApproveWord') }}</code>
-              <span>{{ t('settings.im.guideConfirmApprove') }}</span>
-            </div>
-            <div class="command-item">
-              <code class="confirm-reject">{{ t('settings.im.guideConfirmRejectWord') }}</code>
-              <span>{{ t('settings.im.guideConfirmReject') }}</span>
-            </div>
+          <div class="command-item">
+            <code>/status</code>
+            <span>{{ t('settings.im.guideCommandStatus') }}</span>
+          </div>
+          <div class="command-item">
+            <code>/clear</code>
+            <span>{{ t('settings.im.guideCommandClear') }}</span>
+          </div>
+          <div class="command-item">
+            <code class="confirm-approve">{{ t('settings.im.guideConfirmApproveWord') }}</code>
+            <span>{{ t('settings.im.guideConfirmApprove') }}</span>
+          </div>
+          <div class="command-item">
+            <code class="confirm-reject">{{ t('settings.im.guideConfirmRejectWord') }}</code>
+            <span>{{ t('settings.im.guideConfirmReject') }}</span>
           </div>
         </div>
       </div>
-    </div>
+    </SettingsGroup>
 
     <!-- 自由模式二次确认对话框 -->
     <div v-if="showFreeModeConfirm" class="free-mode-confirm-overlay">
@@ -1130,44 +1087,10 @@ function cancelFreeMode() {
         </div>
       </div>
     </div>
-
-  </div>
+  </SettingsPage>
 </template>
 
 <style scoped>
-.im-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-/* 通用区块 */
-.settings-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  margin-bottom: 8px;
-}
-
-.section-header h4 {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.section-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 16px;
-  line-height: 1.5;
-}
-
 /* 表单控件 */
 .form-group {
   margin-bottom: 14px;
@@ -1334,7 +1257,7 @@ function cancelFreeMode() {
   gap: 10px;
   width: 100%;
   padding: 12px 14px;
-  background: var(--bg-secondary);
+  background: var(--bg-surface);
   border: none;
   color: var(--text-primary);
   font-size: 13px;
@@ -1426,7 +1349,7 @@ function cancelFreeMode() {
 .im-platform-body {
   padding: 14px;
   border-top: 1px solid var(--border-color);
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
 }
 
 .im-hint-header {
@@ -1460,6 +1383,21 @@ function cancelFreeMode() {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+/* 微信走扫码连接，没有对应的详版指南，这几步就是唯一一份说明，留在原处 */
+.setup-steps {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.setup-steps li {
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.setup-steps li:last-child {
+  margin-bottom: 0;
 }
 
 .btn-ai-setup {
@@ -1501,19 +1439,8 @@ function cancelFreeMode() {
   color: var(--text-secondary);
 }
 
-.setup-steps {
-  margin: 0;
-  padding-left: 18px;
-}
 
-.setup-steps li {
-  margin-bottom: 4px;
-  line-height: 1.5;
-}
 
-.setup-steps li:last-child {
-  margin-bottom: 0;
-}
 
 /* 卡片底部操作栏 */
 .im-card-actions {
@@ -1543,114 +1470,6 @@ function cancelFreeMode() {
 
 .auto-connect-label:hover {
   color: var(--text-primary);
-}
-
-/* 运行模式 */
-.execution-mode-section {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-}
-
-.execution-mode-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-.execution-mode-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-left: auto;
-}
-
-.execution-mode-selector {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--bg-tertiary);
-  border-radius: 6px;
-  padding: 2px;
-  border: 1px solid var(--border-color);
-}
-
-.mode-option {
-  padding: 4px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.2;
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.mode-option:hover {
-  background: var(--bg-surface, var(--bg-primary));
-  color: var(--text-primary);
-}
-
-.mode-option.active {
-  background: var(--accent-primary);
-  color: #fff;
-}
-
-.mode-option-free.active {
-  background: var(--danger-color, var(--color-error));
-}
-
-/* 过程消息开关 */
-.process-messages-section {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  margin-top: 8px;
-}
-
-.process-messages-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  user-select: none;
-  flex-shrink: 0;
-}
-
-.process-messages-label input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-  accent-color: var(--accent-primary);
-}
-
-.process-messages-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-.process-messages-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-left: auto;
-}
-
-.mode-option-free:hover:not(.active) {
-  background: rgba(var(--color-error-rgb), 0.15);
-  color: var(--danger-color, var(--color-error));
 }
 
 /* 自由模式二次确认对话框 */
@@ -1735,12 +1554,6 @@ function cancelFreeMode() {
 }
 
 /* 配置说明 */
-.guide-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
-
 .guide-doc-link {
   font-size: 12px;
   color: var(--accent-primary);
@@ -1752,59 +1565,27 @@ function cancelFreeMode() {
   text-decoration: underline;
 }
 
-.guide-card-doc-link {
-  display: inline-block;
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--accent-primary);
-  text-decoration: none;
-}
 
-.guide-card-doc-link:hover {
-  text-decoration: underline;
-}
 
-.guide-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
 
-.guide-card {
-  padding: 12px;
+
+
+
+
+
+
+.usage-card {
+  padding: var(--sp-4);
+  background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
 }
 
-.guide-card:nth-last-child(1) {
-  grid-column: 1 / -1;
-}
-
-.guide-card-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-}
-
-.guide-card-desc {
-  font-size: 12px;
-  color: var(--text-muted);
+.usage-desc {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-desc);
   line-height: 1.5;
-  margin-bottom: 8px;
-}
-
-.guide-steps {
-  margin: 0;
-  padding-left: 20px;
-  font-size: 12px;
   color: var(--text-secondary);
-  line-height: 1.8;
-}
-
-.guide-steps li {
-  margin: 2px 0;
 }
 
 .command-list {

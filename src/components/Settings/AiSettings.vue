@@ -7,6 +7,7 @@ import { showAlert, showConfirm } from '../../composables/useConfirm'
 import type { FetchedAiModel } from '@shared/types'
 import { AI_TEMPLATES, RECOMMENDED_MIN_CONTEXT } from '../../config/ai-templates'
 import { v4 as uuidv4 } from 'uuid'
+import { SettingsPage, SettingsGroup, SettingRow, SettingToggle } from './kit'
 
 const { t, locale } = useI18n()
 
@@ -377,25 +378,26 @@ const openKeyUrl = (url: string) => {
 </script>
 
 <template>
-  <div class="ai-settings">
+  <SettingsPage>
     <!-- Steam 版：仅显示说明，不提供任何 AI/API 配置入口 -->
-    <div v-if="isSteamBuild" class="settings-section steam-notice">
-      <p class="section-desc">{{ t('aiSettings.steamNoAiConfig') }}</p>
-    </div>
+    <SettingsGroup v-if="isSteamBuild">
+      <p class="steam-notice">{{ t('aiSettings.steamNoAiConfig') }}</p>
+    </SettingsGroup>
 
     <!-- 非 Steam 版：完整 AI 模型配置 -->
     <template v-if="!isSteamBuild">
-      <div class="settings-section">
-        <div class="section-header">
-          <h4>{{ t('aiSettings.title') }}</h4>
+      <!-- 列表项自带边框与选中态，外面不再套卡片 -->
+      <SettingsGroup
+        variant="plain"
+        :title="t('aiSettings.title')"
+        :desc="t('aiSettings.apiKeyNotRequired')"
+      >
+        <template #actions>
           <button class="btn btn-primary btn-sm" @click="openNewProfile">
             <Plus :size="14" />
             {{ t('aiSettings.addProfile') }}
           </button>
-        </div>
-        <p class="section-desc">
-          {{ t('aiSettings.apiKeyNotRequired') }}
-        </p>
+        </template>
 
         <!-- 配置列表 -->
         <div class="profile-list">
@@ -453,8 +455,7 @@ const openKeyUrl = (url: string) => {
             <p class="tip">{{ t('aiSettings.addProfile') }}</p>
           </div>
         </div>
-      </div>
-
+      </SettingsGroup>
     </template>
 
     <!-- 添加/编辑表单弹窗 -->
@@ -635,75 +636,41 @@ const openKeyUrl = (url: string) => {
       </Transition>
     </Teleport>
 
-    <!-- 自动使用视觉模型 -->
-    <div v-if="!isSteamBuild" class="settings-section">
-      <div class="section-header">
-        <h4>{{ t('aiSettings.autoVisionModel') }}</h4>
-        <label class="toggle-switch">
-          <input 
-            type="checkbox" 
-            :checked="configStore.autoVisionModel" 
-            @change="configStore.setAutoVisionModel(($event.target as HTMLInputElement).checked)"
-          />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p class="section-desc">
-        {{ t('aiSettings.autoVisionModelDesc') }}
-      </p>
-    </div>
+    <!-- 两个自动切换开关合成一组：各自独占一张卡片时，两条设置之间的空白
+         比它们本身还宽，看不出是相关的一对 -->
+    <SettingsGroup v-if="!isSteamBuild">
+      <SettingRow
+        clickable
+        :label="t('aiSettings.autoVisionModel')"
+        :desc="t('aiSettings.autoVisionModelDesc')"
+      >
+        <SettingToggle
+          :model-value="configStore.autoVisionModel"
+          @update:model-value="configStore.setAutoVisionModel($event)"
+        />
+      </SettingRow>
 
-    <!-- 自动切换可用模型 -->
-    <div class="settings-section">
-      <div class="section-header">
-        <h4>{{ t('aiSettings.autoFailoverModel') }}</h4>
-        <label class="toggle-switch">
-          <input
-            type="checkbox"
-            :checked="configStore.autoFailoverModel"
-            @change="configStore.setAutoFailoverModel(($event.target as HTMLInputElement).checked)"
-          />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p class="section-desc">
-        {{ t('aiSettings.autoFailoverModelDesc') }}
-      </p>
-    </div>
-  </div>
+      <SettingRow
+        clickable
+        :label="t('aiSettings.autoFailoverModel')"
+        :desc="t('aiSettings.autoFailoverModelDesc')"
+      >
+        <SettingToggle
+          :model-value="configStore.autoFailoverModel"
+          @update:model-value="configStore.setAutoFailoverModel($event)"
+        />
+      </SettingRow>
+    </SettingsGroup>
+  </SettingsPage>
 </template>
 
 <style scoped>
-.ai-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.settings-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  margin-bottom: 8px;
-}
-
-.section-header h4 {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.section-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 16px;
+.steam-notice {
+  margin: 0;
+  padding: var(--sp-4) 0;
+  font-size: var(--fs-desc);
   line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 .profile-list {
@@ -712,13 +679,15 @@ const openKeyUrl = (url: string) => {
   gap: 8px;
 }
 
+/* 列表项直接铺在面板底上（不再套外层卡片），所以用卡片底色把自己抬起来——
+   沿用面板同色只剩一圈细线，看不出是一张张可选的配置 */
 .profile-item {
   position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px;
-  background: var(--bg-secondary);
+  background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   cursor: pointer;
@@ -1180,52 +1149,5 @@ const openKeyUrl = (url: string) => {
   animation: spin 0.8s linear infinite;
 }
 
-/* Toggle Switch */
-.toggle-switch {
-  position: relative;
-  display: inline-block;
-  width: 44px;
-  height: 24px;
-}
-
-.toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 24px;
-  transition: 0.3s;
-}
-
-.toggle-slider:before {
-  position: absolute;
-  content: "";
-  height: 18px;
-  width: 18px;
-  left: 2px;
-  bottom: 2px;
-  background-color: var(--text-muted);
-  border-radius: 50%;
-  transition: 0.3s;
-}
-
-.toggle-switch input:checked + .toggle-slider {
-  background-color: var(--accent-primary);
-  border-color: var(--accent-primary);
-}
-
-.toggle-switch input:checked + .toggle-slider:before {
-  transform: translateX(20px);
-  background-color: white;
-}
+/* 开关走 main.css 的 .settings-scope 规范，本页不再重复定义 */
 </style>

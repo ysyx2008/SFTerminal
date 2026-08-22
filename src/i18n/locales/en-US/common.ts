@@ -324,10 +324,9 @@ export default {
 
   // General settings page
   general: {
-    startup: 'Startup',
-    update: 'Updates',
-    language: 'Language',
-    conversation: 'Conversation display',
+    startupAndUpdate: 'Startup & Updates',
+    interface: 'Interface',
+    interfaceLanguage: 'Interface language',
     foldAgentProcess: 'Simplify step display',
     foldAgentProcessHint: 'Stretches where it just works away collapse into one line, leaving what it tells you and what it is doing right now. Click that line to see the full process. Strict mode always stays unfolded.',
     launchAtLogin: 'Launch at Login',

@@ -3,12 +3,22 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfigStore } from '../../stores/config'
 import { SUPPORTED_LOCALES, type LocaleType } from '../../i18n'
+import {
+  SettingsPage,
+  SettingsGroup,
+  SettingRow,
+  SettingToggle,
+  SettingSegmented
+} from './kit'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
 
 const currentLanguage = computed(() => configStore.language)
-const changeLanguage = (lang: LocaleType) => configStore.setLanguage(lang)
+const changeLanguage = (lang: string) => configStore.setLanguage(lang as LocaleType)
+const localeOptions = computed(() =>
+  SUPPORTED_LOCALES.map(l => ({ value: l.value, label: l.label }))
+)
 
 // 平台检测：macOS 仅支持检查更新 + 手动下载（无公证签名，不支持自动更新）
 const isMac = computed(() => navigator.platform.toLowerCase().includes('mac'))
@@ -35,14 +45,16 @@ onMounted(async () => {
   installUpdateOnQuit.value = savedInstallOnQuit ?? true
 })
 
-const onLaunchAtLoginChange = async () => {
-  await window.electronAPI.config.set('launchAtLogin', launchAtLogin.value)
+const onLaunchAtLoginChange = async (v: boolean) => {
+  launchAtLogin.value = v
+  await window.electronAPI.config.set('launchAtLogin', v)
 }
 
 // 关闭自动检查时连带关闭自动下载与退出时安装
-const onAutoCheckChange = async () => {
-  await window.electronAPI.config.set('autoCheckUpdate', autoCheckUpdate.value)
-  if (!autoCheckUpdate.value) {
+const onAutoCheckChange = async (v: boolean) => {
+  autoCheckUpdate.value = v
+  await window.electronAPI.config.set('autoCheckUpdate', v)
+  if (!v) {
     autoDownloadUpdate.value = false
     installUpdateOnQuit.value = false
     await window.electronAPI.config.set('autoDownloadUpdate', false)
@@ -51,9 +63,10 @@ const onAutoCheckChange = async () => {
 }
 
 // 自动下载与「退出时安装」联动：关下载则关退出安装；开下载则恢复退出安装
-const onAutoDownloadChange = async () => {
-  await window.electronAPI.config.set('autoDownloadUpdate', autoDownloadUpdate.value)
-  if (!autoDownloadUpdate.value) {
+const onAutoDownloadChange = async (v: boolean) => {
+  autoDownloadUpdate.value = v
+  await window.electronAPI.config.set('autoDownloadUpdate', v)
+  if (!v) {
     installUpdateOnQuit.value = false
     await window.electronAPI.config.set('installUpdateOnQuit', false)
   } else if (!installUpdateOnQuit.value) {
@@ -62,224 +75,68 @@ const onAutoDownloadChange = async () => {
   }
 }
 
-const onInstallOnQuitChange = async () => {
-  await window.electronAPI.config.set('installUpdateOnQuit', installUpdateOnQuit.value)
+const onInstallOnQuitChange = async (v: boolean) => {
+  installUpdateOnQuit.value = v
+  await window.electronAPI.config.set('installUpdateOnQuit', v)
 }
 </script>
 
 <template>
-  <div class="general-settings">
-    <!-- 启动 -->
-    <div class="settings-section">
-      <h3 class="section-title">{{ t('general.startup') }}</h3>
-      <div class="setting-row">
-        <div>
-          <label class="form-label">{{ t('general.launchAtLogin') }}</label>
-          <p class="setting-desc">{{ t('general.launchAtLoginHint') }}</p>
-        </div>
-        <label class="toggle-switch">
-          <input type="checkbox" v-model="launchAtLogin" @change="onLaunchAtLoginChange" />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>
+  <SettingsPage>
+    <SettingsGroup :title="t('general.startupAndUpdate')">
+      <SettingRow
+        clickable
+        :label="t('general.launchAtLogin')"
+        :desc="t('general.launchAtLoginHint')"
+      >
+        <SettingToggle :model-value="launchAtLogin" @update:model-value="onLaunchAtLoginChange" />
+      </SettingRow>
 
-    <!-- 更新 -->
-    <div class="settings-section">
-      <h3 class="section-title">{{ t('general.update') }}</h3>
-      <div class="setting-row">
-        <div>
-          <label class="form-label">{{ t('general.autoCheckUpdate') }}</label>
-          <p class="setting-desc">{{ t('general.autoCheckUpdateHint') }}</p>
-        </div>
-        <label class="toggle-switch">
-          <input type="checkbox" v-model="autoCheckUpdate" @change="onAutoCheckChange" />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <div v-if="autoCheckUpdate && !isMac" class="setting-row">
-        <div>
-          <label class="form-label">{{ t('general.autoDownloadUpdate') }}</label>
-        </div>
-        <label class="toggle-switch">
-          <input type="checkbox" v-model="autoDownloadUpdate" @change="onAutoDownloadChange" />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <div v-if="autoCheckUpdate && autoDownloadUpdate && !isMac" class="setting-row">
-        <div>
-          <label class="form-label">{{ t('general.installUpdateOnQuit') }}</label>
-          <p class="setting-desc">{{ t('general.installUpdateOnQuitHint') }}</p>
-        </div>
-        <label class="toggle-switch">
-          <input type="checkbox" v-model="installUpdateOnQuit" @change="onInstallOnQuitChange" />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>
+      <SettingRow
+        clickable
+        :label="t('general.autoCheckUpdate')"
+        :desc="t('general.autoCheckUpdateHint')"
+      >
+        <SettingToggle :model-value="autoCheckUpdate" @update:model-value="onAutoCheckChange" />
+      </SettingRow>
 
-    <!-- 对话显示 -->
-    <div class="settings-section">
-      <h3 class="section-title">{{ t('general.conversation') }}</h3>
-      <div class="setting-row">
-        <div>
-          <label class="form-label">{{ t('general.foldAgentProcess') }}</label>
-          <p class="setting-desc">{{ t('general.foldAgentProcessHint') }}</p>
-        </div>
-        <label class="toggle-switch">
-          <input
-            type="checkbox"
-            :checked="configStore.foldAgentProcess"
-            @change="configStore.setFoldAgentProcess(($event.target as HTMLInputElement).checked)"
-          />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>
+      <SettingRow
+        v-if="autoCheckUpdate && !isMac"
+        clickable
+        :label="t('general.autoDownloadUpdate')"
+      >
+        <SettingToggle :model-value="autoDownloadUpdate" @update:model-value="onAutoDownloadChange" />
+      </SettingRow>
 
-    <!-- 语言 -->
-    <div class="settings-section">
-      <h3 class="section-title">{{ t('general.language') }}</h3>
-      <div class="segmented-control">
-        <button
-          v-for="locale in SUPPORTED_LOCALES"
-          :key="locale.value"
-          class="segment-option"
-          :class="{ active: currentLanguage === locale.value }"
-          @click="changeLanguage(locale.value)"
-        >
-          {{ locale.label }}
-        </button>
-      </div>
-    </div>
-  </div>
+      <SettingRow
+        v-if="autoCheckUpdate && autoDownloadUpdate && !isMac"
+        clickable
+        :label="t('general.installUpdateOnQuit')"
+        :desc="t('general.installUpdateOnQuitHint')"
+      >
+        <SettingToggle :model-value="installUpdateOnQuit" @update:model-value="onInstallOnQuitChange" />
+      </SettingRow>
+    </SettingsGroup>
+
+    <SettingsGroup :title="t('general.interface')">
+      <SettingRow :label="t('general.interfaceLanguage')">
+        <SettingSegmented
+          :model-value="currentLanguage"
+          :options="localeOptions"
+          @update:model-value="changeLanguage"
+        />
+      </SettingRow>
+
+      <SettingRow
+        clickable
+        :label="t('general.foldAgentProcess')"
+        :desc="t('general.foldAgentProcessHint')"
+      >
+        <SettingToggle
+          :model-value="configStore.foldAgentProcess"
+          @update:model-value="configStore.setFoldAgentProcess"
+        />
+      </SettingRow>
+    </SettingsGroup>
+  </SettingsPage>
 </template>
-
-<style scoped>
-.general-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.settings-section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.section-title {
-  display: flex;
-  align-items: center;
-  min-height: 28px;
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
-}
-
-.setting-row:last-child {
-  margin-bottom: 0;
-}
-
-.form-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.setting-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin: 2px 0 0;
-}
-
-/* 开关组件 */
-.toggle-switch {
-  position: relative;
-  display: inline-block;
-  width: 44px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
-.toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 24px;
-  transition: 0.3s;
-}
-
-.toggle-slider:before {
-  position: absolute;
-  content: "";
-  height: 18px;
-  width: 18px;
-  left: 2px;
-  bottom: 2px;
-  background-color: var(--text-muted);
-  border-radius: 50%;
-  transition: 0.3s;
-}
-
-.toggle-switch input:checked + .toggle-slider {
-  background-color: var(--accent-primary);
-  border-color: var(--accent-primary);
-}
-
-.toggle-switch input:checked + .toggle-slider:before {
-  transform: translateX(20px);
-  background-color: white;
-}
-
-/* 分段选择器（语言） */
-.segmented-control {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-}
-
-.segment-option {
-  flex: 1;
-  padding: 5px 12px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.segment-option:hover {
-  color: var(--text-primary);
-}
-
-.segment-option.active {
-  background: var(--accent-primary);
-  color: var(--accent-contrast);
-}
-</style>
