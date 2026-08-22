@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => {
     invalidateUser: vi.fn(),
     pauseSession: vi.fn(),
     assertSessionActive: vi.fn(),
+    downloadAndDecryptBuffer: vi.fn(),
+    downloadPlainCdnBuffer: vi.fn(),
     StreamingMarkdownFilter: MockStreamingMarkdownFilter,
   }
 })
@@ -28,6 +30,8 @@ const sendTypingMock = mocks.sendTyping
 const getConfigMock = mocks.getConfig
 const getForUserMock = mocks.getForUser
 const invalidateUserMock = mocks.invalidateUser
+const getUpdatesMock = mocks.vendoredGetUpdates
+const downloadAndDecryptBufferMock = mocks.downloadAndDecryptBuffer
 
 vi.mock('../im/wechat/messaging/send', () => ({
   sendMessageWeixin: mocks.sendMessageWeixin,
@@ -54,11 +58,24 @@ vi.mock('../im/wechat/api/session-guard', () => ({
   STALE_TOKEN_ERRCODE: -14,
   assertSessionActive: mocks.assertSessionActive,
   pauseSession: mocks.pauseSession,
+  getRemainingPauseMs: vi.fn(() => 0),
 }))
 vi.mock('../im/wechat/cdn/pic-decrypt', () => ({
-  downloadAndDecryptBuffer: vi.fn(),
-  downloadPlainCdnBuffer: vi.fn(),
+  downloadAndDecryptBuffer: mocks.downloadAndDecryptBuffer,
+  downloadPlainCdnBuffer: mocks.downloadPlainCdnBuffer,
 }))
+vi.mock('../im/wechat/storage/state-dir', () => ({
+  resolveStateDir: () => '/tmp/sf-wechat-adapter-test-state',
+}))
+vi.mock('../im/wechat/messaging/inbound', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../im/wechat/messaging/inbound')>()
+  return {
+    ...actual,
+    setContextToken: vi.fn(),
+    restoreContextTokens: vi.fn(),
+    clearContextTokensForAccount: vi.fn(),
+  }
+})
 
 vi.mock('../../utils/logger', () => ({
   createLogger: () => ({
@@ -81,6 +98,8 @@ describe('WeChatAdapter', () => {
     getConfigMock.mockReset()
     getForUserMock.mockReset()
     invalidateUserMock.mockReset()
+    getUpdatesMock.mockReset()
+    downloadAndDecryptBufferMock.mockReset()
     sendMessageWeixinMock.mockResolvedValue({ messageId: 'cid-1' })
     sendWeixinMediaFileMock.mockResolvedValue({ messageId: 'cid-2' })
     sendTypingMock.mockResolvedValue(undefined)
@@ -325,5 +344,92 @@ describe('WeChatAdapter', () => {
 
     adapter.endOutboundSession({ userId: 'u1' })
     vi.useRealTimers()
+  })
+
+  it('downloads inbound media in parallel without blocking the next poll, then dispatches in order', async () => {
+    const downloadStartedAt: number[] = []
+    const downloadFinishedAt: number[] = []
+    let pollCount = 0
+    let secondPollAt = 0
+    let releasePoll: (() => void) | undefined
+    let pollingStopped = false
+
+    downloadAndDecryptBufferMock.mockImplementation(async () => {
+      downloadStartedAt.push(Date.now())
+      await new Promise(r => setTimeout(r, 80))
+      downloadFinishedAt.push(Date.now())
+      return Buffer.from('media')
+    })
+
+    const aesKey = Buffer.alloc(16, 1).toString('base64')
+    const imageMsg = (id: string) => ({
+      from_user_id: 'u1',
+      context_token: `ctx-${id}`,
+      item_list: [{
+        type: 2,
+        image_item: { media: { full_url: `https://cdn.example/${id}`, aes_key: aesKey } },
+      }],
+    })
+    const fileMsg = {
+      from_user_id: 'u1',
+      context_token: 'ctx-file',
+      item_list: [{
+        type: 4,
+        file_item: {
+          file_name: 'notes.pdf',
+          media: { full_url: 'https://cdn.example/file', aes_key: aesKey },
+        },
+      }],
+    }
+    const textMsg = {
+      from_user_id: 'u1',
+      context_token: 'ctx-text',
+      item_list: [{ type: 1, text_item: { text: '看这些' } }],
+    }
+
+    getUpdatesMock.mockImplementation(async () => {
+      pollCount++
+      if (pollCount === 1) {
+        return {
+          ret: 0,
+          get_updates_buf: 'buf-1',
+          msgs: [imageMsg('a'), fileMsg, imageMsg('b'), textMsg],
+        }
+      }
+      if (pollCount === 2) secondPollAt = Date.now()
+      if (pollingStopped) return { ret: 0, msgs: [] }
+      await new Promise<void>(resolve => {
+        releasePoll = () => {
+          pollingStopped = true
+          resolve()
+        }
+      })
+      return { ret: 0, msgs: [] }
+    })
+
+    const received: Array<{ text: string; files: string[] }> = []
+    const adapter = new WeChatAdapter({ token: 'tok' } as any)
+    adapter.onMessage = (msg) => {
+      received.push({
+        text: msg.text,
+        files: (msg.attachments ?? []).map(a => a.fileName),
+      })
+    }
+
+    await adapter.start()
+    await vi.waitFor(() => expect(received).toHaveLength(4), { timeout: 3000 })
+
+    expect(downloadAndDecryptBufferMock).toHaveBeenCalledTimes(3)
+    expect(downloadStartedAt[1]).toBeLessThan(downloadFinishedAt[0])
+    expect(secondPollAt).toBeGreaterThan(0)
+    expect(secondPollAt).toBeLessThan(Math.max(...downloadFinishedAt))
+
+    expect(received[0].files[0]).toMatch(/^wechat_image_/)
+    expect(received[1].files[0]).toBe('notes.pdf')
+    expect(received[2].files[0]).toMatch(/^wechat_image_/)
+    expect(received[3]).toEqual({ text: '看这些', files: [] })
+
+    releasePoll?.()
+    await adapter.stop()
   })
 })

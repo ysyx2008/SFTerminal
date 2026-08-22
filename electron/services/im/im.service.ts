@@ -612,6 +612,12 @@ export class IMService {
   private static readonly CONNECT_DEBOUNCE_MS = 3000
   /** 插件注册的额外 adapter（运行时动态添加） */
   private pluginAdapters = new Map<string, IMAdapter>()
+  /**
+   * 入站串行门闩：附件并行下完后会短时间连续上报。
+   * companionStarting 盖住「任务已接手、run 尚未置位」的空档，避免后一条误开第二场。
+   */
+  private incomingChain: Promise<void> = Promise.resolve()
+  private companionStarting = false;
 
   constructor() {
     this.loadPersistedContacts()
@@ -1151,9 +1157,18 @@ export class IMService {
   // ==================== 消息处理核心 ====================
 
   /**
-   * 处理 IM 平台来的消息
+   * 处理 IM 平台来的消息。
+   * 经 incomingChain 串行接手，避免附件并行下完后连续上报时误开第二场任务。
    */
-  private async handleIncomingMessage(msg: IMIncomingMessage) {
+  private handleIncomingMessage(msg: IMIncomingMessage): Promise<void> {
+    const run = this.incomingChain.then(() => this.processIncomingMessage(msg))
+    this.incomingChain = run.then(() => undefined, () => undefined)
+    return run.catch(err => {
+      log.error('handleIncomingMessage failed:', err)
+    })
+  }
+
+  private async processIncomingMessage(msg: IMIncomingMessage) {
     if (!this.deps) {
       log.error('Dependencies not set, ignoring message')
       return
@@ -1202,8 +1217,8 @@ export class IMService {
       return
     }
 
-    // 如果 Agent 正在运行，尝试补充消息（包括 ask_user 的回复）
-    if (companion.isRunning()) {
+    // 如果 Agent 正在运行（或刚接手、run 尚未置位），尝试补充消息
+    if (companion.isRunning() || this.companionStarting) {
       try {
         if (companion.addUserMessage(
           fullMessage,
@@ -1240,8 +1255,13 @@ export class IMService {
       }
     }
 
-    // 开始 Agent 任务
-    await this.runAgentTask(adapter, replyContext, msg, media)
+    // 开始 Agent 任务。不等整场跑完——后一条应走补充，而不是卡到这场结束。
+    this.companionStarting = true
+    void this.runAgentTask(adapter, replyContext, msg, media)
+      .catch(err => log.error('runAgentTask failed:', err))
+      .finally(() => {
+        this.companionStarting = false
+      })
   }
 
   /**

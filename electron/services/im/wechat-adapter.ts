@@ -61,6 +61,43 @@ const MAX_RECONNECT_DELAY_MS = 60_000
 const TYPING_KEEPALIVE_MS = 5_000
 /** 未配对 endOutboundSession 时的泄漏兜底（正常由 IMService finally 结束） */
 const TYPING_KEEPALIVE_LEAK_MS = 3 * 60 * 60 * 1_000
+/** 入站附件并发下载上限：挡住长轮询会丢后续消息，但也不能无上限打 CDN */
+const INBOUND_DOWNLOAD_CONCURRENCY = 6
+/** 单份附件下载超时；裸 fetch 无超时，挂起会拖死整批入站 */
+const INBOUND_DOWNLOAD_TIMEOUT_MS = 60_000
+
+async function mapPool<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return []
+  const results = new Array<R>(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await fn(items[i], i)
+    }
+  }
+  const n = Math.min(Math.max(1, concurrency), items.length)
+  await Promise.all(Array.from({ length: n }, () => worker()))
+  return results
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
 
 export interface WeChatReplyContext {
   userId: string
@@ -151,6 +188,11 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
 
   /** 按 userId 的过程消息 digest 缓冲（beginOutboundSession bufferProgress 时创建） */
   private progressByUser = new Map<string, WechatOutboundProgress>()
+
+  /** 已拉到、待下载/分发的入站消息。长轮询只入队，不在 poll 里等下载。 */
+  private inboundQueue: WeixinMessage[] = []
+  private inboundPumpRunning = false
+  private mediaSeq = 0;
 
   constructor(private config: WeChatConfig) {
     this.token = config.token || ''
@@ -728,6 +770,8 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
     for (const userId of [...this.typingKeepalives.keys()]) {
       this.stopTypingKeepalive(userId)
     }
+    // 只丢掉未开始的批次；已在下的附件不在此等待，避免 CDN 挂起拖死 stop。
+    this.inboundQueue = []
   }
 
   private async pollLoop(signal: AbortSignal): Promise<void> {
@@ -772,9 +816,7 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
         }
 
         if (resp.msgs?.length) {
-          for (const msg of resp.msgs) {
-            await this.handleMessage(msg)
-          }
+          this.enqueueInbound(resp.msgs)
         }
       } catch (err: any) {
         if (signal.aborted) break
@@ -789,24 +831,77 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
 
   // ==================== 消息分发 ====================
 
-  private async handleMessage(msg: WeixinMessage): Promise<void> {
-    const userId = msg.from_user_id || ''
-    if (!userId) return
+  private enqueueInbound(msgs: WeixinMessage[]): void {
+    this.inboundQueue.push(...msgs)
+    if (!this.inboundPumpRunning) {
+      void this.pumpInbound()
+    }
+  }
 
-    // 与上游 monitor.ts + process-message.ts 对齐：每条 inbound 都要做两件事，
-    // 不做 sendmessage 一律会被服务端拒掉（errcode=-2）。
-    //   1. setContextToken：把 token 写进 store + 持久化到磁盘
-    //   2. ConfigManager.getForUser：触发 getconfig 注册 user 端会话 + 缓存 typing_ticket
-    if (msg.context_token) {
-      try {
-        setContextToken(this.accountKey, userId, msg.context_token)
-      } catch (err) {
-        log.warn(`setContextToken failed (ignored): ${String(err)}`)
+  private async pumpInbound(): Promise<void> {
+    this.inboundPumpRunning = true
+    try {
+      while (this.inboundQueue.length > 0) {
+        const batch = this.inboundQueue.splice(0)
+        await this.processInboundBatch(batch)
       }
+    } catch (err) {
+      log.error('Inbound pump error:', err)
+    } finally {
+      this.inboundPumpRunning = false
+      if (this.inboundQueue.length > 0) {
+        void this.pumpInbound()
+      }
+    }
+  }
 
-      // 若 context_token 与上次调用 getconfig 时使用的不同，说明服务端已刷新 session。
-      // 立即 invalidate 该 user 的配置缓存，让下面的 getForUser 绕过 24h TTL 重新注册，
-      // 否则旧 session 失效后 sendmessage 会持续报 errcode=-2，直到缓存自然到期才恢复。
+  /**
+   * 先并行下附件（图/文件/视频/语音），再按到达顺序一条条分发。
+   * 长轮询只负责入队，不在这里等待。
+   */
+  private async processInboundBatch(batch: WeixinMessage[]): Promise<void> {
+    const usable: WeixinMessage[] = []
+    for (const msg of batch) {
+      if (!msg.from_user_id) continue
+      this.rememberInboundSession(msg)
+      usable.push(msg)
+    }
+
+    const prepared = await mapPool(usable, INBOUND_DOWNLOAD_CONCURRENCY, async (msg) => {
+      try {
+        return { msg, attachments: await this.downloadAttachments(msg.item_list) }
+      } catch (err) {
+        log.error('Inbound media download failed:', err)
+        return { msg, attachments: [] as IMAttachment[] }
+      }
+    })
+
+    for (const { msg, attachments } of prepared) {
+      try {
+        await this.dispatchInbound(msg, attachments)
+      } catch (err) {
+        log.error('Inbound dispatch error:', err)
+      }
+    }
+  }
+
+  /** 立刻记下 context_token，出站回信用；不挡下载、不挡下一轮拉取。 */
+  private rememberInboundSession(msg: WeixinMessage): void {
+    const userId = msg.from_user_id || ''
+    if (!userId || !msg.context_token) return
+    try {
+      setContextToken(this.accountKey, userId, msg.context_token)
+    } catch (err) {
+      log.warn(`setContextToken failed (ignored): ${String(err)}`)
+    }
+  }
+
+  /**
+   * 与上游 monitor.ts + process-message.ts 对齐：每条 inbound 都要 getconfig 注册
+   * user 端会话，否则出站 sendmessage 会被服务端拒掉（errcode=-2）。
+   */
+  private async registerInboundSession(msg: WeixinMessage, userId: string): Promise<void> {
+    if (msg.context_token) {
       const prevToken = this.lastConfigContextToken.get(userId)
       if (prevToken !== msg.context_token) {
         this.lastConfigContextToken.set(userId, msg.context_token)
@@ -815,23 +910,23 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
       }
     }
 
-    // 对齐上游 monitor.ts：每条 inbound 注册服务端 session，否则出站 sendmessage 会 errcode=-2
     const inboundToken = msg.context_token ?? getContextToken(this.accountKey, userId)
-    if (inboundToken) {
-      try {
-        await this.getConfigManager().getForUser(userId, inboundToken)
-        this.lastConfigContextToken.set(userId, inboundToken)
-      } catch (err) {
-        log.warn(`handleMessage getForUser failed (ignored): ${String(err)}`)
-      }
+    if (!inboundToken) return
+    try {
+      await this.getConfigManager().getForUser(userId, inboundToken)
+      this.lastConfigContextToken.set(userId, inboundToken)
+    } catch (err) {
+      log.warn(`registerInboundSession getForUser failed (ignored): ${String(err)}`)
     }
+  }
 
-    // keepalive 由 IMService.runAgentTask 通过 beginOutboundSession/endOutboundSession 管理，
-    // 对齐上游 createReplyDispatcherWithTyping（整段回复期间保持，不在每条 send 时停止）。
+  private async dispatchInbound(msg: WeixinMessage, attachments: IMAttachment[]): Promise<void> {
+    const userId = msg.from_user_id || ''
+    if (!userId) return
+
+    await this.registerInboundSession(msg, userId)
 
     const text = bodyFromItemList(msg.item_list)
-    const attachments = await this.downloadAttachments(msg.item_list)
-
     if (!text && attachments.length === 0) {
       log.debug(`Skipping empty message from ${userId}`)
       return
@@ -887,8 +982,12 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
     }
   }
 
+  private nextMediaStamp(): string {
+    return `${Date.now()}_${++this.mediaSeq}`
+  }
+
   private async downloadOneItem(item: MessageItem): Promise<IMAttachment | null> {
-    const timestamp = Date.now()
+    const stamp = this.nextMediaStamp()
     const tempDir = this.ensureTempDir()
 
     // vendored downloadAndDecryptBuffer / downloadPlainCdnBuffer 用位置参数：
@@ -901,19 +1000,27 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
       const encryptedQueryParam: string = media?.encrypt_query_param ?? ''
       const fullUrl: string | undefined = media?.full_url
       if (aesKeyBase64) {
-        return await downloadAndDecryptBuffer(
+        return await withTimeout(
+          downloadAndDecryptBuffer(
+            encryptedQueryParam,
+            aesKeyBase64,
+            CDN_BASE_URL,
+            'wechat-attachment',
+            fullUrl,
+          ),
+          INBOUND_DOWNLOAD_TIMEOUT_MS,
+          'wechat-attachment decrypt',
+        )
+      }
+      return await withTimeout(
+        downloadPlainCdnBuffer(
           encryptedQueryParam,
-          aesKeyBase64,
           CDN_BASE_URL,
           'wechat-attachment',
           fullUrl,
-        )
-      }
-      return await downloadPlainCdnBuffer(
-        encryptedQueryParam,
-        CDN_BASE_URL,
+        ),
+        INBOUND_DOWNLOAD_TIMEOUT_MS,
         'wechat-attachment',
-        fullUrl,
       )
     }
 
@@ -921,7 +1028,7 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
       const img = item.image_item
       if (!img?.media) return null
       const buf = await fetchBuf(img.media, (img as any).aeskey)
-      const fileName = `wechat_image_${timestamp}.jpg`
+      const fileName = `wechat_image_${stamp}.jpg`
       const localPath = path.join(tempDir, fileName)
       fs.writeFileSync(localPath, buf)
       log.info(`Image saved: ${localPath} (${(buf.length / 1024).toFixed(1)}KB)`)
@@ -931,7 +1038,7 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
       const v = item.video_item
       if (!v?.media?.aes_key) return null
       const buf = await fetchBuf(v.media)
-      const fileName = `wechat_video_${timestamp}.mp4`
+      const fileName = `wechat_video_${stamp}.mp4`
       const localPath = path.join(tempDir, fileName)
       fs.writeFileSync(localPath, buf)
       log.info(`Video saved: ${localPath} (${(buf.length / 1024).toFixed(1)}KB)`)
@@ -941,7 +1048,7 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
       const f = item.file_item
       if (!f?.media?.aes_key) return null
       const buf = await fetchBuf(f.media)
-      const fileName = (f as any).file_name || `wechat_file_${timestamp}`
+      const fileName = (f as any).file_name || `wechat_file_${stamp}`
       const localPath = path.join(tempDir, fileName)
       fs.writeFileSync(localPath, buf)
       log.info(`File saved: ${localPath} (${(buf.length / 1024).toFixed(1)}KB)`)
@@ -951,7 +1058,7 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
       const voice = item.voice_item
       if (!voice?.media?.aes_key) return null
       const buf = await fetchBuf(voice.media)
-      const fileName = `wechat_voice_${timestamp}.silk`
+      const fileName = `wechat_voice_${stamp}.silk`
       const localPath = path.join(tempDir, fileName)
       fs.writeFileSync(localPath, buf)
       log.info(`Voice saved: ${localPath} (${(buf.length / 1024).toFixed(1)}KB)`)
