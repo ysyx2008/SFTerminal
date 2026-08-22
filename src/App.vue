@@ -1944,11 +1944,13 @@ onUnmounted(() => {
   --shell-inset-right: 138px;
 }
 
-/* Windows 无红绿灯约束：左上控件、侧栏顶、对话顶栏用同一行高，避免融在一起时高低不齐 */
-.app-container.is-win:not(.is-fullscreen) .shell-chrome,
-.app-container.is-win:not(.is-fullscreen) .shell-nav-chrome,
-.app-container.is-win:not(.is-fullscreen) .shell-top--sidebar,
-.app-container.is-win:not(.is-fullscreen) .sidebar-header {
+/* 左上控件、侧栏顶与对话顶栏同一行高。收起侧栏时折叠按钮会跟「严格/宽松/自由」并排，
+   行高不齐就会看出红绿灯和折叠按钮不在垂直居中。macOS 红绿灯也按这个高度居中
+   （见 electron/main.ts trafficLightPosition）。 */
+.app-container .shell-chrome,
+.app-container .shell-nav-chrome,
+.app-container .shell-top--sidebar,
+.app-container .sidebar-header {
   height: var(--workbench-panel-header-height);
 }
 
@@ -2398,7 +2400,7 @@ onUnmounted(() => {
 
 .recall-sidebar-resize-handle {
   position: absolute;
-  top: calc(var(--shell-top-height) + 1px);
+  top: var(--workbench-panel-header-height);
   right: 0;
   bottom: 0;
   width: 5px;

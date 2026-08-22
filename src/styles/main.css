@@ -33,9 +33,8 @@
   --header-height: 32px;
   /* 侧栏顶与主区顶同源，两段顶条必须齐平，否则窗口上沿会看出参差；
      取 34px 是为了装得下终端 Tab 条（tab 本身 28px + 上下各 3px 呼吸）。
-     改这个值必须同步 electron/main.ts 的 trafficLightPosition.y = (本值 - 12) / 2，
-     否则 macOS 红绿灯与同排图标会差出一档，看着就是「没对齐」。 */
-  --shell-top-height: 34px;
+     左上折叠按钮 / 侧栏顶实际行高跟对话顶栏走（38px，见 App.vue）；
+     macOS 红绿灯按 38px 居中：electron/main.ts trafficLightPosition.y = (38 - 12) / 2。 */
   --sidebar-width: 320px;
   --tab-height: 28px;
   /* 历史侧栏 / 产出物面板开合：变速滑入滑出，无过冲；让位内边距必须跟这条走 */
