@@ -58,6 +58,9 @@ export function inferConversationKind(agentKey?: string): ConversationKind {
 /** Agent 执行模式：strict=所有命令需确认，relaxed=仅危险命令需确认，free=全自动 */
 export type ExecutionMode = 'strict' | 'relaxed' | 'free'
 
+/** 智能巡检的确认策略：cautious=逐条审慎，batch=批量确认，free=自由模式 */
+export type ConfirmStrategy = 'cautious' | 'batch' | 'free'
+
 /** 远程访问渠道 */
 export type RemoteChannel = 'desktop' | 'web' | 'dingtalk' | 'feishu' | 'slack' | 'telegram' | 'wecom' | 'wechat'
 

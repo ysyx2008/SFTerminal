@@ -2,7 +2,7 @@ import Store from 'electron-store'
 import fs from 'fs'
 import path from 'path'
 import { app, safeStorage } from 'electron'
-import type { AiModelType, AiProfile, ApiFormat, CommandRiskPolicy, ExecutionMode, IMProcessMode, JumpHostConfig, McpServerConfig, RiskLevel } from '@shared/types'
+import type { AiModelType, AiProfile, ApiFormat, CommandRiskPolicy, ExecutionMode, IMProcessMode, JumpHostConfig, LocaleType, McpServerConfig, RiskLevel, SessionSortBy } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
 import type { TtsSettings, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
@@ -31,8 +31,7 @@ export interface SessionGroup {
   sortOrder?: number
 }
 
-// 主机排序方式
-export type SessionSortBy = 'custom' | 'name' | 'name-desc' | 'lastUsed'
+export type { SessionSortBy }
 
 export interface SshSession {
   id: string
@@ -69,8 +68,7 @@ export type AgentMbtiType =
   | 'ISTP' | 'ISFP' | 'ESTP' | 'ESFP'
   | null
 
-// 语言类型
-export type LocaleType = 'zh-CN' | 'en-US'
+export type { LocaleType }
 
 // 文件管理器书签
 export interface FileBookmark {

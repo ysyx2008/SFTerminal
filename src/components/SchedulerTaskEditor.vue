@@ -6,9 +6,8 @@ import { showAlert } from '../composables/useConfirm'
 
 const { t } = useI18n()
 
-import type { TerminalType } from '@shared/types'
+import type { ScheduleType, TerminalType } from '@shared/types'
 
-type ScheduleType = 'cron' | 'interval' | 'once'
 type TargetType = TerminalType
 
 interface ScheduleConfig {

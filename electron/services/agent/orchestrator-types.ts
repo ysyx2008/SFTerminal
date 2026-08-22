@@ -3,12 +3,10 @@
  */
 
 import type { AgentPlan, AgentStep, RiskLevel, WorkerAgentOptions } from './types'
+import type { ConfirmStrategy } from '@shared/types'
 
 // 重新导出 WorkerAgentOptions 供外部使用
-export type { WorkerAgentOptions }
-
-// 确认策略
-export type ConfirmStrategy = 'cautious' | 'batch' | 'free'
+export type { WorkerAgentOptions, ConfirmStrategy }
 
 // 协调器配置
 export interface OrchestratorConfig {

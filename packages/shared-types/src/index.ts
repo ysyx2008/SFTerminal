@@ -5,6 +5,7 @@
  */
 export * from './agent'
 export * from './ai'
+export * from './app'
 export * from './bastion'
 export * from './bond'
 export * from './canvas'
@@ -23,3 +24,5 @@ export * from './mcp'
 export * from './auth'
 export * from './todo'
 export * from './diagnostics'
+export * from './scheduler'
+export * from './terminal-awareness'

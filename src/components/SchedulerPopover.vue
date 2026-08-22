@@ -5,10 +5,8 @@ import { Clock, Plus, Play, ChevronRight } from 'lucide-vue-next'
 
 const { t } = useI18n()
 
-import type { TerminalType } from '@shared/types'
+import type { ScheduleType, TaskRunStatus, TerminalType } from '@shared/types'
 
-type TaskRunStatus = 'success' | 'failed' | 'timeout' | 'cancelled' | 'running'
-type ScheduleType = 'cron' | 'interval' | 'once'
 type TargetType = TerminalType
 
 interface ScheduleConfig {

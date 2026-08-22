@@ -42,7 +42,7 @@ type BondMetrics = import('@shared/types').BondMetrics
 type BondTrustLevel = import('@shared/types').BondTrustLevel
 
 // 更新状态类型
-type UpdateSource = 'github' | 'oss'
+type UpdateSource = import('@shared/types').UpdateSource
 interface UpdateStatusInfo {
   status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
   info?: { version?: string; releaseNotes?: string; releaseDate?: string }

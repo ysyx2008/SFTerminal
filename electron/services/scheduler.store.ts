@@ -6,17 +6,9 @@ import Store from 'electron-store'
 
 // ==================== 类型定义 ====================
 
-/**
- * 任务执行状态
- */
-export type TaskRunStatus = 'success' | 'failed' | 'timeout' | 'cancelled' | 'running'
+import type { ScheduleType, TaskRunStatus, TerminalType } from '@shared/types'
 
-/**
- * 调度类型
- */
-export type ScheduleType = 'cron' | 'interval' | 'once'
-
-import type { TerminalType } from '@shared/types'
+export type { ScheduleType, TaskRunStatus }
 
 /** @deprecated Use TerminalType from @shared/types */
 export type TargetType = TerminalType

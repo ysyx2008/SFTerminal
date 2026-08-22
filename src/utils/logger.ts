@@ -1,4 +1,6 @@
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent'
+import type { LogLevel } from '@shared/types'
+
+export type { LogLevel }
 
 const LEVEL_PRIORITY: Record<LogLevel, number> = {
   debug: 0,

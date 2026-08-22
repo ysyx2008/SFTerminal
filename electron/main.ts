@@ -2703,7 +2703,7 @@ autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = false
 
 // 更新源定义
-type UpdateSource = 'github' | 'oss'
+type UpdateSource = import('@shared/types').UpdateSource
 
 const GITHUB_FEED: GithubOptions = {
   provider: 'github',

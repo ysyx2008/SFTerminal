@@ -1,8 +1,9 @@
 import * as path from 'path'
 import * as fs from 'fs'
 import log from 'electron-log/main'
+import type { LogLevel } from '@shared/types'
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent'
+export type { LogLevel }
 
 const LOG_LEVEL_MAP: Record<LogLevel, import('electron-log').LogLevel | false> = {
   debug: 'debug',

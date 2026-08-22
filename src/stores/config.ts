@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, SshEncoding, SystemColorScheme, UiThemeMode } from '@shared/types'
+import type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, SessionSortBy, SshEncoding, SystemColorScheme, UiThemeMode } from '@shared/types'
 import { DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, resolveEffectiveUiTheme } from '@shared/types'
 import { setLocale, type LocaleType } from '../i18n'
 import { uiThemes, type UiThemeName } from '../themes/ui-themes'
@@ -68,7 +68,7 @@ export interface SessionGroup {
 }
 
 // 主机排序方式
-export type SessionSortBy = 'custom' | 'name' | 'name-desc' | 'lastUsed'
+export type { SessionSortBy }
 
 export interface SshSession {
   id: string

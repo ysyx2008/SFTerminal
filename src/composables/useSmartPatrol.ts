@@ -3,9 +3,9 @@
  * 处理智能巡检（多终端协调）的前端逻辑
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import type { ConfirmStrategy } from '@shared/types'
 
-// 确认策略
-export type ConfirmStrategy = 'cautious' | 'batch' | 'free'
+export type { ConfirmStrategy }
 
 // 协调器配置
 export interface OrchestratorConfig {

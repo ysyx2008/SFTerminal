@@ -2,8 +2,9 @@ import { createI18n } from 'vue-i18n'
 import { applyOemBranding } from '@shared/brand'
 import zhCN from './locales/zh-CN'
 import enUS from './locales/en-US'
+import type { LocaleType } from '@shared/types'
 
-export type LocaleType = 'zh-CN' | 'en-US'
+export type { LocaleType }
 
 export const SUPPORTED_LOCALES: { value: LocaleType; label: string }[] = [
   { value: 'zh-CN', label: '简体中文' },

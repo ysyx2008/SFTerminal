@@ -18,59 +18,21 @@ const log = createLogger('TerminalAwareness')
 
 // ==================== 类型定义 ====================
 
-/** 输入等待类型（与前端保持一致）*/
-export type InputWaitingType = 
-  | 'password'        // 密码输入
-  | 'confirmation'    // 确认 (y/n)
-  | 'selection'       // 选择 (1/2/3)
-  | 'pager'           // 分页器 (more/less)
-  | 'prompt'          // Shell 提示符（空闲）
-  | 'editor'          // 编辑器模式 (vim/nano)
-  | 'custom_input'    // 其他自定义输入
-  | 'none'            // 无等待状态
+// 前端按同一份分析结果决定怎么提示用户，契约在 @shared/types
+import type {
+  EnvironmentContext,
+  InputWaitingState,
+  InputWaitingType,
+  OutputPattern,
+  OutputPatternType,
+} from '@shared/types'
 
-/** 输入等待状态 */
-export interface InputWaitingState {
-  isWaiting: boolean
-  type: InputWaitingType
-  prompt?: string
-  options?: string[]
-  suggestedResponse?: string
-  confidence: number
-}
-
-/** 输出模式类型 */
-export type OutputPatternType = 
-  | 'progress'        // 进度条
-  | 'compilation'     // 编译输出
-  | 'test'            // 测试结果
-  | 'log_stream'      // 日志流
-  | 'error'           // 错误输出
-  | 'table'           // 表格数据
-  | 'normal'          // 普通输出
-
-/** 输出模式 */
-export interface OutputPattern {
-  type: OutputPatternType
-  confidence: number
-  details?: {
-    progress?: number
-    testsPassed?: number
-    testsFailed?: number
-    errorCount?: number
-    eta?: string
-  }
-}
-
-/** 环境上下文 */
-export interface EnvironmentContext {
-  user?: string
-  hostname?: string
-  isRoot: boolean
-  cwdFromPrompt?: string
-  activeEnvs: string[]
-  sshDepth: number
-  promptType: 'bash' | 'zsh' | 'fish' | 'powershell' | 'cmd' | 'unknown'
+export type {
+  EnvironmentContext,
+  InputWaitingState,
+  InputWaitingType,
+  OutputPattern,
+  OutputPatternType,
 }
 
 /** 前端屏幕分析结果（通过 IPC 获取）*/

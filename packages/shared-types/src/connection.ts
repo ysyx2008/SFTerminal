@@ -7,6 +7,9 @@
  * 请基于这里的边界类型派生。
  */
 
+/** 主机列表排序方式 */
+export type SessionSortBy = 'custom' | 'name' | 'name-desc' | 'lastUsed'
+
 /** 跳板机配置（对外 IPC + 前端表单共用） */
 export interface JumpHostConfig {
   host: string

@@ -59,8 +59,8 @@ export interface SshSession {
 }
 
 // 定时任务相关类型
-export type TaskRunStatus = 'success' | 'failed' | 'timeout' | 'cancelled' | 'running'
-export type ScheduleType = 'cron' | 'interval' | 'once'
+import type { ScheduleType, TaskRunStatus } from '@shared/types'
+export type { ScheduleType, TaskRunStatus }
 export type { TerminalType } from '@shared/types'
 /** @deprecated Use TerminalType from @shared/types */
 export type TargetType = import('@shared/types').TerminalType
