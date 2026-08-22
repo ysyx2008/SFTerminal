@@ -1960,12 +1960,16 @@ onUnmounted(() => {
   --shell-inset-right: 138px;
 }
 
-/* 左上控件、侧栏顶与对话顶栏同一行高。收起侧栏时折叠按钮会跟「严格/宽松/自由」并排，
-   行高不齐就会看出红绿灯和折叠按钮不在垂直居中。macOS 红绿灯也按这个高度居中
+/* 左上控件、侧栏顶、主区透明拖拽条与对话顶栏同一行高。
+   欢迎页 / 空终端 / 待办没有自己的第一排，必须靠这条透明区拖窗口；
+   漏掉它时高度会塌成 0，主区既拖不动也会整页顶上去。
+   收起侧栏时折叠按钮会跟「严格/宽松/自由」并排，行高不齐就会看出
+   红绿灯和折叠按钮不在垂直居中。macOS 红绿灯也按这个高度居中
    （见 electron/main.ts trafficLightPosition）。 */
 .app-container .shell-chrome,
 .app-container .shell-nav-chrome,
 .app-container .shell-top--sidebar,
+.app-container .shell-top--main,
 .app-container .sidebar-header {
   height: var(--workbench-panel-header-height);
 }
@@ -1992,7 +1996,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: var(--workbench-panel-header-height, var(--shell-top-height));
+  height: var(--workbench-panel-header-height);
   padding: 0 8px;
   pointer-events: none;
 }
@@ -2332,6 +2336,8 @@ onUnmounted(() => {
   position: relative;
   /* 最近对话侧栏 panel-header 与 AiPanel system-info-bar 共用，保证顶栏底边对齐 */
   --workbench-panel-header-height: 38px;
+  /* 壳层顶条高度跟对话顶栏走，避免再单独维护一份数字 */
+  --shell-top-height: var(--workbench-panel-header-height);
 }
 
 /* 侧边栏 */
