@@ -149,8 +149,19 @@ interface StoreSchema {
   mcpServers: McpServerConfig[]
   agentMbti: AgentMbtiType
   agentDebugMode: boolean
-  /** 助手埋头干活的那几步是否收成一行（点开仍可看全过程） */
-  foldAgentProcess: boolean
+  /**
+   * 助手埋头干活的那几步是否收成一行（点开仍可看全过程）。
+   *
+   * 故意不设默认值，`undefined` = 用户还没表态：此时摊开每一步（第一次用的人
+   * 该看见它怎么把活干成的），并有资格在长任务里被邀请一次收起来。显式 `false`
+   * 是"我就要看全过程"，不再打扰。两者生效表现相同，只能靠有无此键区分。
+   *
+   * 一旦写进 defaultConfig，conf 构造时就会把默认值落盘，"还没表态"不复存在，
+   * 邀请永远不会出现。别加默认值。
+   */
+  foldAgentProcess?: boolean
+  /** 长任务邀请已出现过几次（上限 2 次，跨会话累计） */
+  foldProcessInviteCount: number
   /** 崩溃后是否主动提示（用户可在提示里勾选永久关闭） */
   crashNotifyEnabled: boolean
   knowledgeSettings: KnowledgeSettings
@@ -276,7 +287,8 @@ const defaultConfig: StoreSchema = {
   mcpServers: [],
   agentMbti: null,
   agentDebugMode: false,
-  foldAgentProcess: true,
+  // foldAgentProcess 故意不设默认：保持 undefined 以区分"还没表态"与显式 false
+  foldProcessInviteCount: 0,
   crashNotifyEnabled: true,
   knowledgeSettings: DEFAULT_KNOWLEDGE_SETTINGS,
   setupCompleted: false,
