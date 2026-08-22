@@ -47,6 +47,7 @@ import {
   notifyAgentCompleteCue,
   notifyAgentConfirmCue,
   notifyAgentFailedCue,
+  notifyCompanionMessageCue,
 } from './composables/useCueSound'
 
 const log = createLogger('App')
@@ -979,6 +980,7 @@ onMounted(async () => {
   })
 
   cleanupWatchProactiveMessage = window.electronAPI.watch.onProactiveMessage((data) => {
+    notifyCompanionMessageCue()
     const preview = data.message.length > 100
       ? data.message.substring(0, 100) + '...'
       : data.message

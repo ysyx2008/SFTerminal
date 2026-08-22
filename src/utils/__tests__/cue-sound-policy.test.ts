@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { applyMasterCueEnabled, DEFAULT_CUE_SOUND_SETTINGS, isCueKindEnabled, normalizeCueSoundSettings } from '@shared/types'
 import {
   resolveCompleteCueKind,
   shouldPlayConfirmCue,
@@ -11,7 +12,7 @@ describe('cue-sound-policy', () => {
     expect(resolveCompleteCueKind(['assistant-uuid'])).toBe('complete')
   })
 
-  it('stays silent for companion until a distinct message sound exists', () => {
+  it('does not use the task-complete chime for companion turns', () => {
     expect(resolveCompleteCueKind(['__companion__'])).toBeNull()
     expect(resolveCompleteCueKind(['tab-1', '__companion__'])).toBeNull()
   })
@@ -36,5 +37,50 @@ describe('cue-sound-policy', () => {
   it('still plays failed/confirm for user-visible conversations', () => {
     expect(shouldPlayFailedCue(['tab-abc'])).toBe(true)
     expect(shouldPlayConfirmCue(['__companion__'])).toBe(true)
+  })
+})
+
+describe('cue-sound settings switches', () => {
+  it('master off silences every kind', () => {
+    const s = normalizeCueSoundSettings({ enabled: false })
+    expect(isCueKindEnabled('complete', s)).toBe(false)
+    expect(isCueKindEnabled('message', s)).toBe(false)
+  })
+
+  it('lets one kind be turned off while the master stays on', () => {
+    const s = normalizeCueSoundSettings({
+      enabled: true,
+      kindEnabled: { failed: false },
+    })
+    expect(isCueKindEnabled('complete', s)).toBe(true)
+    expect(isCueKindEnabled('failed', s)).toBe(false)
+    expect(isCueKindEnabled('message', s)).toBe(true)
+  })
+
+  it('maps the old companion-only switch onto the message kind', () => {
+    const s = normalizeCueSoundSettings({ enabled: true, companionEnabled: false })
+    expect(isCueKindEnabled('message', s)).toBe(false)
+    expect(isCueKindEnabled('complete', s)).toBe(true)
+  })
+
+  it('defaults to all on', () => {
+    expect(isCueKindEnabled('confirm', DEFAULT_CUE_SOUND_SETTINGS)).toBe(true)
+  })
+
+  it('master off turns every kind off, master on turns every kind on', () => {
+    const off = applyMasterCueEnabled(
+      normalizeCueSoundSettings({ enabled: true, kindEnabled: { failed: false } }),
+      false,
+    )
+    expect(off.enabled).toBe(false)
+    expect(off.kindEnabled.complete).toBe(false)
+    expect(off.kindEnabled.failed).toBe(false)
+    expect(off.kindEnabled.message).toBe(false)
+
+    const on = applyMasterCueEnabled(off, true)
+    expect(on.enabled).toBe(true)
+    expect(on.kindEnabled.complete).toBe(true)
+    expect(on.kindEnabled.failed).toBe(true)
+    expect(on.kindEnabled.message).toBe(true)
   })
 })

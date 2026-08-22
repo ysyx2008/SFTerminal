@@ -1,7 +1,8 @@
-import { DEFAULT_CUE_SOUND_SETTINGS, type CueSoundKind, type CueSoundSettings } from '@shared/types'
+import { DEFAULT_CUE_SOUND_SETTINGS, isCueKindEnabled, type CueSoundKind, type CueSoundSettings } from '@shared/types'
 import completeUrl from '../../resources/sounds/cue-complete.wav'
 import failedUrl from '../../resources/sounds/cue-failed.wav'
 import confirmUrl from '../../resources/sounds/cue-confirm.wav'
+import messageUrl from '../../resources/sounds/cue-message.wav'
 import {
   resolveCompleteCueKind,
   shouldPlayConfirmCue,
@@ -13,6 +14,7 @@ const DEFAULT_URLS: Record<CueSoundKind, string> = {
   complete: completeUrl,
   failed: failedUrl,
   confirm: confirmUrl,
+  message: messageUrl,
 }
 
 const DEBOUNCE_MS = 450
@@ -30,7 +32,7 @@ function resolveUrl(kind: CueSoundKind, s: CueSoundSettings): string {
 
 export function playCueSound(kind: CueSoundKind, opts?: { force?: boolean }): void {
   const s = settings()
-  if (!opts?.force && !s.enabled) return
+  if (!opts?.force && !isCueKindEnabled(kind, s)) return
 
   const now = Date.now()
   if (!opts?.force && lastPlayedAt[kind] && now - lastPlayedAt[kind]! < DEBOUNCE_MS) return
@@ -59,4 +61,8 @@ export function notifyAgentFailedCue(agentKeys: Array<string | undefined>): void
 export function notifyAgentConfirmCue(agentKeys: Array<string | undefined>): void {
   if (!shouldPlayConfirmCue(agentKeys)) return
   playCueSound('confirm')
+}
+
+export function notifyCompanionMessageCue(): void {
+  playCueSound('message')
 }

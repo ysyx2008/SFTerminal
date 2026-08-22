@@ -59,34 +59,42 @@ function lowpass(samples, cutoffHz) {
   }
 }
 
-function render({ duration, notes, peak, cutoff = 2400, seed = 0xC0FFEE }) {
+/** 玻璃/气泡：非整数泛音，一下就听出不是木琴 */
+function glass(t, freq, { attack = 0.003, bodyTau = 0.10, clingTau = 0.035 } = {}) {
+  if (t < 0) return 0
+  const a = raisedCos(t, attack)
+  const body = Math.exp(-t / bodyTau)
+  const cling = Math.exp(-t / clingTau)
+  const w = 2 * Math.PI * t
+  return a * (
+    0.52 * Math.sin(w * freq) * body +
+    0.24 * Math.sin(w * freq * 2.31) * cling +
+    0.11 * Math.sin(w * freq * 3.97) * cling * cling +
+    0.05 * Math.sin(w * freq * 5.4) * cling * cling
+  )
+}
+
+function mixStereo(duration, peak, cutoff, seed, addSample) {
   rngState = seed
   const n = Math.floor(SR * duration)
   const L = new Float64Array(n)
   const R = new Float64Array(n)
-  const haas = 9
-
-  for (const note of notes) {
-    for (let i = 0; i < n; i++) {
-      const t = i / SR - note.start
-      const s = mallet(t, note.freq, note) * (note.gain ?? 1)
-      L[i] += s
-      const j = i + haas
-      if (j < n) R[j] += s
-      else R[i] += s
-    }
+  const haas = 8
+  for (let i = 0; i < n; i++) {
+    const s = addSample(i / SR)
+    L[i] += s
+    const j = i + haas
+    if (j < n) R[j] += s
+    else R[i] += s
   }
-
   lowpass(L, cutoff)
   lowpass(R, cutoff)
-
-  const fade = Math.floor(SR * 0.018)
+  const fade = Math.floor(SR * 0.016)
   for (let i = 0; i < fade; i++) {
     const g = i / fade
     L[n - 1 - i] *= g
     R[n - 1 - i] *= g
   }
-
   let max = 0
   for (let i = 0; i < n; i++) max = Math.max(max, Math.abs(L[i]), Math.abs(R[i]))
   const scale = max > 0 ? peak / max : 0
@@ -95,6 +103,14 @@ function render({ duration, notes, peak, cutoff = 2400, seed = 0xC0FFEE }) {
     R[i] *= scale
   }
   return { L, R }
+}
+
+function render({ duration, notes, peak, cutoff = 2400, seed = 0xC0FFEE }) {
+  return mixStereo(duration, peak, cutoff, seed, (t) => {
+    let s = 0
+    for (const note of notes) s += mallet(t - note.start, note.freq, note) * (note.gain ?? 1)
+    return s
+  })
 }
 
 function writeWav(filePath, { L, R }) {
@@ -160,5 +176,12 @@ writeWav(path.join(outDir, 'cue-confirm.wav'), render({
     { freq: 440.0, start: 0.155, gain: 0.82, attack: 0.014, bodyTau: 0.11, brightTau: 0.045, air: 0.12 },
   ],
 }))
+
+// 联络来信：三下短句，玻璃感，跟木琴收工错开
+writeWav(path.join(outDir, 'cue-message.wav'), mixStereo(0.42, 0.14, 3100, 0x3C0DE, (t) =>
+  glass(t, 587.33, { bodyTau: 0.055, clingTau: 0.022 }) +
+  0.88 * glass(t - 0.07, 739.99, { bodyTau: 0.055, clingTau: 0.022 }) +
+  0.80 * glass(t - 0.14, 880.00, { bodyTau: 0.08, clingTau: 0.03 }),
+))
 
 console.log(`wrote warmer cue sounds to ${outDir}`)

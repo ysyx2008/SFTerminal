@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import type { AiModelType, AiProfile, ApiFormat, JumpHostConfig, SessionSortBy, SshEncoding, SystemColorScheme, UiThemeMode } from '@shared/types'
-import { DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, resolveEffectiveUiTheme } from '@shared/types'
+import { DEFAULT_CUE_SOUND_SETTINGS, DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, normalizeCueSoundSettings, resolveEffectiveUiTheme } from '@shared/types'
 import { setLocale, type LocaleType } from '../i18n'
 import { uiThemes, type UiThemeName } from '../themes/ui-themes'
 import { setLogLevel as setFrontendLogLevel, type LogLevel } from '../utils/logger'
@@ -422,8 +422,7 @@ export const useConfigStore = defineStore('config', () => {
   })
 
   const cueSoundSettings = ref<import('@shared/types').CueSoundSettings>({
-    enabled: true,
-    custom: {},
+    ...DEFAULT_CUE_SOUND_SETTINGS,
   })
 
   // Web 搜索设置
@@ -544,10 +543,10 @@ export const useConfigStore = defineStore('config', () => {
         const custom = savedCueSoundSettings.custom && typeof savedCueSoundSettings.custom === 'object'
           ? { ...savedCueSoundSettings.custom }
           : {}
-        cueSoundSettings.value = {
-          enabled: savedCueSoundSettings.enabled !== false,
+        cueSoundSettings.value = normalizeCueSoundSettings({
+          ...savedCueSoundSettings,
           custom,
-        }
+        })
       }
       if (savedWebSearchSettings && typeof savedWebSearchSettings === 'object') {
         webSearchSettings.value = { ...webSearchSettings.value, ...savedWebSearchSettings }
@@ -1083,10 +1082,7 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   async function saveCueSoundSettings(settings: import('@shared/types').CueSoundSettings): Promise<void> {
-    cueSoundSettings.value = {
-      enabled: settings.enabled !== false,
-      custom: { ...(settings.custom || {}) },
-    }
+    cueSoundSettings.value = normalizeCueSoundSettings(settings)
     await window.electronAPI.config.set('cueSoundSettings', JSON.parse(JSON.stringify(cueSoundSettings.value)))
   }
 

@@ -188,7 +188,7 @@ export default {
     },
     cueSounds: {
       title: '提示音',
-      description: '任务做完、失败、等人批准时各响一声短提示。默认开，可以换成自己的音频。',
+      description: '任务做完、失败、等人批准，以及秘书主动找你时，各响一声。总开关关掉四声都关，再开四声都开；开着时也可单独关某一声。联络一问一答不响。可以换成自己的音频。',
       complete: '任务完成',
       failed: '任务失败',
       confirm: '需要批准',
@@ -198,6 +198,7 @@ export default {
       replaced: '已替换',
       fileTooLarge: '音频不要超过 1.5 MB',
       fileInvalid: '读不了这个音频文件',
+      message: '联络来信',
     },
     tts: {
       title: '语音合成 (TTS)',

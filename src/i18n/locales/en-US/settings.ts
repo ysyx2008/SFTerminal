@@ -188,7 +188,7 @@ export default {
     },
     cueSounds: {
       title: 'Notification sounds',
-      description: 'A short chime when a task finishes, fails, or needs approval. On by default; you can replace any sound.',
+      description: 'A short chime when a task finishes, fails, needs approval, or when the agent reaches out. The master switch turns all four off or on; while it is on, each sound can still be turned off on its own. Companion stays silent during a back-and-forth. You can replace any sound.',
       complete: 'Task complete',
       failed: 'Task failed',
       confirm: 'Needs approval',
@@ -198,6 +198,7 @@ export default {
       replaced: 'Custom',
       fileTooLarge: 'Keep the audio under 1.5 MB',
       fileInvalid: 'Could not read that audio file',
+      message: 'Companion message',
     },
     tts: {
       title: 'Text-to-Speech (TTS)',

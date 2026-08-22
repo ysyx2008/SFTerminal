@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ExternalLink, Play, RotateCcw, Upload } from 'lucide-vue-next'
 import { useConfigStore } from '../../stores/config'
-import type { CueSoundKind } from '@shared/types'
+import { applyMasterCueEnabled, CUE_SOUND_KINDS, type CueSoundKind } from '@shared/types'
 import { playCueSound } from '../../composables/useCueSound'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderId } from '@shared/types'
 import {
@@ -21,19 +21,26 @@ const props = defineProps<{
 
 const configStore = useConfigStore()
 
-const CUE_KINDS: CueSoundKind[] = ['complete', 'failed', 'confirm']
 const CUE_MAX_BYTES = Math.floor(1.5 * 1024 * 1024)
 const cueError = ref('')
 
 const cueEnabled = computed({
   get: () => configStore.cueSoundSettings.enabled !== false,
   set: (enabled: boolean) => {
-    void configStore.saveCueSoundSettings({
-      ...configStore.cueSoundSettings,
-      enabled,
-    })
+    void configStore.saveCueSoundSettings(
+      applyMasterCueEnabled(configStore.cueSoundSettings, enabled),
+    )
   },
 })
+
+const isKindOn = (kind: CueSoundKind) => configStore.cueSoundSettings.kindEnabled[kind] !== false
+
+const setKindOn = (kind: CueSoundKind, on: boolean) => {
+  void configStore.saveCueSoundSettings({
+    ...configStore.cueSoundSettings,
+    kindEnabled: { ...configStore.cueSoundSettings.kindEnabled, [kind]: on },
+  })
+}
 
 const isCustomCue = (kind: CueSoundKind) => Boolean(configStore.cueSoundSettings.custom[kind])
 
@@ -430,9 +437,18 @@ function openWebSearchKeyUrl() {
       </div>
       <p class="section-desc">{{ t('settings.cueSounds.description') }}</p>
       <div class="cue-sound-list">
-        <div v-for="kind in CUE_KINDS" :key="kind" class="cue-sound-row">
+        <div v-for="kind in CUE_SOUND_KINDS" :key="kind" class="cue-sound-row">
           <div class="cue-sound-label">
             <span>{{ t(`settings.cueSounds.${kind}`) }}</span>
+            <label class="toggle-switch toggle-switch-sm" :class="{ 'is-disabled': !cueEnabled }">
+              <input
+                type="checkbox"
+                :checked="isKindOn(kind)"
+                :disabled="!cueEnabled"
+                @change="setKindOn(kind, ($event.target as HTMLInputElement).checked)"
+              />
+              <span class="toggle-slider"></span>
+            </label>
             <span v-if="isCustomCue(kind)" class="form-hint">{{ t('settings.cueSounds.replaced') }}</span>
           </div>
           <div class="cue-sound-actions">
@@ -940,7 +956,7 @@ function openWebSearchKeyUrl() {
 
 .cue-sound-label {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   font-size: 13px;
   color: var(--text-primary);
@@ -989,6 +1005,10 @@ function openWebSearchKeyUrl() {
   width: 36px;
   height: 20px;
   flex-shrink: 0;
+}
+
+.toggle-switch.is-disabled {
+  opacity: 0.45;
 }
 
 .toggle-switch-sm .toggle-slider:before {
