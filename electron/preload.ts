@@ -1132,6 +1132,7 @@ const electronAPI = {
       ptyId?: string
       result: string
       pendingUserMessages?: string[]
+      aborted?: boolean
       newBondMilestones?: string[]
       bondMetrics?: BondMetrics
     }) => void) => {
@@ -1140,6 +1141,7 @@ const electronAPI = {
         ptyId?: string
         result: string
         pendingUserMessages?: string[]
+        aborted?: boolean
         newBondMilestones?: string[]
         bondMetrics?: BondMetrics
       }) => callback(data)
@@ -1150,8 +1152,8 @@ const electronAPI = {
     },
 
     // 监听 Agent 错误（携带 ptyId 用于可靠匹配 tab）
-    onError: (callback: (data: { agentId: string; ptyId?: string; error: string }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; ptyId?: string; error: string }) => callback(data)
+    onError: (callback: (data: { agentId: string; ptyId?: string; error: string; aborted?: boolean }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; ptyId?: string; error: string; aborted?: boolean }) => callback(data)
       ipcRenderer.on('agent:error', handler)
       return () => {
         ipcRenderer.removeListener('agent:error', handler)

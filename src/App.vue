@@ -43,6 +43,11 @@ import {
   checkBondMilestonesOnStartup,
   showBondMilestoneToasts,
 } from './composables/useBondMilestoneToasts'
+import {
+  notifyAgentCompleteCue,
+  notifyAgentConfirmCue,
+  notifyAgentFailedCue,
+} from './composables/useCueSound'
 
 const log = createLogger('App')
 
@@ -907,6 +912,8 @@ onMounted(async () => {
     const tabId = resolveAgentEventTabId(data)
     if (!tabId) return
     terminalStore.setAgentPendingConfirm(tabId, data)
+    const tab = terminalStore.tabs.find(t => t.id === tabId)
+    notifyAgentConfirmCue([data.agentId, data.ptyId, tab?.agentId])
   })
 
   // 全局监听 agent 完成事件：刷新延迟的 proactive + 后台 tab 标签栏提醒（microtask 晚于各 AiPanel 同步逻辑，可配合 skip）
@@ -914,9 +921,14 @@ onMounted(async () => {
     agentId: string
     ptyId?: string
     pendingUserMessages?: string[]
+    aborted?: boolean
     newBondMilestones?: string[]
     bondMetrics?: BondMetrics
   }) => {
+    const completeTabId = resolveAgentEventTabId(data)
+    const completeTab = completeTabId ? terminalStore.tabs.find(t => t.id === completeTabId) : undefined
+    notifyAgentCompleteCue([data.agentId, data.ptyId, completeTab?.agentId], data.aborted)
+
     if (data.newBondMilestones?.length && data.bondMetrics) {
       void showBondMilestoneToasts(t, data.newBondMilestones, data.bondMetrics)
     }
@@ -946,8 +958,12 @@ onMounted(async () => {
   })
 
   // 后台 tab Agent 报错：收口运行状态 + 点亮标签栏（与 complete 兜底一致）
-  cleanupAgentErrorForTabAttention = window.electronAPI.agent.onError((data: { agentId: string; ptyId?: string }) => {
+  cleanupAgentErrorForTabAttention = window.electronAPI.agent.onError((data: { agentId: string; ptyId?: string; aborted?: boolean }) => {
     const foundTabId = resolveAgentEventTabId(data)
+    const errorTab = foundTabId ? terminalStore.tabs.find(t => t.id === foundTabId) : undefined
+    if (!data.aborted) {
+      notifyAgentFailedCue([data.agentId, data.ptyId, errorTab?.agentId])
+    }
     if (foundTabId) {
       terminalStore.finalizeAgentRunState(foundTabId)
     }

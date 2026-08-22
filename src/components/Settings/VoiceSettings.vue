@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ExternalLink } from 'lucide-vue-next'
+import { ExternalLink, Play, RotateCcw, Upload } from 'lucide-vue-next'
 import { useConfigStore } from '../../stores/config'
+import type { CueSoundKind } from '@shared/types'
+import { playCueSound } from '../../composables/useCueSound'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderId } from '@shared/types'
 import {
   useSpeechPackInstall,
@@ -18,6 +20,73 @@ const props = defineProps<{
 }>()
 
 const configStore = useConfigStore()
+
+const CUE_KINDS: CueSoundKind[] = ['complete', 'failed', 'confirm']
+const CUE_MAX_BYTES = Math.floor(1.5 * 1024 * 1024)
+const cueError = ref('')
+
+const cueEnabled = computed({
+  get: () => configStore.cueSoundSettings.enabled !== false,
+  set: (enabled: boolean) => {
+    void configStore.saveCueSoundSettings({
+      ...configStore.cueSoundSettings,
+      enabled,
+    })
+  },
+})
+
+const isCustomCue = (kind: CueSoundKind) => Boolean(configStore.cueSoundSettings.custom[kind])
+
+const previewCue = (kind: CueSoundKind) => {
+  playCueSound(kind, { force: true })
+}
+
+async function ingestCustomCue(kind: CueSoundKind, file: File) {
+  cueError.value = ''
+  if (file.size > CUE_MAX_BYTES) {
+    cueError.value = t('settings.cueSounds.fileTooLarge')
+    return
+  }
+  try {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result || ''))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(file)
+    })
+    if (!dataUrl.startsWith('data:')) {
+      cueError.value = t('settings.cueSounds.fileInvalid')
+      return
+    }
+    await configStore.saveCueSoundSettings({
+      ...configStore.cueSoundSettings,
+      custom: { ...configStore.cueSoundSettings.custom, [kind]: dataUrl },
+    })
+    playCueSound(kind, { force: true })
+  } catch {
+    cueError.value = t('settings.cueSounds.fileInvalid')
+  }
+}
+
+const replaceCue = (kind: CueSoundKind) => {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'audio/wav,audio/mpeg,audio/ogg,audio/mp4,audio/aac,.wav,.mp3,.ogg,.m4a,.aac'
+  input.onchange = () => {
+    const file = input.files?.[0]
+    if (file) void ingestCustomCue(kind, file)
+  }
+  input.click()
+}
+
+const resetCue = (kind: CueSoundKind) => {
+  const custom = { ...configStore.cueSoundSettings.custom }
+  delete custom[kind]
+  void configStore.saveCueSoundSettings({
+    ...configStore.cueSoundSettings,
+    custom,
+  })
+}
 
 onMounted(() => {
   initTtsState()
@@ -347,6 +416,49 @@ function openWebSearchKeyUrl() {
 
 <template>
   <div class="voice-settings">
+    <div class="settings-section">
+      <div class="section-header">
+        <h4>{{ t('settings.cueSounds.title') }}</h4>
+        <label class="toggle-switch">
+          <input
+            type="checkbox"
+            :checked="cueEnabled"
+            @change="cueEnabled = ($event.target as HTMLInputElement).checked"
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p class="section-desc">{{ t('settings.cueSounds.description') }}</p>
+      <div class="cue-sound-list">
+        <div v-for="kind in CUE_KINDS" :key="kind" class="cue-sound-row">
+          <div class="cue-sound-label">
+            <span>{{ t(`settings.cueSounds.${kind}`) }}</span>
+            <span v-if="isCustomCue(kind)" class="form-hint">{{ t('settings.cueSounds.replaced') }}</span>
+          </div>
+          <div class="cue-sound-actions">
+            <button type="button" class="btn btn-sm" @click="previewCue(kind)">
+              <Play :size="12" />
+              {{ t('settings.cueSounds.preview') }}
+            </button>
+            <button type="button" class="btn btn-sm" @click="replaceCue(kind)">
+              <Upload :size="12" />
+              {{ t('settings.cueSounds.replace') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm"
+              :disabled="!isCustomCue(kind)"
+              @click="resetCue(kind)"
+            >
+              <RotateCcw :size="12" />
+              {{ t('settings.cueSounds.reset') }}
+            </button>
+          </div>
+        </div>
+      </div>
+      <p v-if="cueError" class="tts-error-msg">{{ cueError }}</p>
+    </div>
+
     <!-- 语音合成（TTS） -->
     <div class="settings-section">
       <div class="section-header">
@@ -811,6 +923,41 @@ function openWebSearchKeyUrl() {
 }
 
 /* TTS 表单 */
+.cue-sound-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.cue-sound-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cue-sound-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.cue-sound-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cue-sound-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .tts-form-fields {
   display: flex;
   flex-direction: column;

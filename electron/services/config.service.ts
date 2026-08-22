@@ -5,8 +5,8 @@ import { app, safeStorage } from 'electron'
 import type { AiModelType, AiProfile, ApiFormat, CommandRiskPolicy, ExecutionMode, IMProcessMode, JumpHostConfig, LocaleType, McpServerConfig, RiskLevel, SessionSortBy } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
-import type { TtsSettings, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
-import { COMMAND_RISK_POLICY_ALLOWED_LEVELS, DEFAULT_COMMAND_RISK_POLICY, DEFAULT_TTS_SETTINGS, DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
+import type { CueSoundSettings, TtsSettings, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
+import { COMMAND_RISK_POLICY_ALLOWED_LEVELS, DEFAULT_COMMAND_RISK_POLICY, DEFAULT_CUE_SOUND_SETTINGS, DEFAULT_TTS_SETTINGS, DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
 import { createLogger, type LogLevel } from '../utils/logger'
 import { normalizeTerminalSettings, normalizeKeyboardShortcuts } from '../utils/normalize'
 import {
@@ -253,6 +253,8 @@ interface StoreSchema {
   pluginsEntries: Record<string, { enabled: boolean; config?: Record<string, unknown> }>
   // TTS 语音合成
   ttsSettings: TtsSettings
+  // 任务 / 联络桌面提示音
+  cueSoundSettings: CueSoundSettings
   // Web 搜索
   webSearchSettings: WebSearchSettings
   /** 首页最近对话侧栏：置顶的 Agent 历史记录 ID（顺序即展示顺序） */
@@ -367,6 +369,7 @@ const defaultConfig: StoreSchema = {
   pluginsEntries: {},
   // TTS 语音合成
   ttsSettings: DEFAULT_TTS_SETTINGS,
+  cueSoundSettings: DEFAULT_CUE_SOUND_SETTINGS,
   // Web 搜索
   webSearchSettings: DEFAULT_WEB_SEARCH_SETTINGS,
   pinnedConversationIds: [],

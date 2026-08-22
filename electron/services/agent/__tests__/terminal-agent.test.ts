@@ -581,7 +581,8 @@ describe('SailFish callbacks', () => {
     expect(onComplete).toHaveBeenCalledWith(
       expect.any(String), // agentId
       'Done',             // result
-      expect.any(Array)   // pendingUserMessages
+      expect.any(Array),  // pendingUserMessages
+      { aborted: false },
     )
   })
 

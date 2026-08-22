@@ -4007,7 +4007,7 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
         body: t('notification.skillEnvBody', { envName: request.envName })
       })
     },
-    onComplete: (agentId: string, result: string, pendingUserMessages?: string[]) => {
+    onComplete: (agentId: string, result: string, pendingUserMessages?: string[], extra?: { aborted?: boolean }) => {
       const newBondMilestones = sensorService?.appLifecycle.notifyConversationCompleted()
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:complete', {
@@ -4015,15 +4015,16 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
           ptyId,
           result,
           pendingUserMessages,
+          aborted: extra?.aborted === true,
           newBondMilestones,
           bondMetrics: bondService.calculate(),
         })
       }
       attentionService.request()
     },
-    onError: (agentId: string, error: string) => {
+    onError: (agentId: string, error: string, extra?: { aborted?: boolean }) => {
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:error', { agentId, ptyId, error: toSafeErrorMessage(error) })
+        event.sender.send('agent:error', { agentId, ptyId, error: toSafeErrorMessage(error), aborted: extra?.aborted === true })
       }
       attentionService.request()
     }
@@ -4297,7 +4298,7 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
         body: t('notification.skillEnvBody', { envName: request.envName })
       })
     },
-    onComplete: (_runId: string, result: string, pendingUserMessages?: string[]) => {
+    onComplete: (_runId: string, result: string, pendingUserMessages?: string[], extra?: { aborted?: boolean }) => {
       const newBondMilestones = sensorService?.appLifecycle.notifyConversationCompleted()
       if (!event.sender.isDestroyed()) {
         event.sender.send('agent:complete', {
@@ -4305,6 +4306,7 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
           ptyId: agentId,
           result,
           pendingUserMessages,
+          aborted: extra?.aborted === true,
           newBondMilestones,
           bondMetrics: bondService.calculate(),
         })
@@ -4313,10 +4315,10 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
       // 远程会话由 Web 端用户在用，桌面用户没参与，不应打扰
       if (!isRemote) attentionService.request()
     },
-    onError: (_runId: string, error: string) => {
+    onError: (_runId: string, error: string, extra?: { aborted?: boolean }) => {
       const safe = toSafeErrorMessage(error)
       if (!event.sender.isDestroyed()) {
-        event.sender.send('agent:error', { agentId, ptyId: agentId, error: safe })
+        event.sender.send('agent:error', { agentId, ptyId: agentId, error: safe, aborted: extra?.aborted === true })
       }
       if (isRemote) wcs.onAgentError(safe)
       if (!isRemote) attentionService.request()

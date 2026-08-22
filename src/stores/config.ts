@@ -421,6 +421,11 @@ export const useConfigStore = defineStore('config', () => {
     ...{ enabled: false, providerId: 'openai-compat', preset: 'openai', apiUrl: 'https://api.openai.com/v1/audio/speech', apiKey: '', model: 'tts-1', voice: 'alloy', speed: 1.0, autoSpeak: false },
   })
 
+  const cueSoundSettings = ref<import('@shared/types').CueSoundSettings>({
+    enabled: true,
+    custom: {},
+  })
+
   // Web 搜索设置
   const webSearchSettings = ref<import('@shared/types').WebSearchSettings>({
     enabled: false, providerId: 'bocha', apiKeys: {},
@@ -449,7 +454,7 @@ export const useConfigStore = defineStore('config', () => {
         completed, onboarded, onboardingShown, lang, sponsorStatus,
         sortBy, defaultOrder, rules, personalityText,
         savedAgentName, savedAgentAvatar, savedLogLevel, savedTerminalSettings,
-        accounts, savedShortcuts, savedAutoVision, savedAutoFailover, calAccounts, savedTtsSettings, savedWebSearchSettings,
+        accounts, savedShortcuts, savedAutoVision, savedAutoFailover, calAccounts, savedTtsSettings, savedCueSoundSettings, savedWebSearchSettings,
         themeMode, sysScheme, savedPinnedConversationIds, savedConversationDisplayTitles,
         savedFoldAgentProcess, savedFoldProcessInviteCount,
       ] = await Promise.all([
@@ -480,6 +485,7 @@ export const useConfigStore = defineStore('config', () => {
         window.electronAPI.config.get('autoFailoverModel') as Promise<boolean | undefined>,
         window.electronAPI.config.get('calendarAccounts') as Promise<CalendarAccount[] | undefined>,
         window.electronAPI.config.get('ttsSettings') as Promise<import('@shared/types').TtsSettings | undefined>,
+        window.electronAPI.config.get('cueSoundSettings') as Promise<import('@shared/types').CueSoundSettings | undefined>,
         window.electronAPI.config.get('webSearchSettings') as Promise<import('@shared/types').WebSearchSettings | undefined>,
         window.electronAPI.config.getUiThemeMode(),
         window.electronAPI.config.getSystemColorScheme(),
@@ -533,6 +539,15 @@ export const useConfigStore = defineStore('config', () => {
       calendarAccounts.value = calAccounts || []
       if (savedTtsSettings && typeof savedTtsSettings === 'object') {
         ttsSettings.value = { ...ttsSettings.value, ...savedTtsSettings }
+      }
+      if (savedCueSoundSettings && typeof savedCueSoundSettings === 'object') {
+        const custom = savedCueSoundSettings.custom && typeof savedCueSoundSettings.custom === 'object'
+          ? { ...savedCueSoundSettings.custom }
+          : {}
+        cueSoundSettings.value = {
+          enabled: savedCueSoundSettings.enabled !== false,
+          custom,
+        }
       }
       if (savedWebSearchSettings && typeof savedWebSearchSettings === 'object') {
         webSearchSettings.value = { ...webSearchSettings.value, ...savedWebSearchSettings }
@@ -1067,6 +1082,14 @@ export const useConfigStore = defineStore('config', () => {
     await window.electronAPI.config.set('ttsSettings', JSON.parse(JSON.stringify(settings)))
   }
 
+  async function saveCueSoundSettings(settings: import('@shared/types').CueSoundSettings): Promise<void> {
+    cueSoundSettings.value = {
+      enabled: settings.enabled !== false,
+      custom: { ...(settings.custom || {}) },
+    }
+    await window.electronAPI.config.set('cueSoundSettings', JSON.parse(JSON.stringify(cueSoundSettings.value)))
+  }
+
   // ==================== Web 搜索 ====================
 
   async function saveWebSearchSettings(settings: import('@shared/types').WebSearchSettings): Promise<void> {
@@ -1275,6 +1298,8 @@ export const useConfigStore = defineStore('config', () => {
     setKeyboardShortcuts,
     ttsSettings,
     saveTtsSettings,
+    cueSoundSettings,
+    saveCueSoundSettings,
     webSearchSettings,
     saveWebSearchSettings,
     pinnedConversationIds,

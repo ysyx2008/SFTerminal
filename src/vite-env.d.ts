@@ -762,8 +762,8 @@ interface Window {
       }) => void) => () => void
       onNeedConfirm: (callback: (data: PendingConfirmation & { ptyId?: string }) => void) => () => void
       onConfirmResolved: (callback: (data: { agentId: string }) => void) => () => void
-      onComplete: (callback: (data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[] }) => void) => () => void
-      onError: (callback: (data: { agentId: string; ptyId?: string; error: string }) => void) => () => void
+      onComplete: (callback: (data: { agentId: string; ptyId?: string; result: string; pendingUserMessages?: string[]; aborted?: boolean }) => void) => () => void
+      onError: (callback: (data: { agentId: string; ptyId?: string; error: string; aborted?: boolean }) => void) => () => void
       resolveSecureInput: (params: { ptyId: string; requestId: string; value?: string; cancelled?: boolean }) => Promise<boolean>
       onNeedSecureInput: (callback: (data: { agentId: string; requestId: string; prompt: string; skillId: string; envName: string; isUpdate?: boolean; ptyId?: string }) => void) => () => void
     }

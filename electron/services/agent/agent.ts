@@ -1059,7 +1059,7 @@ export abstract class Agent {
     })
     
     // 触发完成回调
-    this.callbacks?.onComplete?.(run.id, result, run.pendingUserMessages.map(m => m.message))
+    this.callbacks?.onComplete?.(run.id, result, run.pendingUserMessages.map(m => m.message), { aborted: run.aborted })
   }
   
   // ==================== 会话持久化 ====================
@@ -1492,7 +1492,7 @@ export abstract class Agent {
       log.warn('对话向量索引失败:', err)
     })
 
-    this.callbacks?.onError?.(run.id, errorMessage)
+    this.callbacks?.onError?.(run.id, errorMessage, { aborted: run.aborted })
   }
   
   // ==================== 受保护方法：上下文构建 ====================
