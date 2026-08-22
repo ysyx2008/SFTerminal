@@ -25,7 +25,6 @@ import type {
   AgentExecutionPhase,
   CommandRiskPolicy,
 } from './types'
-import { Agent } from './agent'
 import { SailFish } from './sailfish'
 import { ConversationStore, ConversationManager, Companion, Conversation } from '../conversation'
 import { assessCommandRisk, analyzeCommand } from './risk-assessor'

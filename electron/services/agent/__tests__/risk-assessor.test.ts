@@ -5,7 +5,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   analyzeCommand,
-  assessCommandRisk,
   assessCommandRiskLegacy,
   assessDatabaseRisk,
   isSudoCommand,

@@ -433,7 +433,7 @@ export class AgentRecordStore {
     return this.maybeExternalizeAndSaveRecord(found, dateStr)
   }
 
-  private maybeExternalizeAndSaveRecord(found: AgentRecord, dateStr: string): AgentRecord {
+  private maybeExternalizeAndSaveRecord(found: AgentRecord, _dateStr: string): AgentRecord {
     const changed = this.externalizeStepImages(found)
     if (changed) {
       const store = this.storeForRecord(found)

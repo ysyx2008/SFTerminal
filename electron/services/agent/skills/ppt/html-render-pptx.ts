@@ -19,8 +19,6 @@ import { createLogger } from '../../../../utils/logger'
 
 const log = createLogger('Html2Pptx')
 
-const PX_PER_IN = 96
-
 export type DeckSize = 'widescreen' | 'standard'
 
 interface SizeSpec {

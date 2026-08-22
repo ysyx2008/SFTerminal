@@ -394,7 +394,7 @@ import type { KnowledgeSettings, SearchOptions, AddDocumentOptions, ModelTier } 
 import {
   decrypt
 } from './services/knowledge/crypto'
-import type { TerminalState, CwdChangeEvent, CommandExecution, CommandExecutionEvent } from './services/terminal-state.service'
+import type { TerminalState, CommandExecution } from './services/terminal-state.service'
 import type { TerminalAwareness } from './services/terminal-awareness'
 import { initScreenContentService } from './services/screen-content.service'
 import { initBrowserBridgeService, getBrowserBridgeService } from './services/browser-bridge/browser-bridge.service'
@@ -452,7 +452,7 @@ import {
 import {
   getEmailCredential, setEmailCredential, deleteEmailCredential,
   getCalendarCredential, setCalendarCredential, deleteCalendarCredential,
-  setSkillEnv, getSkillEnv, deleteSkillEnv, listSkillEnvNames,
+  setSkillEnv, deleteSkillEnv, listSkillEnvNames,
   getDefaultCredentialService
 } from './services/credential.service'
 import { getServerConfig } from './services/agent/skills/email/session'

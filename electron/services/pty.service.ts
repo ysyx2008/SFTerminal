@@ -1,13 +1,13 @@
 import * as pty from 'node-pty'
 import { v4 as uuidv4 } from 'uuid'
 import * as os from 'os'
-import { exec, execSync } from 'child_process'
+import { exec } from 'child_process'
 import { promisify } from 'util'
 import stripAnsi from 'strip-ansi'
 import * as iconv from 'iconv-lite'
 import type { PtyOptions, PtyCreateResult } from '@shared/types'
 import { createLogger } from '../utils/logger'
-import { resolveDefaultShell, inferShellKind, getShellSpawnArgs, quoteForShell, type ShellKind } from '../utils/shell'
+import { resolveDefaultShell, inferShellKind, quoteForShell } from '../utils/shell'
 
 export type { PtyOptions, PtyCreateResult }
 

@@ -525,7 +525,7 @@ function forbiddenUserDataToolResult(
   filePath: string,
   toolName: string,
   executor: ToolExecutorConfig,
-  cwd?: string,
+  _cwd?: string,
 ): ToolResult {
   executor.addStep({
     type: 'tool_call',
@@ -1306,7 +1306,7 @@ export async function readFile(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  let filePath = resolveLocalFilePath(String(args.path ?? ''), getTerminalStateService().getState(ptyId))
+  const filePath = resolveLocalFilePath(String(args.path ?? ''), getTerminalStateService().getState(ptyId))
   if (!filePath) {
     return { success: false, output: '', error: t('error.file_path_required') }
   }
@@ -1622,7 +1622,7 @@ export async function editFile(
   config: AgentConfig,
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
-  let filePath = resolveLocalFilePath(String(args.path ?? ''), getTerminalStateService().getState(ptyId))
+  const filePath = resolveLocalFilePath(String(args.path ?? ''), getTerminalStateService().getState(ptyId))
   const oldText = args.old_text as string
   const newText = args.new_text as string
   const replaceAll = args.replace_all === true

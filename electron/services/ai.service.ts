@@ -75,10 +75,6 @@ export function isRetryableError(error: NetworkErrorLike): boolean {
   )
 }
 
-function isRetryableStatusCode(statusCode: number): boolean {
-  return statusCode === 429 || AI_RETRY.RETRYABLE_STATUS_CODES.includes(statusCode)
-}
-
 function isTimeoutError(error: NetworkErrorLike): boolean {
   return getNetworkErrorCode(error) === 'ETIMEDOUT' || getNetworkErrorMessage(error).includes('ETIMEDOUT')
 }

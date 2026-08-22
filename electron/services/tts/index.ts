@@ -8,8 +8,8 @@
 import type { TtsProvider, TtsSynthesizeOptions, TtsSynthesizeResult, TtsVoice, TtsSettings } from './types'
 import { DEFAULT_TTS_SETTINGS } from './types'
 import { OpenAICompatTtsProvider, setSettingsGetter } from './openai-provider'
-import { VolcengineTtsProvider, setVolcengineSettingsGetter, setVolcengineProxyGetter } from './volcengine-provider'
-import { DashScopeTtsProvider, setDashScopeSettingsGetter, setDashScopeProxyGetter } from './dashscope-provider'
+import { VolcengineTtsProvider, setVolcengineSettingsGetter } from './volcengine-provider'
+import { DashScopeTtsProvider, setDashScopeSettingsGetter } from './dashscope-provider'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('TTS')

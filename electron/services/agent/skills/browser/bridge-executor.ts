@@ -347,7 +347,7 @@ export async function bridgeBrowserCloseTab(
 export async function bridgeBrowserScroll(
   ptyId: string,
   args: Record<string, unknown>,
-  executor: ToolExecutorConfig,
+  _executor: ToolExecutorConfig,
 ): Promise<ToolResult> {
   const direction = (args.direction as string) || 'down'
   const distance = (args.distance as number) || 500

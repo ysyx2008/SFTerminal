@@ -26,7 +26,7 @@ export type {
 import type { AgentContext } from '@shared/types'
 export type { AgentContext }
 
-import type { TerminalType, ExecutionMode, RemoteChannel, PendingConfirmation, PendingSecureInput, AgentStep, AgentContextBar, AgentPlan, AttachmentInfo, TokenUsage, CommandRiskPolicy } from '@shared/types'
+import type { ExecutionMode, PendingConfirmation, PendingSecureInput, AgentStep, AgentContextBar, AgentPlan, AttachmentInfo, TokenUsage, CommandRiskPolicy } from '@shared/types'
 
 // Agent 配置
 export interface AgentConfig {

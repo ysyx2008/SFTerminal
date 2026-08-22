@@ -9,7 +9,6 @@
  * 透明。CLI 场景吞吐次要，可靠性优先。
  */
 import { EventEmitter } from 'events'
-import * as fs from 'fs'
 import * as path from 'path'
 import type { ModelTier, ModelInfo, EmbeddingDevice } from './types'
 import { getModelManager, ModelManager } from './model-manager'

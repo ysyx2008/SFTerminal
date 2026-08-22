@@ -28,7 +28,6 @@ import type {
   ToolExecuteResult,
   HookEvent,
   HookDecision,
-  HookContext,
   ProviderRegistration,
   ChannelRegistration
 } from '../types'
@@ -118,7 +117,6 @@ describe('PluginEntry 签名契约', () => {
 // ==================== 3. Registration API 契约 ====================
 
 describe('Registration API 契约', () => {
-  let registry: PluginRegistry
   let collected: {
     tools: ToolRegistration[]
     providers: ProviderRegistration[]
@@ -128,11 +126,6 @@ describe('Registration API 契约', () => {
   }
 
   beforeEach(() => {
-    registry = new PluginRegistry({
-      enabled: true,
-      userDataPath: '/tmp/test-plugins',
-      entries: { 'contract-test': { enabled: true } }
-    })
     collected = { tools: [], providers: [], channels: [], hooks: [], routes: [] }
   })
 
@@ -407,12 +400,7 @@ describe('工具命名与执行契约', () => {
 
     injectPlugin('slow-plugin', [slowTool])
 
-    // Override timeout for test
-    const origRace = Promise.race
-    let timeoutMs: number | undefined
-    const origExecuteTool = registry.executeTool.bind(registry)
-
-    const result = await origExecuteTool('plugin_slow_plugin_slow', {}, 'call-2')
+    const result = await registry.executeTool('plugin_slow_plugin_slow', {}, 'call-2')
     // Normal case should succeed (timeout is 60s, our sleep is 200ms)
     expect(result!.success).toBe(true)
   })
@@ -423,7 +411,7 @@ describe('工具命名与执行契约', () => {
   })
 
   it('禁用的插件的工具不出现在 getToolDefinitions 中', () => {
-    const plugin = injectPlugin('disabled-test', [{
+    injectPlugin('disabled-test', [{
       name: 'action',
       description: 'Test',
       parameters: {},

@@ -3,7 +3,6 @@
  * 对齐上游 process-message.ts 的 deliver 串行链与 reply-progress-sender。
  */
 import type { WeixinApiOptions } from './api/api.js'
-import type { MessageItem } from './api/types.js'
 import { sendMessageItemWeixin, sendMessageWeixin } from './messaging/send.js'
 import { SfWeixinReplyProgressSender } from './sf-reply-progress.js'
 

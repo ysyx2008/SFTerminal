@@ -94,7 +94,6 @@ export interface ParsedArgv {
 }
 
 export function splitArgv(args: string[], rule: CommandRule): ParsedArgv {
-  const flags: string[] = []
   const paths: string[] = []
   const otherArgs: string[] = []
   const valueFlags = rule.valueFlags ?? new Set()

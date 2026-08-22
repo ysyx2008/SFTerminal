@@ -4,8 +4,6 @@ import * as path from 'path'
 import { execFile, execFileSync } from 'child_process'
 import { promisify } from 'util'
 import {
-  BROWSER_BRIDGE_CHROMIUM_CWS_EXTENSION_ID,
-  BROWSER_BRIDGE_CHROMIUM_DEV_EXTENSION_ID,
   BROWSER_BRIDGE_CHROMIUM_EXTENSION_IDS,
   BROWSER_BRIDGE_FIREFOX_EXTENSION_ID,
   BROWSER_BRIDGE_NATIVE_HOST,

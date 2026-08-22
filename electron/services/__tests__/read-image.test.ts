@@ -17,7 +17,8 @@ vi.mock('electron', () => ({
 
 vi.mock('../terminal-state.service', () => ({
   getTerminalStateService: () => ({
-    getCwd: () => '/tmp'
+    getCwd: () => '/tmp',
+    getState: () => ({ type: 'local' as const, cwd: '/tmp' })
   })
 }))
 

@@ -21,7 +21,7 @@
 
 import { app } from 'electron'
 import * as crypto from 'crypto'
-import { promises as fs, constants as fsConstants } from 'fs'
+import { promises as fs } from 'fs'
 import * as path from 'path'
 import { createLogger } from '../../utils/logger'
 

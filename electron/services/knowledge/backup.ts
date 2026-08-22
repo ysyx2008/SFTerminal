@@ -253,7 +253,6 @@ export function createBackup(automatic: boolean = true): CreateBackupResult {
 function pruneOldBackups(): void {
   const backups = listBackups()
   const autoBackups = backups.filter(b => b.automatic)
-  const manualBackups = backups.filter(b => !b.automatic)
 
   for (const old of autoBackups.slice(MAX_BACKUPS)) {
     rmrfSync(old.path)

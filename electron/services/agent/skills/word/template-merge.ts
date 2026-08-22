@@ -14,15 +14,11 @@
  *  - 页眉/页脚/文本框（仅扫描主 document.xml）
  */
 
-import * as fs from 'fs'
-import JSZip from 'jszip'
 import {
   readDocx,
   writeDocx,
   getParagraphs,
-  extractTextFromParagraphXml,
   replaceTextInParagraphXml,
-  type ParagraphInfo
 } from './docx-xml'
 import {
   findPlaceholders,
@@ -30,7 +26,6 @@ import {
   makeLoopContext,
   stringifyValue,
   type MissingStrategy,
-  type Placeholder
 } from '../../../../utils/template-engine'
 
 export interface MergeOptions {
@@ -219,8 +214,6 @@ function expandRowLoops(
 
     if (!r.found || !Array.isArray(r.value)) {
       missingSet.add(foundLoop.field)
-      // 处理策略：keep 保留原行；其他策略移除模板行
-      const replacement = onMissing === 'keep' ? trXml : ''
       // 不论是否移除，先把 each/each 标签去掉避免后续重复扫描
       const cleaned = onMissing === 'keep'
         ? removeEachMarkersInRow(trXml)

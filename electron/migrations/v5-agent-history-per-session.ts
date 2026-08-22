@@ -17,7 +17,6 @@ import {
 import {
   AGENT_MIGRATED_SUFFIX,
   cleanupExpiredMigratedBackups,
-  getAgentRecordPath,
   listLegacyAgentDayFiles,
   readLegacyAgentDayRecords,
   writeAgentRecordFile,

@@ -10,7 +10,7 @@
 
 import type { AiMessage, ToolCall, ChatWithToolsResult, ToolDefinition, RetryInfo, AiModelFailoverNotice } from '../ai.service'
 import { StreamingToolExecutor } from './streaming-tool-executor'
-import type { AgentRecord, AgentStepRecord } from '../history.service'
+import type { AgentRecord } from '../history.service'
 import type {
   AgentConfig,
   AgentStep,

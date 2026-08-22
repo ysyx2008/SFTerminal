@@ -7,7 +7,7 @@
  * - 出错抛 Error，由调用方捕获返回友好错误
  */
 
-import { getTheme, getKlineProTheme, type ChartTheme, type KlineStyle, type ThemePreset, type KlineProTheme } from './presets'
+import { getTheme, getKlineProTheme, type ChartTheme, type KlineStyle, type ThemePreset } from './presets'
 import {
   extractFeatureNames,
   matchFeatureName,

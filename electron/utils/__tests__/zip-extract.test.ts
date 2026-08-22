@@ -68,7 +68,6 @@ function createGbkFilenameZip(): Buffer {
 
   const localRecord = Buffer.concat([localHeader, filenameGbk, contentGbk])
   const centralRecord = Buffer.concat([centralHeader, filenameGbk])
-  const endOffset = localRecord.length + centralRecord.length
 
   const endRecord = Buffer.alloc(22)
   endRecord.writeUInt32LE(0x06054b50, 0)
