@@ -142,6 +142,7 @@ const statusType = computed(() => {
   if (totalEnabled.value === 0) return 'none'
   if (mcpConnectingQuiet.value) return 'connecting'
   if (totalConnected.value === 0) return 'offline'
+  if (wechatWaitingSession.value) return 'partial'
   if (totalConnected.value >= totalEnabled.value) return 'all'
   return 'partial'
 })
@@ -160,6 +161,9 @@ const statusIcon = computed(() => {
   switch (statusType.value) {
     case 'all': return '●'
     case 'partial':
+      return wechatWaitingSession.value && totalConnected.value >= totalEnabled.value
+        ? '●'
+        : '◐'
     case 'connecting': return '◐'
     default: return '○'
   }
@@ -358,6 +362,13 @@ const retryMcp = async (server: McpServerConfig) => {
 // ==================== 弹窗控制 ====================
 
 let gatewayPollTimer: ReturnType<typeof setInterval> | null = null
+let waitPollTimer: ReturnType<typeof setInterval> | null = null
+
+function onTriggerEnter(e: MouseEvent) {
+  if (wechatWaitingSession.value) {
+    showTip(e, t('conn.wechatNeedMessageTip'))
+  }
+}
 
 const POPOVER_WIDTH = 520
 const VIEWPORT_MARGIN = 8
@@ -391,10 +402,7 @@ const togglePopover = async () => {
       window.addEventListener('resize', updateSidebarPosition)
     }
     await loadAll()
-    gatewayPollTimer = setInterval(async () => {
-      await loadGatewayData()
-      if (wechatWaitingSession.value) await loadIMData()
-    }, 5000)
+    gatewayPollTimer = setInterval(loadGatewayData, 5000)
   } else {
     hideTip()
     window.removeEventListener('resize', updateSidebarPosition)
@@ -456,6 +464,10 @@ onMounted(async () => {
 
   document.addEventListener('pointerdown', handlePointerDownOutside, true)
   document.addEventListener('keydown', handleKeydown)
+
+  waitPollTimer = setInterval(() => {
+    if (wechatWaitingSession.value) void loadIMData()
+  }, 5000)
 })
 
 onUnmounted(() => {
@@ -465,6 +477,7 @@ onUnmounted(() => {
   unsubMcpError?.()
   unsubBrowserBridge?.()
   if (gatewayPollTimer) clearInterval(gatewayPollTimer)
+  if (waitPollTimer) clearInterval(waitPollTimer)
   document.removeEventListener('pointerdown', handlePointerDownOutside, true)
   document.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('resize', updateSidebarPosition)
@@ -478,7 +491,9 @@ onUnmounted(() => {
       ref="buttonRef"
       class="btn-icon conn-btn"
       :class="[statusClass, { 'conn-btn--sidebar': props.variant === 'sidebar' }]"
-      :title="statusTooltip"
+      :title="wechatWaitingSession ? undefined : statusTooltip"
+      @mouseenter="onTriggerEnter"
+      @mouseleave="hideTip"
       @click="togglePopover"
     >
       <span class="equip-icon">
