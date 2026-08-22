@@ -2130,7 +2130,10 @@ const handleSendClick = (event: MouseEvent) => {
   grid-template-rows: auto auto;
   align-items: stretch;
   gap: 0;
-  padding: 10px 10px 6px;
+  /* 四边等距：主操作键落在右下角，右和下不等距时它到两条边的距离就对不齐。
+     文字要的额外内缩由 textarea 自己的 padding 给，不靠这里加偏心。
+     数值与外框圆角联动，改动见下方按钮圆角的同心说明。 */
+  padding: 8px;
 }
 
 .input-container-two-row .input-textarea-wrap {
@@ -2213,8 +2216,12 @@ const handleSendClick = (event: MouseEvent) => {
   }
 }
 
-/* Composer 一行里的所有按钮共用同一个 32px / 9px 方格，主操作键也在这个格子里。
-   尺寸不齐时最重要的那个反而最小，一行读起来就是拼的。 */
+/* Composer 一行里的所有按钮共用同一个 32px / 8px 方格，主操作键也在这个格子里。
+   尺寸不齐时最重要的那个反而最小，一行读起来就是拼的。
+
+   圆角 8px 不是随手取的：按钮要跟外框圆角同心，半径必须等于外框半径减去两者
+   的间距（16 − 8）。取大了角会鼓出父级弧线，取小了显方——两条弧线不平行，
+   看上去就是「差一点」，但很难指出差在哪。外框圆角或内边距一改，这里得跟着改。 */
 .upload-btn,
 .voice-btn {
   flex-shrink: 0;
@@ -2228,7 +2235,7 @@ const handleSendClick = (event: MouseEvent) => {
   background: transparent;
   border: none;
   color: var(--text-muted);
-  border-radius: 9px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
 }
@@ -2330,7 +2337,7 @@ const handleSendClick = (event: MouseEvent) => {
   width: 32px;
   height: 32px;
   padding: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   border: none;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
@@ -2411,7 +2418,7 @@ const handleSendClick = (event: MouseEvent) => {
   width: 32px;
   height: 32px;
   padding: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   border: none;
   cursor: pointer;
   background: rgba(var(--accent-rgb), 0.14);
