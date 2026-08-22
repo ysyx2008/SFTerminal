@@ -313,6 +313,8 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
   // 侧栏 ESC 关闭需让路给上层模态（如主机凭证弹窗），否则会与全局 listener 顺序叠加导致侧栏被误关
   if (event.key === 'Escape' && showSidebar.value) {
     if (document.querySelector('.credential-overlay')) return
+    // 待办面自己分层处理 ESC（菜单 → 详情 → 离开），不要抢先关主机侧栏
+    if (terminalStore.todosActive) return
     showSidebar.value = false
     return
   }
@@ -1282,6 +1284,15 @@ const { canGoBack, canGoForward, goBack, goForward } = useShellNavigation(showSm
 const navBackShortcut = computed(() => formatAccelerator(configStore.keyboardShortcuts.navBack))
 const navForwardShortcut = computed(() => formatAccelerator(configStore.keyboardShortcuts.navForward))
 
+/** 离开待办：回到刚离开的界面；没有历史则回任务区 */
+function closeTodosPanel() {
+  if (canGoBack.value) {
+    goBack()
+    return
+  }
+  terminalStore.focusTaskArea()
+}
+
 function handleMouseNav(e: MouseEvent) {
   if (isFullScreenOverlayOpen.value) return
   if (e.button === 3) {
@@ -1687,6 +1698,7 @@ onUnmounted(() => {
         <TodoPanel
           v-if="terminalStore.todosActive"
           class="main-surface"
+          @close="closeTodosPanel"
         />
         <!-- 有 tab 即挂载工作台；外层原生 div + v-show 控制显隐（component 上 v-show 的 scoped 样式不可靠） -->
         <div

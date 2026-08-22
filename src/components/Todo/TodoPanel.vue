@@ -25,6 +25,7 @@ import TodoMenu from './TodoMenu.vue'
 const { t, locale } = useI18n()
 const terminalStore = useTerminalStore()
 const openAppSettings = inject<(tab?: string, section?: string) => void>('openAppSettings')
+const emit = defineEmits<{ close: [] }>()
 
 const contextMenu = ref<{ item: TodoItem; x: number; y: number } | null>(null)
 const sourceLabels = ref<Record<string, string>>({})
@@ -712,10 +713,17 @@ function onRowKeydown(item: TodoItem, ev: KeyboardEvent) {
 
 function onPanelKeydown(ev: KeyboardEvent) {
   if (ev.key !== 'Escape') return
-  if (!detailOpen.value) return
   ev.preventDefault()
-  ev.stopPropagation()
-  closeDetail()
+  ev.stopImmediatePropagation()
+  if (contextMenu.value) {
+    closeContextMenu()
+    return
+  }
+  if (detailOpen.value) {
+    closeDetail()
+    return
+  }
+  emit('close')
 }
 
 onMounted(async () => {
@@ -723,11 +731,11 @@ onMounted(async () => {
   unsubChanged = window.electronAPI.todo.onChanged(() => {
     void loadTodos()
   })
-  window.addEventListener('keydown', onPanelKeydown)
+  document.addEventListener('keydown', onPanelKeydown, true)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', onPanelKeydown)
+  document.removeEventListener('keydown', onPanelKeydown, true)
   unsubChanged?.()
   if (saveTimer) clearTimeout(saveTimer)
 })
