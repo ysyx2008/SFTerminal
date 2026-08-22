@@ -24,7 +24,33 @@
 :root {
   /* 通用变量（不随主题变化） */
   --border-radius: 8px;
-  
+
+  /* ===== 设计令牌：间距 / 圆角 / 字号（不随主题变化） =====
+     设置面板此前散着 68 种内边距、14 种圆角、21 种字号（含 12.5px / 11.5px 这类
+     显然是随手写的值），页面之间对不齐的根源就在这。这三把尺子是收敛后的档位，
+     基础件（Settings/kit）只允许从中取值，取不到合适的说明设计意图没想清楚，
+     而不是该新增一档。约束由 stylelint 强制，见 .stylelintrc。 */
+
+  /* 间距 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* 圆角：控件用 sm，容器用 md，全圆用 full */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-full: 999px;
+
+  /* 字号按"角色"命名而非尺寸，将来整体调整不必改调用处 */
+  --fs-title: 15px;   /* 页面级标题 */
+  --fs-label: 13px;   /* 设置项名 */
+  --fs-body: 13px;    /* 正文 */
+  --fs-desc: 12px;    /* 描述、辅助说明 */
+  --fs-meta: 11px;    /* 分组标签、徽标 */
+
   /* 字体 */
   --font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
   --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
@@ -53,6 +79,11 @@
      会在各自主题块里覆盖为深色。使用场景：btn-primary、nav.active 等。
      聊天用户气泡不用本变量：见下方 --chat-user-bubble-*（与助手气泡同属 surface 系，避免整板饱和 accent）。 */
   --accent-contrast: #ffffff;
+
+  /* 第三级文字：介于 secondary 与 muted 之间，用于分组标签一类的"结构性弱文字"。
+     从 --text-secondary 派生而非在 12 套主题里各写一份，避免同一概念出现多个真相源；
+     各主题只要定义了 secondary 就自动得到协调的 tertiary。 */
+  --text-tertiary: color-mix(in srgb, var(--text-secondary) 78%, transparent);
 
   /* 聊天用户气泡：语义是"有主题味道的、比助手气泡更显眼的表面"；
      每个主题单独手挑 --chat-user-bubble-bg 以匹配自身色系，
@@ -1088,13 +1119,180 @@ button:focus-visible {
   cursor: not-allowed;
 }
 
-/* 浅色主题分块：--bg-tertiary 与面板底同色，卡片必须改用抬起色 + 边框才能分层。
-   特异性需压过各 Settings 子页 scoped 的 .settings-section { background: var(--bg-tertiary) }。
-   tips-section 自带强调色渐变，排除以免被盖掉。 */
+/* ==================================================================
+   Settings 模块内容区规范（卡片 / 行 / 文字层级 / 行内控件）
+
+   卡片底色必须用 --bg-surface：它是全部 12 套主题中唯一严格亮于面板底
+   (--bg-secondary) 的 token。此前各子页 scoped 里清一色写 --bg-tertiary，
+   只有默认深色主题下才恰好偏亮；浅色主题两者同色导致卡片完全不可见，
+   其余 10 套主题里卡片反而比面板底更暗、呈凹陷。原先仅给 light 打过补丁，
+   这里推广为全主题通用。
+
+   只改底色，不加边框：多数设置页内部本就套着自带边框的盒子，最外层再加一圈
+   会变成套娃（IM 页的"过程消息"曾出现三层框）。边框由内部已改造成扁平行的
+   页面自行按需添加。圆角/内边距沿用各页原值，保持改动最小。
+
+   特异性说明：子页 scoped 规则为 .settings-section[data-v-x] (0,2,0)，
+   与 .settings-scope .settings-section 同级、靠注入顺序取胜；
+   附加 :not(.tips-section) 抬到 (0,3,0) 才能稳定压过，
+   同时 tips-section 自带强调色渐变，本就该排除。
+   ================================================================== */
+
+.settings-scope .settings-section:not(.tips-section) {
+  background: var(--bg-surface);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* 浅色主题额外需要边框才能与面板底分层（保留原有调校，勿删） */
 [data-ui-theme="light"] .settings-scope .settings-section:not(.tips-section),
 [data-ui-theme="light"] .settings-scope .section {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
+}
+
+/* 分组标题：明显退后，让条目名成为视觉主角。
+   与侧栏 .nav-group-label 同源处理，左右两栏分组语言保持一致。 */
+.settings-scope .section-title {
+  display: flex;
+  align-items: center;
+  min-height: 0;
+  margin: 0 0 4px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+
+/* 设置行：统一行高节奏 + 发丝分隔线取代零散的 margin-bottom。
+   左侧文本块 flex:1 使右侧控件天然贴右对齐，无需额外结构。 */
+.settings-scope .setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.settings-scope .setting-row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.settings-scope .setting-row > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-scope .form-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* 描述文字用 --text-secondary 而非 --text-muted：
+   后者在深色主题下为 #6b6b6b 落在卡片上，对比度仅 2.9:1，低于 WCAG AA 的 4.5:1。
+   max-width 防止长描述在宽窗口下拉成难以回扫的一整行。 */
+.settings-scope .setting-desc {
+  margin: 3px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-width: 46em;
+}
+
+/* 开关：维持强调色填充（桌面软件通行做法），仅收窄尺寸并补键盘焦点环。
+
+   所有选择器一律带 .toggle-switch 祖先，不靠 .toggle-slider 这个通用类名单独匹配——
+   类名太泛，全局接管会打到结构不同的自制开关上（曾误伤主题页的"跟随系统外观"）。
+   带上祖先后特异性到 (0,3,0)，对采用标准结构的页面反而能稳定压过其本地重复定义。 */
+.settings-scope .toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.settings-scope .toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.settings-scope .toggle-switch .toggle-slider {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 22px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.settings-scope .toggle-switch .toggle-slider::before {
+  position: absolute;
+  content: "";
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  bottom: 2px;
+  background-color: var(--text-muted);
+  border-radius: 50%;
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.settings-scope .toggle-switch input:checked + .toggle-slider {
+  background-color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.settings-scope .toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(18px);
+  background-color: var(--accent-contrast);
+}
+
+.settings-scope .toggle-switch input:focus-visible + .toggle-slider {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* 分段控件按内容宽度收敛，不再撑满整行 */
+.settings-scope .segmented-control {
+  display: flex;
+  width: fit-content;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.settings-scope .segment-option {
+  flex: 0 0 auto;
+  min-width: 88px;
+  padding: 5px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.settings-scope .segment-option:hover {
+  color: var(--text-primary);
+}
+
+.settings-scope .segment-option.active {
+  background: var(--accent-primary);
+  color: var(--accent-contrast);
 }
 
 /* 输入框样式 */
