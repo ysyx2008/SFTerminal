@@ -38,6 +38,7 @@ import {
   restoreBackup as doRestoreBackup,
   deleteBackup as doDeleteBackup,
   hasCorruptionMarker,
+  clearRestoreExhausted,
   type BackupEntry
 } from './backup'
 
@@ -1739,6 +1740,8 @@ export class KnowledgeService extends EventEmitter {
    */
   async restoreBackup(backupPath?: string): Promise<{ success: boolean; backupPath?: string; error?: string }> {
     this.emit('restoreStarted', { backupPath })
+    // 用户主动来恢复，之前「这批备份都救不回来」的结论作废，重新给机会
+    clearRestoreExhausted()
     const result = doRestoreBackup(backupPath)
     if (!result.success) {
       this.emit('restoreCompleted', { success: false, error: result.error })

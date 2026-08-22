@@ -12,6 +12,11 @@ import { UtilityWorkerSession } from '../worker-session'
 const tmpDir = path.join(os.tmpdir(), 'sailfish-storage-restore-test')
 
 const restoreCalls: Array<string | undefined> = []
+const restoreOptions: Array<{ keepSnapshot?: boolean } | undefined> = []
+const exhaustedMarks: number[] = []
+/** 依次决定每次 restoreBackup 的成败；用完或为空时默认成功 */
+const restoreOutcomes: boolean[] = []
+const state = { exhausted: false }
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getPath: () => tmpDir },
@@ -20,13 +25,21 @@ vi.mock('electron', () => ({
 
 vi.mock('../backup', () => ({
   hasCorruptionMarker: () => true,
+  isRestoreExhausted: () => state.exhausted,
+  markRestoreExhausted: () => { exhaustedMarks.push(Date.now()) },
+  clearRestoreExhausted: () => {},
+  adoptLegacyBrokenSnapshots: () => {},
   listBackups: () => [
     { name: 'auto-newer', path: '/backups/newer', createdAt: 2, sizeBytes: 1, automatic: true },
     { name: 'auto-older', path: '/backups/older', createdAt: 1, sizeBytes: 1, automatic: true }
   ],
-  restoreBackup: (backupPath?: string) => {
+  restoreBackup: (backupPath?: string, options?: { keepSnapshot?: boolean }) => {
     restoreCalls.push(backupPath)
-    return { success: true, backupPath: backupPath || '/backups/newer' }
+    restoreOptions.push(options)
+    const ok = restoreOutcomes.length ? restoreOutcomes.shift() : true
+    return ok
+      ? { success: true, backupPath: backupPath || '/backups/newer' }
+      : { success: false, error: '备份内容不完整' }
   }
 }))
 
@@ -126,6 +139,10 @@ describe('VectorStorage 恢复读不开时改试更早备份', () => {
 
   beforeEach(() => {
     restoreCalls.length = 0
+    restoreOptions.length = 0
+    exhaustedMarks.length = 0
+    restoreOutcomes.length = 0
+    state.exhausted = false
     const markerDir = path.join(tmpDir, 'knowledge', 'lancedb')
     fs.mkdirSync(markerDir, { recursive: true })
     fs.writeFileSync(path.join(markerDir, '.corrupted'), '{"reason":"test"}')
@@ -149,6 +166,54 @@ describe('VectorStorage 恢复读不开时改试更早备份', () => {
     expect(corrupted).toHaveLength(0)
     expect(unreadable).toHaveLength(0)
     expect(storage.spawned).toHaveLength(2)
+  })
+
+  it('试更早的备份时不再留现场——换下来的是上一份备份的副本', async () => {
+    const storage = new TestVectorStorage()
+    storage.queueInitializeEvents([{ name: 'indexUnreadable', args: [] }])
+    storage.queueInitializeEvents([])
+
+    await storage.initialize(384)
+    await flush()
+
+    const olderCall = restoreCalls.indexOf('/backups/older')
+    expect(restoreOptions[olderCall]?.keepSnapshot).toBe(false)
+  })
+
+  it('上次已判定这批备份都救不回来时，这次启动一份都不碰', async () => {
+    state.exhausted = true
+    const storage = new TestVectorStorage()
+    storage.queueInitializeEvents([{ name: 'indexUnreadable', args: [] }])
+
+    await storage.initialize(384)
+    await flush()
+
+    expect(restoreCalls).toHaveLength(0)
+  })
+
+  it('最新那份没恢复成时，接着试更早的仍要留档——那还是用户原始数据', async () => {
+    restoreOutcomes.push(false)
+    const storage = new TestVectorStorage()
+    storage.queueInitializeEvents([{ name: 'indexUnreadable', args: [] }])
+    storage.queueInitializeEvents([])
+
+    await storage.initialize(384)
+    await flush()
+
+    const olderCall = restoreCalls.indexOf('/backups/older')
+    expect(olderCall).toBeGreaterThanOrEqual(0)
+    expect(restoreOptions[olderCall]?.keepSnapshot).toBe(true)
+  })
+
+  it('一份都救不回来时记下结论，供下次启动跳过', async () => {
+    const storage = new TestVectorStorage()
+    storage.queueInitializeEvents([{ name: 'indexUnreadable', args: [] }])
+    storage.queueInitializeEvents([{ name: 'indexUnreadable', args: [] }])
+
+    await storage.initialize(384)
+    await flush()
+
+    expect(exhaustedMarks).toHaveLength(1)
   })
 
   it('所有备份都读不开时发 indexUnreadable，仍不清表', async () => {

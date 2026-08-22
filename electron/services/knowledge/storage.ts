@@ -18,7 +18,15 @@ import type {
   KnowledgeStats
 } from './types'
 import { getBM25Index, type BM25SearchResult } from './bm25'
-import { restoreBackup as doRestoreBackup, listBackups, hasCorruptionMarker } from './backup'
+import {
+  restoreBackup as doRestoreBackup,
+  listBackups,
+  hasCorruptionMarker,
+  isRestoreExhausted,
+  markRestoreExhausted,
+  clearRestoreExhausted,
+  adoptLegacyBrokenSnapshots,
+} from './backup'
 import { createLogger } from '../../utils/logger'
 import { UtilityWorkerSession, type WorkerSessionOptions } from './worker-session'
 
@@ -278,9 +286,21 @@ export class VectorStorage extends EventEmitter {
     if (this.isInitialized) return
     this.dimensions = dimensions
 
+    // 老版本把现场散在数据目录根下且从不清理，先收编再走后面的流程
+    adoptLegacyBrokenSnapshots()
+
     // 已标损坏：先从新到旧试备份。读得开才继续；都读不开也不清表。
-    const backups = hasCorruptionMarker() ? listBackups() : []
-    await this.tryRestoreFromBackupBeforeInit(backups[0]?.path)
+    // 这批备份上次已经整个试过一遍且都救不回来的话就别再来——每试一份都要复制
+    // 几百兆，结论却是注定的（见 SPEC「救不回来的时候，别把磁盘吃掉」）。
+    const shouldTryRestore = hasCorruptionMarker() && !isRestoreExhausted()
+    if (hasCorruptionMarker() && !shouldTryRestore) {
+      log.warn('损坏标记仍在，但现有备份上次已全部试过且都读不开，跳过恢复')
+    }
+    const backups = shouldTryRestore ? listBackups() : []
+    // 不能只把路径传空——restoreBackup 收到 undefined 会自己取最新那份，照跑不误
+    let knowledgeIsBackupCopy = shouldTryRestore
+      ? await this.tryRestoreFromBackupBeforeInit(backups[0]?.path)
+      : false
 
     if (this.isWorkerModeAvailable()) {
       try {
@@ -290,11 +310,16 @@ export class VectorStorage extends EventEmitter {
           for (let i = 1; i < backups.length; i++) {
             log.warn(`恢复后仍无法读取，尝试更早的备份: ${backups[i].name}`)
             this.killWorker()
-            const restored = doRestoreBackup(backups[i].path)
+            // 只有确认此刻 knowledge/ 装的是上一份备份的副本才敢不留档；
+            // 前面的恢复要是没做成，这里放着的仍是用户原始数据，必须留下来
+            const restored = doRestoreBackup(backups[i].path, {
+              keepSnapshot: !knowledgeIsBackupCopy,
+            })
             if (!restored.success) {
               log.warn(`更早备份恢复失败: ${restored.error}`)
               continue
             }
+            knowledgeIsBackupCopy = true
             try {
               events = await this.connectWorker(dimensions)
             } catch (e) {
@@ -303,6 +328,7 @@ export class VectorStorage extends EventEmitter {
             }
             if (!this.eventsIndicateUnreadable(events)) {
               log.info(`已用更早备份恢复: ${backups[i].path}`)
+              clearRestoreExhausted()
               this.emit('restoredFromBackup', { backupPath: backups[i].path, reason: 'older-backup' })
               break
             }
@@ -315,6 +341,10 @@ export class VectorStorage extends EventEmitter {
 
         if (this.eventsIndicateUnreadable(events)) {
           this.markCorrupted('index unreadable after restore attempts')
+          // 这批备份整个试过一遍仍读不开，记下来，下次启动不再重来。
+          // 只有走到这里才有资格下这个结论——下面的 in-process 路径只试最新一份，
+          // 试不成也说明不了「更早的那些也没救」。
+          if (backups.length > 0) markRestoreExhausted()
         }
 
         this.workerMode = true
@@ -355,9 +385,12 @@ export class VectorStorage extends EventEmitter {
   /**
    * 启动前检查损坏标记：有则先恢复（可指定某一份备份）。
    * 恢复成功后删除标记。恢复失败保留标记，但不再清表。
+   *
+   * @returns 恢复是否做成了——做成了才意味着 knowledge/ 现在装的是备份副本，
+   *          调用方据此决定后续换下来的东西还值不值得留档
    */
-  private async tryRestoreFromBackupBeforeInit(backupPath?: string): Promise<void> {
-    if (!fs.existsSync(this.corruptionMarkerPath)) return
+  private async tryRestoreFromBackupBeforeInit(backupPath?: string): Promise<boolean> {
+    if (!fs.existsSync(this.corruptionMarkerPath)) return false
 
     let reason = 'unknown'
     try {
@@ -372,13 +405,15 @@ export class VectorStorage extends EventEmitter {
       if (result.success) {
         log.info(`从备份恢复成功: ${result.backupPath}，删除损坏标记`)
         try { fs.unlinkSync(this.corruptionMarkerPath) } catch { /* ignore */ }
+        clearRestoreExhausted()
         this.emit('restoredFromBackup', { backupPath: result.backupPath, reason })
-      } else {
-        log.warn(`从备份恢复失败: ${result.error}，保留现有表（不清空）`)
+        return true
       }
+      log.warn(`从备份恢复失败: ${result.error}，保留现有表（不清空）`)
     } catch (e) {
       log.warn('调用 restoreBackup 异常，保留现有表（不清空）:', e)
     }
+    return false
   }
 
   // ────────────────────────── In-process helpers ──────────────────────────

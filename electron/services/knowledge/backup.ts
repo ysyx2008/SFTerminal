@@ -38,9 +38,27 @@ export const MIN_BACKUP_INTERVAL_MS = 30 * 60 * 1000
 /** 保留的自动备份数量 */
 export const MAX_BACKUPS = 3
 
+/**
+ * 保留的损坏现场份数。
+ *
+ * 现场是留给排查的，不是存档：真要查，最近一份就够，更早的内容雷同。
+ * 一份两三百兆，不设上限的话每次启动都往上堆（见 SPEC「救不回来的时候，别把磁盘吃掉」）。
+ */
+export const MAX_BROKEN_SNAPSHOTS = 2
+
 /** 备份根目录 */
 function getBackupsRoot(): string {
   return path.join(app.getPath('userData'), 'knowledge-backups')
+}
+
+/** 损坏现场根目录——集中一处，用户一眼能看出占了多少、能整个清掉 */
+function getBrokenRoot(): string {
+  return path.join(app.getPath('userData'), 'knowledge-broken')
+}
+
+/** 「这批备份都救不回来」的结论落盘处 */
+function getRestoreExhaustedPath(): string {
+  return path.join(getBackupsRoot(), '.restore-exhausted')
 }
 
 /** 知识库数据目录 */
@@ -244,14 +262,161 @@ function pruneOldBackups(): void {
 }
 
 /**
+ * 现有备份的指纹：哪几份、各自什么时候的。
+ * 备份没变就没必要把「都救不回来」这个结论重新验证一遍。
+ *
+ * 这是身份代理，不是内容校验——备份目录建好后不再原地改写，所以「名字 + 时间」
+ * 足以认出是不是同一批。它认不出「内容悄悄坏了但名字时间没变」，但那种情况下
+ * 结论本来也没变；反方向（被外部工具碰过时间）只会让人多试一次，不会漏试。
+ */
+function computeBackupFingerprint(): string {
+  return listBackups()
+    .map(b => `${b.name}@${Math.round(b.createdAt)}`)
+    .join(',')
+}
+
+/**
+ * 记下「手上这批备份都救不回来」。
+ * 下次启动据此跳过恢复——每重试一次都要复制几百兆，而结论是注定的。
+ */
+export function markRestoreExhausted(): void {
+  try {
+    fs.mkdirSync(getBackupsRoot(), { recursive: true })
+    fs.writeFileSync(
+      getRestoreExhaustedPath(),
+      JSON.stringify({ fingerprint: computeBackupFingerprint(), at: Date.now() }),
+      'utf-8'
+    )
+  } catch (e) {
+    log.warn('记录「备份都救不回来」失败:', e)
+  }
+}
+
+/** 手上这批备份是否已被判定救不回来（备份有增删或更新则重新算数） */
+export function isRestoreExhausted(): boolean {
+  try {
+    const raw = fs.readFileSync(getRestoreExhaustedPath(), 'utf-8')
+    return JSON.parse(raw)?.fingerprint === computeBackupFingerprint()
+  } catch {
+    return false
+  }
+}
+
+/** 撤销上面的结论——用户手动发起恢复时必须重新给机会 */
+export function clearRestoreExhausted(): void {
+  try {
+    fs.unlinkSync(getRestoreExhaustedPath())
+  } catch { /* 本来就没有 */ }
+}
+
+/**
+ * 分配一个没被占用的现场目录名。
+ *
+ * 光用毫秒会撞：同一次启动里连着换几份备份，快到落在同一毫秒时 rename 到已存在的
+ * 非空目录会直接失败，把整个恢复带崩。
+ */
+function allocateBrokenDir(root: string, timestamp: number = Date.now()): string {
+  for (let seq = 0; seq < 1000; seq++) {
+    const candidate = path.join(root, `broken-${timestamp}-${String(seq).padStart(3, '0')}`)
+    if (!fs.existsSync(candidate)) return candidate
+  }
+  return path.join(root, `broken-${timestamp}-${Math.random().toString(36).slice(2, 8)}`)
+}
+
+/** 现场目录名形如 `broken-<毫秒>-<序号>`；早先收编进来的可能没有序号 */
+function parseSnapshotName(name: string): { ts: number; seq: number } | null {
+  const m = /^broken-(\d+)(?:-(\d+))?$/.exec(name)
+  if (!m) return null
+  return { ts: Number(m[1]), seq: m[2] ? Number(m[2]) : 0 }
+}
+
+/** 现有的损坏现场，按时间倒序 */
+export function listBrokenSnapshots(): Array<{ name: string; path: string; createdAt: number }> {
+  const root = getBrokenRoot()
+  if (!fs.existsSync(root)) return []
+  const entries: Array<{ name: string; path: string; createdAt: number; order: [number, number] }> = []
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const full = path.join(root, entry.name)
+    try {
+      const mtime = fs.statSync(full).mtimeMs
+      // 名字里的时间戳才是「这份现场是什么时候留的」；mtime 会被收编时的搬动等操作带偏
+      const parsed = parseSnapshotName(entry.name)
+      entries.push({
+        name: entry.name,
+        path: full,
+        createdAt: parsed?.ts ?? mtime,
+        order: parsed ? [parsed.ts, parsed.seq] : [mtime, 0],
+      })
+    } catch { /* 读不到就当它不存在 */ }
+  }
+  entries.sort((a, b) => b.order[0] - a.order[0] || b.order[1] - a.order[1])
+  return entries.map(({ name, path: p, createdAt }) => ({ name, path: p, createdAt }))
+}
+
+/** 只留最近 MAX_BROKEN_SNAPSHOTS 份现场 */
+function pruneBrokenSnapshots(): void {
+  for (const old of listBrokenSnapshots().slice(MAX_BROKEN_SNAPSHOTS)) {
+    rmrfSync(old.path)
+    log.info(`已清理旧的损坏现场: ${old.name}`)
+  }
+}
+
+/**
+ * 收编早先散落在数据目录根下的现场（`knowledge.broken-*`）。
+ *
+ * 那时每次恢复都留一份且从不清理，反复重启能堆到几十 G。收进统一位置后一并轮转，
+ * 老用户升上来才有人替他把这笔占用收回去。
+ */
+export function adoptLegacyBrokenSnapshots(): void {
+  const userData = app.getPath('userData')
+  let adopted = 0
+  try {
+    for (const entry of fs.readdirSync(userData, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith('knowledge.broken-')) continue
+      const brokenRoot = getBrokenRoot()
+      fs.mkdirSync(brokenRoot, { recursive: true })
+      const ts = Number(entry.name.slice('knowledge.broken-'.length))
+      try {
+        fs.renameSync(
+          path.join(userData, entry.name),
+          allocateBrokenDir(brokenRoot, Number.isFinite(ts) ? ts : Date.now())
+        )
+        adopted++
+      } catch (e) {
+        log.warn(`收编旧现场失败: ${entry.name}`, e)
+      }
+    }
+  } catch (e) {
+    log.warn('扫描旧现场失败:', e)
+    return
+  }
+  if (adopted > 0) {
+    log.info(`已收编 ${adopted} 份散落的损坏现场，按上限轮转`)
+    pruneBrokenSnapshots()
+  }
+}
+
+export interface RestoreOptions {
+  /**
+   * 是否把被换下来的当前目录留档为现场。默认 true。
+   *
+   * 同一轮里试第二份、第三份备份时传 false：那时被换下来的是上一次刚从备份
+   * 复制进去的副本，内容和备份本身一模一样，留着只是白占几百兆。
+   */
+  keepSnapshot?: boolean
+}
+
+/**
  * 从指定备份恢复。
- * 恢复策略：先把当前 knowledge/ 改名为 knowledge.broken-{ts}/（保留现场便于排查），
+ * 恢复策略：先把当前 knowledge/ 挪进 knowledge-broken/（保留现场便于排查），
  * 再把备份复制回去。这样即便恢复失败，原数据也还在。
  *
  * @param backupPath 备份目录完整路径；不传则用最近一份
  */
-export function restoreBackup(backupPath?: string): RestoreBackupResult {
+export function restoreBackup(backupPath?: string, options?: RestoreOptions): RestoreBackupResult {
   const knowledgeDir = getKnowledgeDir()
+  const keepSnapshot = options?.keepSnapshot !== false
 
   let sourcePath = backupPath
   if (!sourcePath) {
@@ -274,23 +439,28 @@ export function restoreBackup(backupPath?: string): RestoreBackupResult {
   }
 
   try {
-    // 把当前损坏的 knowledge/ 改名保留现场（如果存在）
+    // 把当前的 knowledge/ 挪走腾位置。
     // rename 失败说明文件被占用（worker 未退出 / LanceDB 句柄未释放），
     // 此时不应 rmrf（可能数据丢失），直接抛出让调用方处理
     if (fs.existsSync(knowledgeDir)) {
-      const brokenDir = path.join(
-        path.dirname(knowledgeDir),
-        `knowledge.broken-${Date.now()}`
-      )
+      const brokenRoot = getBrokenRoot()
+      fs.mkdirSync(brokenRoot, { recursive: true })
+      const brokenDir = allocateBrokenDir(brokenRoot)
       try {
         fs.renameSync(knowledgeDir, brokenDir)
-        log.info(`已保留损坏现场: ${brokenDir}`)
       } catch (e) {
         throw new Error(
           `无法重命名当前 knowledge 目录（文件可能被占用）: ` +
           `${e instanceof Error ? e.message : String(e)}。` +
           `请确保知识库已停止运行后重试。`
         )
+      }
+      if (keepSnapshot) {
+        log.info(`已保留损坏现场: ${brokenDir}`)
+        pruneBrokenSnapshots()
+      } else {
+        // 这一份是上次刚从备份复制进去的副本，不是现场
+        rmrfSync(brokenDir)
       }
     }
 
