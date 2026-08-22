@@ -1730,8 +1730,8 @@ onUnmounted(() => {
           :aria-expanded="aiPanelVisible"
           @click="toggleAiPanel"
         >
-          <PanelRightClose v-if="aiPanelVisible" :size="17" :stroke-width="1.75" />
-          <PanelRightOpen v-else :size="17" :stroke-width="1.75" />
+          <PanelRightClose v-if="aiPanelVisible" :size="14" :stroke-width="2" />
+          <PanelRightOpen v-else :size="14" :stroke-width="2" />
         </button>
         <template v-if="authStore.showSoftEntry">
           <button
@@ -1968,8 +1968,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
+  box-sizing: border-box;
   height: var(--workbench-panel-header-height, var(--shell-top-height));
-  padding: 0 8px;
+  /* 产出物/对话顶栏有 1px 底边，内容中心比整条矮半像素。浮层按同样的内容盒居中，
+     才跟「打开」「发送到手机」齐；Windows 三按钮要铺满顶条，下面再撤掉。 */
+  padding: 0 8px 1px;
   pointer-events: none;
 }
 
@@ -2046,6 +2049,7 @@ onUnmounted(() => {
 /* Windows 三按钮必须贴窗口右沿；开关在它们左边，靠 gap 留空 */
 .app-container.is-win:not(.is-fullscreen) .main-float--right {
   padding-right: 0;
+  padding-bottom: 0;
 }
 
 /* 侧栏顶 / 主区顶：两段各自的顶条，共用高度与拖拽行为，保证窗口上沿基线齐平 */
@@ -2218,15 +2222,24 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
+  /* 与产出物顶栏「打开 / 发送到手机」同一尺寸，并排才齐 */
+  width: 22px;
+  height: 22px;
   padding: 0;
-  border-radius: 7px;
+  border-radius: 5px;
+  line-height: 0;
+  /* 浮层按 38px 居中，产出物按钮在 1px 底边之上的 37px 里居中，高亮会低 1px */
+  margin-top: -1px;
   color: var(--text-tertiary, var(--text-secondary));
   background: transparent;
   transition: background 0.18s ease, color 0.18s ease;
   pointer-events: auto;
   -webkit-app-region: no-drag;
+}
+
+.ai-panel-toggle-btn svg {
+  display: block;
+  transform: translateY(1px);
 }
 
 .ai-panel-toggle-btn:hover {
