@@ -25,6 +25,8 @@ const BACKUP_TARGETS = [
   { src: 'knowledge/bm25-index.json', type: 'file' as const },
   { src: 'knowledge/context-docs', type: 'dir' as const },
   { src: 'history/agent', type: 'dir' as const },
+  // 索引是派生数据（可从正文重建），备份它只为省一次重建；两种格式都带上以兼容尚未转换的旧目录
+  { src: 'history/agent-index.jsonl', type: 'file' as const },
   { src: 'history/agent-index.json', type: 'file' as const },
   // 凭证：credentials.json 和 master.key 必须一起备份（缺一不可解密）
   { src: 'credentials.json', type: 'file' as const },

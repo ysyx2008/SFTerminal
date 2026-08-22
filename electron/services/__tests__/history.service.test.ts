@@ -27,6 +27,30 @@ function makeRecord(overrides: Partial<AgentRecord> & { id: string; timestamp: n
   }
 }
 
+/** 索引是追加日志（agent-index.jsonl / watch-index.jsonl），见 history/agent-index-log.ts */
+const indexPathOf = (tree: 'agent' | 'watch') =>
+  path.join(tmpDir, 'history', `${tree}-index.jsonl`)
+
+/** 把日志归约成最终条目：同 id 后写的胜出，墓碑删除 */
+function readIndex(tree: 'agent' | 'watch'): Array<Record<string, any>> {
+  const file = indexPathOf(tree)
+  if (!fs.existsSync(file)) return []
+  const map = new Map<string, Record<string, any>>()
+  for (const line of fs.readFileSync(file, 'utf-8').split('\n')) {
+    if (!line.trim()) continue
+    const op = JSON.parse(line)
+    if (op.op === 'put') map.set(op.e.id, op.e)
+    else if (op.op === 'del') map.delete(op.id)
+  }
+  return [...map.values()]
+}
+
+/** 直接改写索引（模拟错位/损坏），写成无冗余日志 */
+function writeIndex(tree: 'agent' | 'watch', entries: Array<Record<string, any>>): void {
+  const text = entries.map(e => JSON.stringify({ op: 'put', e })).join('\n')
+  fs.writeFileSync(indexPathOf(tree), text ? text + '\n' : '')
+}
+
 describe('HistoryService - getRecentAgentRecords', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-history-test-'))
@@ -111,7 +135,7 @@ describe('HistoryService - getRecentAgentRecords', () => {
     }))
 
     // 删除索引文件，模拟老版本升级
-    const indexPath = path.join(tmpDir, 'history', 'agent-index.json')
+    const indexPath = indexPathOf('agent')
     expect(fs.existsSync(indexPath)).toBe(true)
     fs.unlinkSync(indexPath)
 
@@ -142,10 +166,7 @@ describe('HistoryService - getRecentAgentRecords', () => {
     expect(results[0].id).toBe('r1')
     expect(results[0].userTask).toBe('task 1 updated')
 
-    const indexContent = JSON.parse(fs.readFileSync(
-      path.join(tmpDir, 'history', 'agent-index.json'), 'utf-8'
-    ))
-    expect(indexContent).toHaveLength(2)
+    expect(readIndex('agent')).toHaveLength(2)
   })
 
   it('cleanupOldRecords 后索引同步重建', () => {
@@ -215,9 +236,7 @@ describe('HistoryService - deleteAgentRecord', () => {
     expect(svc.getAgentRecordById('remove')).toBeUndefined()
     expect(svc.getRecentAgentRecords(10).map(r => r.id)).toEqual(['keep'])
 
-    const indexContent = JSON.parse(fs.readFileSync(
-      path.join(tmpDir, 'history', 'agent-index.json'), 'utf-8'
-    ))
+    const indexContent = readIndex('agent')
     expect(indexContent).toHaveLength(1)
     expect(indexContent[0].id).toBe('keep')
   })
@@ -281,15 +300,12 @@ describe('HistoryService - multi-process index safety', () => {
       id: 'cli-sess', timestamp: baseTime + 1000, duration: 200, userTask: 'from cli', title: '问候'
     }))
 
-    // 桌面进程用陈旧 cache 再保存：写前读盘合并后应保留 CLI 条目
+    // 桌面进程再保存：追加写只动自己那一条，不会盖掉 CLI 刚写的条目
     desktop.saveAgentRecord(makeRecord({
       id: 'desktop-sess', timestamp: baseTime, duration: 150, userTask: 'from desktop updated'
     }))
 
-    const index = JSON.parse(fs.readFileSync(
-      path.join(tmpDir, 'history', 'agent-index.json'), 'utf-8'
-    )) as Array<{ id: string }>
-    expect(index.map(e => e.id).sort()).toEqual(['cli-sess', 'desktop-sess'])
+    expect(readIndex('agent').map(e => e.id).sort()).toEqual(['cli-sess', 'desktop-sess'])
     expect(desktop.getAgentRecordById('cli-sess')?.title).toBe('问候')
   })
 
@@ -300,12 +316,11 @@ describe('HistoryService - multi-process index safety', () => {
       id: 'orphan-body', timestamp: baseTime, duration: 100, userTask: 'hello', title: '问候'
     }))
 
-    const indexPath = path.join(tmpDir, 'history', 'agent-index.json')
-    const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8')) as Array<Record<string, unknown>>
+    const index = readIndex('agent')
     const entry = index.find(e => e.id === 'orphan-body')
     expect(entry).toBeTruthy()
     entry!.dateStr = '2099-01-01'
-    fs.writeFileSync(indexPath, JSON.stringify(index))
+    writeIndex('agent', index)
 
     // 新实例强制从盘读错位索引
     const fresh = new HistoryService()
@@ -321,8 +336,7 @@ describe('HistoryService - multi-process index safety', () => {
       id: 'orphan-del', timestamp: baseTime, duration: 100, userTask: 'bye'
     }))
 
-    const indexPath = path.join(tmpDir, 'history', 'agent-index.json')
-    fs.writeFileSync(indexPath, '[]')
+    writeIndex('agent', [])
 
     const fresh = new HistoryService()
     expect(fresh.deleteAgentRecord('orphan-del')).toBe(true)
@@ -585,8 +599,8 @@ describe('HistoryService - watch 历史隔离', () => {
     expect(fs.existsSync(path.join(tmpDir, 'history', 'agent', '2026-03-18', 'watch-1.json'))).toBe(false)
 
     // 两套独立索引
-    expect(fs.existsSync(path.join(tmpDir, 'history', 'agent-index.json'))).toBe(true)
-    expect(fs.existsSync(path.join(tmpDir, 'history', 'watch-index.json'))).toBe(true)
+    expect(fs.existsSync(indexPathOf('agent'))).toBe(true)
+    expect(fs.existsSync(indexPathOf('watch'))).toBe(true)
 
     // 主历史接口不含 watch
     expect(svc.getRecentAgentRecords(10).map(r => r.id)).toEqual(['user-1'])
@@ -632,8 +646,7 @@ describe('HistoryService - watch 历史隔离', () => {
     expect(svc.deleteAgentRecord('w')).toBe(true)
     expect(fs.existsSync(path.join(tmpDir, 'history', 'watch', '2026-03-18', 'w'))).toBe(false)
     expect(svc.getRecentWatchRecords(10)).toHaveLength(0)
-    const idx = JSON.parse(fs.readFileSync(path.join(tmpDir, 'history', 'watch-index.json'), 'utf-8'))
-    expect(idx).toHaveLength(0)
+    expect(readIndex('watch')).toHaveLength(0)
   })
 
   it('rebuildAgentIndex 后两套索引各自一致', () => {
@@ -643,8 +656,8 @@ describe('HistoryService - watch 历史隔离', () => {
     svc.saveAgentRecord(makeRecord({ id: 'w', timestamp: t, duration: 1, userTask: '心跳', agentKey: '__watch__' }))
 
     // 删索引文件模拟损坏/老版本，强制从磁盘重建两套
-    fs.unlinkSync(path.join(tmpDir, 'history', 'agent-index.json'))
-    fs.unlinkSync(path.join(tmpDir, 'history', 'watch-index.json'))
+    fs.unlinkSync(indexPathOf('agent'))
+    fs.unlinkSync(indexPathOf('watch'))
     svc.rebuildAgentIndex()
 
     expect(svc.getRecentAgentRecords(10).map(r => r.id)).toEqual(['u'])
@@ -658,10 +671,141 @@ describe('HistoryService - watch 历史隔离', () => {
 
     svc.saveAgentRecord(makeRecord({ id: 'w', timestamp: t, duration: 1, userTask: longTask, agentKey: '__watch__' }))
 
-    const idx = JSON.parse(fs.readFileSync(path.join(tmpDir, 'history', 'watch-index.json'), 'utf-8'))
+    const idx = readIndex('watch')
     expect(idx[0].userTask.length).toBe(200)
     // 正文未截断
     expect(svc.getRecentWatchRecords(1)[0].userTask).toBe(longTask)
+  })
+})
+
+describe('HistoryService - 旧索引（单个 JSON 数组）自动转成追加日志', () => {
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-history-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  /** 造出「旧版本留下的状态」：正文树 + 单个 JSON 数组索引，没有 jsonl */
+  function seedLegacy(records: AgentRecord[]): void {
+    const svc = new HistoryService()
+    for (const r of records) svc.saveAgentRecord(r)
+    for (const tree of ['agent', 'watch'] as const) {
+      const jsonl = indexPathOf(tree)
+      if (!fs.existsSync(jsonl)) continue
+      const legacy = path.join(tmpDir, 'history', `${tree}-index.json`)
+      fs.writeFileSync(legacy, JSON.stringify(readIndex(tree)))
+      fs.unlinkSync(jsonl)
+    }
+  }
+
+  it('首次访问就转换：条目一一对应，旧文件留档不再参与', () => {
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    seedLegacy([
+      makeRecord({ id: 'a', timestamp: t, duration: 100, userTask: '任务 A', title: '标题 A' }),
+      makeRecord({ id: 'b', timestamp: t + 1000, duration: 200, userTask: '任务 B' }),
+      makeRecord({ id: 'w', timestamp: t, duration: 1, userTask: '心跳', agentKey: '__watch__' }),
+    ])
+
+    const legacyAgent = path.join(tmpDir, 'history', 'agent-index.json')
+    expect(fs.existsSync(legacyAgent)).toBe(true)
+    expect(fs.existsSync(indexPathOf('agent'))).toBe(false)
+
+    const svc = new HistoryService()
+    expect(svc.getRecentAgentRecords(10).map(r => r.id).sort()).toEqual(['a', 'b'])
+    expect(svc.getRecentWatchRecords(10).map(r => r.id)).toEqual(['w'])
+
+    // 转换后旧文件改名留档，不再被当成索引
+    expect(fs.existsSync(indexPathOf('agent'))).toBe(true)
+    expect(fs.existsSync(legacyAgent)).toBe(false)
+    expect(fs.existsSync(`${legacyAgent}.migrated`)).toBe(true)
+
+    // 标题等字段完整搬过来，没有在转换中丢失
+    expect(svc.listAgentHistorySummaries().find(s => s.id === 'a')?.title).toBe('标题 A')
+  })
+
+  it('转换后照常增删：新写的进日志，旧条目仍在', () => {
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    seedLegacy([makeRecord({ id: 'old', timestamp: t, duration: 100, userTask: '旧任务' })])
+
+    const svc = new HistoryService()
+    svc.saveAgentRecord(makeRecord({ id: 'new', timestamp: t + 1000, duration: 100, userTask: '新任务' }))
+    expect(svc.getRecentAgentRecords(10).map(r => r.id).sort()).toEqual(['new', 'old'])
+
+    expect(svc.deleteAgentRecord('old')).toBe(true)
+    expect(new HistoryService().getRecentAgentRecords(10).map(r => r.id)).toEqual(['new'])
+  })
+
+  it('旧索引损坏时不卡住：从正文重建，记录照样读得到', () => {
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    seedLegacy([makeRecord({ id: 'a', timestamp: t, duration: 100, userTask: '任务 A' })])
+    fs.writeFileSync(path.join(tmpDir, 'history', 'agent-index.json'), '{截断的坏文件')
+
+    const svc = new HistoryService()
+    expect(svc.getRecentAgentRecords(10).map(r => r.id)).toEqual(['a'])
+  })
+
+  it('旧索引损坏且第一个动作是写：不会建出只剩新记录的索引，老记录仍在', () => {
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    seedLegacy([
+      makeRecord({ id: 'old1', timestamp: t, duration: 100, userTask: '老任务 1' }),
+      makeRecord({ id: 'old2', timestamp: t + 1, duration: 100, userTask: '老任务 2' }),
+    ])
+    fs.writeFileSync(path.join(tmpDir, 'history', 'agent-index.json'), '{截断的坏文件')
+
+    // 新进程上来就写（CLI 只跑任务、不读历史列表，就是这个顺序）。
+    // 记录自带 title，好让保存过程不去查已有标题——否则那一步会顺带把索引补出来，
+    // 就测不到写入本身该有的兜底了
+    const svc = new HistoryService()
+    svc.saveAgentRecord(makeRecord({
+      id: 'fresh', timestamp: t + 2000, duration: 100, userTask: '新任务', title: '新任务'
+    }))
+
+    expect(new HistoryService().getRecentAgentRecords(10).map(r => r.id).sort())
+      .toEqual(['fresh', 'old1', 'old2'])
+  })
+
+  it('索引整个丢失且第一个动作是写：同样从正文补回来', () => {
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    const seed = new HistoryService()
+    seed.saveAgentRecord(makeRecord({ id: 'old', timestamp: t, duration: 100, userTask: '老任务' }))
+    fs.unlinkSync(indexPathOf('agent'))
+
+    const svc = new HistoryService()
+    svc.saveAgentRecord(makeRecord({
+      id: 'fresh', timestamp: t + 2000, duration: 100, userTask: '新任务', title: '新任务'
+    }))
+
+    expect(new HistoryService().getRecentAgentRecords(10).map(r => r.id).sort())
+      .toEqual(['fresh', 'old'])
+  })
+
+  it('索引丢失时保标题也要走重建，不该把已有标题弄丢', () => {
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    const seed = new HistoryService()
+    seed.saveAgentRecord(makeRecord({ id: 's', timestamp: t, duration: 100, userTask: '任务', title: '原标题' }))
+    fs.unlinkSync(indexPathOf('agent'))
+
+    // checkpoint 不带 title：应从重建出的索引里把原标题捞回来
+    const svc = new HistoryService()
+    svc.saveAgentRecord(makeRecord({ id: 's', timestamp: t, duration: 200, userTask: '任务' }))
+
+    expect(new HistoryService().listAgentHistorySummaries().find(x => x.id === 's')?.title).toBe('原标题')
+  })
+
+  it('已经是日志格式时，残留的旧 JSON 文件不会把它顶掉', () => {
+    const t = new Date('2026-03-18T10:00:00').getTime()
+    const svc = new HistoryService()
+    svc.saveAgentRecord(makeRecord({ id: 'current', timestamp: t, duration: 100, userTask: '当前' }))
+
+    // 残留一份内容不同的旧索引（例如回滚过版本）
+    fs.writeFileSync(
+      path.join(tmpDir, 'history', 'agent-index.json'),
+      JSON.stringify([{ id: 'stale', timestamp: t, duration: 1, dateStr: '2026-03-18', userTask: '陈旧', terminalType: 'local', status: 'completed' }])
+    )
+
+    expect(new HistoryService().getRecentAgentRecords(10).map(r => r.id)).toEqual(['current'])
   })
 })
 

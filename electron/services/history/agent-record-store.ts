@@ -38,6 +38,7 @@ import {
   type ReadSessionOptions,
 } from './session-persistence'
 import { getDateString } from './date-util'
+import { AgentIndexLog } from './agent-index-log'
 import { throwIfAborted } from '../../utils/abort'
 import {
   isWatchAgentKey,
@@ -84,19 +85,17 @@ export interface AgentIndexEntry {
 }
 
 /**
- * 一个独立的「记录树 + 索引文件 + 内存缓存」三元组。
+ * 一个独立的「记录正文目录 + 索引」二元组。
  * 主索引（agentStore）放用户/联络/终端任务；watch 索引（watchStore）放关切内心独白。
- * 两者结构相同、方法复用，只是目录/索引路径/缓存不同。
+ * 两者结构相同、方法复用，只是目录/索引路径不同。
  */
 interface AgentIndexStore {
   /** 记录正文所在目录（history/agent 或 history/watch） */
   dir: string
-  /** 索引文件路径 */
-  indexPath: string
-  /** 常驻内存索引缓存 */
-  cache: AgentIndexEntry[] | null
-  /** 缓存对应的索引文件 mtime；他进程改写后用于失效重载 */
-  indexMtimeMs?: number
+  /** 索引（追加日志，见 agent-index-log.ts） */
+  log: AgentIndexLog<AgentIndexEntry>
+  /** 迁移前的旧索引文件（单个 JSON 数组），首次访问时就地转成日志 */
+  legacyIndexPath: string
   /** 写索引条目时截断 userTask 的长度（仅 watch 用，避免内心独白长 prompt 撑大索引） */
   userTaskMaxLen?: number
 }
@@ -138,13 +137,13 @@ export class AgentRecordStore {
 
     this.agentStore = {
       dir: this.agentDir,
-      indexPath: path.join(historyDir, 'agent-index.json'),
-      cache: null,
+      log: new AgentIndexLog<AgentIndexEntry>(path.join(historyDir, 'agent-index.jsonl')),
+      legacyIndexPath: path.join(historyDir, 'agent-index.json'),
     }
     this.watchStore = {
       dir: this.watchDir,
-      indexPath: path.join(historyDir, 'watch-index.json'),
-      cache: null,
+      log: new AgentIndexLog<AgentIndexEntry>(path.join(historyDir, 'watch-index.jsonl')),
+      legacyIndexPath: path.join(historyDir, 'watch-index.json'),
       userTaskMaxLen: WATCH_INDEX_USERTASK_MAX,
     }
 
@@ -184,73 +183,63 @@ export class AgentRecordStore {
   }
 
   /**
-   * 从磁盘读索引（不重建）。文件不存在 → `[]`；损坏 → `null`。
-   * 供写路径与他进程合并用，避免仅信内存 cache。
+   * 旧索引（单个 JSON 数组）就地转成追加日志。
+   *
+   * 做成惰性转换而不是启动迁移：索引是可从正文重建的派生数据，不需要迁移框架的备份
+   * 保障；而桌面、CLI、测试都会经过这里，转换一次即可，不必每个入口各记一遍。
    */
-  private readIndexFromDisk(store: AgentIndexStore): AgentIndexEntry[] | null {
+  private migrateLegacyIndex(store: AgentIndexStore): void {
+    if (!fs.existsSync(store.legacyIndexPath)) return
+    // 已经转过了（或本进程之前重建过）：旧文件留着只会每次多探一次盘，归档掉
+    if (store.log.exists()) {
+      this.archiveLegacyIndex(store, 'migrated')
+      return
+    }
     try {
-      if (!fs.existsSync(store.indexPath)) return []
-      return JSON.parse(fs.readFileSync(store.indexPath, 'utf-8')) as AgentIndexEntry[]
+      const parsed = JSON.parse(fs.readFileSync(store.legacyIndexPath, 'utf-8'))
+      if (!Array.isArray(parsed)) throw new Error('旧索引不是数组')
+      store.log.initializeIfAbsent(parsed as AgentIndexEntry[])
+      this.archiveLegacyIndex(store, 'migrated')
+      log.info(`索引已转为追加日志 (${path.basename(store.log.path)})，共 ${parsed.length} 条`)
     } catch (e) {
-      log.warn(`读取索引失败 (${path.basename(store.indexPath)}):`, e)
-      return null
+      // 旧索引读不出来就地作废，交给 ensureIndex 从正文重建；不改名的话下次还会再撞一次，
+      // 而且写路径会误以为"没有索引"，凭一条新记录建出个只剩它自己的索引
+      log.warn(`旧索引损坏，改从正文重建 (${path.basename(store.legacyIndexPath)}):`, e)
+      this.archiveLegacyIndex(store, 'corrupt')
     }
   }
 
-  private getIndexFor(store: AgentIndexStore): AgentIndexEntry[] {
+  private archiveLegacyIndex(store: AgentIndexStore, suffix: 'migrated' | 'corrupt'): void {
     try {
-      if (fs.existsSync(store.indexPath)) {
-        const mtimeMs = fs.statSync(store.indexPath).mtimeMs
-        // 他进程（如 CLI）可能已改写索引：mtime 变化则丢弃陈旧 cache
-        if (store.cache && store.indexMtimeMs === mtimeMs) return store.cache
-        const disk = this.readIndexFromDisk(store)
-        if (disk) {
-          store.cache = disk
-          store.indexMtimeMs = mtimeMs
-          return store.cache
-        }
-      } else if (store.cache) {
-        return store.cache
-      }
-    } catch (e) {
-      log.warn(`读取索引失败，将重建 (${path.basename(store.indexPath)}):`, e)
-    }
-
-    return this.rebuildIndexFor(store)
+      fs.renameSync(store.legacyIndexPath, `${store.legacyIndexPath}.${suffix}`)
+    } catch { /* 他进程已经改过名了 */ }
   }
 
   /**
-   * 变更索引前以磁盘为底（刷新 cache），避免 CLI/桌面多进程用陈旧 cache 覆盖对方写入。
-   * 磁盘损坏时回退到当前 getIndexFor（可能触发重建）。
+   * 保证索引可用后再操作它。
+   *
+   * 索引缺失时必须从正文重建，读写路径都要过这一关：只在读路径兜底的话，一次"先写后读"
+   * 就会拿新记录建出一份只有它自己的索引，而正文里那几千条会一直看不见——正文还在，
+   * 但用户看到的就是历史没了。
    */
-  private entriesForMutation(store: AgentIndexStore): AgentIndexEntry[] {
-    const disk = this.readIndexFromDisk(store)
-    if (disk) {
-      store.cache = disk
-      try {
-        store.indexMtimeMs = fs.existsSync(store.indexPath)
-          ? fs.statSync(store.indexPath).mtimeMs
-          : undefined
-      } catch {
-        store.indexMtimeMs = undefined
-      }
-      return disk
-    }
-    return this.getIndexFor(store)
+  private ensureIndex(store: AgentIndexStore): void {
+    this.migrateLegacyIndex(store)
+    if (!store.log.exists()) this.rebuildIndexFor(store)
+  }
+
+  private getIndexFor(store: AgentIndexStore): AgentIndexEntry[] {
+    this.ensureIndex(store)
+    return store.log.entries()
+  }
+
+  /** 按 id 取单条索引条目。O(1)，不构造整个数组 */
+  private getIndexEntry(store: AgentIndexStore, id: string): AgentIndexEntry | undefined {
+    this.ensureIndex(store)
+    return store.log.get(id)
   }
 
   private writeIndexFor(store: AgentIndexStore, entries: AgentIndexEntry[]): void {
-    store.cache = entries
-    try {
-      writeFileAtomic(store.indexPath, JSON.stringify(entries))
-      try {
-        store.indexMtimeMs = fs.statSync(store.indexPath).mtimeMs
-      } catch {
-        store.indexMtimeMs = Date.now()
-      }
-    } catch (e) {
-      log.error(`写入索引失败 (${path.basename(store.indexPath)}):`, e)
-    }
+    store.log.replaceAll(entries)
   }
 
   /** 从某个存储的所有会话文件重建其索引 */
@@ -284,7 +273,7 @@ export class AgentRecordStore {
     }
 
     this.writeIndexFor(store, entries)
-    log.info(`索引已重建 (${path.basename(store.indexPath)})，共 ${entries.length} 条记录`)
+    log.info(`索引已重建 (${path.basename(store.log.path)})，共 ${entries.length} 条记录`)
     return entries
   }
 
@@ -295,8 +284,8 @@ export class AgentRecordStore {
 
   /** 从磁盘重建全部索引（主 + watch）。首次升级、索引损坏或 v6 迁移后触发 */
   rebuildAgentIndex(): void {
-    this.agentStore.cache = null
-    this.watchStore.cache = null
+    this.agentStore.log.invalidate()
+    this.watchStore.log.invalidate()
     this.rebuildIndexFor(this.agentStore)
     this.rebuildIndexFor(this.watchStore)
   }
@@ -326,19 +315,11 @@ export class AgentRecordStore {
   }
 
   private updateIndexEntryFor(store: AgentIndexStore, record: AgentRecord): void {
-    // 写前读盘：保留他进程新写入的条目，只 upsert 本条
-    const entries = this.entriesForMutation(store)
+    this.ensureIndex(store)
     const dateStr = getDateString(record.timestamp)
-    const entry = this.toIndexEntry(record, dateStr, store.userTaskMaxLen)
-
-    const idx = entries.findIndex(e => e.id === record.id)
-    if (idx !== -1) {
-      entries[idx] = entry
-    } else {
-      entries.push(entry)
-    }
-
-    this.writeIndexFor(store, entries)
+    // 追加一行即可：同 id 后写的胜出，也不会覆盖他进程刚写的别的条目，
+    // 所以不再需要"写前把整个索引读回来合并"那套防覆盖补丁
+    store.log.put(this.toIndexEntry(record, dateStr, store.userTaskMaxLen))
   }
 
   // ==================== 读侧索引暴露（供 HistoryService 的 Token 统计 / 存储统计复用） ====================
@@ -525,7 +506,7 @@ export class AgentRecordStore {
     // checkpoint 未带 title 时保留磁盘/索引上已有标题，避免覆盖丢失
     if (!record.title?.trim()) {
       const store = this.storeForRecord(record)
-      const entry = this.getIndexFor(store).find(e => e.id === record.id)
+      const entry = this.getIndexEntry(store, record.id)
       if (entry?.title?.trim()) record.title = entry.title.trim()
     }
 
@@ -679,21 +660,17 @@ export class AgentRecordStore {
    */
   deleteAgentRecord(id: string): boolean {
     this.pendingTitles.delete(id)
-    // 写前读盘：与他进程索引对齐后再删，避免用陈旧 cache 漏删或盖回已删条目
     let store = this.agentStore
-    let index = this.entriesForMutation(store)
-    let entry = index.find(e => e.id === id)
+    let entry = this.getIndexEntry(store, id)
     if (!entry) {
       store = this.watchStore
-      index = this.entriesForMutation(store)
-      entry = index.find(e => e.id === id)
+      entry = this.getIndexEntry(store, id)
     }
     if (!entry) {
-      // 索引已无条目时仍尝试按正文扫到并删目录（CLI 写入被盖索引后的孤儿会话）
+      // 索引已无条目时仍尝试按正文扫到并删目录（正文才是真相源，索引可能滞后）
       const orphan = this.getAgentRecordById(id)
       if (!orphan) return false
       store = this.storeForRecord(orphan)
-      index = this.entriesForMutation(store)
       entry = {
         id: orphan.id,
         timestamp: orphan.timestamp,
@@ -751,7 +728,7 @@ export class AgentRecordStore {
       fs.rmdirSync(dateDir)
     }
 
-    this.writeIndexFor(store, index.filter(e => e.id !== id))
+    store.log.delete(id)
 
     const sessionImagesDir = path.join(this.imagesDir, entry.dateStr, id)
     if (fs.existsSync(sessionImagesDir)) {
