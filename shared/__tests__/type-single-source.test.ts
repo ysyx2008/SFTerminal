@@ -12,6 +12,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 const ROOT = path.resolve(__dirname, '../..')
+// 桌面端主体。website 与 server 各自独立发布、不与这里共享类型，扯进来只会制造假重复；
+// 哪天它们开始共用枚举，再把目录加进来。
 const SCAN_DIRS = ['electron', 'src', 'packages', 'shared']
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-electron', 'release', '.git', 'coverage'])
 const SCAN_EXTS = new Set(['.ts', '.vue'])
@@ -49,7 +51,7 @@ function collectLiteralUnions(source: string, file: string): Definition[] {
   let buffer = ''
 
   const flush = () => {
-    if (name && LITERAL_UNION.test(buffer.trim())) {
+    if (name && LITERAL_UNION.test(buffer.trim().replace(/;+$/, ''))) {
       const values = (buffer.match(LITERAL) ?? [])
         .map(v => v.replace(/^["']|["']$/g, ''))
         .sort()
