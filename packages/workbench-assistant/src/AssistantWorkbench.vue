@@ -549,13 +549,16 @@ defineExpose({
 
 .artifact-chrome {
   position: absolute;
-  top: 8px;
+  top: 0;
   right: 8px;
   z-index: 5;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: flex-end;
+  box-sizing: border-box;
+  height: var(--workbench-panel-header-height, 38px);
+  border-bottom: 1px solid transparent;
   gap: 2px;
   -webkit-app-region: no-drag;
 }
@@ -574,11 +577,16 @@ defineExpose({
   height: 22px;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
+  line-height: 0;
   background: transparent;
   color: var(--text-secondary, #aaa);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
+}
+
+.artifact-chrome-btn svg {
+  display: block;
 }
 
 .artifact-chrome-btn:hover,

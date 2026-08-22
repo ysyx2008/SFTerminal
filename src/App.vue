@@ -2153,13 +2153,18 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   padding: 0;
-  border-radius: 7px;
+  border-radius: 5px;
+  line-height: 0;
   color: var(--text-tertiary, var(--text-secondary));
   background: transparent;
   transition: background 0.18s ease, color 0.18s ease;
+}
+
+.sidebar-toggle-btn svg {
+  display: block;
 }
 
 /* 与红绿灯之间留出一档呼吸，避免圆形彩色按钮紧挨着方形线框图标 */
@@ -2172,13 +2177,18 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   padding: 0;
-  border-radius: 7px;
+  border-radius: 5px;
+  line-height: 0;
   color: var(--text-tertiary, var(--text-secondary));
   background: transparent;
   transition: background 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+.shell-nav-btn svg {
+  display: block;
 }
 
 .shell-nav-btn:hover:not(:disabled) {
@@ -2236,9 +2246,6 @@ onUnmounted(() => {
   padding: 0;
   border-radius: 5px;
   line-height: 0;
-  /* 浮层按 38px 居中，产出物按钮在 1px 底边之上的 37px 里居中，高亮会低 1px */
-  margin-top: -1px;
-  overflow: hidden;
   color: var(--text-tertiary, var(--text-secondary));
   background: transparent;
   transition: background 0.18s ease, color 0.18s ease;
@@ -2248,8 +2255,6 @@ onUnmounted(() => {
 
 .ai-panel-toggle-btn svg {
   display: block;
-  position: relative;
-  top: 1px;
 }
 
 .ai-panel-toggle-btn:hover {

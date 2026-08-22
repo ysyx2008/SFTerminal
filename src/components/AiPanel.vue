@@ -3135,9 +3135,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .host-info-trigger {
   position: relative;
   cursor: pointer;
-  height: 26px;
+  height: 22px;
   padding: 0 8px;
-  border-radius: 6px;
+  border-radius: 5px;
   transition: all 0.2s ease;
   box-sizing: border-box;
 }
@@ -3958,19 +3958,24 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .execution-mode-selector {
   display: flex;
   align-items: center;
+  box-sizing: border-box;
+  height: 22px;
   gap: 2px;
   background: var(--bg-tertiary);
   border-radius: 6px;
-  padding: 2px;
+  padding: 1px;
   border: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
 .mode-option {
-  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 8px;
   font-size: 11px;
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 1;
   color: var(--text-secondary);
   background: transparent;
   border: none;
