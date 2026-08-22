@@ -364,12 +364,6 @@ const retryMcp = async (server: McpServerConfig) => {
 let gatewayPollTimer: ReturnType<typeof setInterval> | null = null
 let waitPollTimer: ReturnType<typeof setInterval> | null = null
 
-function onTriggerEnter(e: MouseEvent) {
-  if (wechatWaitingSession.value) {
-    showTip(e, t('conn.wechatNeedMessageTip'))
-  }
-}
-
 const POPOVER_WIDTH = 520
 const VIEWPORT_MARGIN = 8
 
@@ -491,9 +485,7 @@ onUnmounted(() => {
       ref="buttonRef"
       class="btn-icon conn-btn"
       :class="[statusClass, { 'conn-btn--sidebar': props.variant === 'sidebar' }]"
-      :title="wechatWaitingSession ? undefined : statusTooltip"
-      @mouseenter="onTriggerEnter"
-      @mouseleave="hideTip"
+      :title="statusTooltip"
       @click="togglePopover"
     >
       <span class="equip-icon">
