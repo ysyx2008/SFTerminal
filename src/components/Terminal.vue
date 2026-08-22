@@ -160,6 +160,137 @@ const syncCursorBlinkToVisibility = () => {
     document.visibilityState === 'visible' && wantBlink
 }
 
+/**
+ * 切走超过此时长再回来：不信任现有 WebGL 画布，拆掉重建。
+ * 短切只 refresh——系统可能只清了画面、上下文其实还在。
+ */
+const RENDERER_REBUILD_AFTER_AWAY_MS = 30_000
+let awaySince = 0
+let restorePaintScheduled = false
+let pendingForceRebuild = false
+
+function markTerminalAway() {
+  if (!awaySince) awaySince = Date.now()
+}
+
+function clearTerminalAway() {
+  awaySince = 0
+}
+
+function awayDurationMs(): number {
+  return awaySince ? Date.now() - awaySince : 0
+}
+
+function refreshTerminalPaint() {
+  if (!terminal || isDisposed) return
+  try {
+    terminal.refresh(0, Math.max(0, terminal.rows - 1))
+    if (fitAddon && terminalRef.value) {
+      const rect = terminalRef.value.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        fitAddon.fit()
+      }
+    }
+  } catch (e) {
+    log.warn('Terminal refresh failed:', e)
+  }
+}
+
+function isWebglContextLost(): boolean {
+  const root = terminal?.element
+  if (!root) return false
+  for (const node of root.querySelectorAll('canvas')) {
+    const canvas = node as HTMLCanvasElement
+    let gl: WebGLRenderingContext | WebGL2RenderingContext | null = null
+    try {
+      gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+    } catch {
+      continue
+    }
+    if (gl?.isContextLost()) return true
+  }
+  return false
+}
+
+function disposeWebglRenderer(reason: string) {
+  if (!webglAddon) return
+  log.info(`WebGL renderer disposed (${reason})`)
+  try {
+    webglAddon.dispose()
+  } catch (e) {
+    log.warn('WebGL addon dispose failed:', e)
+  }
+  webglAddon = null
+}
+
+function enableWebglRenderer() {
+  if (webglAddon || !terminal || isDisposed) return
+  try {
+    const addon = new WebglAddon()
+    // 官方约定：上下文丢失后 addon 自己好不了，必须拆掉才能回到 DOM 渲染
+    addon.onContextLoss(() => {
+      disposeWebglRenderer('context-loss')
+      refreshTerminalPaint()
+    })
+    terminal.loadAddon(addon)
+    webglAddon = addon
+    log.debug('WebGL renderer enabled')
+  } catch (e) {
+    log.info('WebGL not available, using DOM renderer:', e)
+    webglAddon = null
+  }
+}
+
+function restoreTerminalPaint(forceRebuild: boolean) {
+  if (!terminal || isDisposed) return
+  if (document.visibilityState !== 'visible') return
+
+  const rebuild = forceRebuild || isWebglContextLost()
+  if (rebuild && webglAddon) {
+    disposeWebglRenderer(isWebglContextLost() ? 'context-lost-on-restore' : 'long-away')
+  }
+  refreshTerminalPaint()
+  if (rebuild) {
+    enableWebglRenderer()
+    refreshTerminalPaint()
+  }
+}
+
+function scheduleRestoreTerminalPaint(forceRebuild: boolean) {
+  pendingForceRebuild = pendingForceRebuild || forceRebuild
+  if (restorePaintScheduled) return
+  restorePaintScheduled = true
+  requestAnimationFrame(() => {
+    restorePaintScheduled = false
+    const rebuild = pendingForceRebuild
+    pendingForceRebuild = false
+    restoreTerminalPaint(rebuild)
+  })
+}
+
+function handleDocumentVisibilityChange() {
+  syncCursorBlinkToVisibility()
+  if (document.visibilityState === 'hidden') {
+    markTerminalAway()
+    return
+  }
+  const longAway = awayDurationMs() >= RENDERER_REBUILD_AFTER_AWAY_MS
+  clearTerminalAway()
+  scheduleRestoreTerminalPaint(longAway)
+}
+
+function handleWindowBlur() {
+  markTerminalAway()
+}
+
+function handleWindowFocus() {
+  const longAway = awayDurationMs() >= RENDERER_REBUILD_AFTER_AWAY_MS
+  if (document.visibilityState === 'visible') {
+    clearTerminalAway()
+  }
+  scheduleRestoreTerminalPaint(longAway)
+}
+
 // 初始化终端
 onMounted(async () => {
   if (!terminalRef.value) return
@@ -186,7 +317,9 @@ onMounted(async () => {
     rightClickSelectsWord: false
   })
 
-  document.addEventListener('visibilitychange', syncCursorBlinkToVisibility)
+  document.addEventListener('visibilitychange', handleDocumentVisibilityChange)
+  window.addEventListener('blur', handleWindowBlur)
+  window.addEventListener('focus', handleWindowFocus)
 
   // 加载插件
   fitAddon = new FitAddon()
@@ -203,36 +336,8 @@ onMounted(async () => {
   // 挂载到 DOM
   terminal.open(terminalRef.value)
 
-  // 尝试加载 WebGL 渲染器（GPU 加速）
-  // 如果失败则自动降级到默认的 DOM 渲染
-  try {
-    webglAddon = new WebglAddon()
-
-    // WebGL 上下文丢失后必须 dispose + refresh，否则 canvas 残留黑屏、DOM 渲染器不恢复
-    webglAddon.onContextLoss(() => {
-      log.warn('WebGL context lost, falling back to DOM renderer')
-      try {
-        webglAddon?.dispose()
-      } catch (e) {
-        log.warn('WebGL addon dispose failed:', e)
-      }
-      webglAddon = null
-      try {
-        if (terminal) {
-          terminal.refresh(0, terminal.rows - 1)
-          fitAddon?.fit()
-        }
-      } catch (e) {
-        log.warn('Terminal refresh after WebGL loss failed:', e)
-      }
-    })
-
-    terminal.loadAddon(webglAddon)
-    log.debug('WebGL renderer enabled')
-  } catch (e) {
-    log.info('WebGL not available, using DOM renderer:', e)
-    webglAddon = null
-  }
+  // GPU 加速；失败或上下文丢失时降级 DOM。长时间切走后再回来会拆掉重建。
+  enableWebglRenderer()
 
   // 创建屏幕服务实例
   screenService = new TerminalScreenService(terminal)
@@ -661,7 +766,9 @@ onUnmounted(() => {
   window.electronAPI.terminalState.remove(props.ptyId)
   inputBuffer = ''
   
-  document.removeEventListener('visibilitychange', syncCursorBlinkToVisibility)
+  document.removeEventListener('visibilitychange', handleDocumentVisibilityChange)
+  window.removeEventListener('blur', handleWindowBlur)
+  window.removeEventListener('focus', handleWindowFocus)
 
   // xterm / WebGL 拆掉可能同步卡住渲染进程；先让关窗返回，下一轮再拆
   const gl = webglAddon
@@ -693,6 +800,12 @@ watch(
       if (rect.width > 0 && rect.height > 0) {
         fitAddon.fit()
         terminalStore.resizePty(props.ptyId, props.type, terminal.cols, terminal.rows)
+      }
+      // 切回本窗格时画面可能已被系统清掉（含 v-show 隐藏），补一刀重画
+      if (isWebglContextLost()) {
+        restoreTerminalPaint(true)
+      } else {
+        refreshTerminalPaint()
       }
       terminal.focus()
       log.debug(`[focus] pane activated ptyId=${props.ptyId} activeElement=${(document.activeElement as HTMLElement)?.tagName ?? 'null'}`)
