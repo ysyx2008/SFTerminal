@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Folder, FileText, Upload } from 'lucide-vue-next'
 import type { LocalFileInfo } from '../../composables/useLocalFs'
 import type { SftpFileInfo } from '../../composables/useSftp'
+import type { SortKey, SortOrder } from '../../types/file-list'
 
 const { t } = useI18n()
 
@@ -28,9 +29,6 @@ const emit = defineEmits<{
 }>()
 
 // 排序状态
-type SortKey = 'name' | 'size' | 'modifyTime' | 'permissions'
-type SortOrder = 'asc' | 'desc'
-
 const sortKey = ref<SortKey>('name')
 const sortOrder = ref<SortOrder>('asc')
 

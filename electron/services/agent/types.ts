@@ -315,7 +315,7 @@ export interface TaskMemory {
   embedding?: number[]            // 向量嵌入（用于语义搜索，可选）
   
   // AI 建议的压缩级别（由 manage_memory 工具设置，用于 buildRecentTasksContext 优先取值）
-  aiSuggestedLevel?: import('./context-builder').CompressionLevel
+  aiSuggestedLevel?: CompressionLevel
 }
 
 /**

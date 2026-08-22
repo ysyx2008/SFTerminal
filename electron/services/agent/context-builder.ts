@@ -19,15 +19,9 @@ function formatTaskTime(timestamp: number): string {
 
 // ==================== 类型定义 ====================
 
-/**
- * 压缩级别
- * Level 0: 完整对话（用户请求 + 所有工具调用/结果 + AI 回复）
- * Level 1: 压缩对话（用户请求 + 压缩后的工具输出 + AI 回复）
- * Level 2: 精简对话（用户请求 + AI 最终回复）
- * Level 3: L2 摘要（命令、路径、关键发现）
- * Level 4: L1 总结（一句话概要）
- */
-export type CompressionLevel = 0 | 1 | 2 | 3 | 4
+/** 真相源在 types.ts；此处 re-export 保持既有引用路径可用 */
+import type { CompressionLevel } from './types'
+export type { CompressionLevel }
 
 /**
  * 上下文预算分配

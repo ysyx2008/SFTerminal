@@ -9,8 +9,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { TodoItem } from '@sailfish/shared-types'
-
-type UrgencyTier = 'urgent' | 'watch' | 'relaxed'
+import type { UrgencyTier } from './urgency'
 
 const props = defineProps<{
   item: TodoItem

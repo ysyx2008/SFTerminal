@@ -18,6 +18,7 @@ import {
 import type { TodoItem, TodoPriority, TodoSource, TodoStatus } from '@sailfish/shared-types'
 import { useTerminalStore, COMPANION_TAB_AGENT_ID } from '../../stores/terminal'
 import { toast } from '../../composables/useToast'
+import type { UrgencyTier } from './urgency'
 import TodoRowHoverTip from './TodoRowHoverTip.vue'
 import TodoMenu from './TodoMenu.vue'
 
@@ -198,8 +199,6 @@ function attentionLevel(item: TodoItem): AttentionLevel {
  * --brand-alert（红/高风险）→ --brand-caution（橙/中风险）→ --brand-vital（绿/低风险）。
  * 单一判档函数，供进度条颜色、Hover 速览文案与色点共用，避免阈值散落三处。
  */
-type UrgencyTier = 'urgent' | 'watch' | 'relaxed'
-
 function dueUrgencyTier(remainingMs: number): UrgencyTier {
   if (remainingMs <= 2 * MS_PER_DAY) return 'urgent'
   if (remainingMs <= 7 * MS_PER_DAY) return 'watch'

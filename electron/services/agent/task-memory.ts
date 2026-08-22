@@ -580,7 +580,7 @@ export class TaskMemoryStore {
    * @param level 建议的压缩级别 (0-4)
    * @returns 是否成功（任务不存在时返回 false）
    */
-  updateSuggestedLevel(taskId: string, level: import('./context-builder').CompressionLevel): boolean {
+  updateSuggestedLevel(taskId: string, level: import('./types').CompressionLevel): boolean {
     const memory = this.memories.get(taskId)
     if (!memory) return false
     memory.aiSuggestedLevel = level
