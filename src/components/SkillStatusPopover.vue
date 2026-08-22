@@ -244,11 +244,11 @@ onUnmounted(() => {
           <div v-if="totalCount === 0" class="empty-hint">{{ t('skills.none') }}</div>
           <div v-else-if="!hasVisible" class="empty-hint">{{ t('skills.emptyFilter') }}</div>
           <template v-else>
-            <div v-if="visibleBuiltin.length" class="section">
-              <div class="section-label">{{ t('skillSettings.builtinSkills') }}</div>
+            <div v-if="visibleUser.length" class="section">
+              <div class="section-label">{{ t('skillSettings.extensionSkills') }}</div>
               <label
-                v-for="skill in visibleBuiltin"
-                :key="'builtin-' + skill.id"
+                v-for="skill in visibleUser"
+                :key="'user-' + skill.id"
                 class="item"
                 :class="{ disabled: !skill.enabled }"
               >
@@ -265,11 +265,11 @@ onUnmounted(() => {
                 </span>
               </label>
             </div>
-            <div v-if="visibleUser.length" class="section">
-              <div class="section-label">{{ t('skillSettings.extensionSkills') }}</div>
+            <div v-if="visibleBuiltin.length" class="section">
+              <div class="section-label">{{ t('skillSettings.builtinSkills') }}</div>
               <label
-                v-for="skill in visibleUser"
-                :key="'user-' + skill.id"
+                v-for="skill in visibleBuiltin"
+                :key="'builtin-' + skill.id"
                 class="item"
                 :class="{ disabled: !skill.enabled }"
               >
