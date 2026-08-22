@@ -163,8 +163,9 @@ const syncCursorBlinkToVisibility = () => {
 /**
  * 切走超过此时长再回来：不信任现有 WebGL 画布，拆掉重建。
  * 短切只 refresh——系统可能只清了画面、上下文其实还在。
+ * 用户反馈是「长时间干别的事」，30 秒太短，按「离开去做另一件事」的量级取 5 分钟。
  */
-const RENDERER_REBUILD_AFTER_AWAY_MS = 30_000
+const RENDERER_REBUILD_AFTER_AWAY_MS = 5 * 60 * 1000
 let awaySince = 0
 let restorePaintScheduled = false
 let pendingForceRebuild = false
