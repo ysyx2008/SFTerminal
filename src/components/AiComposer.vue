@@ -732,10 +732,6 @@ const handleSend = async (opts?: { enqueue?: boolean }) => {
     return
   }
 
-  if (!inputText.value.trim() && props.hasImages) {
-    inputText.value = t('ai.describeImage')
-  }
-
   if (
     !isEditingFollowUp.value &&
     !inputText.value.trim() &&

@@ -102,7 +102,6 @@ export default {
     uploadDocument: '上传文档',
     uploadImage: '上传图片',
     removeImage: '移除图片',
-    describeImage: '请描述这张图片的内容',
     visionNotSupported: '当前模型 {model} 可能不支持看图，建议切换到视觉模型（如 deepseek-v4-flash-vision-exp、qwen3.7-plus、gpt-5.6 等）',
     visionGuardTitle: '当前模型不支持图片识别',
     visionGuardCurrentModel: '当前模型',

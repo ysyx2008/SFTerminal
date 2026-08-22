@@ -102,7 +102,6 @@ export default {
     uploadDocument: 'Upload Document',
     uploadImage: 'Upload Image',
     removeImage: 'Remove Image',
-    describeImage: 'Please describe the content of this image',
     visionNotSupported: 'Model {model} may not support vision. Consider switching to a vision model (e.g. deepseek-v4-flash-vision-exp, qwen3.7-plus, gpt-5.6)',
     visionGuardTitle: 'Current Model Does Not Support Image Recognition',
     visionGuardCurrentModel: 'the current model',
