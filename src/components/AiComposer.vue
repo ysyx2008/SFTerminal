@@ -2213,34 +2213,37 @@ const handleSendClick = (event: MouseEvent) => {
   }
 }
 
+/* Composer 一行里的所有按钮共用同一个 32px / 9px 方格，主操作键也在这个格子里。
+   尺寸不齐时最重要的那个反而最小，一行读起来就是拼的。 */
 .upload-btn,
 .voice-btn {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   box-sizing: border-box;
   background: transparent;
   border: none;
   color: var(--text-muted);
-  border-radius: 10px;
+  border-radius: 9px;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
 }
 
+/* 悬停只换颜色、按下才缩——与主操作键同一套手感。
+   悬停放大会让一行图标此起彼伏地跳。 */
 .upload-btn:hover:not(:disabled),
 .voice-btn:hover:not(:disabled) {
   background: rgba(var(--accent-rgb), 0.12);
   color: var(--accent-primary);
-  transform: scale(1.08);
 }
 
 .upload-btn:active:not(:disabled),
 .voice-btn:active:not(:disabled) {
-  transform: scale(0.95);
+  transform: scale(0.94);
 }
 
 .upload-btn:disabled,
@@ -2310,6 +2313,13 @@ const handleSendClick = (event: MouseEvent) => {
   outline: none;
 }
 
+/*
+ * 主操作键（发送 / 停止）的外观只有一处定义，变体只改 --btn-tint。
+ *
+ * 刻意做成纯平：一块实色、无渐变、无投影、无内高光。32px 上渐变跨不出层次、
+ * 黑投影在深色底上看不见，这些只会让边缘发灰、像早年的拟物按钮。这个尺寸的
+ * 立体感只能靠色块与底色的对比，不靠打光。
+ */
 .send-btn,
 .stop-btn {
   flex-shrink: 0;
@@ -2323,66 +2333,36 @@ const handleSendClick = (event: MouseEvent) => {
   border-radius: 9px;
   border: none;
   cursor: pointer;
-  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
-}
-
-/*
- * 主操作键（发送 / 停止）的外观只有一处定义：底色、渐变、投影、按下态全部
- * 从 --btn-tint 派生，各状态只改这一个变量。
- *
- * 此前每个变体各自写一遍 background，却没人管投影——绿色的「发送」底下压着
- * 基类那圈硬编码的蓝光，色相互撞；而变体的「渐变」三个节点填的又是同一个色值，
- * 实际是块扁平纯色。两处叠起来就是那种说不清哪里不对的脏。
- *
- * 基类的默认蓝同时服务「编辑追问」态（.send-btn-edit-follow-up 无需再声明）。
- */
-.send-btn,
-.stop-btn {
+  transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
   --btn-tint: #5a7bff;
   color: #fff;
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, #fff 18%, var(--btn-tint)) 0%,
-    var(--btn-tint) 58%,
-    color-mix(in srgb, #000 10%, var(--btn-tint)) 100%
-  );
-  /* 只留一层紧贴的中性投影 + 顶部内高光。
-     彩色外发光在 32px 这种小尺寸上会把边缘晕开，按钮和背景糊成一片，
-     远看像失焦——尺寸越小越明显，所以宁可要清晰的边界，不要氛围。 */
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  background: var(--btn-tint);
 }
 
-/* 32px 里 18px 图标偏满；略收并让描边更利落，箭头才显得挺。
-   只作用于发送键——停止键是实心方块，加粗描边只会把它撑圆。 */
+/* 白箭头描边越细越挺；2.25 那档在小尺寸上会糊成一团。
+   只作用于发送键——停止键是实心方块，与描边无关。 */
 .send-btn svg {
-  width: 17px;
-  height: 17px;
-  stroke-width: 2.25;
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+}
+
+/* 实心方块比同尺寸的线稿箭头重得多，得收得比箭头更小才等重 */
+.stop-btn svg {
+  width: 12px;
+  height: 12px;
 }
 
 .send-btn:hover:not(:disabled),
 .stop-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, #fff 26%, var(--btn-tint)) 0%,
-    color-mix(in srgb, #fff 6%, var(--btn-tint)) 58%,
-    var(--btn-tint) 100%
-  );
-  box-shadow:
-    0 2px 5px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  background: color-mix(in srgb, #fff 14%, var(--btn-tint));
 }
 
-/* 按下时收掉外投影、换成内投影——真的像被按进去了 */
+/* 按下用缩放而不是位移：一行按钮里只有它上下跳会显得散 */
 .send-btn:active:not(:disabled),
 .stop-btn:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow:
-    0 1px 1px rgba(0, 0, 0, 0.14),
-    inset 0 1px 3px rgba(0, 0, 0, 0.22);
+  transform: scale(0.94);
+  background: color-mix(in srgb, #000 8%, var(--btn-tint));
 }
 
 .send-btn:focus-visible,
@@ -2391,10 +2371,13 @@ const handleSendClick = (event: MouseEvent) => {
   outline-offset: 2px;
 }
 
+/* 不可用时整块退成中性灰，不做「暗一点的绿」——半透明的品牌色压在深色底上
+   会变成一坨发闷的橄榄色，读起来像坏了，而不是「还不能发」。
+   顺带让空输入框安静下来：没话可发时它不该是全场最亮的东西。 */
 .send-btn:disabled {
-  opacity: 0.45;
   cursor: not-allowed;
-  box-shadow: none;
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+  color: var(--text-muted);
 }
 
 .send-btn-agent,
@@ -2425,19 +2408,23 @@ const handleSendClick = (event: MouseEvent) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 9px;
   border: none;
   cursor: pointer;
-  background: rgba(99, 102, 241, 0.15);
-  color: var(--accent-primary, #6366f1);
-  transition: all 0.2s ease;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent-primary);
+  transition: background 0.15s ease, transform 0.12s ease;
 }
 
 .tts-stop-btn:hover {
-  background: rgba(99, 102, 241, 0.3);
+  background: rgba(var(--accent-rgb), 0.24);
+}
+
+.tts-stop-btn:active {
+  transform: scale(0.94);
 }
 
 @keyframes tts-pulse {
