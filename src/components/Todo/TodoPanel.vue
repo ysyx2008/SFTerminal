@@ -713,6 +713,8 @@ function onRowKeydown(item: TodoItem, ev: KeyboardEvent) {
 
 function onPanelKeydown(ev: KeyboardEvent) {
   if (ev.key !== 'Escape') return
+  // 设置 / 觉醒 / 关切 / 确认框等盖在上面时，ESC 先给它们
+  if (document.querySelector('.modal-overlay, .credential-overlay, .setup-wizard, .confirm-overlay')) return
   ev.preventDefault()
   ev.stopImmediatePropagation()
   if (contextMenu.value) {
