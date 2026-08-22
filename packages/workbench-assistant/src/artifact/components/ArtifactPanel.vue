@@ -978,7 +978,6 @@ defineExpose({ minimizePanel })
         @click.stop
       >
         <div class="canvas-send-title">{{ t('canvas.sendToPhone') }}</div>
-        <div class="canvas-dropdown-separator" />
         <div v-if="sendTargetsLoading" class="canvas-send-loading">{{ t('common.loading') }}</div>
         <template v-else>
           <button
@@ -1520,11 +1519,19 @@ defineExpose({ minimizePanel })
 }
 
 .canvas-send-title {
-  padding: 6px 10px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 32px;
+  margin: -4px -4px 0;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
   color: var(--text-secondary, #aaa);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  text-align: center;
   user-select: none;
   pointer-events: none;
 }
