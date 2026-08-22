@@ -7,7 +7,6 @@ const { t } = useI18n()
 
 import type { ScheduleType, TaskRunStatus, TerminalType } from '@shared/types'
 
-type TargetType = TerminalType
 
 interface ScheduleConfig {
   type: ScheduleType
@@ -15,7 +14,7 @@ interface ScheduleConfig {
 }
 
 interface TargetConfig {
-  type: TargetType
+  type: TerminalType
   sshSessionId?: string
   sshSessionName?: string
   workingDirectory?: string

@@ -350,53 +350,8 @@ export interface RelatedTaskDigest {
  */
 export type CompressionLevel = 0 | 1 | 2 | 3 | 4
 
-/**
- * 上下文预算分配
- */
-export interface ContextBudget {
-  total: number              // 总预算（tokens）
-  systemPrompt: number       // 系统提示基础部分
-  knowledge: number          // 知识库/主机记忆
-  recentTasks: number        // 最近任务区（按预算填充）
-  nearTasks: number          // 较近任务摘要
-  historySummary: number     // 历史任务总结
-  currentConversation: number // 当前对话预留
-}
-
-/**
- * 带压缩级别的任务上下文
- */
-export interface TaskWithLevel {
-  taskId: string
-  level: CompressionLevel    // 实际使用的压缩级别
-  tokens: number             // 实际占用的 tokens
-  content: import('../ai.service').AiMessage[] | string  // Level 0-2 返回消息数组，Level 3-4 返回字符串
-  userRequest: string        // 用户原始请求
-  status: 'success' | 'failed' | 'aborted'
-}
-
-/**
- * 上下文构建结果
- */
-export interface ContextBuildResult {
-  // Level 0-2 的任务，作为消息注入
-  recentTaskMessages: import('../ai.service').AiMessage[]
-  // Level 3-4 的任务，作为摘要/总结写入系统提示
-  taskSummarySection: string
-  // 统计信息
-  stats: {
-    totalTasks: number
-    level0Count: number
-    level1Count: number
-    level2Count: number
-    level3Count: number
-    level4Count: number
-    usedTokens: number
-    budget: number
-  }
-  // 可用任务 ID 列表（用于 recall）
-  availableTaskIds: Array<{ id: string; summary: string }>
-}
+// ContextBudget / TaskWithLevel / ContextBuildResult 定义在 context-builder.ts —— 只有它产出这些结构。
+// 这里曾各留一份无人引用的副本，且已经漂移（TaskWithLevel.status 少了 pending_confirmation）。
 
 // ==================== Agent OOP 架构相关类型 ====================
 
