@@ -1,6 +1,6 @@
 # 崩溃诊断与一键上报（P0：可诊断）设计
 
-> 一次性 plan 文档。完成后取舍升华进 `electron/services/diagnostics/SPEC.md`，本文件删除。
+> 2026-08-16。一次性 plan 文档。完成后取舍升华进 `electron/services/diagnostics/SPEC.md`，本文件删除。
 
 ## 1. 背景
 

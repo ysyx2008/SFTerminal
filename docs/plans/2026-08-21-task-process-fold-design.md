@@ -1,6 +1,6 @@
 # 长任务过程折叠
 
-> 一次性 plan。完成后取舍升华进 `AIPANEL_SPEC.md` / `agent/SPEC.md`，本文件删除。
+> 2026-08-21。一次性 plan。完成后取舍升华进 `AIPANEL_SPEC.md` / `agent/SPEC.md`，本文件删除。
 
 ## 定稿形态（第三轮，推翻前两轮的展示方式）
 

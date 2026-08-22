@@ -1,6 +1,6 @@
 # 过程折叠：新用户默认摊开 + 长任务当场邀请
 
-> 一次性 plan。完成后取舍升华进 `src/components/AIPANEL_SPEC.md`，本文件删除。
+> 2026-08-22。一次性 plan。完成后取舍升华进 `src/components/AIPANEL_SPEC.md`，本文件删除。
 
 ## 问题
 
