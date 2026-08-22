@@ -1,5 +1,4 @@
 
-
 <div align="center">
 
 <pre>
@@ -17,14 +16,16 @@
 
 **Your Personal Desktop Secretary**
 
-*Knows your habits, acts proactively, and truly operates your computer — local terminal, remote servers, email, calendar, and more*
+*Not just chat — it runs your computer, reaches out first, and remembers what matters about you*
 
 [![Build](https://github.com/ysyx2008/SailFish/actions/workflows/build-release.yml/badge.svg)](https://github.com/ysyx2008/SailFish/actions)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
 [![en](https://img.shields.io/badge/lang-English-blue.svg)](./README.md)
 [![cn](https://img.shields.io/badge/lang-中文-red.svg)](./README_CN.md)
 
-[Website](http://www.sfterm.com/en/) · [Download](https://github.com/ysyx2008/SailFish/releases) · [Documentation](./docs/)
+[Website](https://www.sfterm.com/en/) · [Download](https://www.sfterm.com/en/#download) · [Docs](https://www.sfterm.com/en/docs/getting-started/what-is-sailfish/) · [Skill Market](https://www.sfterm.com/en/skills/)
+
+Bring your own AI API · macOS / Windows
 
 </div>
 
@@ -36,88 +37,108 @@ SailFish isn't a chatbot waiting for commands. It's a **personal secretary** liv
 
 | Pain Point | SailFish Approach |
 |------------|-------------------|
-| Chat-only AI can't act | Your secretary runs commands, reads/writes files, controls the browser, sends email |
-| Every conversation starts from zero | Three-tier memory + knowledge base: knows you (L2), recalls past work (L3), file archive on demand |
-| You have to watch and wait | Awaken mode + Watch: proactive monitoring, scheduled tasks, push notifications |
-| Tied to your desk | Reach your same secretary via WeChat, DingTalk, Feishu, Slack, Telegram, or Web |
-| Don't know the command? | Describe in natural language; your secretary plans and executes |
-| Intranet restrictions? | Supports private AI models and proxies |
+| Chat-only AI can't act | Your secretary runs commands, reads/writes files, controls the browser, sends email, and makes documents |
+| Every conversation starts from zero | Three-tier memory + knowledge base: knows you, recalls past work, file archive on demand |
+| You have to watch and wait | Awaken + Watch: proactive monitoring, scheduled work, push notifications |
+| Tied to your desk | The same secretary via WeChat, DingTalk, Feishu, WeCom, Slack, Telegram, or the web |
+| Don't know the command? | Describe it in natural language; your secretary plans and executes. Risky steps ask first |
+| Intranet / offline | Private models, local Ollama, and proxies |
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-welcome_en.jpg" width="800" alt="SailFish">
 </p>
 
-## Two Ways to Work: Tasks & Reach
+## Two Ways to Work, One Workspace
 
 | Entry | Relationship | Character |
 |-------|--------------|-----------|
-| **Tasks** | You delegate specific work to your secretary | One-off, parallel, isolated; the desktop mainstay |
-| **Reach** | Your ongoing relationship with your secretary | Always-on, multi-channel; your secretary can reach out first |
+| **Tasks** | You delegate specific work | One-off, parallel, isolated; the desktop mainstay. Queue the next message while a task is still running |
+| **Reach** | Your ongoing relationship | Always-on, multi-channel; your secretary can reach out first |
 
-Tasks come first on desktop; Reach sits at the end — all IM channels flow into one continuous relationship, not a different bot each time.
+Tasks come first on desktop. All IM channels flow into one Reach line — not a different bot each time.
 
-## ✨ Core Capabilities
+The window is three columns: new chat, Reach, Terminal, and recent conversations on the left; the current work in the middle; artifacts on the right, gone when collapsed. Watch and Todos have their own panels.
+
+## Core Capabilities
+
+### It remembers
 
 | Feature | Description |
 |---------|-------------|
-| 🧬 **Identity & Personality** | IDENTITY/SOUL/USER shape your secretary's character; birth conversation on first launch |
-| 🧠 **Three-Tier Memory** | L2 knows you (habits & facts), L3 recalls past work on demand; knowledge base is your secretary's archive |
-| 🌅 **Awaken Mode** | Your secretary becomes proactive — personality-driven chat, background monitoring, reaching out to you |
-| 👁️ **Watch & Sensors** | Heartbeat, file-watch, calendar, and email sensors; anomaly badges on the home screen at a glance |
-| 💬 **Multi-Channel Reach** | WeChat, DingTalk, Feishu, WeCom, Slack, Telegram, Web — one secretary, one relationship |
-| 🖥️ **Local & SSH Terminal** | Your secretary operates your machine and remote servers; JumpServer bastion sync |
-| 🛡️ **Security & Command Audit** | Shell-AST command parsing, four-level risk assessment, configurable command rules and allowlist |
-| 🌐 **Browser Bridge** | Control your open Chrome or Firefox — no new window, logins preserved |
-| 📦 **Artifact Panel** | WYSIWYG Markdown editing, live HTML/URL preview, screenshot follow-ups, send to phone |
-| 📁 **File Manager** | Dual-pane local and remote file management |
-| 🐦 **Feishu / DingTalk / WeCom** | Calendar, tasks, approvals, docs, Bitable, and other enterprise office skills |
-| 📊 **Office Skills** | Excel, Word, PPT generation and editing via natural language |
-| 📧 **Email & Calendar** | Your secretary reads/sends email and manages your schedule |
-| 🔍 **Web Search** | Bocha, Tavily, Google, Jina multi-engine search |
+| 🧬 **Identity & Personality** | Your secretary has a character; a birth conversation on first launch, more “yours” the more you use it |
+| 🧠 **Three-Tier Memory** | Knows your habits and facts; recalls past work on demand; the knowledge base is the archive you hand over |
+| 📚 **Knowledge Base** | Documents stay on your machine and are retrieved when needed |
+
+### It actually works
+
+| Feature | Description |
+|---------|-------------|
+| 🖥️ **Local & SSH Terminal** | Operates your machine and remote servers; split panes can mix local and multiple hosts; reconnects after a drop |
+| 📁 **File Manager** | Dual-pane local and remote files, drag-and-drop transfer |
+| 🌐 **Browser Bridge** | Control the Chrome / Edge / Firefox you already have open — logins preserved |
+| 📦 **Artifacts** | WYSIWYG Markdown, live HTML/URL preview, screenshot follow-ups, send to phone; Word / Excel / PDF / WPS open in place |
+| 🛡️ **Safety** | Command risk levels; dangerous steps ask first; strict / relaxed / free execution modes |
+
+### Secretary work
+
+| Feature | Description |
+|---------|-------------|
+| ✅ **Todos** | Local todos with due-soon reminders and importance sorting; hand one off into a new task |
+| 📧 **Email** | Read, search, write, reply — Gmail, Outlook, QQ Mail, 163, and more |
+| 📅 **Calendar** | Google, iCloud, Outlook, CalDAV — manage the schedule in natural language |
+| 📊 **Office Skills** | Word, Excel, editable PowerPoint, charts, PDF; official-document styles and WPS formats |
+| 🐦 **Feishu / DingTalk / WeCom** | Calendar, tasks, approvals, docs, Bitable, and other workplace skills |
+
+### It reaches you
+
+| Feature | Description |
+|---------|-------------|
+| 🌅 **Awaken** | Your secretary keeps its own rhythm and contacts you when it should |
+| 👁️ **Watch & Sensors** | Heartbeat, file-watch, calendar, email, webhooks, and more; a dedicated ops panel so you see problems at a glance |
+| 💬 **Multi-Channel Reach** | WeChat (scan to sign in), DingTalk, Feishu, WeCom, Slack, Telegram, web remote — one secretary |
+| 🔊 **Speech** | Replies can be read aloud; speech recognition is download-on-demand so the installer stays small |
+
+### It can grow
+
+| Feature | Description |
+|---------|-------------|
 | 🛒 **Skill Market & Plugins** | One-click community skills; plugins extend tools, providers, and IM channels |
-| 🔌 **MCP Extension** | Connect databases, APIs, and external tools |
-| 🔊 **Text-to-Speech** | Secretary responses read aloud |
-| 🔒 **System Tray** | Minimize to tray, always available in the background |
-| 🖥️ **CLI Mode** | Headless backend via `npm run sailfish`. Install globally with `npm run install:cli` to use the `sailfish` shell command. |
+| 🔌 **Connectors (MCP)** | Databases, APIs, and other external tools; connect when enabled, load on demand |
+| 🔍 **Web Search** | Bocha, Tavily, Google, Jina, and more |
+| 🖥️ **CLI** | `sailfish` runs the full backend headless; share desktop data or isolate with a sandbox |
+| 💾 **Your data** | Full backup and restore; move the data directory to another disk; copy a redacted crash summary |
+| 🔒 **Always there** | System tray and launch-at-login |
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-assistant_en.png" width="800" alt="Desktop Secretary">
+  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-agent-exec.png" width="800" alt="Secretary working in the local terminal">
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-skills_en.png" width="800" alt="Skill Market">
+  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-im.png" width="800" alt="Reach: scan WeChat to chat on your phone">
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-im_en.png" width="800" alt="Multi-Channel Reach">
+  <img src="https://raw.githubusercontent.com/ysyx2008/SailFish/main/website/public/screenshot-memory.png" width="800" alt="Memory and knowledge base">
 </p>
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Download
 
-Get the latest release from [GitHub Releases](https://github.com/ysyx2008/SailFish/releases) or [Official Website](http://www.sfterm.com/en/). On Windows, releases include a **portable ZIP** in addition to the NSIS installer—use the ZIP if the installer fails on older systems (e.g. some Windows Server 2016 builds).
+Get the latest release from the [website](https://www.sfterm.com/en/#download) or [GitHub Releases](https://github.com/ysyx2008/SailFish/releases). In mainland China, the site’s Aliyun mirror is usually faster.
 
-### Development
+| Platform | Requirements | Packages |
+|----------|--------------|----------|
+| **macOS** | 10.15+, Intel and Apple Silicon | `.dmg` (arm64 / x64) |
+| **Windows** | Windows 10 / 11, Server 2016+ | NSIS installer, plus a **portable ZIP** |
 
-```bash
-# Install dependencies
-npm install
+No official Linux desktop build. On Windows, if the installer fails (e.g. some Windows Server 2016 hosts), use the ZIP.
 
-# Start development
-npm run dev
-
-# Build
-npm run build:mac    # macOS
-npm run build:win    # Windows
-```
-
-> **Dev Windows build** (for the author's cross-platform testing only): run `npm run build:win:remote` locally to trigger a GitHub Actions build; the artifact overwrites a fixed OSS path in 8-10 minutes. Stability is not guaranteed.
-> Download: <https://sfterm-download.oss-cn-wuhan-lr.aliyuncs.com/dev/SailFish-Setup-dev.exe>
+First launch on macOS may say the developer cannot be verified: System Settings → Privacy & Security → Open Anyway, or `xattr -cr /Applications/SailFish.app`.
 
 ### AI Configuration
 
-SailFish supports OpenAI-compatible APIs. Configure in Settings:
+SailFish does not ship a model — you bring an API key. Settings include one-click presets; configure several and switch anytime.
 
 ```json
 {
@@ -128,42 +149,91 @@ SailFish supports OpenAI-compatible APIs. Configure in Settings:
 }
 ```
 
-**Recommended models for secretary mode** (requires Function Calling; configure multiple profiles and switch anytime):
+**Recommended models** (Function Calling required):
 
-- **Daily use** (fast, affordable): DeepSeek V4 Flash · Qwen 3.5 Plus · Claude Sonnet 4.6 · Gemini Flash
-- **Complex tasks** (long reasoning, multi-step): DeepSeek V4 Pro · GPT-5.5 · Claude Opus 4.7 · Gemini 3.1 Pro
-- **Vision tasks** (screenshots, image analysis, scanned PDFs): Doubao Seed 2.0 · Qwen 3.5 Plus · GPT-5.5 · Gemini Flash · Claude Sonnet 4.6
-- **More providers**: Doubao Seed 2.0, Zhipu GLM-5, Kimi K2.6, MiniMax M2.7, Grok, Mistral, and more (one-click presets in Settings)
+- **Daily** (fast, affordable): DeepSeek V4 Flash · Qwen 3.5 Plus · Claude Sonnet 4.6 · Gemini Flash
+- **Complex** (long reasoning, multi-step): DeepSeek V4 Pro · GPT-5.5 · Claude Opus 4.7 · Gemini 3.1 Pro
+- **Vision** (screenshots, images, scanned PDFs): Doubao Seed 2.0 · Qwen 3.5 Plus · GPT-5.5 · Gemini Flash · Claude Sonnet 4.6
+- **Local / offline**: Ollama (preset in Settings; small context windows struggle with multi-step work)
+- **More**: Doubao, Zhipu GLM-5, Kimi K2.6, MiniMax M2.7, Grok, Mistral, and any OpenAI-compatible endpoint
 
-## 🏗️ Architecture
+A text-only model can be paired with a vision model: pictures go there, then conversation returns. For web search, Bocha is a good default in China. Step-by-step: [First setup](https://www.sfterm.com/en/docs/getting-started/first-setup/).
+
+### Development
+
+```bash
+npm install
+npm run dev              # development
+npm run build:mac        # macOS package
+npm run build:win        # Windows package
+npm run test             # unit tests
+bash electron/cli/test-cli.sh --no-ai   # CLI regression (no model calls)
+```
+
+> **Dev Windows build** (for the author’s cross-platform testing only): `npm run build:win:remote` triggers a GitHub Actions build; the artifact overwrites a fixed OSS path in 8–10 minutes. Stability is not guaranteed.
+> <https://sfterm-download.oss-cn-wuhan-lr.aliyuncs.com/dev/SailFish-Setup-dev.exe>
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). Day-to-day work is on `develop`; open PRs against `develop`, not `main`.
+
+## CLI
+
+After install, add the `sailfish` command from Settings → Data Management. In a checkout, use `npm run sailfish` or `npm run install:cli`.
+
+```bash
+sailfish "list markdown files in this folder"
+sailfish --sandbox "try this without touching desktop data"
+sailfish models
+sailfish --help
+```
+
+By default it shares desktop data and asks before dangerous steps (`--mode relaxed`). `--sandbox` isolates runtime data while still borrowing AI profiles and credentials. `--mode free` / `--free` skips confirmations — use with care.
+
+Running from the repo defaults to the sandbox so desktop history is not overwritten.
+
+## Architecture
 
 <p align="center">
   <img src="./docs/architecture.png" width="800" alt="SailFish Architecture">
 </p>
 
-## 📖 Documentation
+The desktop app (Electron) and the CLI share one backend. The UI renders; sessions, memory, and tool execution live in the backend. IM and web remote use that same backend — not a separate bot.
 
-- [Agent Architecture](./docs/agent-architecture.md)
-- [IM Integration Guide](./docs/messaging-integration.md)
-- [Changelog](./CHANGELOG.md)
+## Documentation
+
+**For users**
+
+- [What is SailFish](https://www.sfterm.com/en/docs/getting-started/what-is-sailfish/)
+- [Install](https://www.sfterm.com/en/docs/getting-started/installation/)
+- [User guide](https://www.sfterm.com/en/docs/)
+- [Skill market](https://www.sfterm.com/en/skills/)
+- [Data safety](https://www.sfterm.com/en/data-privacy/)
+- [Changelog](./CHANGELOG.md) · [Website changelog](https://www.sfterm.com/en/changelog/)
+
+**For developers and integrators**
+
+- [How the Agent works](./docs/agent-architecture.md)
+- [IM integration](./docs/messaging-integration.md)
+- [Plugin development](./docs/plugin-dev-guide.md)
 - [Contributing](./CONTRIBUTING.md)
 
-## 📄 License
+## License
 
-**Dual Licensing**: AGPL v3.0 for open source use, commercial license available.
+**Dual licensing**: AGPL v3.0 for open source use; commercial license available.
 
 - ✅ Personal use, research, education
-- ✅ Enterprise internal use (≤1000 installations, modifications must be open-sourced)
-- 💼 Commercial license required for: >1000 installations, SaaS/product integration, closed-source modifications
+- ✅ Medical and non-profit organizations
+- ✅ Enterprise internal use (≤1000 installations; modifications must be open-sourced under AGPL)
+- 💼 Commercial license required for: >1000 installations, SaaS / product embedding, closed-source modifications, changing the logo or name, or removing “Support the author”
 
-See [LICENSE](./LICENSE) for details.
+See [LICENSE](./LICENSE).
 
-## 🔗 Links
+## Links
 
-- 🌐 [Website](http://www.sfterm.com/en/)
+- 🌐 [Website](https://www.sfterm.com/en/)
 - 📦 [GitHub](https://github.com/ysyx2008/SailFish)
 - 🐛 [Issues](https://github.com/ysyx2008/SailFish/issues)
+- 💬 QQ group: `1078041072`
 
-## 🙏 Acknowledgements
+## Acknowledgements
 
-Built with [Electron](https://www.electronjs.org/), [Vue.js](https://vuejs.org/), [xterm.js](https://xtermjs.org/), [LanceDB](https://lancedb.com/), and many other amazing open source projects.
+Built with [Electron](https://www.electronjs.org/), [Vue.js](https://vuejs.org/), [xterm.js](https://xtermjs.org/), [LanceDB](https://lancedb.com/), and many other open source projects.
