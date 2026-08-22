@@ -2317,45 +2317,97 @@ const handleSendClick = (event: MouseEvent) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 9px;
   border: none;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.send-btn {
-  background: linear-gradient(135deg, #6b8cff 0%, #5a7bff 50%, #4f6ef7 100%);
-  box-shadow: 0 2px 8px rgba(90, 123, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+/*
+ * 主操作键（发送 / 停止）的外观只有一处定义：底色、渐变、投影、按下态全部
+ * 从 --btn-tint 派生，各状态只改这一个变量。
+ *
+ * 此前每个变体各自写一遍 background，却没人管投影——绿色的「发送」底下压着
+ * 基类那圈硬编码的蓝光，色相互撞；而变体的「渐变」三个节点填的又是同一个色值，
+ * 实际是块扁平纯色。两处叠起来就是那种说不清哪里不对的脏。
+ *
+ * 基类的默认蓝同时服务「编辑追问」态（.send-btn-edit-follow-up 无需再声明）。
+ */
+.send-btn,
+.stop-btn {
+  --btn-tint: #5a7bff;
+  color: #fff;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, #fff 18%, var(--btn-tint)) 0%,
+    var(--btn-tint) 58%,
+    color-mix(in srgb, #000 10%, var(--btn-tint)) 100%
+  );
+  /* 只留一层紧贴的中性投影 + 顶部内高光。
+     彩色外发光在 32px 这种小尺寸上会把边缘晕开，按钮和背景糊成一片，
+     远看像失焦——尺寸越小越明显，所以宁可要清晰的边界，不要氛围。 */
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
-.send-btn:hover:not(:disabled) {
+/* 32px 里 18px 图标偏满；略收并让描边更利落，箭头才显得挺。
+   只作用于发送键——停止键是实心方块，加粗描边只会把它撑圆。 */
+.send-btn svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.25;
+}
+
+.send-btn:hover:not(:disabled),
+.stop-btn:hover:not(:disabled) {
   transform: translateY(-1px);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, #fff 26%, var(--btn-tint)) 0%,
+    color-mix(in srgb, #fff 6%, var(--btn-tint)) 58%,
+    var(--btn-tint) 100%
+  );
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* 按下时收掉外投影、换成内投影——真的像被按进去了 */
+.send-btn:active:not(:disabled),
+.stop-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.14),
+    inset 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+
+.send-btn:focus-visible,
+.stop-btn:focus-visible {
+  outline: 2px solid var(--btn-tint);
+  outline-offset: 2px;
 }
 
 .send-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
   box-shadow: none;
 }
 
-.send-btn-agent {
-  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success) 50%, var(--color-success) 100%);
+.send-btn-agent,
+.send-btn-default {
+  --btn-tint: var(--color-success);
 }
 
 .send-btn-supplement {
-  background: linear-gradient(135deg, var(--color-warning) 0%, var(--color-warning) 50%, var(--color-warning) 100%);
+  --btn-tint: var(--color-warning);
 }
 
-.send-btn-default {
-  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success) 50%, var(--color-success) 100%);
-}
-
-.send-btn-edit-follow-up {
-  background: linear-gradient(135deg, #6b8cff 0%, #5a7bff 50%, #4f6ef7 100%);
-  box-shadow: 0 2px 8px rgba(90, 123, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+.stop-btn {
+  --btn-tint: var(--color-error);
 }
 
 .ai-input-editing-follow-up {
@@ -2366,17 +2418,6 @@ const handleSendClick = (event: MouseEvent) => {
 .composer-root-embedded-filled:has(.ai-input-editing-follow-up) {
   border-color: color-mix(in srgb, var(--accent-primary) 55%, var(--border-color));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-primary) 22%, transparent);
-}
-
-.stop-btn {
-  background: linear-gradient(135deg, var(--color-error) 0%, var(--color-error) 50%, var(--color-error) 100%);
-  box-shadow: 0 2px 8px rgba(var(--color-error-rgb), 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-}
-
-.stop-btn:hover {
-  transform: translateY(-1px);
-  background: linear-gradient(135deg, #fca5a5 0%, var(--color-error) 50%, var(--color-error) 100%);
-  box-shadow: 0 4px 16px rgba(var(--color-error-rgb), 0.5);
 }
 
 .tts-stop-btn {
@@ -2406,10 +2447,6 @@ const handleSendClick = (event: MouseEvent) => {
 
 .tts-speaking-icon {
   animation: tts-pulse 1.5s ease-in-out infinite;
-}
-
-.stop-btn:active {
-  transform: translateY(0) scale(0.95);
 }
 
 .mention-menu {
