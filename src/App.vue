@@ -1780,8 +1780,8 @@ onUnmounted(() => {
           :aria-expanded="showRecallSidebar"
           @click="toggleRecallSidebarCollapsed"
         >
-          <PanelLeftClose v-if="showRecallSidebar" :size="17" :stroke-width="1.75" />
-          <PanelLeftOpen v-else :size="17" :stroke-width="1.75" />
+          <PanelLeftClose v-if="showRecallSidebar" :size="14" :stroke-width="2" />
+          <PanelLeftOpen v-else :size="14" :stroke-width="2" />
         </button>
       </div>
       <div
@@ -1801,7 +1801,7 @@ onUnmounted(() => {
             :title="navBackShortcut ? `${t('shell.navBack')} (${navBackShortcut})` : t('shell.navBack')"
             @click="goBack"
           >
-            <ChevronLeft :size="18" :stroke-width="1.75" />
+            <ChevronLeft :size="14" :stroke-width="2" />
           </button>
           <button
             type="button"
@@ -1810,7 +1810,7 @@ onUnmounted(() => {
             :title="navForwardShortcut ? `${t('shell.navForward')} (${navForwardShortcut})` : t('shell.navForward')"
             @click="goForward"
           >
-            <ChevronRight :size="18" :stroke-width="1.75" />
+            <ChevronRight :size="14" :stroke-width="2" />
           </button>
         </div>
       </div>
@@ -1954,6 +1954,14 @@ onUnmounted(() => {
   height: var(--workbench-panel-header-height);
 }
 
+/* 与对话/产出物顶栏同一盒模型：38px 里含 1px 底边，22px 按钮才会落在同一条中线上 */
+.app-container .shell-chrome,
+.app-container .shell-nav-chrome,
+.app-container .main-float {
+  box-sizing: border-box;
+  border-bottom: 1px solid transparent;
+}
+
 /* 非 Windows：SSO 软登录也浮在主区右上，第一排（含产出物展开按钮）要让开 */
 .app-container:not(.is-win):has(.sso-soft-btn) {
   --shell-inset-right: 148px;
@@ -1968,11 +1976,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  box-sizing: border-box;
   height: var(--workbench-panel-header-height, var(--shell-top-height));
-  /* 产出物/对话顶栏有 1px 底边，内容中心比整条矮半像素。浮层按同样的内容盒居中，
-     才跟「打开」「发送到手机」齐；Windows 三按钮要铺满顶条，下面再撤掉。 */
-  padding: 0 8px 1px;
+  padding: 0 8px;
   pointer-events: none;
 }
 
@@ -2047,9 +2052,12 @@ onUnmounted(() => {
 }
 
 /* Windows 三按钮必须贴窗口右沿；开关在它们左边，靠 gap 留空 */
+.app-container.is-win:not(.is-fullscreen) .main-float {
+  border-bottom: none;
+}
+
 .app-container.is-win:not(.is-fullscreen) .main-float--right {
   padding-right: 0;
-  padding-bottom: 0;
 }
 
 /* 侧栏顶 / 主区顶：两段各自的顶条，共用高度与拖拽行为，保证窗口上沿基线齐平 */
@@ -2230,6 +2238,7 @@ onUnmounted(() => {
   line-height: 0;
   /* 浮层按 38px 居中，产出物按钮在 1px 底边之上的 37px 里居中，高亮会低 1px */
   margin-top: -1px;
+  overflow: hidden;
   color: var(--text-tertiary, var(--text-secondary));
   background: transparent;
   transition: background 0.18s ease, color 0.18s ease;
@@ -2239,7 +2248,8 @@ onUnmounted(() => {
 
 .ai-panel-toggle-btn svg {
   display: block;
-  transform: translateY(1px);
+  position: relative;
+  top: 1px;
 }
 
 .ai-panel-toggle-btn:hover {
