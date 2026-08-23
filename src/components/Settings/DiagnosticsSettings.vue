@@ -55,10 +55,21 @@ const setNotifyEnabled = async (enabled: boolean) => {
   await window.electronAPI.diagnostics.setNotifyEnabled(enabled)
 }
 
+// 转储个数不参与判断：本机保留上限就是 10 个，且清理只按个数不按时间，
+// 一旦历史上崩够 10 次这个数就永久钉在 10。拿它当告警依据，等于让半年前的
+// 几次崩溃把警示色一直挂着。状态条只回答「最近是不是出事了」。
 const hasCrashRecord = computed(() => {
   const c = crash.value
   if (!c) return false
-  return c.lastExitWasCrash || c.crashesThisRun > 0 || (c.dumpCount ?? 0) > 0
+  return c.lastExitWasCrash || c.crashesThisRun > 0
+})
+
+// 转储是诊断包的内容物，个数就近说在那一行，而不是单独占一条状态
+const packageDesc = computed(() => {
+  const count = crash.value?.dumpCount ?? 0
+  return count > 0
+    ? t('aiSettings.packageRowDescWithDumps', { count })
+    : t('aiSettings.packageRowDesc')
 })
 
 const copySummary = async () => {
@@ -108,9 +119,6 @@ const revealPackage = () => {
           <span v-if="crash.crashesThisRun > 0">
             {{ t('aiSettings.crashReportThisRun', { count: crash.crashesThisRun }) }}
           </span>
-          <span v-if="crash.dumpCount">
-            {{ t('aiSettings.crashReportDumps', { count: crash.dumpCount }) }}
-          </span>
         </template>
         <span v-else>{{ t('aiSettings.crashReportHealthy') }}</span>
       </SettingNotice>
@@ -126,7 +134,7 @@ const revealPackage = () => {
 
       <SettingRow
         :label="t('aiSettings.packageRow')"
-        :desc="t('aiSettings.packageRowDesc')"
+        :desc="packageDesc"
       >
         <span v-if="packageResult?.success" class="package-result">
           {{ t('aiSettings.packageCreated', { size: packageSizeText }) }}
