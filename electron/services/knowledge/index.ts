@@ -38,7 +38,9 @@ import {
   restoreBackup as doRestoreBackup,
   deleteBackup as doDeleteBackup,
   hasCorruptionMarker,
+  clearCorruptionMarker,
   clearRestoreExhausted,
+  isRestoreExhausted,
   type BackupEntry
 } from './backup'
 
@@ -232,6 +234,17 @@ export class KnowledgeService extends EventEmitter {
       
       await this.vectorStorage.initialize(dimensions)
 
+      // 向量表读不开，且手上这批备份已经整个试过一遍都救不回来——恢复手段到此用尽。
+      // 再抱着这张表不放，只是让检索一直坏着等人去翻日志：数据确实没丢，功能一直是废的。
+      // 只丢向量这一半，BM25 与源文档是另一套数据，随后按差集把向量补回来。
+      //
+      // 必须以「备份全试过且都失败」为前提，不能只凭「读不开」。读不开不等于坏了：
+      // 另一个实例正握着这张表时它也读不开，而那张表是完好的。挨个试过备份才是能
+      // 证伪的证据；没有备份可试的时候我们手里什么都没有，猜错就毁掉用户唯一的副本。
+      if (this.skipStartupVectorRebuild && isRestoreExhausted()) {
+        await this.discardUnrecoverableVectorTable()
+      }
+
       // 初始化 BM25 索引
       await this.bm25Index.initialize()
 
@@ -260,6 +273,34 @@ export class KnowledgeService extends EventEmitter {
     }
   }
   
+  /**
+   * 确证救不回来之后，丢掉向量表让后面的差集补建把它重新长出来。
+   *
+   * 只在「读不开」且「这批备份全试过」同时成立时才走到这里——这与「一发现损坏
+   * 就推倒」是相反的处境，界线是有没有确证救不回来（见 SPEC）。
+   *
+   * 丢表失败就维持原样跳过补建：宁可继续坏着，也不能变成每次启动都重烧一遍。
+   */
+  private async discardUnrecoverableVectorTable(): Promise<void> {
+    log.warn('向量库确证无法恢复（备份已全部试过且都读不开），丢弃向量表并按源文档重建向量侧')
+    try {
+      await this.vectorStorage.clear()
+    } catch (e) {
+      log.error('丢弃损坏向量表失败，维持跳过补建以免反复重来:', e)
+      return
+    }
+    // 撤销损坏标记必须排在前面，且必须在丢表成功之后：坏表已经不在了，标记留着会让
+    // 下次启动拿旧备份把重建成果盖掉、再重烧一轮。万一进程死在这两行之间，先清标记
+    // 的顺序保证残留的是「结论还在」而不是「标记还在」——前者只是少试一次备份，
+    // 后者才是那个循环。
+    clearCorruptionMarker()
+    // 表都换了，「这批备份救不回来」的结论跟着作废，否则会挡住将来真有救时的恢复
+    clearRestoreExhausted()
+    this.lastClearReason = 'data_corrupted'
+    this.skipStartupVectorRebuild = false
+    this.emit('indexCleared', { reason: 'data_corrupted' })
+  }
+
   /**
    * 强制重建所有索引（CLI / 用户手动触发用）。
    *
@@ -318,6 +359,20 @@ export class KnowledgeService extends EventEmitter {
       this.vectorStorage.getAllDocIds(),
       Promise.resolve(this.bm25Index.getIndexedDocIds()),
     ])
+
+    // 「读不出来」不等于「里面是空的」：枚举失败同样返回空集，照着开工会把整库
+    // 判成缺失，然后往一张已经坏掉的表里重新 embed 几个小时——修不好，纯白烧。
+    // 表里明明还有 chunk 却枚举不出来时，宁可拒绝并说明原因。
+    if (vectorDocIds.size === 0 && allDocs.length >= 50) {
+      const chunkCount = await this.vectorStorage.getChunkCount()
+      if (chunkCount > 0) {
+        throw new Error(
+          `向量库有 ${chunkCount} 条数据却枚举不出内容，无法判断缺哪些文档。` +
+          `此时修复会把全部 ${allDocs.length} 篇当成缺失重新索引，既修不好也白跑。` +
+          `请先重启应用让损坏恢复流程处理。`
+        )
+      }
+    }
 
     // 找出缺失的文档（在 documentsIndex 里有但索引里没有）
     const missingDocs = allDocs.filter(

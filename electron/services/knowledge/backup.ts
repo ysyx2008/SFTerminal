@@ -76,6 +76,18 @@ export function hasCorruptionMarker(): boolean {
   return fs.existsSync(getCorruptionMarkerPath())
 }
 
+/**
+ * 撤销损坏标记：坏的那张表已经被丢掉、正按源文档重新长出来，标记再留着就是说谎。
+ *
+ * 留着的后果不是多打几行日志：下次启动会据此认定「该再试一次备份」，把刚重建好的
+ * 表改名存成现场、再拿那份读不开的旧备份盖上去，于是又得重建一遍。每轮还多吃几百兆。
+ */
+export function clearCorruptionMarker(): void {
+  try {
+    fs.unlinkSync(getCorruptionMarkerPath())
+  } catch { /* 本来就没有 */ }
+}
+
 /** 上次自动备份时间戳文件 */
 function getLastBackupMarkerPath(): string {
   return path.join(getBackupsRoot(), '.last-auto-backup')
