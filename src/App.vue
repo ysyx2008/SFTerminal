@@ -1939,6 +1939,8 @@ onUnmounted(() => {
   /* 主区第一排要给浮在其上的窗口控件让出的宽度（见 main.css「第一排契约」） */
   --shell-inset-left: 0px;
   --shell-inset-right: 0px;
+  /* 挂在窗口根上，欢迎页顶条和全屏面板（关切 / 觉醒 / 控制面板）共用，红绿灯按这个高度居中 */
+  --workbench-panel-header-height: 38px;
 }
 
 /* 侧栏收起且主区贴着窗口左沿：第一排让出左上那排常驻控件
@@ -2337,7 +2339,6 @@ onUnmounted(() => {
   overflow: hidden;
   position: relative;
   /* 最近对话侧栏 panel-header 与 AiPanel system-info-bar 共用，保证顶栏底边对齐 */
-  --workbench-panel-header-height: 38px;
   /* 壳层顶条高度跟对话顶栏走，避免再单独维护一份数字 */
   --shell-top-height: var(--workbench-panel-header-height);
 }

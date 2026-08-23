@@ -854,7 +854,8 @@ const onQrImageError = (event: Event) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--header-height);
+  /* 与欢迎页 / 壳层顶条同一行高，红绿灯按这个高度垂直居中 */
+  height: var(--workbench-panel-header-height, 38px);
   padding: 0 12px;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-tertiary);
