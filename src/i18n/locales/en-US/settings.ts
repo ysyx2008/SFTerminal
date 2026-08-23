@@ -6,10 +6,11 @@ export default {
     title: 'Control Panel',
     closeSettings: 'Close Control Panel',
     groups: {
+      preferences: 'Preferences',
       ai: 'AI',
       integration: 'Integration',
-      system: 'System',
-      security: 'Security'
+      security: 'Security',
+      system: 'System'
     },
     tabs: {
       ai: 'Models',

@@ -6,10 +6,11 @@ export default {
     title: '控制面板',
     closeSettings: '关闭控制面板',
     groups: {
+      preferences: '偏好',
       ai: 'AI',
       integration: '集成',
-      system: '系统',
-      security: '安全'
+      security: '安全',
+      system: '系统'
     },
     tabs: {
       ai: '模型',

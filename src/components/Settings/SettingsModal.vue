@@ -421,17 +421,22 @@ onUnmounted(() => {
   }
 })
 
-// Steam 版只保留「系统」分组（通用、主题、终端、数据、关于），隐藏 AI 与集成相关
+// Steam 版只留偏好 + 系统（数据、关于），隐藏 AI、集成、安全、诊断
 const tabGroups = computed(() => {
   if (isSteamBuild) {
     return [
       {
-        label: t('settings.groups.system'),
+        label: t('settings.groups.preferences'),
         tabs: [
           { id: 'general' as const, label: t('settings.tabs.general'), icon: '🧭' },
           { id: 'theme' as const, label: t('settings.tabs.theme'), icon: '🎨' },
           { id: 'terminal' as const, label: t('settings.tabs.terminal'), icon: '⚙️' },
-          { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' },
+          { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' }
+        ]
+      },
+      {
+        label: t('settings.groups.system'),
+        tabs: [
           { id: 'data' as const, label: t('settings.tabs.data'), icon: '💾' },
           { id: 'about' as const, label: t('settings.tabs.about'), icon: 'ℹ️' }
         ]
@@ -440,15 +445,12 @@ const tabGroups = computed(() => {
   }
   return [
     {
-      label: t('settings.groups.system'),
+      label: t('settings.groups.preferences'),
       tabs: [
         { id: 'general' as const, label: t('settings.tabs.general'), icon: '🧭' },
         { id: 'theme' as const, label: t('settings.tabs.theme'), icon: '🎨' },
         { id: 'terminal' as const, label: t('settings.tabs.terminal'), icon: '⚙️' },
-        { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' },
-        { id: 'data' as const, label: t('settings.tabs.data'), icon: '💾' },
-        { id: 'diagnostics' as const, label: t('settings.tabs.diagnostics'), icon: '🩺' },
-        { id: 'about' as const, label: t('settings.tabs.about'), icon: 'ℹ️' }
+        { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' }
       ]
     },
     {
@@ -479,6 +481,14 @@ const tabGroups = computed(() => {
       tabs: [
         { id: 'commandRules' as const, label: t('settings.tabs.commandRules'), icon: '🔐' },
         { id: 'riskPolicy' as const, label: t('settings.tabs.riskPolicy'), icon: '⚖️' }
+      ]
+    },
+    {
+      label: t('settings.groups.system'),
+      tabs: [
+        { id: 'data' as const, label: t('settings.tabs.data'), icon: '💾' },
+        { id: 'diagnostics' as const, label: t('settings.tabs.diagnostics'), icon: '🩺' },
+        { id: 'about' as const, label: t('settings.tabs.about'), icon: 'ℹ️' }
       ]
     }
   ]
