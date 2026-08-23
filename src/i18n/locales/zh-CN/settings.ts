@@ -8,7 +8,8 @@ export default {
     groups: {
       ai: 'AI',
       integration: '集成',
-      system: '系统'
+      system: '系统',
+      security: '安全'
     },
     tabs: {
       ai: '模型',
@@ -28,20 +29,17 @@ export default {
       terminal: '终端设置',
       shortcuts: '快捷键',
       data: '数据管理',
-      securityPermissions: '安全与权限',
+      commandRules: '命令规则',
+      riskPolicy: '风险策略',
       general: '通用',
       diagnostics: '诊断',
       about: '关于'
     },
     restartSetup: '重新运行引导',
     restartSetupConfirm: '确定要重新运行首次启动引导吗？',
+    unsavedLeave: '有未保存的更改，确定离开？未保存的修改将丢失。',
     security: {
-      subTabs: {
-        builtin: '命令规则',
-        policy: '风险策略',
-      },
       builtinRules: {
-        title: '命令与路径规则',
         description: '可补充未收录命令的风险规则；内置命令基线与系统路径只读。工作区分区可追加额外自由区并配置区外写确认。',
         argvCommands: '命令风险基线',
         argvCommandsDesc: '内置只读表。未收录命令可走上方「我的命令规则」，或由「风险策略」中的未知命令等项兜底。safe 级别只放只读命令。',
@@ -106,7 +104,6 @@ export default {
         errGeneric: '添加失败，请重试。',
       },
       riskPolicy: {
-        title: '命令风险策略',
         description: '解析失败、未知命令、间接执行、动态路径的默认风险等级，按执行模式分档；并可配置宽松模式确认阈值与子 Agent 天花板。',
         colParseFail: '解析失败',
         colParseFailTipBody: '命令字符串无法被 shell 语法正确解析（引号未闭合、括号不配、超复杂构造等），或解析后找不到任何可审计的调用。这时无法套用内置规则，只能按你设定的兜底等级处理。',
@@ -156,7 +153,6 @@ export default {
         resetPath: '恢复路径默认',
         saved: '已保存',
         unsaved: '有未保存的更改',
-        unsavedLeave: '有未保存的更改，确定离开？未保存的修改将丢失。',
         freeModeHint: '自由模式不弹确认；此处档位仅影响展示色与授权快照，默认跟随宽松配置。',
         blockedHint: '阻断是硬墙——任何执行模式下都会拒绝执行，慎用。',
       },

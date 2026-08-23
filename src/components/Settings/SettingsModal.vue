@@ -26,9 +26,11 @@ import BrowserBridgeSettings from './BrowserBridgeSettings.vue'
 import GatewaySettings from './GatewaySettings.vue'
 import IMSettings from './IMSettings.vue'
 import BastionSettings from './BastionSettings.vue'
-import UserAllowlistSettings from './UserAllowlistSettings.vue'
+import CommandRulesSettings from './CommandRulesSettings.vue'
+import RiskPolicySettings from './RiskPolicySettings.vue'
 import ShortcutSettings from './ShortcutSettings.vue'
 import PluginSettings from './PluginSettings.vue'
+import { provideUnsavedGuard } from './composables/useUnsavedGuard'
 import sailfishLogo from '../../../resources/logo.png'
 
 const { t, locale } = useI18n()
@@ -47,7 +49,7 @@ const emit = defineEmits<{
 
 const configStore = useConfigStore()
 
-type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'browserBridge' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'securityPermissions' | 'general' | 'voice' | 'diagnostics' | 'about'
+type SettingsTab = 'ai' | 'aiRules' | 'mcp' | 'plugins' | 'skills' | 'knowledge' | 'email' | 'calendar' | 'im' | 'bastion' | 'gateway' | 'browserBridge' | 'theme' | 'terminal' | 'shortcuts' | 'data' | 'commandRules' | 'riskPolicy' | 'general' | 'voice' | 'diagnostics' | 'about'
 // 默认选中「通用」（__STEAM_BUILD__ 由 vite define 注入）
 const isSteamBuild = __STEAM_BUILD__
 const activeTab = ref<SettingsTab>('general')
@@ -348,7 +350,7 @@ const handleKeydown = (e: KeyboardEvent) => {
       e.stopImmediatePropagation()
       showConfirmDialog.value = false
     } else {
-      emit('close')
+      void requestClose()
     }
   }
 }
@@ -361,7 +363,7 @@ let unsubscribeUpdater: (() => void) | null = null
 
 // Steam 版仅保留 general/theme/terminal/data/about，其它 initialTab 均 fallback 到 theme
 const STEAM_TABS: SettingsTab[] = ['general', 'theme', 'terminal', 'shortcuts', 'data', 'about']
-const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'browserBridge', 'bastion', 'theme', 'terminal', 'shortcuts', 'data', 'securityPermissions', 'general', 'voice', 'diagnostics', 'about']
+const ALL_TABS: SettingsTab[] = ['ai', 'aiRules', 'mcp', 'plugins', 'skills', 'knowledge', 'email', 'calendar', 'im', 'gateway', 'browserBridge', 'bastion', 'theme', 'terminal', 'shortcuts', 'data', 'commandRules', 'riskPolicy', 'general', 'voice', 'diagnostics', 'about']
 
 const applyInitialTab = (tabName?: string) => {
   if (tabName && ALL_TABS.includes(tabName as SettingsTab)) {
@@ -371,7 +373,8 @@ const applyInitialTab = (tabName?: string) => {
 }
 
 // 设置已打开时，外部通过菜单切换 tab（如"关于"），需要响应 prop 变化
-watch(() => props.initialTab, (newTab) => {
+watch(() => props.initialTab, async (newTab) => {
+  if (newTab && newTab !== activeTab.value && !(await confirmLeaveIfDirty())) return
   applyInitialTab(newTab)
 })
 
@@ -444,7 +447,6 @@ const tabGroups = computed(() => {
         { id: 'terminal' as const, label: t('settings.tabs.terminal'), icon: '⚙️' },
         { id: 'shortcuts' as const, label: t('settings.tabs.shortcuts'), icon: '⌨️' },
         { id: 'data' as const, label: t('settings.tabs.data'), icon: '💾' },
-        { id: 'securityPermissions' as const, label: t('settings.tabs.securityPermissions'), icon: '🔐' },
         { id: 'diagnostics' as const, label: t('settings.tabs.diagnostics'), icon: '🩺' },
         { id: 'about' as const, label: t('settings.tabs.about'), icon: 'ℹ️' }
       ]
@@ -471,9 +473,41 @@ const tabGroups = computed(() => {
         { id: 'bastion' as const, label: t('settings.tabs.bastion'), icon: '🛡️' }
         // 插件页先不进菜单：生态没起来之前给用户看空列表没意义。页面和后端都留着。
       ]
+    },
+    {
+      label: t('settings.groups.security'),
+      tabs: [
+        { id: 'commandRules' as const, label: t('settings.tabs.commandRules'), icon: '🔐' },
+        { id: 'riskPolicy' as const, label: t('settings.tabs.riskPolicy'), icon: '⚖️' }
+      ]
     }
   ]
 })
+
+// 少数几页（风险策略这类）要求显式点保存，切走前得问一声，否则改动无声就没了
+const unsavedGuard = provideUnsavedGuard()
+
+async function confirmLeaveIfDirty(): Promise<boolean> {
+  if (!unsavedGuard.hasUnsaved()) return true
+  const confirmed = await showConfirm({
+    type: 'warning',
+    title: t('common.confirm'),
+    message: t('settings.unsavedLeave'),
+  })
+  if (confirmed) unsavedGuard.reset()
+  return confirmed
+}
+
+const switchTab = async (tab: SettingsTab) => {
+  if (tab === activeTab.value) return
+  if (!(await confirmLeaveIfDirty())) return
+  activeTab.value = tab
+}
+
+const requestClose = async () => {
+  if (!(await confirmLeaveIfDirty())) return
+  emit('close')
+}
 
 const restartSetup = async () => {
   const confirmed = await showConfirm({
@@ -570,7 +604,7 @@ const onQrImageError = (event: Event) => {
     <div ref="modalRef" class="settings-modal settings-scope" tabindex="-1">
       <div class="settings-header">
         <h2>{{ t('settings.title') }}</h2>
-        <button class="btn-icon btn-icon-header" @click="emit('close')" :title="t('settings.closeSettings')">
+        <button class="btn-icon btn-icon-header" @click="requestClose" :title="t('settings.closeSettings')">
           <X :size="18" />
         </button>
       </div>
@@ -583,7 +617,7 @@ const onQrImageError = (event: Event) => {
               :key="tab.id"
               class="nav-item"
               :class="{ active: activeTab === tab.id }"
-              @click="activeTab = tab.id"
+              @click="switchTab(tab.id)"
             >
               <span class="nav-icon">{{ tab.icon }}</span>
               <span>{{ tab.label }}</span>
@@ -600,9 +634,10 @@ const onQrImageError = (event: Event) => {
           <KnowledgeSettings v-else-if="activeTab === 'knowledge'" />
           <EmailSettings v-else-if="activeTab === 'email'" />
           <CalendarSettings v-else-if="activeTab === 'calendar'" />
-          <IMSettings v-else-if="activeTab === 'im'" @close="emit('close')" />
+          <IMSettings v-else-if="activeTab === 'im'" @close="requestClose" />
           <BastionSettings v-else-if="activeTab === 'bastion'" />
-          <UserAllowlistSettings v-else-if="activeTab === 'securityPermissions'" />
+          <CommandRulesSettings v-else-if="activeTab === 'commandRules'" />
+          <RiskPolicySettings v-else-if="activeTab === 'riskPolicy'" />
           <GatewaySettings v-else-if="activeTab === 'gateway'" />
           <BrowserBridgeSettings v-else-if="activeTab === 'browserBridge'" />
           <ThemeSettings v-else-if="activeTab === 'theme'" />

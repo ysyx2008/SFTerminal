@@ -93,7 +93,7 @@ const panelStyle = computed(() => ({
     ref="triggerEl"
     type="button"
     class="sf-help-trigger"
-    :class="{ 'is-open': open }"
+    :class="{ 'is-open': open, 'is-icon-only': !label }"
     :aria-expanded="open"
     @click.stop="toggle"
   >
@@ -133,6 +133,12 @@ const panelStyle = computed(() => ({
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+/* 只有图标时左右留白必须相等，否则挤在表头或标签旁边会明显偏心 */
+.sf-help-trigger.is-icon-only {
+  padding: 2px;
+  border-radius: var(--radius-full);
 }
 
 .sf-help-trigger:hover,

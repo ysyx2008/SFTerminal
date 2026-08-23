@@ -8,7 +8,8 @@ export default {
     groups: {
       ai: 'AI',
       integration: 'Integration',
-      system: 'System'
+      system: 'System',
+      security: 'Security'
     },
     tabs: {
       ai: 'Models',
@@ -28,20 +29,17 @@ export default {
       terminal: 'Terminal',
       shortcuts: 'Shortcuts',
       data: 'Data',
-      securityPermissions: 'Security & Permissions',
+      commandRules: 'Command Rules',
+      riskPolicy: 'Risk Policy',
       general: 'General',
       diagnostics: 'Diagnostics',
       about: 'About'
     },
     restartSetup: 'Restart Setup Wizard',
     restartSetupConfirm: 'Are you sure you want to restart the setup wizard?',
+    unsavedLeave: 'You have unsaved changes. Leave anyway? Unsaved changes will be lost.',
     security: {
-      subTabs: {
-        builtin: 'Command Rules',
-        policy: 'Risk Policy',
-      },
       builtinRules: {
-        title: 'Command & Path Rules',
         description: 'Add risk rules for unlisted commands; built-in baselines and system paths are read-only. Workspace zones let you add free directories and configure outside-write confirmation.',
         argvCommands: 'Command Risk Baseline',
         argvCommandsDesc: 'Built-in read-only table. For unlisted commands, use My Command Rules above, or fall back to Risk Policy (unknown command, etc.). The safe tier is for read-only commands only.',
@@ -106,7 +104,6 @@ export default {
         errGeneric: 'Failed to add. Please try again.',
       },
       riskPolicy: {
-        title: 'Command Risk Policy',
         description: 'Default risk levels for parse-fail, unknown commands, indirection, and dynamic paths—per execution mode. Also configure Relaxed confirm threshold and sub-agent ceiling.',
         colParseFail: 'Parse Fail',
         colParseFailTipBody: 'The command string cannot be parsed as valid shell (unclosed quotes, mismatched brackets, exotic constructs), or parsing yields no auditable call. Built-in rules cannot apply, so this fallback level is used.',
@@ -156,7 +153,6 @@ export default {
         resetPath: 'Reset Path Defaults',
         saved: 'Saved',
         unsaved: 'Unsaved changes',
-        unsavedLeave: 'You have unsaved changes. Leave anyway? Your edits will be lost.',
         freeModeHint: 'Free mode never confirms; the level here only affects display color and allowlist snapshots, defaulting to the Relaxed config.',
         blockedHint: 'Blocked is a hard wall—it rejects execution in any mode, use with caution.',
       },
