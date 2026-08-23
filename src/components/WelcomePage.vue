@@ -471,8 +471,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  /* 只留最小呼吸量，居中交给 .welcome-content 的 auto 外边距 */
-  padding: 40px 20px;
+  /* 居中交给 .welcome-content 的 auto 外边距，这里只管四边的最小呼吸量。
+     左右这 40px 平时是空转的（内容被 760px 上限锁住、居中留白更宽），
+     只在面板窄到顶着上限时才真的收进来——而那正是内容会贴着边缘的场合。 */
+  padding: 40px;
 }
 
 .welcome-content {
