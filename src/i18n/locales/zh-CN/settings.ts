@@ -542,7 +542,7 @@ export default {
     openAiDebugLogDir: '打开 AI 对话日志目录',
     // 崩溃诊断
     crashReport: '崩溃诊断',
-    crashReportDesc: '软件崩溃时会自动留下现场，交给我们即可排查。',
+    crashReportDesc: '要找我们反馈问题时，从这里取现场资料。平时不用管——软件崩溃会自动留下现场，并在下次启动时主动提示你。',
     crashSummaryRow: '崩溃摘要',
     crashSummaryRowDesc: '脱敏后的纯文本，不含主机名、账号名与对话内容，可直接粘贴发给我们',
     packageRow: '完整诊断包',
@@ -552,7 +552,6 @@ export default {
     logFilesRowDesc: '日志按日期分文件保存，自动保留 30 天',
     generate: '生成',
     copied: '已复制',
-    crashReportHealthy: '最近没有崩溃记录',
     crashReportLastCrash: '上次未正常退出（当时版本 {version}）',
     crashReportConsecutive: '连续异常退出 {count} 次',
     crashReportThisRun: '本次运行崩溃 {count} 次',

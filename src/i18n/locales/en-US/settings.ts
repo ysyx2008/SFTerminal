@@ -542,7 +542,7 @@ export default {
     openAiDebugLogDir: 'Open AI Conversation Log Directory',
     // Crash diagnostics
     crashReport: 'Crash Diagnostics',
-    crashReportDesc: 'Crashes are recorded automatically — just send the record over and we can investigate.',
+    crashReportDesc: 'Grab what we need here when you report a problem. You normally never come here — crashes are recorded automatically and we prompt you on the next launch.',
     crashSummaryRow: 'Crash summary',
     crashSummaryRowDesc: 'Redacted plain text with no hostname, account name or conversations — paste it straight to us',
     packageRow: 'Full diagnostics package',
@@ -552,7 +552,6 @@ export default {
     logFilesRowDesc: 'Logs are split by date and kept for 30 days',
     generate: 'Generate',
     copied: 'Copied',
-    crashReportHealthy: 'No recent crashes',
     crashReportLastCrash: 'Last session did not exit normally (version {version})',
     crashReportConsecutive: '{count} consecutive abnormal exits',
     crashReportThisRun: '{count} crashes this session',

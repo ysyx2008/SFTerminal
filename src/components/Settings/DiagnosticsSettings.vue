@@ -108,19 +108,16 @@ const revealPackage = () => {
 <template>
   <SettingsPage :title="t('settings.tabs.diagnostics')">
     <SettingsGroup :title="t('aiSettings.crashReport')" :desc="t('aiSettings.crashReportDesc')">
-      <SettingNotice v-if="crash" :tone="hasCrashRecord ? 'warn' : 'neutral'">
-        <template v-if="hasCrashRecord">
-          <span v-if="crash.lastExitWasCrash">
-            {{ t('aiSettings.crashReportLastCrash', { version: crash.previousVersion || '?' }) }}
-          </span>
-          <span v-if="crash.consecutiveCrashCount > 1">
-            {{ t('aiSettings.crashReportConsecutive', { count: crash.consecutiveCrashCount }) }}
-          </span>
-          <span v-if="crash.crashesThisRun > 0">
-            {{ t('aiSettings.crashReportThisRun', { count: crash.crashesThisRun }) }}
-          </span>
-        </template>
-        <span v-else>{{ t('aiSettings.crashReportHealthy') }}</span>
+      <SettingNotice v-if="hasCrashRecord" tone="warn">
+        <span v-if="crash?.lastExitWasCrash">
+          {{ t('aiSettings.crashReportLastCrash', { version: crash.previousVersion || '?' }) }}
+        </span>
+        <span v-if="(crash?.consecutiveCrashCount ?? 0) > 1">
+          {{ t('aiSettings.crashReportConsecutive', { count: crash!.consecutiveCrashCount }) }}
+        </span>
+        <span v-if="(crash?.crashesThisRun ?? 0) > 0">
+          {{ t('aiSettings.crashReportThisRun', { count: crash!.crashesThisRun }) }}
+        </span>
       </SettingNotice>
 
       <SettingRow
