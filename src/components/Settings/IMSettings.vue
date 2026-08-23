@@ -525,19 +525,15 @@ function cancelFreeMode() {
 </script>
 
 <template>
-  <SettingsPage>
-    <!-- 平台卡片各自成盒，外面不再套一层卡片 -->
-    <SettingsGroup
-      variant="plain"
-      :title="t('settings.im.title')"
-      :desc="t('settings.im.description')"
-    >
-      <template #actions>
-        <a class="guide-doc-link" :href="t('settings.im.guideDocUrl')" target="_blank" rel="noopener noreferrer">
-          {{ t('settings.im.guideDocLink') }} ↗
-        </a>
-      </template>
+  <SettingsPage :title="t('settings.tabs.im')" :desc="t('settings.im.description')">
+    <template #actions>
+      <a class="guide-doc-link" :href="t('settings.im.guideDocUrl')" target="_blank" rel="noopener noreferrer">
+        {{ t('settings.im.guideDocLink') }} ↗
+      </a>
+    </template>
 
+    <!-- 平台卡片各自成盒，外面不再套一层卡片 -->
+    <SettingsGroup variant="plain" :title="t('settings.im.groupChannels')">
       <!-- 微信 -->
       <div class="im-platform-card" :class="{ expanded: wechatExpanded, connected: wxConnected }">
         <button class="im-platform-header" @click="wechatExpanded = !wechatExpanded">
@@ -995,13 +991,9 @@ function cancelFreeMode() {
         </div>
       </div>
 
-      <div class="security-note">
-        {{ t('settings.im.securityNote') }}
-      </div>
     </SettingsGroup>
 
-    <!-- 运行模式 -->
-    <SettingsGroup>
+    <SettingsGroup :title="t('settings.im.groupBehavior')">
       <SettingRow
         :label="t('settings.im.executionMode')"
         :desc="t('settings.im.executionModeDesc')"
@@ -1224,15 +1216,6 @@ function cancelFreeMode() {
   background: rgba(88, 166, 255, 0.1);
 }
 
-.security-note {
-  font-size: 12px;
-  color: var(--color-warning);
-  line-height: 1.5;
-  padding: 8px 12px;
-  background: rgba(var(--color-warning-rgb), 0.06);
-  border-radius: 6px;
-  border-left: 3px solid rgba(var(--color-warning-rgb), 0.4);
-}
 
 /* IM 平台卡片 */
 .im-platform-card {
@@ -1243,9 +1226,8 @@ function cancelFreeMode() {
   transition: border-color 0.2s;
 }
 
-.im-platform-card.connected {
-  border-color: rgba(63, 185, 80, 0.3);
-}
+/* 连接状态只由状态点表达，不借边框颜色：边框颜色在面板里专指「当前生效的那一个」，
+   两处含义撞车；且状态不止两种（还有连接中、失败），边框颜色分不过来 */
 
 .im-platform-card.expanded {
   border-color: var(--accent-primary);

@@ -337,7 +337,6 @@ export default {
       wechatOpenInBrowser: 'Open QR Page',
       wechatRescan: 'Re-scan',
       wechatLogout: 'Logout',
-      securityNote: 'Credentials are stored locally. Ensure your device is secure. Once connected, messages from IM users will be processed by the local Agent.',
       betaBadge: 'Beta',
       betaTooltip: 'This platform integration has not been fully tested and may have compatibility issues',
       autoConnect: 'Auto-connect on startup',
@@ -402,6 +401,8 @@ export default {
       guideWecomStep3: 'Get BotID and Secret',
       guideWecomStep4: 'Enter BotID and Secret above and click Connect',
       guideWecomStep5: "Supports both single chat and group chat ({'@'}bot in group)",
+      groupChannels: 'Channels',
+      groupBehavior: 'Execution & Messages',
       guideUsageTitle: 'Usage Tips',
       guideUsageDesc: 'Once connected, find the bot in your IM and send a message to start chatting. Available commands:',
       guideCommandHelp: 'Show help information',
@@ -418,6 +419,8 @@ export default {
   // AI Settings
   aiSettings: {
     title: 'AI Model Configuration',
+    groupProfiles: 'Model Profiles',
+    groupAuto: 'Automatic Switching',
     noProfiles: 'No AI model configured',
     addProfile: 'Add Profile',
     editProfile: 'Edit Profile',

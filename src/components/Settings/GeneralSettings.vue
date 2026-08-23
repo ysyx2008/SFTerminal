@@ -82,7 +82,7 @@ const onInstallOnQuitChange = async (v: boolean) => {
 </script>
 
 <template>
-  <SettingsPage>
+  <SettingsPage :title="t('settings.tabs.general')">
     <SettingsGroup :title="t('general.startupAndUpdate')">
       <SettingRow
         clickable

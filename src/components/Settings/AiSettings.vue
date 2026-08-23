@@ -378,7 +378,14 @@ const openKeyUrl = (url: string) => {
 </script>
 
 <template>
-  <SettingsPage>
+  <SettingsPage :title="t('settings.tabs.ai')">
+    <template v-if="!isSteamBuild" #actions>
+      <button class="btn btn-primary btn-sm" @click="openNewProfile">
+        <Plus :size="14" />
+        {{ t('aiSettings.addProfile') }}
+      </button>
+    </template>
+
     <!-- Steam 版：仅显示说明，不提供任何 AI/API 配置入口 -->
     <SettingsGroup v-if="isSteamBuild">
       <p class="steam-notice">{{ t('aiSettings.steamNoAiConfig') }}</p>
@@ -389,16 +396,9 @@ const openKeyUrl = (url: string) => {
       <!-- 列表项自带边框与选中态，外面不再套卡片 -->
       <SettingsGroup
         variant="plain"
-        :title="t('aiSettings.title')"
+        :title="t('aiSettings.groupProfiles')"
         :desc="t('aiSettings.apiKeyNotRequired')"
       >
-        <template #actions>
-          <button class="btn btn-primary btn-sm" @click="openNewProfile">
-            <Plus :size="14" />
-            {{ t('aiSettings.addProfile') }}
-          </button>
-        </template>
-
         <!-- 配置列表 -->
         <div class="profile-list">
           <div
@@ -638,7 +638,7 @@ const openKeyUrl = (url: string) => {
 
     <!-- 两个自动切换开关合成一组：各自独占一张卡片时，两条设置之间的空白
          比它们本身还宽，看不出是相关的一对 -->
-    <SettingsGroup v-if="!isSteamBuild">
+    <SettingsGroup v-if="!isSteamBuild" :title="t('aiSettings.groupAuto')">
       <SettingRow
         clickable
         :label="t('aiSettings.autoVisionModel')"

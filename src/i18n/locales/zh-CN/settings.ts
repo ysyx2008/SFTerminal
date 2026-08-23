@@ -337,7 +337,6 @@ export default {
       wechatOpenInBrowser: '打开扫码页面',
       wechatRescan: '重新扫码',
       wechatLogout: '退出登录',
-      securityNote: '凭证将保存在本地，请确保你的设备安全。连接后，IM 用户发送的消息将由本机 Agent 处理。',
       betaBadge: 'Beta',
       betaTooltip: '此平台集成尚未经过充分测试，可能存在兼容性问题',
       autoConnect: '启动时自动连接',
@@ -402,6 +401,8 @@ export default {
       guideWecomStep3: '获取 BotID 和 Secret',
       guideWecomStep4: '将 BotID 和 Secret 填入上方，点击连接',
       guideWecomStep5: "支持单聊和群聊（群聊中 {'@'}机器人 即可）",
+      groupChannels: '渠道',
+      groupBehavior: '执行与消息',
       guideUsageTitle: '使用提示',
       guideUsageDesc: '连接成功后，在 IM 中找到机器人直接发消息即可对话。支持以下命令：',
       guideCommandHelp: '显示帮助信息',
@@ -418,6 +419,8 @@ export default {
   // AI 配置
   aiSettings: {
     title: 'AI 模型配置',
+    groupProfiles: '模型配置',
+    groupAuto: '自动切换',
     noProfiles: '尚未配置 AI 模型',
     addProfile: '添加配置',
     editProfile: '编辑配置',
