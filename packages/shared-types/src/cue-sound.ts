@@ -11,12 +11,20 @@ export interface CueSoundSettings {
   kindEnabled: Partial<Record<CueSoundKind, boolean>>
   /** 用户替换的音频（data URL）；缺省用内置默认音 */
   custom: Partial<Record<CueSoundKind, string>>
+  /** 四声共用音量，0–1，缺省最响 */
+  volume: number
 }
 
 export const DEFAULT_CUE_SOUND_SETTINGS: CueSoundSettings = {
   enabled: true,
   kindEnabled: {},
   custom: {},
+  volume: 1,
+}
+
+export function clampCueVolume(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1
+  return Math.min(1, Math.max(0, value))
 }
 
 function allKinds(on: boolean): Record<CueSoundKind, boolean> {
@@ -43,6 +51,7 @@ export function normalizeCueSoundSettings(
     enabled: raw?.enabled !== false,
     kindEnabled,
     custom,
+    volume: clampCueVolume(raw?.volume),
   }
 }
 

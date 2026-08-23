@@ -65,6 +65,14 @@ describe('cue-sound settings switches', () => {
 
   it('defaults to all on', () => {
     expect(isCueKindEnabled('confirm', DEFAULT_CUE_SOUND_SETTINGS)).toBe(true)
+    expect(DEFAULT_CUE_SOUND_SETTINGS.volume).toBe(1)
+  })
+
+  it('clamps shared volume to 0–1 and defaults missing to full', () => {
+    expect(normalizeCueSoundSettings({}).volume).toBe(1)
+    expect(normalizeCueSoundSettings({ volume: 0.4 }).volume).toBe(0.4)
+    expect(normalizeCueSoundSettings({ volume: 1.8 }).volume).toBe(1)
+    expect(normalizeCueSoundSettings({ volume: -2 }).volume).toBe(0)
   })
 
   it('master off turns every kind off, master on turns every kind on', () => {

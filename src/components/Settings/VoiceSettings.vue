@@ -33,6 +33,25 @@ const cueEnabled = computed({
   },
 })
 
+const cueVolumeDraft = ref<number | null>(null)
+const cueVolumePercent = computed(() =>
+  cueVolumeDraft.value ?? Math.round((configStore.cueSoundSettings.volume ?? 1) * 100),
+)
+
+const onCueVolumeInput = (event: Event) => {
+  cueVolumeDraft.value = Number((event.target as HTMLInputElement).value)
+}
+
+const onCueVolumeCommit = (event: Event) => {
+  const percent = Number((event.target as HTMLInputElement).value)
+  cueVolumeDraft.value = null
+  void configStore.saveCueSoundSettings({
+    ...configStore.cueSoundSettings,
+    volume: percent / 100,
+  })
+  previewCue('complete')
+}
+
 const isKindOn = (kind: CueSoundKind) => configStore.cueSoundSettings.kindEnabled[kind] !== false
 
 const setKindOn = (kind: CueSoundKind, on: boolean) => {
@@ -436,6 +455,19 @@ function openWebSearchKeyUrl() {
         </label>
       </div>
       <p class="section-desc">{{ t('settings.cueSounds.description') }}</p>
+      <div class="form-group cue-volume-row">
+        <label class="form-label">{{ t('settings.cueSounds.volume') }}: {{ cueVolumePercent }}%</label>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          class="tts-range-slider"
+          :value="cueVolumePercent"
+          @input="onCueVolumeInput"
+          @change="onCueVolumeCommit"
+        />
+      </div>
       <div class="cue-sound-list">
         <div v-for="kind in CUE_SOUND_KINDS" :key="kind" class="cue-sound-row">
           <div class="cue-sound-label">
@@ -888,6 +920,10 @@ function openWebSearchKeyUrl() {
 }
 
 /* TTS 表单 */
+.cue-volume-row {
+  margin-top: 10px;
+}
+
 .cue-sound-list {
   display: flex;
   flex-direction: column;

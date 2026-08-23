@@ -140,11 +140,12 @@ function writeWav(filePath, { L, R }) {
 fs.mkdirSync(outDir, { recursive: true })
 
 const soft = { attack: 0.022, bodyTau: 0.22, brightTau: 0.055, air: 0.10 }
+const louder = (peak) => peak * 1.44
 
 // 完成：中音区上行大三度，像轻轻敲了两下木琴
 writeWav(path.join(outDir, 'cue-complete.wav'), render({
   duration: 0.58,
-  peak: 0.16,
+  peak: louder(0.16),
   cutoff: 2200,
   seed: 0xC0E001,
   notes: [
@@ -156,7 +157,7 @@ writeWav(path.join(outDir, 'cue-complete.wav'), render({
 // 失败：下行大三度，沉、不报警
 writeWav(path.join(outDir, 'cue-failed.wav'), render({
   duration: 0.66,
-  peak: 0.14,
+  peak: louder(0.14),
   cutoff: 1900,
   seed: 0xFA11ED,
   notes: [
@@ -168,7 +169,7 @@ writeWav(path.join(outDir, 'cue-failed.wav'), render({
 // 批准：同一音两下轻叩，短、不尖
 writeWav(path.join(outDir, 'cue-confirm.wav'), render({
   duration: 0.44,
-  peak: 0.15,
+  peak: louder(0.15),
   cutoff: 2100,
   seed: 0xC0F1A1,
   notes: [
@@ -178,7 +179,7 @@ writeWav(path.join(outDir, 'cue-confirm.wav'), render({
 }))
 
 // 联络来信：三下短句，玻璃感，跟木琴收工错开
-writeWav(path.join(outDir, 'cue-message.wav'), mixStereo(0.42, 0.14, 3100, 0x3C0DE, (t) =>
+writeWav(path.join(outDir, 'cue-message.wav'), mixStereo(0.42, louder(0.14), 3100, 0x3C0DE, (t) =>
   glass(t, 587.33, { bodyTau: 0.055, clingTau: 0.022 }) +
   0.88 * glass(t - 0.07, 739.99, { bodyTau: 0.055, clingTau: 0.022 }) +
   0.80 * glass(t - 0.14, 880.00, { bodyTau: 0.08, clingTau: 0.03 }),

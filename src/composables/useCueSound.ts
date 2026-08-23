@@ -1,4 +1,4 @@
-import { DEFAULT_CUE_SOUND_SETTINGS, isCueKindEnabled, type CueSoundKind, type CueSoundSettings } from '@shared/types'
+import { clampCueVolume, DEFAULT_CUE_SOUND_SETTINGS, isCueKindEnabled, type CueSoundKind, type CueSoundSettings } from '@shared/types'
 import completeUrl from '../../resources/sounds/cue-complete.wav'
 import failedUrl from '../../resources/sounds/cue-failed.wav'
 import confirmUrl from '../../resources/sounds/cue-confirm.wav'
@@ -43,6 +43,7 @@ export function playCueSound(kind: CueSoundKind, opts?: { force?: boolean }): vo
     current = null
   }
   const audio = new Audio(resolveUrl(kind, s))
+  audio.volume = clampCueVolume(s.volume)
   current = audio
   void audio.play().catch(() => {})
 }

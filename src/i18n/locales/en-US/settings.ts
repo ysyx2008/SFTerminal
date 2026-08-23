@@ -199,6 +199,7 @@ export default {
       fileTooLarge: 'Keep the audio under 1.5 MB',
       fileInvalid: 'Could not read that audio file',
       message: 'Companion message',
+      volume: 'Volume',
     },
     tts: {
       title: 'Text-to-Speech (TTS)',

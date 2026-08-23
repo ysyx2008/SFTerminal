@@ -199,6 +199,7 @@ export default {
       fileTooLarge: '音频不要超过 1.5 MB',
       fileInvalid: '读不了这个音频文件',
       message: '联络来信',
+      volume: '音量',
     },
     tts: {
       title: '语音合成 (TTS)',
