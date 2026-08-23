@@ -107,7 +107,7 @@ const revealPackage = () => {
 
 <template>
   <SettingsPage :title="t('settings.tabs.diagnostics')">
-    <SettingsGroup :title="t('aiSettings.crashReport')" :desc="t('aiSettings.crashReportDesc')">
+    <SettingsGroup :title="t('aiSettings.crashReport')">
       <SettingNotice v-if="hasCrashRecord" tone="warn">
         <span v-if="crash?.lastExitWasCrash">
           {{ t('aiSettings.crashReportLastCrash', { version: crash.previousVersion || '?' }) }}

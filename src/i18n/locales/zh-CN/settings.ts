@@ -542,7 +542,6 @@ export default {
     openAiDebugLogDir: '打开 AI 对话日志目录',
     // 崩溃诊断
     crashReport: '崩溃诊断',
-    crashReportDesc: '要找我们反馈问题时，从这里取现场资料。平时不用管——软件崩溃会自动留下现场，并在下次启动时主动提示你。',
     crashSummaryRow: '崩溃摘要',
     crashSummaryRowDesc: '脱敏后的纯文本，不含主机名、账号名与对话内容，可直接粘贴发给我们',
     packageRow: '完整诊断包',

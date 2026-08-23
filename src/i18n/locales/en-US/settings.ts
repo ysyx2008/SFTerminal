@@ -542,7 +542,6 @@ export default {
     openAiDebugLogDir: 'Open AI Conversation Log Directory',
     // Crash diagnostics
     crashReport: 'Crash Diagnostics',
-    crashReportDesc: 'Grab what we need here when you report a problem. You normally never come here — crashes are recorded automatically and we prompt you on the next launch.',
     crashSummaryRow: 'Crash summary',
     crashSummaryRowDesc: 'Redacted plain text with no hostname, account name or conversations — paste it straight to us',
     packageRow: 'Full diagnostics package',
