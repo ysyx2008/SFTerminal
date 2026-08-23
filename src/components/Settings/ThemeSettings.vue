@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useConfigStore } from '../../stores/config'
 import { uiThemes, type UiThemeName, sponsorUiThemes } from '../../themes/ui-themes'
 import { oemConfig } from '../../config/oem.config'
+import { SettingsPage, SettingsGroup, SettingRow, SettingToggle } from './kit'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -98,28 +99,19 @@ const getUiThemeAccentStyle = (themeName: UiThemeName) => {
 </script>
 
 <template>
-  <div class="theme-settings">
-    <!-- UI 主题选择 -->
-    <div class="settings-section">
-      <h4>{{ t('themeSettings.uiTheme') }}</h4>
-      <p class="section-desc">{{ t('themeSettings.selectUiTheme') }}</p>
+  <SettingsPage :title="t('settings.tabs.theme')" :desc="t('themeSettings.selectUiTheme')">
+    <SettingsGroup :title="t('themeSettings.groupAppearance')">
+      <SettingRow
+        clickable
+        :label="t('themeSettings.followSystem')"
+        :desc="t('themeSettings.followSystemDesc')"
+      >
+        <SettingToggle v-model="followSystem" />
+      </SettingRow>
+    </SettingsGroup>
 
-      <!-- 跟随系统外观：整块可点，保留独立卡片外观以示可交互 -->
-      <label class="follow-system-toggle">
-        <span class="follow-system-text">
-          <span class="form-label">{{ t('themeSettings.followSystem') }}</span>
-          <span class="setting-desc">{{ t('themeSettings.followSystemDesc') }}</span>
-        </span>
-        <span class="toggle-switch">
-          <input
-            type="checkbox"
-            :checked="followSystem"
-            @change="followSystem = ($event.target as HTMLInputElement).checked"
-          />
-          <span class="toggle-slider"></span>
-        </span>
-      </label>
-
+    <!-- 主题卡自带边框与选中态，外面不套卡片 -->
+    <SettingsGroup variant="plain" :title="t('themeSettings.uiTheme')">
       <div class="ui-theme-grid" :class="{ 'is-dimmed': followSystem }">
         <div
           v-for="themeName in uiThemeList"
@@ -161,62 +153,11 @@ const getUiThemeAccentStyle = (themeName: UiThemeName) => {
           </div>
         </div>
       </div>
-    </div>
-  </div>
+    </SettingsGroup>
+  </SettingsPage>
 </template>
 
 <style scoped>
-.theme-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-
-.settings-section h4 {
-  display: flex;
-  align-items: center;
-  min-height: 28px;
-  margin-bottom: 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.section-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 16px;
-  line-height: 1.5;
-}
-
-/* 跟随系统开关：开关本体走 main.css 的 .settings-scope 规范，
-   这里只保留"整块可点"的卡片外观——它是个交互控件，不是普通设置行。 */
-.follow-system-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  cursor: pointer;
-  user-select: none;
-  transition: border-color 0.2s ease;
-}
-
-.follow-system-toggle:hover {
-  border-color: var(--text-muted);
-}
-
-.follow-system-text {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-}
-
 /* UI 主题网格 */
 .ui-theme-grid {
   display: grid;

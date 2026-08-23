@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Trash2, RefreshCw, Search, Shield, ShieldAlert, FolderLock, HardDrive, Terminal, Plus, SlidersHorizontal, CircleHelp } from 'lucide-vue-next'
+import { Trash2, RefreshCw, Search, ShieldAlert, FolderLock, HardDrive, Terminal, Plus, CircleHelp } from 'lucide-vue-next'
 import type { RiskLevel, CommandRiskPolicy } from '@shared/types/agent'
 import { DEFAULT_COMMAND_RISK_POLICY } from '@shared/types/agent'
 import { showConfirm } from '../../composables/useConfirm'
+import { SettingsPage, SettingsGroup, SettingRow, SettingToggle, SettingSegmented } from './kit'
 
 type BuiltInRulesView = {
   argvCommands: Array<{
@@ -112,6 +113,11 @@ async function removeUserCommandRule(cmd: string) {
 // —— 子 tab 切换（命令规则 / 风险策略）——
 type SubTab = 'builtin' | 'policy'
 const activeSubTab = ref<SubTab>('builtin')
+
+const subTabOptions = computed(() => [
+  { value: 'builtin', label: t('settings.security.subTabs.builtin') },
+  { value: 'policy', label: t('settings.security.subTabs.policy') },
+])
 
 const builtinFilteredCommands = computed(() => {
   if (!builtinRules.value) return []
@@ -461,38 +467,21 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="user-allowlist-settings">
-    <!-- 子标签切换 -->
-    <div class="sub-tabs">
-      <button
-        class="sub-tab"
-        :class="{ active: activeSubTab === 'builtin' }"
-        @click="switchSubTab('builtin')"
-      >
-        <Shield :size="14" />
-        {{ t('settings.security.subTabs.builtin') }}
-      </button>
-      <button
-        class="sub-tab"
-        :class="{ active: activeSubTab === 'policy' }"
-        @click="switchSubTab('policy')"
-      >
-        <SlidersHorizontal :size="14" />
-        {{ t('settings.security.subTabs.policy') }}
-      </button>
-    </div>
+  <SettingsPage :title="t('settings.tabs.securityPermissions')">
+    <!-- 页内分块用与档位切换同一套控件，不另起一套标签条 -->
+    <SettingSegmented
+      :model-value="activeSubTab"
+      :options="subTabOptions"
+      @update:model-value="switchSubTab($event as 'builtin' | 'policy')"
+    />
 
     <!-- ========== 命令规则 ========== -->
-    <div v-if="activeSubTab === 'builtin'" class="sub-panel">
-      <div class="settings-section">
-        <div class="section-header">
-          <div class="header-left">
-            <Shield :size="16" class="builtin-icon" />
-            <h4>{{ t('settings.security.builtinRules.title') }}</h4>
-          </div>
-        </div>
-        <p class="section-desc">{{ t('settings.security.builtinRules.description') }}</p>
-
+    <SettingsGroup
+      v-if="activeSubTab === 'builtin'"
+      variant="plain"
+      :title="t('settings.security.builtinRules.title')"
+      :desc="t('settings.security.builtinRules.description')"
+    >
         <div class="builtin-content">
           <div v-if="builtinLoading" class="builtin-loading">
             <RefreshCw :size="24" class="spinning" />
@@ -887,13 +876,15 @@ onUnmounted(() => {
                 <div class="rule-subtitle">{{ t('settings.security.builtinRules.zoneOutside') }}</div>
                 <p class="rule-text">{{ t('settings.security.builtinRules.zoneOutsideText') }}</p>
                 <p class="rule-text muted">{{ t('settings.security.builtinRules.zoneSystemText') }}</p>
-                <label v-if="policyLoaded && !policyError" class="policy-toggle workspace-config-toggle">
-                  <input v-model="policy.outsideWritesUpgrade" type="checkbox" />
-                  <div>
-                    <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.outsideWritesUpgrade') }}</div>
-                    <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.outsideWritesUpgradeDesc') }}</div>
-                  </div>
-                </label>
+                <SettingRow
+                  v-if="policyLoaded && !policyError"
+                  clickable
+                  class="inline-row"
+                  :label="t('settings.security.riskPolicy.outsideWritesUpgrade')"
+                  :desc="t('settings.security.riskPolicy.outsideWritesUpgradeDesc')"
+                >
+                  <SettingToggle v-model="policy.outsideWritesUpgrade" />
+                </SettingRow>
               </div>
 
               <div v-if="policyLoaded && !policyError" class="rule-subblock workspace-config">
@@ -942,24 +933,20 @@ onUnmounted(() => {
             </div>
           </template>
         </div>
-      </div>
-    </div>
+    </SettingsGroup>
 
     <!-- ========== 命令风险策略 ========== -->
-    <div v-if="activeSubTab === 'policy'" class="sub-panel">
-      <div class="settings-section">
-        <div class="section-header">
-          <div class="header-left">
-            <h4>{{ t('settings.security.riskPolicy.title') }}</h4>
-          </div>
-          <div class="header-actions">
-            <button class="btn btn-sm" @click="loadPolicy" :disabled="policyLoading" :title="t('common.refresh')">
-              <RefreshCw :size="14" :class="{ spinning: policyLoading }" />
-            </button>
-          </div>
-        </div>
-
-        <p class="section-desc">{{ t('settings.security.riskPolicy.description') }}</p>
+    <template v-if="activeSubTab === 'policy'">
+      <SettingsGroup
+        variant="plain"
+        :title="t('settings.security.riskPolicy.title')"
+        :desc="t('settings.security.riskPolicy.description')"
+      >
+        <template #actions>
+          <button class="btn btn-sm" :disabled="policyLoading" :title="t('common.refresh')" @click="loadPolicy">
+            <RefreshCw :size="14" :class="{ spinning: policyLoading }" />
+          </button>
+        </template>
 
         <div v-if="policyLoading" class="empty-state">
           <RefreshCw :size="20" class="spinning" />
@@ -1038,22 +1025,6 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="policy-toggles">
-            <label class="policy-toggle">
-              <input v-model="policy.relaxedConfirmModerate" type="checkbox" />
-              <div>
-                <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.relaxedConfirmModerate') }}</div>
-                <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.relaxedConfirmModerateDesc') }}</div>
-              </div>
-            </label>
-            <label class="policy-toggle">
-              <input v-model="policy.subAgentBlockDangerous" type="checkbox" />
-              <div>
-                <div class="policy-toggle-title">{{ t('settings.security.riskPolicy.subAgentBlockDangerous') }}</div>
-                <div class="policy-toggle-desc">{{ t('settings.security.riskPolicy.subAgentBlockDangerousDesc') }}</div>
-              </div>
-            </label>
-          </div>
         </div>
 
         <div v-if="!policyLoading && !policyError" class="policy-actions">
@@ -1070,11 +1041,31 @@ onUnmounted(() => {
           <span v-if="policySaved" class="policy-saved">{{ t('settings.security.riskPolicy.saved') }}</span>
           <span v-else-if="policyUnsaved" class="policy-unsaved">{{ t('settings.security.riskPolicy.unsaved') }}</span>
         </div>
+      </SettingsGroup>
 
-        <p class="rule-text muted">{{ t('settings.security.riskPolicy.freeModeHint') }}</p>
-        <p class="rule-text muted">{{ t('settings.security.riskPolicy.blockedHint') }}</p>
-      </div>
-    </div>
+      <SettingsGroup
+        v-if="!policyLoading && !policyError"
+        :title="t('settings.security.riskPolicy.groupExtras')"
+      >
+        <SettingRow
+          clickable
+          :label="t('settings.security.riskPolicy.relaxedConfirmModerate')"
+          :desc="t('settings.security.riskPolicy.relaxedConfirmModerateDesc')"
+        >
+          <SettingToggle v-model="policy.relaxedConfirmModerate" />
+        </SettingRow>
+        <SettingRow
+          clickable
+          :label="t('settings.security.riskPolicy.subAgentBlockDangerous')"
+          :desc="t('settings.security.riskPolicy.subAgentBlockDangerousDesc')"
+        >
+          <SettingToggle v-model="policy.subAgentBlockDangerous" />
+        </SettingRow>
+      </SettingsGroup>
+
+      <p class="rule-text muted">{{ t('settings.security.riskPolicy.freeModeHint') }}</p>
+      <p class="rule-text muted">{{ t('settings.security.riskPolicy.blockedHint') }}</p>
+    </template>
 
     <Teleport to="body">
       <div
@@ -1095,51 +1086,14 @@ onUnmounted(() => {
         </ul>
       </div>
     </Teleport>
-  </div>
+  </SettingsPage>
 </template>
 
 <style scoped>
-.user-allowlist-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-/* —— 子标签切换（对齐 SkillSettings）—— */
-.sub-tabs {
-  display: flex;
-  gap: 4px;
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 4px;
-}
-
-.sub-tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.sub-tab:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
-.sub-tab.active {
-  color: var(--text-primary);
-  background: var(--bg-secondary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+/* 嵌在说明段落里的单行设置：不画卡片分隔线，靠上下留白与正文分开 */
+.inline-row {
+  margin-top: var(--sp-2);
+  border-bottom: none;
 }
 
 .tab-badge {
@@ -1150,31 +1104,6 @@ onUnmounted(() => {
   border-radius: 10px;
 }
 
-.sub-panel {
-  display: flex;
-  flex-direction: column;
-}
-
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  margin-bottom: 8px;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h4 {
-  font-size: 14px;
-  font-weight: 600;
-  margin: 0;
-}
 
 .count-badge {
   font-size: 11px;
@@ -1183,22 +1112,6 @@ onUnmounted(() => {
   background: var(--accent-primary);
   color: var(--accent-contrast);
   font-weight: 500;
-}
-
-.header-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.builtin-icon {
-  color: var(--accent-primary);
-}
-
-.section-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 16px;
-  line-height: 1.5;
 }
 
 .toolbar {
@@ -2113,13 +2026,6 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 
-.section-desc {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin: 0 0 8px 0;
-  line-height: 1.5;
-}
-
 .add-entry-form {
   display: flex;
   gap: 8px;
@@ -2192,40 +2098,6 @@ onUnmounted(() => {
   gap: 16px;
 }
 
-.policy-toggles {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.policy-toggle {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  cursor: pointer;
-  padding: 10px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-}
-
-.policy-toggle input {
-  margin-top: 3px;
-}
-
-.policy-toggle-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.policy-toggle-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 2px;
-  line-height: 1.4;
-}
-
 .policy-free-dirs {
   padding: 10px 12px;
   border: 1px solid var(--border-color);
@@ -2238,10 +2110,6 @@ onUnmounted(() => {
   margin-top: 4px;
   padding-top: 12px;
   border-top: 1px dashed var(--border-color);
-}
-
-.workspace-config-toggle {
-  margin-top: 10px;
 }
 
 .workspace-policy-actions {

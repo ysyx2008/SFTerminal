@@ -3,6 +3,15 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { CrashSummary, DiagnosticsPackageResult } from '@sailfish/shared-types'
 import { useConfigStore } from '../../stores/config'
+import type { LogLevel } from '../../utils/logger'
+import {
+  SettingsPage,
+  SettingsGroup,
+  SettingRow,
+  SettingToggle,
+  SettingSelect,
+  SettingNotice,
+} from './kit'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -23,6 +32,14 @@ const copied = ref(false)
 const creatingPackage = ref(false)
 const packageResult = ref<DiagnosticsPackageResult | null>(null)
 const notifyEnabled = ref(true)
+
+const logLevelOptions = [
+  { value: 'debug', label: 'Debug' },
+  { value: 'info', label: 'Info' },
+  { value: 'warn', label: 'Warn' },
+  { value: 'error', label: 'Error' },
+  { value: 'silent', label: 'Silent' },
+]
 
 onMounted(async () => {
   const [summary, enabled] = await Promise.all([
@@ -78,17 +95,9 @@ const revealPackage = () => {
 </script>
 
 <template>
-  <div class="diagnostics-settings">
-    <!-- 崩溃诊断 -->
-    <div class="settings-section">
-      <div class="section-header">
-        <h4>{{ t('aiSettings.crashReport') }}</h4>
-      </div>
-      <p class="section-desc">
-        {{ t('aiSettings.crashReportDesc') }}
-      </p>
-
-      <div v-if="crash" class="crash-status" :class="{ 'crash-status--alert': hasCrashRecord }">
+  <SettingsPage :title="t('settings.tabs.diagnostics')">
+    <SettingsGroup :title="t('aiSettings.crashReport')" :desc="t('aiSettings.crashReportDesc')">
+      <SettingNotice v-if="crash" :tone="hasCrashRecord ? 'warn' : 'neutral'">
         <template v-if="hasCrashRecord">
           <span v-if="crash.lastExitWasCrash">
             {{ t('aiSettings.crashReportLastCrash', { version: crash.previousVersion || '?' }) }}
@@ -104,218 +113,94 @@ const revealPackage = () => {
           </span>
         </template>
         <span v-else>{{ t('aiSettings.crashReportHealthy') }}</span>
-      </div>
+      </SettingNotice>
 
-      <div class="log-dir-actions">
-        <button class="open-log-dir-btn open-log-dir-btn--primary" @click="copySummary">
-          {{ copied ? t('aiSettings.crashSummaryCopied') : t('aiSettings.copyCrashSummary') }}
+      <SettingRow
+        :label="t('aiSettings.crashSummaryRow')"
+        :desc="t('aiSettings.crashSummaryRowDesc')"
+      >
+        <button class="btn btn-sm" @click="copySummary">
+          {{ copied ? t('aiSettings.copied') : t('common.copy') }}
         </button>
-        <button class="open-log-dir-btn" :disabled="creatingPackage" @click="createPackage">
-          {{ creatingPackage ? t('aiSettings.creatingPackage') : t('aiSettings.createDiagnosticsPackage') }}
+      </SettingRow>
+
+      <SettingRow
+        :label="t('aiSettings.packageRow')"
+        :desc="t('aiSettings.packageRowDesc')"
+      >
+        <span v-if="packageResult?.success" class="package-result">
+          {{ t('aiSettings.packageCreated', { size: packageSizeText }) }}
+          <button class="link-btn" @click="revealPackage">{{ t('aiSettings.revealPackage') }}</button>
+        </span>
+        <span v-else-if="packageResult && !packageResult.success" class="package-result is-error">
+          {{ t('aiSettings.packageFailed', { error: packageResult.error || '' }) }}
+        </span>
+        <button class="btn btn-sm" :disabled="creatingPackage" @click="createPackage">
+          {{ creatingPackage ? t('aiSettings.creatingPackage') : t('aiSettings.generate') }}
         </button>
-      </div>
+      </SettingRow>
 
-      <p v-if="packageResult?.success" class="package-result">
-        {{ t('aiSettings.packageCreated', { size: packageSizeText }) }}
-        <button class="link-btn" @click="revealPackage">{{ t('aiSettings.revealPackage') }}</button>
-      </p>
-      <p v-else-if="packageResult && !packageResult.success" class="package-result package-result--error">
-        {{ t('aiSettings.packageFailed', { error: packageResult.error || '' }) }}
-      </p>
+      <SettingRow clickable :label="t('aiSettings.crashNotify')">
+        <SettingToggle :model-value="notifyEnabled" @update:model-value="setNotifyEnabled" />
+      </SettingRow>
+    </SettingsGroup>
 
-      <div class="crash-notify-row">
-        <span>{{ t('aiSettings.crashNotify') }}</span>
-        <label class="toggle-switch">
-          <input
-            type="checkbox"
-            :checked="notifyEnabled"
-            @change="setNotifyEnabled(($event.target as HTMLInputElement).checked)"
-          />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>
+    <SettingsGroup :title="t('aiSettings.logLevel')">
+      <SettingRow
+        :label="t('aiSettings.logLevel')"
+        :desc="t('aiSettings.logLevelDesc')"
+      >
+        <SettingSelect
+          :model-value="configStore.logLevel"
+          :options="logLevelOptions"
+          @update:model-value="configStore.setLogLevel($event as LogLevel)"
+        />
+      </SettingRow>
 
-    <!-- Agent 调试模式 -->
-    <div class="settings-section">
-      <div class="section-header">
-        <h4>{{ t('aiSettings.agentDebugMode') }}</h4>
-        <label class="toggle-switch">
-          <input
-            type="checkbox"
-            :checked="debugMode"
-            @change="configStore.setAgentDebugMode(($event.target as HTMLInputElement).checked)"
-          />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p class="section-desc">
-        {{ t('aiSettings.agentDebugModeDesc') }}
-      </p>
-    </div>
+      <SettingRow
+        :label="t('aiSettings.logFilesRow')"
+        :desc="t('aiSettings.logFilesRowDesc')"
+      >
+        <button class="btn btn-sm" @click="openLogDir">{{ t('aiSettings.openLogDir') }}</button>
+        <button class="btn btn-sm" @click="openAiDebugLogDir">{{ t('aiSettings.openAiDebugLogDir') }}</button>
+      </SettingRow>
 
-    <!-- 日志级别 -->
-    <div class="settings-section">
-      <div class="section-header">
-        <h4>{{ t('aiSettings.logLevel') }}</h4>
-        <select
-          class="log-level-select"
-          :value="configStore.logLevel"
-          @change="configStore.setLogLevel(($event.target as HTMLSelectElement).value as import('../../utils/logger').LogLevel)"
-        >
-          <option value="debug">Debug</option>
-          <option value="info">Info</option>
-          <option value="warn">Warn</option>
-          <option value="error">Error</option>
-          <option value="silent">Silent</option>
-        </select>
-      </div>
-      <p class="section-desc">
-        {{ t('aiSettings.logLevelDesc') }}
-      </p>
-      <div class="log-dir-actions">
-        <button class="open-log-dir-btn" @click="openLogDir">
-          {{ t('aiSettings.openLogDir') }}
-        </button>
-        <button class="open-log-dir-btn" @click="openAiDebugLogDir">
-          {{ t('aiSettings.openAiDebugLogDir') }}
-        </button>
-      </div>
-    </div>
-  </div>
+      <SettingRow
+        clickable
+        :label="t('aiSettings.agentDebugMode')"
+        :desc="t('aiSettings.agentDebugModeDesc')"
+      >
+        <SettingToggle
+          :model-value="debugMode"
+          @update:model-value="configStore.setAgentDebugMode"
+        />
+      </SettingRow>
+    </SettingsGroup>
+  </SettingsPage>
 </template>
 
 <style scoped>
-.diagnostics-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  margin-bottom: 8px;
-}
-
-.section-header h4 {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.section-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 16px;
-  line-height: 1.5;
-}
-
-/* 开关走 main.css 的 .settings-scope 规范，本页不再重复定义 */
-
-.log-level-select {
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border-color, #555);
-  background: var(--bg-secondary, #2a2a2a);
-  color: var(--text-primary, #e0e0e0);
-  font-size: 13px;
-  cursor: pointer;
-  outline: none;
-}
-
-.log-level-select:focus {
-  border-color: var(--accent-primary);
-}
-
-.open-log-dir-btn {
-  margin-top: 8px;
-  padding: 4px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border-color, #555);
-  background: var(--bg-secondary, #2a2a2a);
-  color: var(--text-secondary, #aaa);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.open-log-dir-btn:hover {
-  background: var(--bg-hover, #333);
-  color: var(--text-primary, #e0e0e0);
-  border-color: var(--accent-primary);
-}
-
-.log-dir-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.open-log-dir-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.open-log-dir-btn--primary {
-  border-color: var(--accent-primary);
-  color: var(--text-primary, #e0e0e0);
-}
-
-.crash-status {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  padding: 8px 10px;
-  margin-bottom: 12px;
-  border-radius: 6px;
-  background: var(--bg-secondary, #2a2a2a);
-  font-size: 12px;
-  color: var(--text-secondary, #aaa);
-}
-
-.crash-status--alert {
-  color: var(--text-primary, #e0e0e0);
-  border-left: 3px solid var(--color-warning, #e0a030);
-}
-
 .package-result {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--text-secondary, #aaa);
+  font-size: var(--fs-desc);
+  color: var(--text-secondary);
 }
 
-.package-result--error {
-  color: var(--color-danger, #e05252);
+.package-result.is-error {
+  color: var(--color-error);
 }
 
 .link-btn {
+  margin-left: var(--sp-2);
+  padding: 0;
+  font-family: inherit;
+  font-size: var(--fs-desc);
+  color: var(--accent-primary);
   background: none;
   border: none;
-  padding: 0;
-  font-size: 12px;
-  color: var(--accent-primary);
   cursor: pointer;
 }
 
 .link-btn:hover {
   text-decoration: underline;
-}
-
-.crash-notify-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-color, #444);
-  font-size: 12px;
-  color: var(--text-secondary, #aaa);
 }
 </style>

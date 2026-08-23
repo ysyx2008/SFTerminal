@@ -1,7 +1,16 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfigStore, type LocalEncoding } from '../../stores/config'
+import {
+  SettingsPage,
+  SettingsGroup,
+  SettingRow,
+  SettingToggle,
+  SettingSelect,
+  SettingSlider,
+  SettingSegmented,
+} from './kit'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -53,115 +62,72 @@ const encodingOptions: LocalEncoding[] = [
   'koi8-r',
   'windows-1251'
 ]
+
+const encodingSelectOptions = computed(() =>
+  encodingOptions.map((enc) => ({ value: enc, label: t(`terminalSettings.encodings.${enc}`) }))
+)
+
+const cursorStyleOptions = computed(() =>
+  (['block', 'underline', 'bar'] as const).map((style) => ({
+    value: style,
+    label: t(`terminalSettings.cursorStyles.${style}`),
+  }))
+)
+
+const aiPanelPositionOptions = computed(() =>
+  (['left', 'right'] as const).map((pos) => ({
+    value: pos,
+    label: t(`terminalSettings.aiPanelPositions.${pos}`),
+  }))
+)
 </script>
 
 <template>
-  <div class="terminal-settings">
-    <div class="settings-section">
-      <h4>{{ t('terminalSettings.title') }}</h4>
-      
-      <div class="form-group">
-        <label class="form-label">{{ t('terminalSettings.fontSize') }}</label>
-        <div class="slider-group">
-          <input
-            v-model.number="settings.fontSize"
-            type="range"
-            min="10"
-            max="24"
-            step="1"
-            class="slider"
-          />
-          <span class="slider-value">{{ settings.fontSize }}px</span>
-        </div>
-      </div>
+  <SettingsPage :title="t('settings.tabs.terminal')">
+    <SettingsGroup :title="t('terminalSettings.groupAppearance')">
+      <SettingRow :label="t('terminalSettings.fontSize')">
+        <SettingSlider v-model="settings.fontSize" :min="10" :max="24" suffix="px" />
+      </SettingRow>
 
-      <div class="form-group">
-        <label class="form-label">{{ t('terminalSettings.fontFamily') }}</label>
-        <select v-model="settings.fontFamily" class="select">
-          <option v-for="font in fontFamilies" :key="font.value" :value="font.value">
-            {{ font.label }}
-          </option>
-        </select>
-      </div>
+      <SettingRow :label="t('terminalSettings.fontFamily')">
+        <SettingSelect v-model="settings.fontFamily" :options="fontFamilies" />
+      </SettingRow>
 
-      <div class="form-group">
-        <label class="form-label">{{ t('terminalSettings.cursorStyle') }}</label>
-        <div class="radio-group">
-          <label class="radio-item">
-            <input v-model="settings.cursorStyle" type="radio" value="block" />
-            <span class="cursor-preview block"></span>
-            <span>{{ t('terminalSettings.cursorStyles.block') }}</span>
-          </label>
-          <label class="radio-item">
-            <input v-model="settings.cursorStyle" type="radio" value="underline" />
-            <span class="cursor-preview underline"></span>
-            <span>{{ t('terminalSettings.cursorStyles.underline') }}</span>
-          </label>
-          <label class="radio-item">
-            <input v-model="settings.cursorStyle" type="radio" value="bar" />
-            <span class="cursor-preview bar"></span>
-            <span>{{ t('terminalSettings.cursorStyles.bar') }}</span>
-          </label>
-        </div>
-      </div>
+      <SettingRow :label="t('terminalSettings.cursorStyle')">
+        <SettingSegmented v-model="settings.cursorStyle" :options="cursorStyleOptions" />
+      </SettingRow>
 
-      <div class="form-group">
-        <label class="checkbox-item">
-          <input v-model="settings.cursorBlink" type="checkbox" />
-          <span>{{ t('terminalSettings.cursorBlink') }}</span>
-        </label>
-      </div>
+      <SettingRow clickable :label="t('terminalSettings.cursorBlink')">
+        <SettingToggle v-model="settings.cursorBlink" />
+      </SettingRow>
 
-      <div class="form-group">
-        <label class="checkbox-item">
-          <input v-model="settings.commandHighlight" type="checkbox" />
-          <span>{{ t('terminalSettings.commandHighlight') }}</span>
-        </label>
-        <p class="form-hint">{{ t('terminalSettings.commandHighlightHint') }}</p>
-      </div>
+      <SettingRow
+        clickable
+        :label="t('terminalSettings.commandHighlight')"
+        :desc="t('terminalSettings.commandHighlightHint')"
+      >
+        <SettingToggle v-model="settings.commandHighlight" />
+      </SettingRow>
+    </SettingsGroup>
 
-      <div class="form-group form-group-divider">
-        <label class="form-label">{{ t('terminalSettings.scrollback') }}</label>
-        <div class="slider-group">
-          <input
-            v-model.number="settings.scrollback"
-            type="range"
-            min="1000"
-            max="50000"
-            step="1000"
-            class="slider"
-          />
-          <span class="slider-value">{{ settings.scrollback }}</span>
-        </div>
-      </div>
+    <SettingsGroup :title="t('terminalSettings.groupBehavior')">
+      <SettingRow :label="t('terminalSettings.scrollback')">
+        <SettingSlider v-model="settings.scrollback" :min="1000" :max="50000" :step="1000" />
+      </SettingRow>
 
-      <div class="form-group">
-        <label class="form-label">{{ t('terminalSettings.localEncoding') }}</label>
-        <select v-model="settings.localEncoding" class="select">
-          <option v-for="enc in encodingOptions" :key="enc" :value="enc">
-            {{ t(`terminalSettings.encodings.${enc}`) }}
-          </option>
-        </select>
-        <p class="form-hint">{{ t('terminalSettings.localEncodingHint') }}</p>
-      </div>
+      <SettingRow
+        :label="t('terminalSettings.localEncoding')"
+        :desc="t('terminalSettings.localEncodingHint')"
+      >
+        <SettingSelect v-model="settings.localEncoding" :options="encodingSelectOptions" />
+      </SettingRow>
 
-      <div class="form-group">
-        <label class="form-label">{{ t('terminalSettings.aiPanelPosition') }}</label>
-        <div class="radio-group">
-          <label class="radio-item">
-            <input v-model="settings.aiPanelPosition" type="radio" value="left" />
-            <span>{{ t('terminalSettings.aiPanelPositions.left') }}</span>
-          </label>
-          <label class="radio-item">
-            <input v-model="settings.aiPanelPosition" type="radio" value="right" />
-            <span>{{ t('terminalSettings.aiPanelPositions.right') }}</span>
-          </label>
-        </div>
-      </div>
-    </div>
+      <SettingRow :label="t('terminalSettings.aiPanelPosition')">
+        <SettingSegmented v-model="settings.aiPanelPosition" :options="aiPanelPositionOptions" />
+      </SettingRow>
+    </SettingsGroup>
 
-    <div class="settings-section preview-section">
-      <h4>{{ t('themeSettings.preview') }}</h4>
+    <SettingsGroup :title="t('themeSettings.preview')">
       <div
         class="terminal-preview"
         :style="{
@@ -181,171 +147,11 @@ const encodingOptions: LocalEncoding[] = [
           ></span>
         </div>
       </div>
-    </div>
-  </div>
+    </SettingsGroup>
+  </SettingsPage>
 </template>
 
 <style scoped>
-.terminal-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-/* 卡片本身做 grid 容器：第一列宽度 = 整卡内最长 label 的宽度，
-   配合内部 form-group 的 subgrid，让所有标签列统一对齐。 */
-.settings-section {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  column-gap: 16px;
-  row-gap: 10px;
-}
-
-/* 预览卡片只有标题和预览面板，强制单列 */
-.preview-section {
-  grid-template-columns: 1fr;
-}
-
-.settings-section h4 {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  min-height: 28px;
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.slider-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.slider {
-  flex: 1;
-  height: 4px;
-  -webkit-appearance: none;
-  background: var(--bg-surface);
-  border-radius: 2px;
-  outline: none;
-}
-
-.slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  background: var(--accent-primary);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.slider-value {
-  min-width: 60px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-}
-
-.radio-group {
-  display: flex;
-  gap: 16px;
-}
-
-.radio-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.cursor-preview {
-  width: 10px;
-  height: 16px;
-  background: var(--accent-primary);
-}
-
-.cursor-preview.block {
-  width: 10px;
-}
-
-.cursor-preview.underline {
-  height: 2px;
-  align-self: flex-end;
-}
-
-.cursor-preview.bar {
-  width: 2px;
-}
-
-.checkbox-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-/* 每个 form-group 跨满父 grid 的两列，并继承父级列定义（subgrid），
-   这样不同 form-group 的标签列宽度统一对齐。 */
-.form-group {
-  display: grid;
-  grid-template-columns: subgrid;
-  grid-column: 1 / -1;
-  align-items: center;
-  row-gap: 4px;
-  margin: 0;
-}
-
-.form-label {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-/* checkbox 没有外部 label，整行占满 */
-.form-group > .checkbox-item {
-  grid-column: 1 / -1;
-}
-
-/* hint 与控件同列，紧贴控件下方 */
-.form-group > .form-hint {
-  grid-column: 2;
-}
-
-/* checkbox 行已跨满两列，对应的 hint 也要跨满整行，
-   并左缩进与 checkbox 文字对齐（checkbox 13px + gap 8px ≈ 21px） */
-.form-group > .checkbox-item + .form-hint {
-  grid-column: 1 / -1;
-  padding-left: 21px;
-}
-
-.select {
-  padding: 6px 10px;
-  font-size: 13px;
-  background: var(--bg-secondary);
-  border-radius: 6px;
-  width: 100%;
-  min-width: 0;
-}
-
-.form-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin: 0;
-}
-
-/* 视觉分隔：把"外观"和"行为"两组配置分开 */
-.form-group-divider {
-  border-top: 1px solid var(--border-color);
-  padding-top: 10px;
-  margin-top: 4px;
-}
-
-/* 预览 */
 .terminal-preview {
   background: var(--bg-primary);
   padding: 16px;

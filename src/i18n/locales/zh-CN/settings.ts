@@ -141,6 +141,7 @@ export default {
         tipExamplesLabel: '例如',
         strictDesc: '所有命令都需确认；此处档位用于展示色',
         relaxedDesc: '默认仅危险/阻断需确认；此处档位决定是否弹确认',
+        groupExtras: '附加规则',
         relaxedConfirmModerate: '宽松模式下要求确认中风险命令',
         relaxedConfirmModerateDesc: '开启后，宽松模式会对中风险命令弹出确认；安全命令仍自动执行。',
         outsideWritesUpgrade: '写入工作区外时需确认',
@@ -540,7 +541,15 @@ export default {
     openAiDebugLogDir: '打开 AI 对话日志目录',
     // 崩溃诊断
     crashReport: '崩溃诊断',
-    crashReportDesc: '软件崩溃时会自动留下现场。「复制崩溃摘要」是脱敏后的纯文本，不含主机名、账号名与对话内容，可直接粘贴发给我们；「生成完整诊断包」另含崩溃转储（崩溃瞬间的内存快照，可能带有本机路径等信息），排查疑难问题时再发',
+    crashReportDesc: '软件崩溃时会自动留下现场，交给我们即可排查。',
+    crashSummaryRow: '崩溃摘要',
+    crashSummaryRowDesc: '脱敏后的纯文本，不含主机名、账号名与对话内容，可直接粘贴发给我们',
+    packageRow: '完整诊断包',
+    packageRowDesc: '另含崩溃转储（崩溃瞬间的内存快照，可能带有本机路径等信息），排查疑难问题时再发',
+    logFilesRow: '日志文件',
+    logFilesRowDesc: '日志按日期分文件保存，自动保留 30 天',
+    generate: '生成',
+    copied: '已复制',
     crashReportHealthy: '未发现崩溃记录',
     crashReportLastCrash: '上次未正常退出（当时版本 {version}）',
     crashReportConsecutive: '连续异常退出 {count} 次',
@@ -936,6 +945,10 @@ export default {
   shortcutSettings: {
     title: '快捷键',
     description: '自定义应用快捷键。点击快捷键区域后按下新的组合键即可修改。',
+    groupOpen: '打开与新建',
+    groupView: '界面切换',
+    groupPane: '终端窗格',
+    groupOther: '其他',
     actions: {
       newLocalTerminal: '打开本机终端',
       newAssistantTab: '新建（终端里开终端，其他地方开新对话）',
@@ -972,6 +985,8 @@ export default {
 
   // 终端设置
   terminalSettings: {
+    groupAppearance: '外观',
+    groupBehavior: '行为',
     title: '终端设置',
     fontSize: '字体大小',
     fontFamily: '字体',
@@ -1016,6 +1031,7 @@ export default {
     title: '终端主题',
     selectTheme: '选择终端配色方案',
     preview: '预览',
+    groupAppearance: '外观',
     uiTheme: '界面主题',
     selectUiTheme: '选择应用界面的配色风格，终端会自动融入整体风格',
     followSystem: '跟随系统外观',
@@ -1146,6 +1162,13 @@ export default {
     restoreErrNested: '备份文件不能位于当前数据目录内部',
     restoreErrMigrationPending: '数据目录迁移尚未完成，请稍后再试',
     // 清理历史
+    currentLocation: '当前位置',
+    startAction: '开始',
+    chooseFile: '选择文件',
+    cleanupOldRecords: '清理旧记录',
+    days30: '30 天前',
+    days90: '90 天前',
+    clearAllDesc: '删除全部历史记录，不可恢复',
     cleanupHistory: '清理历史',
     cleanup30Days: '清理 30 天前',
     cleanup90Days: '清理 90 天前',

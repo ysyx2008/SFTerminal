@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfigStore, DEFAULT_KEYBOARD_SHORTCUTS, type KeyboardShortcuts } from '../../stores/config'
 import { showConfirm } from '../../composables/useConfirm'
+import { SettingsPage, SettingsGroup, SettingRow, SettingNotice } from './kit'
 
 const { t } = useI18n()
 const configStore = useConfigStore()
@@ -34,6 +35,34 @@ const allActions: ShortcutAction[] = ([
   'splitVertical',
   'closePane',
 ] as ShortcutAction[]).filter(a => !isSteamBuild || !AI_ACTIONS.includes(a))
+
+// 按用途分组：十几条快捷键平铺成一堵墙，找不到想改的那条
+const ACTION_GROUPS: ReadonlyArray<{ titleKey: string; actions: ShortcutAction[] }> = [
+  {
+    titleKey: 'shortcutSettings.groupOpen',
+    actions: ['newAssistantTab', 'newLocalTerminal', 'newSshConnection', 'openFileManager', 'batchCommand', 'openSettings'],
+  },
+  {
+    titleKey: 'shortcutSettings.groupView',
+    actions: ['toggleSidebar', 'toggleAiPanel', 'toggleKnowledge', 'navBack', 'navForward'],
+  },
+  {
+    titleKey: 'shortcutSettings.groupPane',
+    actions: ['splitHorizontal', 'splitVertical', 'closePane', 'clearTerminal'],
+  },
+  {
+    titleKey: 'shortcutSettings.groupOther',
+    actions: ['voiceInput', 'aiDebugConsole'],
+  },
+]
+
+// Steam 版会过滤掉部分动作，整组空掉就不显示
+const visibleGroups = computed(() =>
+  ACTION_GROUPS.map((g) => ({
+    titleKey: g.titleKey,
+    actions: g.actions.filter((a) => allActions.includes(a)),
+  })).filter((g) => g.actions.length > 0)
+)
 
 const HOLD_KEY_ACTIONS: ShortcutAction[] = ['voiceInput']
 
@@ -214,202 +243,80 @@ function isActionModified(action: ShortcutAction): boolean {
 </script>
 
 <template>
-  <div class="shortcut-settings">
-    <div class="settings-section">
-      <div class="section-header">
-        <h4>{{ t('shortcutSettings.title') }}</h4>
-        <button
-          v-if="isModified"
-          class="btn-reset-all"
-          @click="resetAll"
-        >
-          {{ t('shortcutSettings.resetAll') }}
-        </button>
-      </div>
-      <p class="section-desc">{{ t('shortcutSettings.description') }}</p>
+  <SettingsPage :title="t('shortcutSettings.title')" :desc="t('shortcutSettings.description')">
+    <template v-if="isModified" #actions>
+      <button class="btn btn-sm" @click="resetAll">{{ t('shortcutSettings.resetAll') }}</button>
+    </template>
 
-      <div v-if="conflictMessage" class="conflict-alert">
-        {{ conflictMessage }}
-      </div>
+    <SettingNotice v-if="conflictMessage" tone="warn">{{ conflictMessage }}</SettingNotice>
 
-      <div class="shortcut-list">
-      <div
-        v-for="action in allActions"
+    <SettingsGroup
+      v-for="group in visibleGroups"
+      :key="group.titleKey"
+      :title="t(group.titleKey)"
+    >
+      <SettingRow
+        v-for="action in group.actions"
         :key="action"
-        class="shortcut-row"
-        :class="{ modified: isActionModified(action) }"
+        :label="t(`shortcutSettings.actions.${action}`)"
+        :desc="isHoldKeyAction(action) && configStore.keyboardShortcuts[action] ? t('shortcutSettings.holdToTalk') : undefined"
       >
-          <div class="shortcut-label-wrap">
-            <span
-              class="shortcut-label"
-              :title="isVoiceInput(action) ? t('shortcutSettings.voiceInputHint') : undefined"
-            >{{ t(`shortcutSettings.actions.${action}`) }}</span>
-            <span v-if="isHoldKeyAction(action) && configStore.keyboardShortcuts[action]" class="shortcut-hint">{{ t('shortcutSettings.holdToTalk') }}</span>
-          </div>
-          <div class="shortcut-right">
-            <div class="shortcut-actions">
-              <button
-                v-if="configStore.keyboardShortcuts[action]"
-                class="btn-action"
-                :title="t('shortcutSettings.clear')"
-                @click="clearShortcut(action, $event)"
-              >✕</button>
-              <button
-                v-if="isActionModified(action)"
-                class="btn-action btn-reset"
-                :title="t('shortcutSettings.reset')"
-                @click="resetShortcut(action, $event)"
-              >↺</button>
-            </div>
-            <div
-              class="shortcut-recorder"
-              :class="{
-                recording: recordingAction === action,
-                empty: !configStore.keyboardShortcuts[action],
-              }"
-              tabindex="0"
-              @click="startRecording(action)"
-              @keydown="handleKeydown($event, action)"
-            >
-              <template v-if="recordingAction === action">
-                <span class="recording-text">{{ isHoldKeyAction(action) ? t('shortcutSettings.recordingModifier') : t('shortcutSettings.recording') }}</span>
-              </template>
-              <template v-else-if="configStore.keyboardShortcuts[action]">
-                <span class="keycap-group">
-                  <kbd
-                    v-for="(key, i) in acceleratorToKeys(configStore.keyboardShortcuts[action])"
-                    :key="i"
-                    class="keycap"
-                  >{{ key }}</kbd>
-                </span>
-              </template>
-              <template v-else-if="isVoiceInput(action)">
-                <span class="empty-text">{{ t('shortcutSettings.voiceInputOff') }}</span>
-              </template>
-              <template v-else>
-                <span class="empty-text">{{ t('shortcutSettings.clickToSet') }}</span>
-              </template>
-            </div>
-          </div>
+        <button
+          v-if="configStore.keyboardShortcuts[action]"
+          class="btn-action"
+          :title="t('shortcutSettings.clear')"
+          @click="clearShortcut(action, $event)"
+        >✕</button>
+        <button
+          v-if="isActionModified(action)"
+          class="btn-action btn-reset"
+          :title="t('shortcutSettings.reset')"
+          @click="resetShortcut(action, $event)"
+        >↺</button>
+        <div
+          class="shortcut-recorder"
+          :class="{
+            recording: recordingAction === action,
+            empty: !configStore.keyboardShortcuts[action],
+          }"
+          tabindex="0"
+          :title="isVoiceInput(action) ? t('shortcutSettings.voiceInputHint') : undefined"
+          @click="startRecording(action)"
+          @keydown="handleKeydown($event, action)"
+        >
+          <template v-if="recordingAction === action">
+            <span class="recording-text">{{ isHoldKeyAction(action) ? t('shortcutSettings.recordingModifier') : t('shortcutSettings.recording') }}</span>
+          </template>
+          <template v-else-if="configStore.keyboardShortcuts[action]">
+            <span class="keycap-group">
+              <kbd
+                v-for="(key, i) in acceleratorToKeys(configStore.keyboardShortcuts[action])"
+                :key="i"
+                class="keycap"
+              >{{ key }}</kbd>
+            </span>
+          </template>
+          <template v-else-if="isVoiceInput(action)">
+            <span class="empty-text">{{ t('shortcutSettings.voiceInputOff') }}</span>
+          </template>
+          <template v-else>
+            <span class="empty-text">{{ t('shortcutSettings.clickToSet') }}</span>
+          </template>
         </div>
-      </div>
-    </div>
-  </div>
+      </SettingRow>
+    </SettingsGroup>
+  </SettingsPage>
 </template>
 
 <style scoped>
-.shortcut-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  margin-bottom: 8px;
-}
-
-.section-header h4 {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.section-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin-bottom: 16px;
-}
-
-.btn-reset-all {
-  flex-shrink: 0;
-  padding: 5px 12px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  white-space: nowrap;
-  margin-top: 2px;
-}
-
-.btn-reset-all:hover {
-  color: var(--text-primary);
-  border-color: var(--text-muted);
-  background: var(--bg-hover);
-}
-
-.shortcut-list {
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.shortcut-row {
-  display: flex;
-  align-items: center;
-  padding: 0 14px;
-  height: 40px;
-  transition: background 0.1s ease;
-}
-
-.shortcut-row + .shortcut-row {
-  border-top: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
-}
-
-.shortcut-row:hover {
-  background: var(--bg-hover);
-}
-
-.shortcut-label-wrap {
-  flex: 1;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
-.shortcut-label {
-  font-size: 13px;
-  color: var(--text-primary);
-}
-
-.shortcut-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-  opacity: 0.7;
-}
-
-.shortcut-row.modified .shortcut-label-wrap .shortcut-label {
-  color: var(--accent-primary);
-}
-
-.shortcut-right {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* 操作按钮 */
-.shortcut-actions {
-  display: flex;
-  gap: 1px;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-
-.shortcut-row:hover .shortcut-actions {
+/* 清除 / 恢复默认：平时藏起来，指到这一行才浮现，避免十几行按钮抢注意力 */
+:deep(.sf-row):hover .btn-action,
+.btn-action:focus-visible {
   opacity: 1;
 }
 
 .btn-action {
+  opacity: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -517,13 +424,5 @@ function isActionModified(action: ShortcutAction): boolean {
 }
 
 /* 冲突提示 */
-.conflict-alert {
-  margin-bottom: 10px;
-  padding: 8px 12px;
-  font-size: 12px;
-  color: var(--color-warning);
-  background: rgba(var(--color-warning-rgb), 0.08);
-  border: 1px solid rgba(var(--color-warning-rgb), 0.15);
-  border-radius: 6px;
-}
+
 </style>

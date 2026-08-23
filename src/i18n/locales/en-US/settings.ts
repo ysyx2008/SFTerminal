@@ -141,6 +141,7 @@ export default {
         tipExamplesLabel: 'Examples',
         strictDesc: 'All commands require confirmation; the level here sets display color',
         relaxedDesc: 'By default only dangerous/blocked require confirmation; the level here decides whether to prompt',
+        groupExtras: 'Extra Rules',
         relaxedConfirmModerate: 'In Relaxed mode, also confirm medium-risk commands',
         relaxedConfirmModerateDesc: 'When on, Relaxed also prompts for medium-risk commands; safe commands still run automatically.',
         outsideWritesUpgrade: 'Confirm writes outside workspace',
@@ -540,7 +541,15 @@ export default {
     openAiDebugLogDir: 'Open AI Conversation Log Directory',
     // Crash diagnostics
     crashReport: 'Crash Diagnostics',
-    crashReportDesc: 'Crashes are recorded automatically. "Copy Crash Summary" gives redacted plain text with no hostname, account name or conversations — paste it straight to us. "Create Full Package" also includes crash dumps (memory snapshots taken at crash time, which may contain local paths), so send that one only for hard-to-diagnose issues',
+    crashReportDesc: 'Crashes are recorded automatically — just send the record over and we can investigate.',
+    crashSummaryRow: 'Crash summary',
+    crashSummaryRowDesc: 'Redacted plain text with no hostname, account name or conversations — paste it straight to us',
+    packageRow: 'Full diagnostics package',
+    packageRowDesc: 'Also includes crash dumps (memory snapshots taken at crash time, which may contain local paths); send this one only for hard-to-diagnose issues',
+    logFilesRow: 'Log files',
+    logFilesRowDesc: 'Logs are split by date and kept for 30 days',
+    generate: 'Generate',
+    copied: 'Copied',
     crashReportHealthy: 'No crashes recorded',
     crashReportLastCrash: 'Last session did not exit normally (version {version})',
     crashReportConsecutive: '{count} consecutive abnormal exits',
@@ -936,6 +945,10 @@ export default {
   shortcutSettings: {
     title: 'Keyboard Shortcuts',
     description: 'Customize application shortcuts. Click a shortcut area and press a new key combination to change it.',
+    groupOpen: 'Open & Create',
+    groupView: 'Views',
+    groupPane: 'Terminal Panes',
+    groupOther: 'Other',
     actions: {
       newLocalTerminal: 'Open Local Terminal',
       newAssistantTab: 'New (terminal here, new chat elsewhere)',
@@ -972,6 +985,8 @@ export default {
 
   // Terminal Settings
   terminalSettings: {
+    groupAppearance: 'Appearance',
+    groupBehavior: 'Behavior',
     title: 'Terminal Settings',
     fontSize: 'Font Size',
     fontFamily: 'Font Family',
@@ -1016,6 +1031,7 @@ export default {
     title: 'Terminal Theme',
     selectTheme: 'Select terminal color scheme',
     preview: 'Preview',
+    groupAppearance: 'Appearance',
     uiTheme: 'UI Theme',
     selectUiTheme: 'Select interface color style, terminal colors will auto-sync',
     followSystem: 'Follow system appearance',
@@ -1146,6 +1162,13 @@ export default {
     restoreErrNested: 'Backup file cannot be inside the current data directory',
     restoreErrMigrationPending: 'A data-directory migration is still pending; try again later',
     // Cleanup History
+    currentLocation: 'Current location',
+    startAction: 'Start',
+    chooseFile: 'Choose file…',
+    cleanupOldRecords: 'Clean up old records',
+    days30: 'Older than 30 days',
+    days90: 'Older than 90 days',
+    clearAllDesc: 'Deletes every history record. This cannot be undone.',
     cleanupHistory: 'Cleanup History',
     cleanup30Days: 'Clean 30 days ago',
     cleanup90Days: 'Clean 90 days ago',

@@ -2,13 +2,14 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
-import { Bot, HardDrive, CalendarRange, FolderOpen, History, Download, Upload, Trash2, Clock, AlertTriangle, Search, X, ChevronDown, ChevronRight, ExternalLink, Monitor, Server, Coins, ArrowUpRight, ArrowDownLeft, Zap, FolderSymlink, RotateCcw, FileClock, Terminal } from 'lucide-vue-next'
+import { Bot, HardDrive, CalendarRange, History, Download, Upload, Clock, AlertTriangle, Search, X, ChevronDown, ChevronRight, ExternalLink, Monitor, Server, Coins, ArrowUpRight, ArrowDownLeft, Zap, FolderSymlink, RotateCcw, Terminal } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const isSteamBuild = __STEAM_BUILD__
 
 import type { AgentRecord } from '@shared/types'
 import { showConfirm } from '../../composables/useConfirm'
+import { SettingsPage, SettingsGroup, SettingRow, SettingInput, SettingNotice } from './kit'
 
 // 存储统计
 const storageStats = ref<{
@@ -596,31 +597,21 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="data-settings">
-    <!-- 页面标题 -->
-    <div class="section page-intro">
-      <div class="section-header">
-        <h4>{{ t('dataSettings.title') }}</h4>
-      </div>
-      <p class="section-desc">{{ t('dataSettings.description') }}</p>
-    </div>
-
-    <!-- 消息提示 -->
+  <SettingsPage :title="t('dataSettings.title')" :desc="t('dataSettings.description')">
     <Transition name="msg">
-      <div v-if="message" class="message" :class="message.type">
+      <SettingNotice v-if="message" :tone="message.type === 'error' ? 'danger' : 'success'">
         {{ message.text }}
-      </div>
+      </SettingNotice>
     </Transition>
-    
-    <!-- Token 用量统计 -->
-    <div v-if="!isSteamBuild" class="section">
-      <div class="section-header">
-        <Coins :size="15" class="section-icon" />
-        <h4>{{ t('dataSettings.tokenUsage') }}</h4>
-      </div>
-      
+
+    <!-- Token 用量：内容是一排数据卡，外面不再套卡片 -->
+    <SettingsGroup
+      v-if="!isSteamBuild"
+      variant="plain"
+      :title="t('dataSettings.tokenUsage')"
+      :footnote="t('dataSettings.tokenUsageHint')"
+    >
       <div v-if="tokenUsageStats && hasTokenData" class="token-usage-section">
-        <!-- 时段卡片 -->
         <div class="token-period-grid">
           <div v-for="period in [
             { key: 'today', data: tokenUsageStats.today, iconClass: 'today' },
@@ -641,14 +632,13 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 每日明细（可折叠） -->
         <div v-if="tokenUsageStats.daily.length > 0" class="token-daily-section">
           <button class="btn btn-ghost token-daily-toggle" @click="showDailyDetail = !showDailyDetail">
             <ChevronDown v-if="showDailyDetail" :size="14" />
             <ChevronRight v-else :size="14" />
             {{ t('dataSettings.tokenDailyDetail') }}
           </button>
-          
+
           <Transition name="slide">
             <div v-if="showDailyDetail" class="token-daily-table-wrap">
               <table class="token-daily-table">
@@ -677,22 +667,22 @@ onUnmounted(() => {
           </Transition>
         </div>
       </div>
-      
+
       <div v-else-if="tokenUsageStats" class="token-empty">
         <Coins :size="24" class="empty-icon" />
         <span>{{ t('dataSettings.tokenNoData') }}</span>
       </div>
       <div v-else class="loading">{{ t('dataSettings.loading') }}</div>
-      
-      <p class="hint">{{ t('dataSettings.tokenUsageHint') }}</p>
-    </div>
+    </SettingsGroup>
 
-    <!-- 存储统计 -->
-    <div class="section">
-      <div class="section-header">
-        <HardDrive :size="15" class="section-icon" />
-        <h4>{{ t('dataSettings.storageStats') }}</h4>
-      </div>
+    <!-- 存储统计：同上，内容本身是一排数据卡 -->
+    <SettingsGroup variant="plain" :title="t('dataSettings.storageStats')">
+      <template v-if="!isSteamBuild" #actions>
+        <button class="btn btn-sm" @click="openHistoryViewer">
+          <History :size="14" />
+          {{ t('dataSettings.viewHistory') }}
+        </button>
+      </template>
       <div v-if="storageStats" class="stats-grid">
         <div v-if="!isSteamBuild" class="stat-card stat-agent">
           <div class="stat-icon-wrap agent">
@@ -734,174 +724,118 @@ onUnmounted(() => {
         </div>
       </div>
       <div v-else class="loading">{{ t('dataSettings.loading') }}</div>
-      
-      <button v-if="!isSteamBuild" class="btn btn-ghost view-history-btn" @click="openHistoryViewer">
-        <History :size="15" />
-        {{ t('dataSettings.viewHistory') }}
-      </button>
-    </div>
-    
+    </SettingsGroup>
+
     <!-- 数据目录 -->
-    <div class="section">
-      <div class="section-header">
-        <FolderOpen :size="15" class="section-icon" />
-        <h4>{{ t('dataSettings.dataDirectory') }}</h4>
-        <span v-if="isCustomDataDir" class="custom-badge">{{ t('dataSettings.customBadge') }}</span>
-      </div>
-      <div class="data-path-card">
+    <SettingsGroup :title="t('dataSettings.dataDirectory')">
+      <template v-if="isCustomDataDir" #actions>
+        <span class="custom-badge">{{ t('dataSettings.customBadge') }}</span>
+      </template>
+      <SettingRow stacked :label="t('dataSettings.currentLocation')" :desc="t('dataSettings.dataDirHint')">
         <code class="path-text">{{ dataPath }}</code>
-        <button class="btn btn-sm btn-icon" @click="openDataFolder" :title="t('dataSettings.openFolder')" :aria-label="t('dataSettings.openFolder')">
+        <button class="btn btn-sm btn-icon" :title="t('dataSettings.openFolder')" :aria-label="t('dataSettings.openFolder')" @click="openDataFolder">
           <ExternalLink :size="14" />
         </button>
-      </div>
-      <div class="datadir-actions">
-        <button class="btn btn-outline" @click="changeDataDir" :disabled="isMigratingDataDir">
+        <button class="btn btn-sm" :disabled="isMigratingDataDir" @click="changeDataDir">
           <FolderSymlink :size="14" />
           {{ t('dataSettings.changeDir') }}
         </button>
-        <button v-if="isCustomDataDir" class="btn btn-outline" @click="resetDataDir" :disabled="isMigratingDataDir">
+        <button v-if="isCustomDataDir" class="btn btn-sm" :disabled="isMigratingDataDir" @click="resetDataDir">
           <RotateCcw :size="14" />
           {{ t('dataSettings.resetDir') }}
         </button>
-      </div>
-      <p class="hint">{{ t('dataSettings.dataDirHint') }}</p>
-    </div>
+      </SettingRow>
+    </SettingsGroup>
 
     <!-- 命令行工具 sailfish（macOS） -->
-    <div v-if="isDarwin" class="section">
-      <div class="section-header">
-        <Terminal :size="15" class="section-icon" />
-        <h4>{{ t('dataSettings.shellCli') }}</h4>
-      </div>
-      <p class="hint">{{ t('dataSettings.shellCliHint') }}</p>
-      <p v-if="shellCliStatus?.installed && shellCliStatus.shimPath" class="path-text shell-cli-status">
-        {{ t('dataSettings.shellCliInstalled', { path: shellCliStatus.shimPath }) }}
-      </p>
-      <p v-else class="hint">{{ t('dataSettings.shellCliNotInstalled') }}</p>
-      <div class="datadir-actions">
-        <button
-          v-if="!shellCliStatus?.installed"
-          class="btn btn-outline"
-          :disabled="shellCliBusy"
-          @click="installShellCli"
-        >
+    <SettingsGroup v-if="isDarwin" :title="t('dataSettings.shellCli')" :desc="t('dataSettings.shellCliHint')">
+      <SettingRow
+        label="sailfish"
+        :desc="shellCliStatus?.installed && shellCliStatus.shimPath
+          ? t('dataSettings.shellCliInstalled', { path: shellCliStatus.shimPath })
+          : t('dataSettings.shellCliNotInstalled')"
+      >
+        <button v-if="!shellCliStatus?.installed" class="btn btn-sm" :disabled="shellCliBusy" @click="installShellCli">
           <Terminal :size="14" />
           {{ t('dataSettings.shellCliInstall') }}
         </button>
-        <button
-          v-else
-          class="btn btn-outline"
-          :disabled="shellCliBusy"
-          @click="uninstallShellCli"
-        >
+        <button v-else class="btn btn-sm" :disabled="shellCliBusy" @click="uninstallShellCli">
           {{ t('dataSettings.shellCliUninstall') }}
         </button>
-      </div>
-    </div>
-    
+      </SettingRow>
+    </SettingsGroup>
+
     <!-- 完整备份 / 恢复 -->
-    <div class="section">
-      <div class="section-header">
-        <Download :size="15" class="section-icon" />
-        <h4>{{ t('dataSettings.backupRestore') }}</h4>
+    <SettingsGroup :title="t('dataSettings.backupRestore')">
+      <SettingRow :label="t('dataSettings.fullBackup')" :desc="t('dataSettings.fullBackupHint')">
+        <button
+          v-if="!backupProgress"
+          class="btn btn-sm btn-primary"
+          :disabled="isExporting || isImporting"
+          @click="startFullBackup"
+        >
+          <Download :size="14" />
+          {{ isExporting ? t('dataSettings.backupPreparing') : t('dataSettings.startAction') }}
+        </button>
+        <button v-else class="btn btn-sm" @click="cancelFullBackup">
+          {{ t('dataSettings.backupCancel') }}
+        </button>
+      </SettingRow>
+
+      <div v-if="backupProgress" class="backup-progress">
+        <div class="backup-progress-bar">
+          <div class="backup-progress-fill" :style="{ width: backupProgress.pct + '%' }" />
+        </div>
+        <div class="backup-progress-meta">
+          <span class="backup-progress-file">{{ backupProgress.file || '…' }}</span>
+          <span>
+            {{ backupProgress.pct }}%
+            <template v-if="backupProgress.totalBytes > 0">
+              · {{ formatSize(backupProgress.bytes) }} / {{ formatSize(backupProgress.totalBytes) }}
+            </template>
+          </span>
+        </div>
       </div>
 
-      <div class="backup-card">
-        <p class="hint" style="margin: 0 0 12px">{{ t('dataSettings.fullBackupHint') }}</p>
-        <div v-if="backupProgress" class="backup-progress">
-          <div class="backup-progress-bar">
-            <div class="backup-progress-fill" :style="{ width: backupProgress.pct + '%' }" />
-          </div>
-          <div class="backup-progress-meta">
-            <span class="backup-progress-file">{{ backupProgress.file || '…' }}</span>
-            <span>
-              {{ backupProgress.pct }}%
-              <template v-if="backupProgress.totalBytes > 0">
-                · {{ formatSize(backupProgress.bytes) }} / {{ formatSize(backupProgress.totalBytes) }}
-              </template>
-            </span>
-          </div>
-        </div>
-        <div class="actions">
-          <button
-            v-if="!backupProgress"
-            class="btn btn-primary"
-            :disabled="isExporting || isImporting"
-            @click="startFullBackup"
-          >
-            <Download :size="14" />
-            {{ isExporting ? t('dataSettings.backupPreparing') : t('dataSettings.fullBackup') }}
-          </button>
-          <button
-            v-else
-            class="btn"
-            @click="cancelFullBackup"
-          >
-            {{ t('dataSettings.backupCancel') }}
-          </button>
-          <button
-            class="btn"
-            :disabled="isExporting || isImporting"
-            @click="startFullRestore"
-          >
-            <Upload :size="14" />
-            {{ isImporting ? t('dataSettings.restorePreparing') : t('dataSettings.fullRestore') }}
-          </button>
-        </div>
-      </div>
-      <p class="hint">{{ t('dataSettings.fullRestoreHint') }}</p>
-    </div>
-    
+      <SettingRow :label="t('dataSettings.fullRestore')" :desc="t('dataSettings.fullRestoreHint')">
+        <button class="btn btn-sm" :disabled="isExporting || isImporting" @click="startFullRestore">
+          <Upload :size="14" />
+          {{ isImporting ? t('dataSettings.restorePreparing') : t('dataSettings.chooseFile') }}
+        </button>
+      </SettingRow>
+    </SettingsGroup>
+
     <!-- Agent 临时文件自动清理 -->
-    <div class="section">
-      <div class="section-header">
-        <FileClock :size="15" class="section-icon" />
-        <h4>{{ t('dataSettings.scratchCleanup') }}</h4>
-      </div>
-      <div class="scratch-cleanup-card">
-        <p class="scratch-desc">{{ t('dataSettings.scratchCleanupHint') }}</p>
-        <div class="scratch-input-row">
-          <label class="scratch-label">{{ t('dataSettings.scratchCleanupDays') }}</label>
-          <input
-            v-model.number="scratchCleanupDays"
-            type="number"
-            min="0"
-            max="365"
-            class="scratch-input"
-          />
-          <button class="btn btn-primary" @click="saveScratchConfig" :disabled="scratchSaving">
-            {{ t('dataSettings.scratchCleanupSaved') }}
-          </button>
-        </div>
-        <div v-if="scratchCleanupDays === 0" class="scratch-disabled-hint">
-          {{ t('dataSettings.scratchCleanupDisabled') }}
-        </div>
-      </div>
-    </div>
+    <SettingsGroup
+      :title="t('dataSettings.scratchCleanup')"
+      :footnote="scratchCleanupDays === 0 ? t('dataSettings.scratchCleanupDisabled') : undefined"
+    >
+      <SettingRow :label="t('dataSettings.scratchCleanupDays')" :desc="t('dataSettings.scratchCleanupHint')">
+        <SettingInput v-model="scratchCleanupDays" type="number" compact :min="0" :max="365" />
+        <button class="btn btn-sm btn-primary" :disabled="scratchSaving" @click="saveScratchConfig">
+          {{ t('common.save') }}
+        </button>
+      </SettingRow>
+    </SettingsGroup>
 
-    <!-- 清理 -->
-    <div class="section section-danger">
-      <div class="section-header">
-        <Trash2 :size="15" class="section-icon danger" />
-        <h4>{{ t('dataSettings.cleanupHistory') }}</h4>
-      </div>
-      <div class="cleanup-actions">
-        <button class="btn btn-outline" @click="cleanupOldRecords(30)" :disabled="isLoading">
-          <Clock :size="14" />
-          {{ t('dataSettings.cleanup30Days') }}
+    <!-- 清理历史 -->
+    <SettingsGroup :title="t('dataSettings.cleanupHistory')" :desc="t('dataSettings.cleanupHint')">
+      <SettingRow :label="t('dataSettings.cleanupOldRecords')">
+        <button class="btn btn-sm" :disabled="isLoading" @click="cleanupOldRecords(30)">
+          {{ t('dataSettings.days30') }}
         </button>
-        <button class="btn btn-outline" @click="cleanupOldRecords(90)" :disabled="isLoading">
-          <Clock :size="14" />
-          {{ t('dataSettings.cleanup90Days') }}
+        <button class="btn btn-sm" :disabled="isLoading" @click="cleanupOldRecords(90)">
+          {{ t('dataSettings.days90') }}
         </button>
-        <button class="btn btn-danger-fill" @click="cleanupOldRecords(0)" :disabled="isLoading">
+      </SettingRow>
+      <SettingRow :label="t('dataSettings.clearAll')" :desc="t('dataSettings.clearAllDesc')">
+        <button class="btn btn-sm btn-danger-fill" :disabled="isLoading" @click="cleanupOldRecords(0)">
           <AlertTriangle :size="14" />
           {{ t('dataSettings.clearAll') }}
         </button>
-      </div>
-      <p class="hint">{{ t('dataSettings.cleanupHint') }}</p>
-    </div>
-    
+      </SettingRow>
+    </SettingsGroup>
+
     <!-- 历史记录查看器弹窗 -->
     <Teleport to="body">
       <Transition name="modal">
@@ -1042,73 +976,10 @@ onUnmounted(() => {
         </div>
       </Transition>
     </Teleport>
-  </div>
+  </SettingsPage>
 </template>
 
 <style scoped>
-.data-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-/* Sections：与其他设置页一致的卡片容器 */
-.section {
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  margin-bottom: 8px;
-}
-
-.section-header h4 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.section-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin-bottom: 0;
-}
-
-.section-icon {
-  color: var(--text-muted);
-}
-
-.section-icon.danger {
-  color: var(--color-error);
-}
-
-/* Message toast */
-.message {
-  padding: 10px 14px;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  font-size: 13px;
-}
-
-.message.success {
-  background: rgba(var(--color-success-rgb), 0.1);
-  color: var(--color-success);
-  border: 1px solid rgba(var(--color-success-rgb), 0.2);
-}
-
-.message.error {
-  background: rgba(var(--color-error-rgb), 0.1);
-  color: var(--color-error);
-  border: 1px solid rgba(var(--color-error-rgb), 0.2);
-}
-
 .msg-enter-active,
 .msg-leave-active {
   transition: all 0.3s ease;
@@ -1200,24 +1071,6 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
-.view-history-btn {
-  margin-top: 14px;
-  width: 100%;
-  justify-content: center;
-  min-height: 34px;
-}
-
-/* Data path */
-.data-path-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-}
-
 .path-text {
   flex: 1;
   font-size: 12px;
@@ -1234,27 +1087,6 @@ onUnmounted(() => {
   font-weight: 500;
   background: rgba(var(--color-info-rgb), 0.12);
   color: var(--color-info);
-}
-
-.datadir-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-}
-
-.datadir-actions .btn {
-  flex: 1;
-  min-width: 140px;
-  justify-content: center;
-}
-
-/* Backup card */
-.backup-card {
-  padding: 14px;
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
 }
 
 .backup-progress {
@@ -1292,86 +1124,6 @@ onUnmounted(() => {
   white-space: nowrap;
   direction: rtl;
   text-align: left;
-}
-
-.actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.actions .btn {
-  flex: 1;
-  min-width: 160px;
-  justify-content: center;
-}
-
-/* Cleanup */
-.section-danger .cleanup-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.section-danger .cleanup-actions .btn {
-  flex: 1;
-  min-width: 150px;
-  justify-content: center;
-}
-
-/* Scratch cleanup card */
-.scratch-cleanup-card {
-  padding: 14px;
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-}
-
-.scratch-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin: 0 0 12px 0;
-}
-
-.scratch-input-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.scratch-label {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.scratch-input {
-  width: 90px;
-  padding: 6px 10px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-tertiary);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 13px;
-}
-
-.scratch-input:focus {
-  outline: none;
-  border-color: var(--accent-primary);
-}
-
-.scratch-disabled-hint {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--color-warning);
-}
-
-.hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 10px;
-  line-height: 1.5;
 }
 
 .loading {
