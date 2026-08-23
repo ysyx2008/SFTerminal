@@ -535,6 +535,7 @@ export default {
     // Agent debug mode
     agentDebugMode: 'Agent Debug Mode',
     agentDebugModeDesc: 'Show detailed tool call steps when enabled, simpler interaction when disabled',
+    groupLogging: 'Logs & Debugging',
     logLevel: 'Log Level',
     logLevelDesc: 'Controls log verbosity. Debug outputs the most, Silent suppresses all. Warn is recommended. Logs are also written to files for troubleshooting',
     openLogDir: 'Open Log Directory',
@@ -555,9 +556,6 @@ export default {
     crashReportConsecutive: '{count} consecutive abnormal exits',
     crashReportThisRun: '{count} crashes this session',
     crashReportDumps: '{count} crash dumps',
-    copyCrashSummary: 'Copy Crash Summary',
-    crashSummaryCopied: 'Copied, ready to paste',
-    createDiagnosticsPackage: 'Create Full Package',
     creatingPackage: 'Creating…',
     packageCreated: 'Package created ({size})',
     revealPackage: 'Show in Folder',
@@ -943,7 +941,6 @@ export default {
 
   // Shortcut Settings
   shortcutSettings: {
-    title: 'Keyboard Shortcuts',
     description: 'Customize application shortcuts. Click a shortcut area and press a new key combination to change it.',
     groupOpen: 'Open & Create',
     groupView: 'Views',
@@ -987,7 +984,6 @@ export default {
   terminalSettings: {
     groupAppearance: 'Appearance',
     groupBehavior: 'Behavior',
-    title: 'Terminal Settings',
     fontSize: 'Font Size',
     fontFamily: 'Font Family',
     cursorBlink: 'Cursor Blink',
@@ -1057,7 +1053,6 @@ export default {
 
   // Data Settings
   dataSettings: {
-    title: 'Data Management',
     description: 'Inspect storage usage, back up / restore all configuration and sessions, or clean up history',
     configRestoredTitle: 'Settings Restored from Backup',
     configRestoredMessage:
@@ -1170,8 +1165,6 @@ export default {
     days90: 'Older than 90 days',
     clearAllDesc: 'Deletes every history record. This cannot be undone.',
     cleanupHistory: 'Cleanup History',
-    cleanup30Days: 'Clean 30 days ago',
-    cleanup90Days: 'Clean 90 days ago',
     clearAll: 'Clear All',
     cleanupHint: 'Cleaning old records frees up storage space. This action cannot be undone.',
     // Agent scratch cleanup

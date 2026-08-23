@@ -16,8 +16,14 @@ withDefaults(
     clickable?: boolean
     /** 控件与文字上下排布，用于控件较宽（输入框、长下拉）的场景 */
     stacked?: boolean
+    /**
+     * 嵌在说明正文里的单行设置：不画分隔线、不撑到整行高度。
+     * 由组件自己提供，是因为页面从外面拿 class 压子组件的分隔线权重相同、
+     * 靠注入顺序定胜负，压不稳。
+     */
+    bare?: boolean
   }>(),
-  { clickable: false, stacked: false }
+  { clickable: false, stacked: false, bare: false }
 )
 </script>
 
@@ -25,7 +31,7 @@ withDefaults(
   <component
     :is="clickable ? 'label' : 'div'"
     class="sf-row"
-    :class="{ 'is-clickable': clickable, 'is-stacked': stacked }"
+    :class="{ 'is-clickable': clickable, 'is-stacked': stacked, 'is-bare': bare }"
   >
     <span class="sf-row-text">
       <span class="sf-row-label">{{ label }}</span>
@@ -64,6 +70,12 @@ withDefaults(
   gap: var(--sp-2);
 }
 
+.sf-row.is-bare {
+  min-height: 0;
+  padding: var(--sp-2) 0 0;
+  border-bottom: none;
+}
+
 .sf-row-text {
   display: flex;
   flex-direction: column;
@@ -96,5 +108,6 @@ withDefaults(
 
 .sf-row.is-stacked .sf-row-control {
   flex-shrink: 1;
+  flex-wrap: wrap;
 }
 </style>

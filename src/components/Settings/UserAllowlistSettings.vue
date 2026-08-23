@@ -879,7 +879,7 @@ onUnmounted(() => {
                 <SettingRow
                   v-if="policyLoaded && !policyError"
                   clickable
-                  class="inline-row"
+                  bare
                   :label="t('settings.security.riskPolicy.outsideWritesUpgrade')"
                   :desc="t('settings.security.riskPolicy.outsideWritesUpgradeDesc')"
                 >
@@ -1090,12 +1090,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 嵌在说明段落里的单行设置：不画卡片分隔线，靠上下留白与正文分开 */
-.inline-row {
-  margin-top: var(--sp-2);
-  border-bottom: none;
-}
-
 .tab-badge {
   font-size: 11px;
   padding: 1px 6px;

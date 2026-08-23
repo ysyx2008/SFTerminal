@@ -243,7 +243,7 @@ function isActionModified(action: ShortcutAction): boolean {
 </script>
 
 <template>
-  <SettingsPage :title="t('shortcutSettings.title')" :desc="t('shortcutSettings.description')">
+  <SettingsPage :title="t('settings.tabs.shortcuts')" :desc="t('shortcutSettings.description')">
     <template v-if="isModified" #actions>
       <button class="btn btn-sm" @click="resetAll">{{ t('shortcutSettings.resetAll') }}</button>
     </template>
@@ -258,6 +258,7 @@ function isActionModified(action: ShortcutAction): boolean {
       <SettingRow
         v-for="action in group.actions"
         :key="action"
+        :class="{ 'is-modified': isActionModified(action) }"
         :label="t(`shortcutSettings.actions.${action}`)"
         :desc="isHoldKeyAction(action) && configStore.keyboardShortcuts[action] ? t('shortcutSettings.holdToTalk') : undefined"
       >
@@ -309,6 +310,11 @@ function isActionModified(action: ShortcutAction): boolean {
 </template>
 
 <style scoped>
+/* 改过默认值的那一条要静态可辨，不能只靠悬停才浮现的按钮 */
+.is-modified :deep(.sf-row-label) {
+  color: var(--accent-primary);
+}
+
 /* 清除 / 恢复默认：平时藏起来，指到这一行才浮现，避免十几行按钮抢注意力 */
 :deep(.sf-row):hover .btn-action,
 .btn-action:focus-visible {

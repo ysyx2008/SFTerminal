@@ -25,7 +25,13 @@ const emit = defineEmits<{ 'update:modelValue': [value: string | number] }>()
 
 const onInput = (e: Event) => {
   const el = e.target as HTMLInputElement
-  emit('update:modelValue', el.type === 'number' ? Number(el.value) : el.value)
+  if (el.type !== 'number') {
+    emit('update:modelValue', el.value)
+    return
+  }
+  // 「清空准备重填」与「就是要填 0」是两件事。Number('') 会把前者变成后者，
+  // 于是用户刚删掉数字，页面就先按 0 给出反馈（如「已关闭自动清理」）。
+  emit('update:modelValue', el.value === '' ? '' : Number(el.value))
 }
 </script>
 

@@ -145,7 +145,7 @@ const revealPackage = () => {
       </SettingRow>
     </SettingsGroup>
 
-    <SettingsGroup :title="t('aiSettings.logLevel')">
+    <SettingsGroup :title="t('aiSettings.groupLogging')">
       <SettingRow
         :label="t('aiSettings.logLevel')"
         :desc="t('aiSettings.logLevelDesc')"

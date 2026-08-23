@@ -524,7 +524,7 @@ const cleanupOldRecords = async (days: number) => {
 }
 
 // ========== Agent 临时文件自动清理 ==========
-const scratchCleanupDays = ref<number>(7)
+const scratchCleanupDays = ref<number | ''>(7)
 const scratchSaving = ref(false)
 
 const loadScratchConfig = async () => {
@@ -597,7 +597,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <SettingsPage :title="t('dataSettings.title')" :desc="t('dataSettings.description')">
+  <SettingsPage :title="t('settings.tabs.data')" :desc="t('dataSettings.description')">
     <Transition name="msg">
       <SettingNotice v-if="message" :tone="message.type === 'error' ? 'danger' : 'success'">
         {{ message.text }}

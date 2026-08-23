@@ -535,6 +535,7 @@ export default {
     // 助手调试模式
     agentDebugMode: '助手调试模式',
     agentDebugModeDesc: '开启后显示详细的工具调用步骤，关闭后交互更简洁自然',
+    groupLogging: '日志与调试',
     logLevel: '日志级别',
     logLevelDesc: '控制日志输出量。Debug 输出最多，Silent 完全静默，推荐使用 Warn。日志同时写入文件便于排查问题',
     openLogDir: '打开日志目录',
@@ -555,9 +556,6 @@ export default {
     crashReportConsecutive: '连续异常退出 {count} 次',
     crashReportThisRun: '本次运行崩溃 {count} 次',
     crashReportDumps: '崩溃转储 {count} 个',
-    copyCrashSummary: '复制崩溃摘要',
-    crashSummaryCopied: '已复制，可直接粘贴',
-    createDiagnosticsPackage: '生成完整诊断包',
     creatingPackage: '生成中…',
     packageCreated: '诊断包已生成（{size}）',
     revealPackage: '打开所在文件夹',
@@ -943,7 +941,6 @@ export default {
 
   // 快捷键设置
   shortcutSettings: {
-    title: '快捷键',
     description: '自定义应用快捷键。点击快捷键区域后按下新的组合键即可修改。',
     groupOpen: '打开与新建',
     groupView: '界面切换',
@@ -987,7 +984,6 @@ export default {
   terminalSettings: {
     groupAppearance: '外观',
     groupBehavior: '行为',
-    title: '终端设置',
     fontSize: '字体大小',
     fontFamily: '字体',
     cursorBlink: '光标闪烁',
@@ -1057,7 +1053,6 @@ export default {
 
   // 数据管理
   dataSettings: {
-    title: '数据管理',
     description: '查看存储占用、备份/恢复所有配置与会话数据，或清理历史记录',
     configRestoredTitle: '配置已从备份恢复',
     configRestoredMessage:
@@ -1170,8 +1165,6 @@ export default {
     days90: '90 天前',
     clearAllDesc: '删除全部历史记录，不可恢复',
     cleanupHistory: '清理历史',
-    cleanup30Days: '清理 30 天前',
-    cleanup90Days: '清理 90 天前',
     clearAll: '清空全部',
     cleanupHint: '清理旧记录可释放存储空间，此操作不可恢复',
     // Agent 临时文件清理
