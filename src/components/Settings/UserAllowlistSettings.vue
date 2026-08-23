@@ -5,7 +5,7 @@ import { Trash2, RefreshCw, Search, ShieldAlert, FolderLock, HardDrive, Terminal
 import type { RiskLevel, CommandRiskPolicy } from '@shared/types/agent'
 import { DEFAULT_COMMAND_RISK_POLICY } from '@shared/types/agent'
 import { showConfirm } from '../../composables/useConfirm'
-import { SettingsPage, SettingsGroup, SettingRow, SettingToggle, SettingSegmented } from './kit'
+import { SettingsPage, SettingsTabs, SettingsGroup, SettingRow, SettingToggle } from './kit'
 
 type BuiltInRulesView = {
   argvCommands: Array<{
@@ -468,12 +468,13 @@ onUnmounted(() => {
 
 <template>
   <SettingsPage :title="t('settings.tabs.securityPermissions')">
-    <!-- 页内分块用与档位切换同一套控件，不另起一套标签条 -->
-    <SettingSegmented
-      :model-value="activeSubTab"
-      :options="subTabOptions"
-      @update:model-value="switchSubTab($event as 'builtin' | 'policy')"
-    />
+    <template #tabs>
+      <SettingsTabs
+        :model-value="activeSubTab"
+        :tabs="subTabOptions"
+        @update:model-value="switchSubTab($event as 'builtin' | 'policy')"
+      />
+    </template>
 
     <!-- ========== 命令规则 ========== -->
     <SettingsGroup

@@ -20,7 +20,11 @@ defineProps<{
 
 <template>
   <div class="sf-page">
-    <header v-if="title || $slots.actions" class="sf-page-head">
+    <header
+      v-if="title || $slots.actions"
+      class="sf-page-head"
+      :class="{ 'has-tabs': !!$slots.tabs }"
+    >
       <div class="sf-page-heading">
         <h2 v-if="title" class="sf-page-title">{{ title }}</h2>
         <p v-if="desc" class="sf-page-desc">{{ desc }}</p>
@@ -29,6 +33,10 @@ defineProps<{
         <slot name="actions" />
       </div>
     </header>
+
+    <div v-if="$slots.tabs" class="sf-page-tabs">
+      <slot name="tabs" />
+    </div>
 
     <div class="sf-page-groups">
       <slot />
@@ -50,6 +58,15 @@ defineProps<{
   /* 与首个分组之间留得比组间距更宽，页头才不会被读成又一个分组 */
   margin-bottom: var(--sp-6);
   padding: 0 var(--sp-1);
+}
+
+/* 有标签条时页头与它同属导航区，之间不留出分组那么宽的空 */
+.sf-page-head.has-tabs {
+  margin-bottom: var(--sp-4);
+}
+
+.sf-page-tabs {
+  margin-bottom: var(--sp-6);
 }
 
 .sf-page-heading {

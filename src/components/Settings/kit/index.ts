@@ -8,6 +8,7 @@
  */
 export { default as SettingsPage } from './SettingsPage.vue'
 export { default as SettingsGroup } from './SettingsGroup.vue'
+export { default as SettingsTabs } from './SettingsTabs.vue'
 export { default as SettingRow } from './SettingRow.vue'
 export { default as SettingToggle } from './SettingToggle.vue'
 export { default as SettingSegmented } from './SettingSegmented.vue'
