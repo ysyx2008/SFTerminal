@@ -454,8 +454,13 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* 欢迎页 textarea 最大高度比面板模式矮，避免把 logo 和卡片都撑出屏幕 */
+/* 欢迎页 textarea 最大高度比面板模式矮，避免把 logo 和卡片都撑出屏幕。
+   最小高度则相反要给足：这一屏只剩输入框一个主体，一行高的框读起来像搜索框，
+   得先看着像「可以写点东西的地方」。只在欢迎页放大——侧边面板纵向空间紧张，
+   不该跟着变高。用 min-height 而非改高度：它是约束，赢过测量逻辑写进去的
+   行内高度，同时不妨碍内容变多时继续往上长。 */
 .welcome-chat-composer :deep(.ai-input textarea) {
+  min-height: 56px;
   max-height: 160px;
 }
 

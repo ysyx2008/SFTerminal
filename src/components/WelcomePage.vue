@@ -471,15 +471,20 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  /* clamp(40px, calc(50vh - 300px), 150px) 在典型窗口高度下近似 margin:auto 的居中效果，
-     但不随内容高度变化而移动，确保 logo 和输入框顶部位置稳定 */
-  padding: clamp(40px, calc(50vh - 300px), 150px) 20px 24px;
+  /* 只留最小呼吸量，居中交给 .welcome-content 的 auto 外边距 */
+  padding: 40px 20px;
 }
 
 .welcome-content {
   max-width: 760px;
   width: 100%;
-  margin: 0 auto;
+  /* 真居中：空白均分到上下，读起来才是刻意的留白而不是没写完。
+     代价是内容增减（输入框变高、注意事项出现）时整块会上下移——这是选过的，
+     换来的是内容一旦变短不会全部堆在底部。
+
+     用 auto 外边距而不是父级 justify-content: center：后者在可滚动容器里
+     内容超高时会把顶部溢出的部分顶到滚不到的地方。 */
+  margin: auto;
   animation: pageEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
@@ -720,13 +725,14 @@ onUnmounted(() => {
 }
 
 /* 纯色而非渐变：渐变文字一旦在某套主题下失效会整段透明变不可读，
-   而 12 套主题里此前只验证过 dark / light 两套。 */
+   而 12 套主题里此前只验证过 dark / light 两套。
+   字号则要给足——显得廉价的是渐变不是字号，两个一起砍会把底气也砍掉。 */
 .welcome-title {
-  font-size: 22px;
-  font-weight: 600;
+  font-size: 26px;
+  font-weight: 700;
   color: var(--text-primary);
   margin: 0 0 4px 0;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.4px;
   white-space: nowrap;
 }
 

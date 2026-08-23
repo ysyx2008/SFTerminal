@@ -1641,6 +1641,7 @@ onUnmounted(() => {
         <div class="sidebar-content sidebar-content--recall">
           <AppSidebar
             :awakened="isAwakened"
+            :watch-open="showWatchPanel"
             @open-todos="terminalStore.openTodos()"
             @open-watch="openWatchesFromWelcome"
             @open-awaken="showWatchPanel = false; showAwaken = true"

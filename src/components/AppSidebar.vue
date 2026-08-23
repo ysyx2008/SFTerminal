@@ -24,6 +24,9 @@ import SkillStatusPopover from './SkillStatusPopover.vue'
 
 const props = defineProps<{
   awakened: boolean
+  /** 关切面板是否开着。它是全屏覆盖层而非一个「地方」，自己推不出选中态，
+      不传的话它会是这一排里唯一永远不亮的项，面板开着时界面也没有位置指示。 */
+  watchOpen?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -87,9 +90,9 @@ const atNewChat = computed(() =>
 const menuOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
 
-const secretaryHasBadge = computed(() =>
-  hasUnseenOverdue.value || watchAnomalyCount.value > 0
-)
+/* 只反映菜单里真有的东西。关切搬到固定入口后自带常驻角标，
+   这里再算一次就会出现「头像有点、点开菜单里却没这件事」。 */
+const secretaryHasBadge = computed(() => hasUnseenOverdue.value)
 
 function closeMenu() {
   menuOpen.value = false
@@ -120,10 +123,9 @@ function goTerminal() {
   terminalStore.focusTerminalPlace()
 }
 
-function pick(action: 'open-todos' | 'open-watch' | 'open-awaken' | 'open-settings') {
+function pick(action: 'open-todos' | 'open-awaken' | 'open-settings') {
   closeMenu()
   if (action === 'open-todos') emit('open-todos')
-  else if (action === 'open-watch') emit('open-watch')
   else if (action === 'open-awaken') emit('open-awaken')
   else emit('open-settings')
 }
@@ -165,6 +167,23 @@ function pick(action: 'open-todos' | 'open-watch' | 'open-awaken' | 'open-settin
         <span>{{ t('shell.terminal') }}</span>
         <span v-if="terminalStore.hasTerminalPlaceAttention" class="dot" />
       </button>
+      <!-- 关切：常驻、有状态（会攒异常数），性质与上面三个固定入口一致，
+           不该和「设置」「退出登录」挤在秘书菜单里等人去猜。
+           角标保留数字而非退化成点——邻居的点表示「这里有新东西」不可数，
+           而异常数是可数且可行动的，退成点等于丢信息。 -->
+      <button
+        v-if="canShowWatch"
+        type="button"
+        class="place-item"
+        :class="{ active: watchOpen }"
+        @click="emit('open-watch')"
+      >
+        <Eye :size="16" :stroke-width="1.75" />
+        <span>{{ t('shell.watch') }}</span>
+        <span v-if="watchAnomalyCount > 0" class="place-badge">
+          {{ watchAnomalyCount > 99 ? '99+' : watchAnomalyCount }}
+        </span>
+      </button>
     </nav>
 
     <div v-if="canShowAssistant" class="recent-slot">
@@ -201,11 +220,6 @@ function pick(action: 'open-todos' | 'open-watch' | 'open-awaken' | 'open-settin
           <ListTodo :size="14" />
           <span>{{ t('shell.todos') }}</span>
           <span v-if="overdueCount > 0" class="menu-badge">{{ overdueCount > 99 ? '99+' : overdueCount }}</span>
-        </button>
-        <button v-if="canShowWatch" type="button" class="menu-item" @click="pick('open-watch')">
-          <Eye :size="14" />
-          <span>{{ t('shell.watch') }}</span>
-          <span v-if="watchAnomalyCount > 0" class="menu-badge">{{ watchAnomalyCount > 99 ? '99+' : watchAnomalyCount }}</span>
         </button>
         <button v-if="canShowAwaken" type="button" class="menu-item" @click="pick('open-awaken')">
           <Heart :size="14" :fill="props.awakened ? 'currentColor' : 'none'" />
@@ -439,5 +453,20 @@ function pick(action: 'open-todos' | 'open-watch' | 'open-awaken' | 'open-settin
   height: 6px;
   border-radius: 50%;
   background: var(--accent, #7aa2f7);
+}
+
+/* 关切异常数：靠右与邻居的点同一条竖线，用告警色而不是强调色——
+   邻居的点是「有新东西」，这个是「有事不对」，两种分量不该同色。 */
+.place-badge {
+  margin-left: auto;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--danger, #c45c5c);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 </style>
