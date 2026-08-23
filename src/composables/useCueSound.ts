@@ -20,6 +20,25 @@ const DEFAULT_URLS: Record<CueSoundKind, string> = {
 const DEBOUNCE_MS = 450
 const lastPlayedAt: Partial<Record<CueSoundKind, number>> = {}
 let current: HTMLAudioElement | null = null
+let cueCtx: AudioContext | null = null
+let lastSource: MediaElementAudioSourceNode | null = null
+let lastGain: GainNode | null = null
+
+function cueAudioContext(): AudioContext | null {
+  const Ctor = window.AudioContext
+    ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!Ctor) return null
+  if (!cueCtx) cueCtx = new Ctor()
+  if (cueCtx.state === 'suspended') void cueCtx.resume()
+  return cueCtx
+}
+
+function teardownCueGraph(): void {
+  lastSource?.disconnect()
+  lastGain?.disconnect()
+  lastSource = null
+  lastGain = null
+}
 
 function settings(): CueSoundSettings {
   return useConfigStore().cueSoundSettings ?? DEFAULT_CUE_SOUND_SETTINGS
@@ -42,8 +61,20 @@ export function playCueSound(kind: CueSoundKind, opts?: { force?: boolean }): vo
     current.pause()
     current = null
   }
+  teardownCueGraph()
+
   const audio = new Audio(resolveUrl(kind, s))
-  audio.volume = clampCueVolume(s.volume)
+  const volume = clampCueVolume(s.volume)
+  const ctx = cueAudioContext()
+  if (ctx) {
+    lastSource = ctx.createMediaElementSource(audio)
+    lastGain = ctx.createGain()
+    lastGain.gain.value = volume
+    lastSource.connect(lastGain)
+    lastGain.connect(ctx.destination)
+  } else {
+    audio.volume = Math.min(1, volume)
+  }
   current = audio
   void audio.play().catch(() => {})
 }

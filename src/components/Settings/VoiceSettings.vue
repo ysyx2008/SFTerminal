@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ExternalLink, Play, RotateCcw, Upload } from 'lucide-vue-next'
+import { ExternalLink, Play, RotateCcw, Upload, Volume2 } from 'lucide-vue-next'
 import { useConfigStore } from '../../stores/config'
-import { applyMasterCueEnabled, CUE_SOUND_KINDS, type CueSoundKind } from '@shared/types'
+import { applyMasterCueEnabled, clampCueVolume, CUE_SOUND_KINDS, CUE_VOLUME_MAX, CUE_VOLUME_STEP, type CueSoundKind } from '@shared/types'
 import { playCueSound } from '../../composables/useCueSound'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderId } from '@shared/types'
 import {
@@ -34,16 +34,17 @@ const cueEnabled = computed({
 })
 
 const cueVolumeDraft = ref<number | null>(null)
+const toCueVolumePercent = (raw: number) => Math.round(clampCueVolume(raw / 100) * 100)
 const cueVolumePercent = computed(() =>
-  cueVolumeDraft.value ?? Math.round((configStore.cueSoundSettings.volume ?? 1) * 100),
+  cueVolumeDraft.value ?? toCueVolumePercent((configStore.cueSoundSettings.volume ?? 1) * 100),
 )
 
 const onCueVolumeInput = (event: Event) => {
-  cueVolumeDraft.value = Number((event.target as HTMLInputElement).value)
+  cueVolumeDraft.value = toCueVolumePercent(Number((event.target as HTMLInputElement).value))
 }
 
 const onCueVolumeCommit = (event: Event) => {
-  const percent = Number((event.target as HTMLInputElement).value)
+  const percent = toCueVolumePercent(Number((event.target as HTMLInputElement).value))
   cueVolumeDraft.value = null
   void configStore.saveCueSoundSettings({
     ...configStore.cueSoundSettings,
@@ -455,20 +456,27 @@ function openWebSearchKeyUrl() {
         </label>
       </div>
       <p class="section-desc">{{ t('settings.cueSounds.description') }}</p>
-      <div class="form-group cue-volume-row">
-        <label class="form-label">{{ t('settings.cueSounds.volume') }}: {{ cueVolumePercent }}%</label>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          class="tts-range-slider"
-          :value="cueVolumePercent"
-          @input="onCueVolumeInput"
-          @change="onCueVolumeCommit"
-        />
-      </div>
-      <div class="cue-sound-list">
+      <div class="cue-sound-panel">
+        <div class="cue-volume">
+          <Volume2 :size="15" class="cue-volume-icon" />
+          <div class="cue-volume-track">
+            <span class="cue-volume-tick" aria-hidden="true" />
+            <input
+              type="range"
+              min="0"
+              :max="CUE_VOLUME_MAX * 100"
+              :step="CUE_VOLUME_STEP * 100"
+              class="cue-volume-slider"
+              :style="{ '--fill': `${cueVolumePercent / CUE_VOLUME_MAX}%` }"
+              :value="cueVolumePercent"
+              :aria-label="t('settings.cueSounds.volume')"
+              @input="onCueVolumeInput"
+              @change="onCueVolumeCommit"
+            />
+          </div>
+          <span class="cue-volume-value">{{ cueVolumePercent }}%</span>
+        </div>
+        <div class="cue-sound-list">
         <div v-for="kind in CUE_SOUND_KINDS" :key="kind" class="cue-sound-row">
           <div class="cue-sound-label">
             <span>{{ t(`settings.cueSounds.${kind}`) }}</span>
@@ -502,6 +510,7 @@ function openWebSearchKeyUrl() {
               {{ t('settings.cueSounds.reset') }}
             </button>
           </div>
+        </div>
         </div>
       </div>
       <p v-if="cueError" class="tts-error-msg">{{ cueError }}</p>
@@ -920,15 +929,106 @@ function openWebSearchKeyUrl() {
 }
 
 /* TTS 表单 */
-.cue-volume-row {
-  margin-top: 10px;
+.cue-sound-panel {
+  margin-top: 4px;
+  padding: 12px 14px 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
+.cue-volume {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cue-volume-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.cue-volume-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  display: flex;
+  align-items: center;
+}
+
+.cue-volume-tick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1px;
+  height: 8px;
+  margin-top: -4px;
+  background: var(--text-muted);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.cue-volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  margin: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent-primary) 0%,
+    var(--accent-primary) var(--fill, 50%),
+    color-mix(in srgb, var(--text-muted) 28%, transparent) var(--fill, 50%),
+    color-mix(in srgb, var(--text-muted) 28%, transparent) 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+
+.cue-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: 2px solid var(--bg-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-muted) 35%, transparent);
+}
+
+.cue-volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: 2px solid var(--bg-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-muted) 35%, transparent);
+}
+
+.cue-volume-slider::-moz-range-track {
+  height: 3px;
+  background: transparent;
+  border: none;
+}
+
+.cue-volume-value {
+  flex-shrink: 0;
+  min-width: 3.2em;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: right;
+  letter-spacing: 0.01em;
 }
 
 .cue-sound-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 8px;
 }
 
 .cue-sound-row {
@@ -937,6 +1037,11 @@ function openWebSearchKeyUrl() {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  padding: 10px 0;
+}
+
+.cue-sound-row + .cue-sound-row {
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
 }
 
 .cue-sound-label {

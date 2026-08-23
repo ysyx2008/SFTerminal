@@ -11,9 +11,13 @@ export interface CueSoundSettings {
   kindEnabled: Partial<Record<CueSoundKind, boolean>>
   /** 用户替换的音频（data URL）；缺省用内置默认音 */
   custom: Partial<Record<CueSoundKind, string>>
-  /** 四声共用音量，0–1，缺省最响 */
+  /** 四声共用音量，1 为默认；可以大于 1，调得比默认更响 */
   volume: number
 }
+
+export const CUE_VOLUME_MAX = 2
+/** 音量按 5% 一档，1 = 100% */
+export const CUE_VOLUME_STEP = 0.05
 
 export const DEFAULT_CUE_SOUND_SETTINGS: CueSoundSettings = {
   enabled: true,
@@ -24,7 +28,11 @@ export const DEFAULT_CUE_SOUND_SETTINGS: CueSoundSettings = {
 
 export function clampCueVolume(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 1
-  return Math.min(1, Math.max(0, value))
+  const clamped = Math.min(CUE_VOLUME_MAX, Math.max(0, value))
+  const percent = Math.round(clamped * 100)
+  const stepPercent = Math.round(CUE_VOLUME_STEP * 100)
+  const snapped = Math.round(percent / stepPercent) * stepPercent
+  return Math.min(CUE_VOLUME_MAX, Math.max(0, snapped / 100))
 }
 
 function allKinds(on: boolean): Record<CueSoundKind, boolean> {

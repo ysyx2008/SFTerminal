@@ -68,10 +68,12 @@ describe('cue-sound settings switches', () => {
     expect(DEFAULT_CUE_SOUND_SETTINGS.volume).toBe(1)
   })
 
-  it('clamps shared volume to 0–1 and defaults missing to full', () => {
+  it('clamps shared volume to 0–2, snaps to 5%, and defaults missing to 1', () => {
     expect(normalizeCueSoundSettings({}).volume).toBe(1)
     expect(normalizeCueSoundSettings({ volume: 0.4 }).volume).toBe(0.4)
-    expect(normalizeCueSoundSettings({ volume: 1.8 }).volume).toBe(1)
+    expect(normalizeCueSoundSettings({ volume: 1.8 }).volume).toBe(1.8)
+    expect(normalizeCueSoundSettings({ volume: 0.97 }).volume).toBe(0.95)
+    expect(normalizeCueSoundSettings({ volume: 3 }).volume).toBe(2)
     expect(normalizeCueSoundSettings({ volume: -2 }).volume).toBe(0)
   })
 
