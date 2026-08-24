@@ -2,7 +2,38 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.7.0 (2026-08-18) (Latest)
+## v11.8.0 (2026-08-24) (Latest)
+
+> The assistant can dispatch sub-agents and open a terminal in the same chat. An SSH session can also work on this machine. The welcome page is rebuilt; work and artifacts are easier to follow. If a model stalls, it switches; when a task has a result, you hear a sound.
+
+### New Features
+- 🎯 **New sub-agents**: Dispatch several at once; they start immediately and report back. They stay in this task, so you can follow up, wait a bit, or stop them. Dangerous work still asks you — they won't sign off on your behalf
+- 🎯 **Terminal in the assistant**: In a standalone assistant chat, the terminal and files sit with the conversation; you can move the chat onto a real terminal when you need to
+- 🎯 **SSH sessions can use this machine**: Read and write local files and run local commands from an SSH session, without opening a separate local window
+- 🎯 **Collapse the work into one line**: Thinking, tools, and search can fold up; what it says stays outside. Strict mode always stays expanded
+- 🎯 **Artifact tabs**: Switch files with tabs, or a dropdown when they overflow; zoom web previews; select text in Word and ask right there
+- 🎯 **A sound when something happens**: Done, failed, waiting for your approval, or when the secretary reaches out — volume is adjustable
+
+### Improvements
+- ⚡ **Rebuilt welcome page**: Same features, new layout and empty state — quieter, less decoration
+- ⚡ **Switch models when one keeps failing**: Retries show a countdown; if the current model keeps failing, it tries the next one in your list
+- ⚡ **Long chats hand off automatically**: Near the limit, the AI picks what matters and continues; models with a small context window warn you once
+- ⚡ **Settings grouped by job**: Sidebar recategorized, Security on its own, system pages share one look. Diagnostics no longer shows an “all clear” bar, and dump counts don't stay yellow
+- ⚡ **Queued messages can be edited and reordered**: Drag to change the order
+- ⚡ **Default models updated**: Presets match current mainline models; DeepSeek includes vision by default
+- ⚡ **Ask the secretary to change models**: View, add, or remove AI models by asking; the one in use is blocked from deletion
+- ⚡ **Misc**: Cancel an SSH connect in progress; WeChat shows yellow when connected but not yet able to send; title-bar buttons aligned; sidebar avatar matches Awaken; extension skills listed first; split panes show which machine they are on
+
+### Bug Fixes
+- 🐛 **Knowledge base can recover**: Rebuilds the index when a backup can't; won't fill the disk if recovery fails
+- 🐛 **Windows freeze and broken Copy**: SSH disconnect no longer waits on the remote; app-wide Copy works again
+- 🐛 **Reopened history was only a one-line summary**: Compresses conversation by conversation instead of dropping the detail
+- 🐛 **WeChat attachments blocked the next poll**: Batch downloads no longer stall incoming messages
+- 🐛 **Sending only an image no longer auto-fills “Please describe this image”**
+- 🐛 **Terminal went black after a long time away**: The screen is redrawn when you come back
+- 🐛 **Misc**: Confirm dialogs covering Settings; Reach timeline crowded out by notices; Esc closes Todos; plans must be checked off as you go; large scanned PDFs no longer skipped whole; clearing a number in Settings no longer jumps to 0
+
+## v11.7.0 (2026-08-18)
 
 > A new three-column layout: navigate on the left, work in the middle, artifacts on the right. Queue the next message while a task is running. After a crash, copy a summary to send us.
 
