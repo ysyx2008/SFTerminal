@@ -654,7 +654,7 @@ describe('子智能体端到端（真实 SailFish.run）', () => {
     const services = makeServices(async ({ isChild, parentIndex, messages }) => {
       if (isChild) {
         const text = lastUserText(messages as Array<{ role?: string; content?: string }>)
-        if (text.includes('快的')) {
+        if (text.includes('快的先做完')) {
           await sleep(20)
           return { content: FAST }
         }

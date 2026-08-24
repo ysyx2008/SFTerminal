@@ -1089,14 +1089,7 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
       type: 'function',
       function: {
         name: 'dispatch_agents',
-        description: `派出这场任务里的同事（伙计）并行干活。立刻返回每个人的名字，你不用干等。
-
-适用：可拆成互不依赖的子问题（同时读几份文件、分头调研）。
-用 fork_turns 决定带多少对话：all（默认）全带用户原话和你说出口的答复（没有工具过程）；正整数如 1 或 3 只带最近几轮；none 不带对话，伙计只看见这条任务。后面还有还没轮到的安排、或怕伙计抢跑时，用 none 或只带最近几轮。
-他们能读写文件、跑命令、加载技能；不能找用户签字、不能再派人、不能对外发信/改日程。
-高危命令会被拦住，你接到失败后再自己做或换方案。
-
-派出后先干自己的事，不要马上干等。完成后会敲门汇报。需要时用 followup_agent 再交代、wait_agents 等待、interrupt_agent 打断。`,
+        description: `派出这场任务里的同事（伙计）并行干活。立刻返回每个人的名字。`,
         parameters: {
           type: 'object',
           properties: {

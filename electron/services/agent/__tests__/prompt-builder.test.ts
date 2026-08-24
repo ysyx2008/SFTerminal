@@ -870,5 +870,8 @@ describe('伙计自己的工作契约', () => {
     expect(prompt).toContain('scratch')
     expect(prompt).toContain('桌面等正式目录')
     expect(prompt).toContain('不会弹确认')
+    expect(prompt).toContain('只做交代给你的那一件')
+    expect(prompt).toContain('不要接手整场')
+    expect(prompt).not.toContain('当别人在干活')
   })
 })
