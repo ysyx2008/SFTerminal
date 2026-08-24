@@ -120,6 +120,17 @@ export interface ToolMeta {
   }
 
   /**
+   * 伙计能不能用。默认能用。false = 仅主人可见，执行时也会硬拦。
+   * 规划锁预留同一套过滤钩子，本次不实现锁本身。
+   */
+  allowedForSubAgent?: boolean
+
+  /**
+   * 伙计看到的工具说明。处境和主人不同时写这一份，避免共用说明骗人。
+   */
+  descriptionForSubAgent?: string
+
+  /**
    * 参数角色：用于历史摘要等场景"知道哪个字段是重点"
    */
   argRole?: {
@@ -201,19 +212,7 @@ function writeTextFileStreamValidate(args: Record<string, unknown>, rawPartial: 
 function dispatchAgentsPrefix(args: Record<string, unknown>): string | null {
   const rawTasks = Array.isArray(args.tasks) ? (args.tasks as unknown[]) : []
   if (rawTasks.length === 0) return null
-
-  const globalType = typeof args.agent_type === 'string' ? args.agent_type : 'read'
-  let typeLabel = globalType
-  for (const task of rawTasks) {
-    if (!task || typeof task !== 'object') continue
-    const tType = (task as { agent_type?: unknown }).agent_type
-    const resolved = typeof tType === 'string' ? tType : globalType
-    if (resolved !== typeLabel) {
-      typeLabel = 'mixed'
-      break
-    }
-  }
-  return t('dispatch.running', { count: rawTasks.length, type: typeLabel })
+  return t('dispatch.running', { count: rawTasks.length })
 }
 
 /**
@@ -499,21 +498,14 @@ const PANE_TOOL_DESC: Record<AgentMode | 'unspecified', PaneToolDescriptions> = 
 export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOptions, pluginRegistry?: PluginRegistry): ToolDefinition[] {
   // 本机命令（child_process.spawn）。可见性由 _meta.supportedModes 决定：本地终端眼前已是本机窗，不另给。
   // 终端窗里的命令由 terminal 技能的 execute_command 提供。
-  const execTool: ToolDefinitionWithMeta = {
-        type: 'function',
-        function: {
-          name: 'exec',
-          description: `【在本机执行 Shell 命令】通过本机 shell 执行命令字符串，支持管道/&&/重定向/脚本内联。不支持交互式命令(vim/nano/tmux)。
-
-**安全规则（命中标为 dangerous，strict/relaxed 需确认；free 放行）**：
-- 解释器内联代码（node -e / python -c / bash -c / zsh -c / perl -e / ruby -e / php -r 等）会被标记为危险
+  const execIntro = `【在本机执行 Shell 命令】通过本机 shell 执行命令字符串，支持管道/&&/重定向/脚本内联。不支持交互式命令(vim/nano/tmux)。`
+  const execDangerousExamples = `- 解释器内联代码（node -e / python -c / bash -c / zsh -c / perl -e / ruby -e / php -r 等）会被标记为危险
   —— 这类代码无法静态审计，真正高风险场景请切严格模式
 - 包装器/调度器（sudo / env / docker / ssh / make / npx 等）会被标记为危险
   —— 这些 cmd 会转手执行别的命令，违反"直接调用"的不变量
 - 如需运行脚本，直接用 exec 跑脚本文件：exec("node script.js")、exec("python a.py")
-- find -exec / -delete、tar --to-command、git rebase --exec 等结构性 flag 会被标记为危险
-
-**等待与转后台**：
+- find -exec / -delete、tar --to-command、git rebase --exec 等结构性 flag 会被标记为危险`
+  const execWaitAndUsage = `**等待与转后台**：
 - wait_seconds 内结束 → 返回完整结果
 - 超过 wait_seconds 仍在跑 → 自动转后台，返回 task_id 和 pid
 - 想接着等结果用 await_exec(task_id)；想杀就 exec("kill <pid>")
@@ -521,7 +513,28 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
 **典型用法**：
 - 短命令（ls/grep/cat...）：直接 exec，默认 wait 60s 足够
 - 启动长任务（构建/部署/服务）：exec("npm run build", wait_seconds: 5) 立刻转后台，去做别的，回头 await_exec
-- 启动后想看到关键日志：先 exec 转后台拿 task_id，再 await_exec(task_id, pattern: "Listening on")`,
+- 启动后想看到关键日志：先 exec 转后台拿 task_id，再 await_exec(task_id, pattern: "Listening on")`
+  const execDescriptionForParent = `${execIntro}
+
+**安全规则（命中标为 dangerous，strict/relaxed 需确认；free 放行）**：
+${execDangerousExamples}
+
+${execWaitAndUsage}`
+  const execDescriptionForSubAgent = `${execIntro}
+
+**安全规则（伙计没有签字通道）**：
+- 命中 dangerous 或 blocked 一律拦住，不会问人签字。这是系统限制，不是暂时失败
+- scratch 及系统临时目录里，用绝对路径的普通写删可以直接做
+- 相对路径、先 cd 再删、桌面等正式目录的删除一律被拦
+${execDangerousExamples}
+
+${execWaitAndUsage}`
+
+  const execTool: ToolDefinitionWithMeta = {
+        type: 'function',
+        function: {
+          name: 'exec',
+          description: execDescriptionForParent,
           parameters: {
             type: 'object',
             properties: {
@@ -552,10 +565,9 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
         _meta: {
           supportedModes: ['assistant', 'ssh'],
           idempotencyKey: ['command'],
-          // 历史摘要中"主命令"是 command 字段（task-memory.extractDigest 用得到）
           argRole: { summaryLine: 'command' },
-          // 流式预卡片：标题 + command 字段；命令文本本身在流式增长，不加字符数尾缀
-          streamDisplay: { titleKey: 'status.executing', titleField: 'command' }
+          streamDisplay: { titleKey: 'status.executing', titleField: 'command' },
+          descriptionForSubAgent: execDescriptionForSubAgent
         }
       }
 
@@ -603,12 +615,8 @@ export function getAgentTools(mcpService?: McpService, options?: GetAgentToolsOp
   const { open: paneOpenDesc, close: paneCloseDesc, sshUsage: sshUsageDesc } =
     PANE_TOOL_DESC[options?.mode ?? 'unspecified']
 
-  // 内置工具（所有模式通用）
-  // ⚠️ 顺序约定：子 Agent 通用工具排在最前（前 8 个），让父/子 Agent 的工具列表共享 byte-exact 前缀，
-  // 最大化 prompt cache 命中（参考 sub-agent.ts 的 SUB_AGENT_TYPES）。
-  // 改动顺序时请同步检查子 Agent 工具白名单。
+  // 内置工具（所有模式通用）。伙计能否使用看 ToolMeta.allowedForSubAgent，不靠列表前缀。
   const builtinTools: ToolDefinition[] = [
-    // ==================== 子 Agent 通用前缀（read / write 都用） ====================
     execTool,
     {
       type: 'function',
@@ -961,7 +969,8 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
       },
       _meta: {
         // 此工具的 tool_call 后会阻塞等待用户输入（task-memory 据此识别"任务在等待确认"）
-        lifecycle: { blocksUntilUserInput: true }
+        lifecycle: { blocksUntilUserInput: true },
+        allowedForSubAgent: false,
       }
     } as ToolDefinitionWithMeta,
     // ==================== Plan 工具（合并 create/update/clear） ====================
@@ -1009,7 +1018,8 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
           },
           required: ['action']
         }
-      }
+      },
+      _meta: { allowedForSubAgent: false }
     } as ToolDefinitionWithMeta,
     buildSkillTool(mcpService),
     buildLoadUserSkillTool(),
@@ -1079,18 +1089,14 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
       type: 'function',
       function: {
         name: 'dispatch_agents',
-        description: `将多个**独立子任务**分派给并行子 Agent 同时执行。适用于可拆分为互不依赖的子问题的场景（如同时分析多个文件、并行调研不同方向）。
+        description: `派出这场任务里的同事（伙计）并行干活。立刻返回每个人的名字，你不用干等。
 
-⚠️ 使用条件：
-- 子任务之间**无数据依赖**，可独立完成
-- 子任务各自聚焦明确的小目标
-- 2 个及以上子任务才有并行价值
+适用：可拆成互不依赖的子问题（同时读几份文件、分头调研）。
+用 fork_turns 决定带多少对话：all（默认）全带用户原话和你说出口的答复（没有工具过程）；正整数如 1 或 3 只带最近几轮；none 不带对话，伙计只看见这条任务。后面还有还没轮到的安排、或怕伙计抢跑时，用 none 或只带最近几轮。
+他们能读写文件、跑命令、加载技能；不能找用户签字、不能再派人、不能对外发信/改日程。
+高危命令会被拦住，你接到失败后再自己做或换方案。
 
-Agent 类型：
-- read（默认）：只读分析与调研，读文件/exec/搜索/查知识库
-- write：可修改文件（在 read 基础上增加 edit_file / write_text_file）
-
-⚠️ 子 Agent 看不到你的对话历史，每个子任务的 prompt 必须**自包含**（完整上下文：路径、目标、约束等）。子 Agent 只能使用 exec、读文件、搜索、知识库、web 等基础工具；不能调用技能（skill/load_user_skill）、MCP、终端交互或向用户提问。需要 browser/excel/email 等技能的子任务请由主 Agent 亲自执行。`,
+派出后先干自己的事，不要马上干等。完成后会敲门汇报。需要时用 followup_agent 再交代、wait_agents 等待、interrupt_agent 打断。`,
         parameters: {
           type: 'object',
           properties: {
@@ -1099,22 +1105,21 @@ Agent 类型：
               items: {
                 type: 'object',
                 properties: {
+                  name: { type: 'string', description: '招呼他的短名字（可选，不填则从 description 生成）' },
                   description: { type: 'string', description: '任务简述（一句话，用于进度展示）' },
-                  prompt: { type: 'string', description: '详细任务指令（子 Agent 的完整上下文）' },
-                  agent_type: { type: 'string', enum: ['read', 'write'], description: '此子任务的 Agent 类型（覆盖全局 agent_type）' }
+                  prompt: { type: 'string', description: '详细任务指令' },
+                  fork_turns: {
+                    type: 'string',
+                    description: '带多少对话。默认 all。none=不带，all=全带，正整数字符串（如 1、3）=只带最近几轮。'
+                  }
                 },
                 required: ['description', 'prompt']
               },
-              description: '子任务列表（2-10 个）'
-            },
-            agent_type: {
-              type: 'string',
-              enum: ['read', 'write'],
-              description: '全局 Agent 类型（默认 read）。每个子任务可单独指定 agent_type 覆盖'
+              description: '子任务列表（1-10 个）'
             },
             max_concurrent: {
               type: 'number',
-              description: '最大并发数（默认 5，范围 1-10）'
+              description: '最大同时开工数（默认 5，范围 1-10）'
             }
           },
           required: ['tasks']
@@ -1122,12 +1127,76 @@ Agent 类型：
       },
       _meta: {
         supportedModes: ['local', 'assistant'],
-        // 流式预卡片：tasks 数组才能确定文案，customRender 处理 N + agent_type；
-        // 字符数从 tasks[].prompt + tasks[].description 嵌套累加，用 customProgress
+        allowedForSubAgent: false,
         streamDisplay: {
           customRender: dispatchAgentsPrefix,
           customProgress: dispatchAgentsCharCount
         }
+      }
+    } as ToolDefinitionWithMeta,
+    {
+      type: 'function',
+      function: {
+        name: 'followup_agent',
+        description: `向已派出的伙计再交代一句。他还在跑就先记下，等当前这条命令或这一轮走完再消化，不会掐断正在跑的操作；已经做完就在同一条线上继续。急着停用 interrupt_agent。`,
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'dispatch_agents 返回的名字' },
+            message: { type: 'string', description: '要补充的交代' }
+          },
+          required: ['name', 'message']
+        }
+      },
+      _meta: {
+        supportedModes: ['local', 'assistant'],
+        allowedForSubAgent: false,
+        streamDisplay: { titleKey: 'tool.followup_agent', titleField: 'name' }
+      }
+    } as ToolDefinitionWithMeta,
+    {
+      type: 'function',
+      function: {
+        name: 'wait_agents',
+        description: `等下一条敲门（不传 names 则等任何一个还活着的）。有人回来或超时就返回，不等全部做完。只报谁回来了、谁还在做，不重复正文——正文在敲门里。只有下一步被挡住了才等，派出后先干自己的。`,
+        parameters: {
+          type: 'object',
+          properties: {
+            names: {
+              type: 'array',
+              items: { type: 'string' },
+              description: '要等的名字；省略则等所有还活着的伙计'
+            },
+            timeout: {
+              type: 'number',
+              description: '超时秒数（默认 120，范围 1-600）'
+            }
+          }
+        }
+      },
+      _meta: {
+        supportedModes: ['local', 'assistant'],
+        allowedForSubAgent: false,
+        streamDisplay: { titleKey: 'tool.wait_agents' }
+      }
+    } as ToolDefinitionWithMeta,
+    {
+      type: 'function',
+      function: {
+        name: 'interrupt_agent',
+        description: `打断一个还在跑的伙计。`,
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: '要打断的名字' }
+          },
+          required: ['name']
+        }
+      },
+      _meta: {
+        supportedModes: ['local', 'assistant'],
+        allowedForSubAgent: false,
+        streamDisplay: { titleKey: 'tool.interrupt_agent', titleField: 'name' }
       }
     } as ToolDefinitionWithMeta,
     // ==================== 分屏管理（仅终端 Agent 可用） ====================
@@ -1177,6 +1246,7 @@ SSH 断线：ensure_connected 或依赖用时懒重连（结果会告知，不�
         supportedModes: ['local', 'ssh', 'assistant'],
         // streaming-tool-executor 只看工具名：合并后整体不可并行（list 失去并行是可接受代价）
         parallelizable: false,
+        allowedForSubAgent: false,
       }
     } as ToolDefinitionWithMeta,
     {
@@ -1199,6 +1269,7 @@ ${sshUsageDesc}
       _meta: {
         supportedModes: ['local', 'ssh', 'assistant'],
         parallelizable: true,
+        allowedForSubAgent: false,
       }
     } as ToolDefinitionWithMeta,
 
@@ -1224,7 +1295,8 @@ ${sshUsageDesc}
         }
       },
       _meta: {
-        streamDisplay: { titleKey: 'im.tool_send_notification', titleField: 'message' }
+        streamDisplay: { titleKey: 'im.tool_send_notification', titleField: 'message' },
+        allowedForSubAgent: false,
       }
     } as ToolDefinitionWithMeta,
 
@@ -1300,7 +1372,8 @@ ${sshUsageDesc}
           },
           required: ['file_path']
         }
-      }
+      },
+      _meta: { allowedForSubAgent: false }
     } as ToolDefinitionWithMeta)
 
     filteredTools.push({
@@ -1325,7 +1398,8 @@ ${sshUsageDesc}
           },
           required: ['task_id']
         }
-      }
+      },
+      _meta: { allowedForSubAgent: false }
     } as ToolDefinitionWithMeta)
   }
 
@@ -1380,6 +1454,22 @@ export function filterUnattendedTools(tools: readonly ToolDefinition[]): ToolDef
   return tools.filter(
     tool => !(tool as ToolDefinitionWithMeta)._meta?.lifecycle?.blocksUntilUserInput
   )
+}
+
+/**
+ * 伙计工具清单：只看元数据，不认工具名。默认能用。
+ */
+export function filterSubAgentTools(tools: readonly ToolDefinition[]): ToolDefinition[] {
+  return tools
+    .filter(tool => (tool as ToolDefinitionWithMeta)._meta?.allowedForSubAgent !== false)
+    .map(tool => {
+      const alt = (tool as ToolDefinitionWithMeta)._meta?.descriptionForSubAgent
+      if (!alt) return tool
+      return {
+        ...tool,
+        function: { ...tool.function, description: alt }
+      }
+    })
 }
 
 /**

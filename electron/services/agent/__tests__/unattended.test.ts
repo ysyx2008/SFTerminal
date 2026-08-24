@@ -65,12 +65,14 @@ describe('无人值守时的工具可见性', () => {
     expect(blockingToolNames(attended)).toEqual(['ask_user'])
   })
 
-  it('移除后子 Agent 工具列表仍是父列表的连续前缀（cache 约定不被破坏）', () => {
-    const parent = getAgentTools(undefined, { mode: 'assistant', unattended: true }).map(t => t.function.name)
-    for (const type of ['explore', 'edit', 'research']) {
-      const child = getSubAgentTools(type).map(t => t.function.name)
-      expect(parent.slice(0, child.length)).toEqual(child)
+  it('伙计清单是主人清单的子集，且不含仅主人工具', () => {
+    const parent = new Set(getAgentTools(undefined, { mode: 'assistant', unattended: true }).map(t => t.function.name))
+    const child = getSubAgentTools().map(t => t.function.name)
+    for (const name of child) {
+      expect(parent.has(name)).toBe(true)
     }
+    expect(child).not.toContain('dispatch_agents')
+    expect(child).not.toContain('ask_user')
   })
 
   it('过滤函数按元数据判定，不认工具名（技能等后加入的来源共用它）', () => {

@@ -5,7 +5,7 @@
 
 import type { ToolDefinition } from '../../tools'
 
-export const watchTools: ToolDefinition[] = [
+const watchToolDefs: ToolDefinition[] = [
   {
     type: 'function',
     function: {
@@ -251,3 +251,8 @@ export const watchTools: ToolDefinition[] = [
     }
   }
 ]
+
+export const watchTools: ToolDefinition[] = watchToolDefs.map(tool => ({
+  ...tool,
+  _meta: { allowedForSubAgent: false }
+}))

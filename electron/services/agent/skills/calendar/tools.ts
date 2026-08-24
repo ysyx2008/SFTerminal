@@ -4,7 +4,18 @@
 
 import type { ToolDefinition } from '../../tools'
 
-export const calendarTools: ToolDefinition[] = [
+const CALENDAR_PARENT_ONLY = new Set([
+  'calendar_create',
+  'calendar_update',
+  'calendar_delete',
+  'calendar_todo_create',
+  'calendar_todo_update',
+  'calendar_todo_delete',
+  'calendar_account_add',
+  'calendar_account_delete',
+])
+
+const calendarToolDefs: ToolDefinition[] = [
   {
     type: 'function',
     function: {
@@ -399,3 +410,9 @@ export const calendarTools: ToolDefinition[] = [
     }
   }
 ]
+
+export const calendarTools: ToolDefinition[] = calendarToolDefs.map(tool =>
+  CALENDAR_PARENT_ONLY.has(tool.function.name)
+    ? { ...tool, _meta: { allowedForSubAgent: false } }
+    : tool
+)

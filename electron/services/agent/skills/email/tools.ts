@@ -4,7 +4,14 @@
 
 import type { ToolDefinition } from '../../tools'
 
-export const emailTools: ToolDefinition[] = [
+const EMAIL_PARENT_ONLY = new Set([
+  'email_send',
+  'email_delete',
+  'email_account_add',
+  'email_account_delete',
+])
+
+const emailToolDefs: ToolDefinition[] = [
   {
     type: 'function',
     function: {
@@ -291,4 +298,10 @@ export const emailTools: ToolDefinition[] = [
     }
   }
 ]
+
+export const emailTools: ToolDefinition[] = emailToolDefs.map(tool =>
+  EMAIL_PARENT_ONLY.has(tool.function.name)
+    ? { ...tool, _meta: { allowedForSubAgent: false } }
+    : tool
+)
 

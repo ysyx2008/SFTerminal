@@ -859,3 +859,16 @@ describe('Edge cases', () => {
     expect(prompt).toContain('browser_list_tabs')
   })
 })
+
+describe('伙计自己的工作契约', () => {
+  it('写明高危不走签字、写删只认 scratch 绝对路径', () => {
+    const prompt = PromptBuilder.buildSubAgentSystemPrompt({
+      context: createMockContext({ terminalType: 'assistant' }),
+    })
+    expect(prompt).toContain('不会问人签字')
+    expect(prompt).toContain('只认绝对路径')
+    expect(prompt).toContain('scratch')
+    expect(prompt).toContain('桌面等正式目录')
+    expect(prompt).toContain('不会弹确认')
+  })
+})

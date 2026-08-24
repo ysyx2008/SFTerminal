@@ -243,6 +243,7 @@ export default {
       seconds: '{n} 秒',
       minutes: '{n} 分',
       minutesSeconds: '{m} 分 {s} 秒',
+      colleagues: '{n} 个人在并行',
       doing: {
         read: '在读文件',
         write: '在写文件',
@@ -712,6 +713,7 @@ export default {
     subAgentRunning: '执行中',
     subAgentCompleted: '已完成',
     subAgentFailed: '失败',
+    subAgentInterrupted: '已打断',
     subAgentShowResult: '查看结果',
     subAgentHideResult: '收起结果',
     // 思考块（reasoning 模型的 thinking 单行呈现）

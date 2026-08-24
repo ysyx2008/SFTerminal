@@ -242,6 +242,7 @@ export default {
       seconds: '{n}s',
       minutes: '{n}m',
       minutesSeconds: '{m}m {s}s',
+      colleagues: '{n} working in parallel',
       doing: {
         read: 'Reading files',
         write: 'Writing files',
@@ -711,6 +712,7 @@ export default {
     subAgentRunning: 'Running',
     subAgentCompleted: 'Completed',
     subAgentFailed: 'Failed',
+    subAgentInterrupted: 'Interrupted',
     subAgentShowResult: 'Show result',
     subAgentHideResult: 'Hide result',
     // Thinking block (reasoning model thinking shown as single line)

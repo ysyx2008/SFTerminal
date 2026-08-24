@@ -2526,11 +2526,13 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                             <span v-if="sa.status === 'pending'" class="sa-icon-pending">○</span>
                             <span v-else-if="sa.status === 'running'" class="sa-icon-running">◌</span>
                             <span v-else-if="sa.status === 'completed'" class="sa-icon-completed">✓</span>
+                            <span v-else-if="sa.status === 'interrupted'" class="sa-icon-failed">⏹</span>
                             <span v-else class="sa-icon-failed">✗</span>
                           </span>
                           <span class="sub-agent-header-text">
-                            <span class="sub-agent-desc">{{ sa.description }}</span>
+                            <span class="sub-agent-desc">{{ sa.name ? `${sa.name} · ${sa.description}` : sa.description }}</span>
                             <span v-if="sa.status === 'running' && getSubAgentActivity(sa)" class="sub-agent-activity">⟳ {{ getSubAgentActivity(sa) }}</span>
+                            <span v-if="sa.blockedReason" class="sub-agent-activity">{{ sa.blockedReason }}</span>
                           </span>
                           <span class="sub-agent-status-text">
                             {{ t(`ai.subAgent${sa.status.charAt(0).toUpperCase() + sa.status.slice(1)}`) }}

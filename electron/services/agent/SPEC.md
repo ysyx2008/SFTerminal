@@ -1,6 +1,6 @@
 # Agent 子系统 SPEC
 
-> Last verified: 2026-08-22（任务完成提示音）
+> Last verified: 2026-08-23（功能完整的子智能体）
 
 ## 职责
 
@@ -52,6 +52,21 @@ AI Agent 的核心执行引擎。接收用户自然语言指令，通过 ReAct �
 > - **关键取舍**：计划是给用户看的进度，不是收工对账。宁可每一步多勾一次，也不能让计划停在原地。
 > - **明确不做**：这次只改给模型看的说明和催促措辞；不做「做完一步还没勾就自动催」的运行时拦截。
 
+> **子智能体是这场任务里还活着的同事（设计目标，2026-08-23）**：
+>
+> - **问题**：以前派出子任务是一次性外包——看不见这场对话、必须写完整说明书、派出去就堵在门口等齐，做完就散。曾经试过带着全部历史去，子任务看见主人用过、自己却没有的能力，反复瞎调卡死；又试过后台派出，主人先收工，结果没人接。只读太窄，全功能再各自弹确认又会把界面打乱。
+> - **成功标准**：
+>   1. 子智能体能干活：读、写、改、搜、跑普通命令、用不必问人的技能。主人说「去审登录那块」就够，不必把路径和目标再写一遍。
+>   2. 派出立刻走，主人还能继续干自己的事。子智能体做完、失败或被打断，会敲门把结果交给主人。还有人在干活，主人就不能收工。
+>   3. 派出时秘书自己决定带多少对话——像交代下属：有的适合把原文转过去，有的只带最近几轮，有的要自己写清再分派、不宜直接转。**全带**：伙计看得见用户说过的话和秘书已经说出口的结论，不带怎么调用工具的流水账。**最近几轮**：只带最近那几轮对话。**不带**：伙计只看见这条任务。默认全带。
+>   4. 这场任务里它还活着：主人能再交代、能叫停、也能选择等一会儿（有超时，不该死等）。**等的是下一条敲门，不是等人全部做完**；等的结果不重复正文，正文走敲门。秘书少等，派出后先干自己的，只有下一步被挡住了才等。用户点停止，所有子智能体一起停。
+>   5. **不能顶替主人**：不能找用户签字、提问、要密码；不能主动联系用户、建关切；不能再派一层；不能改计划、开终端窗格；不能发信、改日程。这些卡住了交给主人，由主人决定问你还是自己做。
+>   6. 高危命令做不到，必须如实告诉主人被拦了、原命令是什么。宽松模式下本来就不问人的写文件和普通命令，可以直接做。工作区里只有绝对路径的写删才直接做；相对路径和桌面等正式目录的删除会被拦住、不会问你。伙计自己能看见这些限制。
+>   7. 规划锁开着时，子智能体和主人同一把锁，也改不了用户的世界。
+>   8. 只在本机终端和助手里能派。不进「最近对话」，不跨任务复活。
+> - **关键取舍**：功能完整指能干主人在本机能干的活，不是能顶替主人。确认是独占的前台，只走主人——伙计可以动手，但不能找你签字。不要另请一个模型替你审批。过程怎么给人看，见对话面板那条：子任务进度是过程，收在一行里，不另开一条对话。
+> - **明确不做**：不学「替我审批」；不让用户切进子智能体自己的对话；不让它再派孙智能体、不让它们互相传话；不把它做成最近对话里的一条；不在远程会话里新开放这项能力。
+>
 > **任务做完要听得见（设计目标，2026-08-22）**：
 >
 > - **问题**：任务结束时界面上只有一行「完成」或侧栏亮一下。人在别的窗口、别的桌面时很容易看不见。光看不够。
@@ -547,27 +562,11 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 
 通过 `getAgentTools(mode, remoteChannel)` 按模式过滤。见 `tools.ts` 中的完整定义。返回的工具列表上仍保留 `_meta` 字段供 Agent 抽象层查询；真正发给 LLM 之前由 `stripToolMeta()` 在 `agent.ts` 调用点清理（避免浪费 token）。
 
-### 工具列表顺序约定（Cache 友好）
+### 伙计能看见什么工具
 
-`builtinTools` 数组的顺序**不是任意的**：子 Agent 工具列表是父 Agent 工具列表的**连续 byte-exact 前缀**，让 Anthropic/DeepSeek/OpenAI 的前缀缓存在工具 schema 部分尽可能命中。
+默认都能用。标成「伙计不能用」的，清单里拿掉，运行时再拦一遍，两处必须对齐。不再分只读/可写两档，也不再靠「工具列表是主人列表的连续前缀」来省缓存——伙计的身份说明和工具清单必须对得上，对不上就会去调自己没有的能力。
 
-**分段约定**（assistant 模式下）：
-
-| 段 | 工具 | 用途 |
-|---|---|---|
-| 子 Agent 通用前缀（前 7 个） | `exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch` | `read` 类型子 Agent 工具列表 = 此段 |
-| `write` 类型追加（前 8-9 个） | `edit_file, write_text_file` | `write` 类型子 Agent 工具列表 = 上一段 + 此段 |
-| 父 Agent 专用尾部 | `write_remote_text_file, sftp_put, sftp_get, ask_user, plan, skill, load_user_skill, recall, search_history, dispatch_agents, talk_to_user` | 仅父 Agent 可见；`write_remote_text_file` 仅 SSH 模式；`sftp_put/sftp_get` local+ssh 模式（local tab 通过 pane_id 指 SSH 窗格） |
-
-**保持前缀连续的红线**：
-
-1. 新增子 Agent 用的工具时，必须放进对应分段（前 7 / 前 9）的末尾，并同步更新 `SUB_AGENT_TYPES` 白名单
-2. 新增父专用工具，只能加在尾部
-3. **不要**为子 Agent 重写工具 description（破坏 byte-exact 字节）。如果某些工具描述对子 Agent 无关上下文太多，应通过 `parameters.description` 传入或在 user 指令中说明，不要改 `function.description`
-4. `web_search` 是条件性工具（未配置时整体不存在），即使不存在也不破坏前缀关系（子 Agent 同样不会有它，仍是父的连续前缀）
-5. 测试 `all sub-agent tool lists should be a contiguous prefix of parent tool list` 是机械护栏
-
-回归保护：`__tests__/sub-agent.test.ts` 中的 "contiguous prefix" 与 "byte-exact tool list across sub-agents of same type" 两条用例固定了此约定。
+不能给伙计的：找用户签字、提问、要密码、主动联系用户、建关切、再派一层、改计划、开终端窗格、发信、改日程，以及主人用来再交代/等待/打断的那几样。新加工具时要想清楚伙计能不能用；默认能用的，就得真能用。
 
 ### 工具执行 (`tools/`)
 
@@ -583,61 +582,15 @@ Companion 语义是「一条跨重启、多渠道汇流的连续关系线」，�
 | `memory.ts` | 任务记忆检索 |
 | `context.ts` | 上下文压缩/恢复 |
 | `misc.ts` | 等待、提问、MCP、技能 |
-| `sub-agent.ts` | 并行子 Agent（dispatch_agents 工具） |
+| `sub-agent.ts` | 派出 / 再交代 / 等待 / 打断伙计 |
 
-### 并行子 Agent (`tools/sub-agent.ts`)
+### 这场任务里的伙计
 
-主 Agent 通过 `dispatch_agents` 工具分派轻量子任务并行执行。
+主人派出后立刻拿到名字，自己还能继续干。伙计用和主人同一套做事循环，但不是一条独立会话：不进最近对话、不落盘、不写长期记忆。开局带多少对话由秘书决定：全带、最近几轮、或不带。全带则是用户说过的话和秘书已经说出口的结论，不带工具流水账。默认全带。
 
-**独立模式**：子 Agent 用 `[system, user]` 两条消息开局，**不继承父 Agent 的对话历史**。父 Agent 想让子 Agent 知道的上下文必须显式写在 `task.prompt` 里。
+做完、失败或被打断会敲门把结果交给主人。主人还能再交代、叫停、或等一会儿（有超时）。等的是下一条敲门，不把全文再报一遍。用户点停止，所有伙计一起停。还有人在干活，主人就不能收工。
 
-为什么不用 fork 模式：曾经参考 Claude Code 改成 fork（继承父消息历史以最大化 prompt cache），但导致严重的工具幻觉——子 Agent 的 system prompt 是父 Agent 的（描述自己能用 `dispatch_agents` / `talk_to_user` / `plan` 等），对话历史里也有这些工具的调用先例，但实际工具列表里没有这些。LLM 看到这种不一致会反复尝试调用不存在的工具，被运行时拦截后再重试，整体卡死。
-
-切回独立模式后：
-- 身份、工具、历史三者彻底一致，根除幻觉源头
-- prompt cache 仍正常命中：所有同类型子 Agent 的 system prompt 与工具 schema byte-exact 一致
-
-**子 Agent system prompt 结构**（由 `PromptBuilder.buildSubAgentSystemPrompt` 构建）：
-
-| 段落 | 来源 | 备注 |
-|---|---|---|
-| 语言规则 | `LANGUAGE_RULE` 常量 | 与父 Agent 共用同一字符串 |
-| 运行环境（OS / Shell / CWD / 用户名 / 主目录） | `PromptBuilder.buildHostEnvironment(context, hostProfileService)` | Shell 优先 `context.systemInfo`（来自 PTY 实际 spawn）；为空/`unknown` 时兜底 `profile.shell`。子 Agent `exec` 必须知道当前 OS / Shell、CWD 等 |
-| 用户 AI Rules | `executor.getAiRules()` | 项目编码约定（如"用 npm 不用 yarn"），write 类型尤其重要 |
-| 类型角色 | `SUB_AGENT_TYPES[type].systemPromptPrefix` | 一两句话区分 read/write |
-| 工作契约 | 固定文本：数据真实性 + **失败如实上报**（禁止私自换命令补救） + 结论结构化（做到/没做到/为什么） | byte-exact 常量 |
-
-**不**继承的部分：身份描述（IDENTITY/SOUL/USER）、技能列表、知识文档、对话历史、任务记忆、关切列表、羁绊上下文——这些都是会话级动态状态，子 Agent 是一次性短任务不需要。
-
-**不在 prompt 里点名"哪些工具不能调用"**：schema 不暴露的工具 LLM 一般不会主动捏造，反复点名反而是诱导。
-
-**byte-exact 一致性**：同一父 Agent 内所有子 Agent 共享相同 `context` / `aiRules` / `hostProfileService`，因此 system prompt 跨子 Agent byte-exact 一致；工具 schema 因为顺序约定（见「工具列表顺序约定」一节）天然共享前缀。两者都让 Anthropic/DeepSeek/OpenAI 的前缀缓存正常命中。
-
-**工具列表**：子 Agent 看到的是按类型白名单过滤后的工具列表（**不是父 Agent 的完整工具列表**）。父 Agent 专属工具（`dispatch_agents` / `talk_to_user` / `plan` / `ask_user` / `skill` / `load_user_skill` 等）对子 Agent 完全不可见。父 Agent 的系统提示与 `dispatch_agents` 工具描述会明确告知：依赖技能的子任务（browser/excel/email 等）不得分派给子 Agent。
-
-**Agent 类型系统**：
-
-| 类型 | 用途 | 可用工具 |
-|---|---|---|
-| `read`（默认） | 只读分析、调研、知识检索 | exec, read_file, file_search, search_knowledge, get_knowledge_doc, web_search, web_fetch |
-| `write` | 文件修改 | read + edit_file, write_text_file |
-
-类型通过 `SubAgentType` 接口定义，注册在 `SUB_AGENT_TYPES` 注册表中。白名单顺序与 `tools.ts` 中 `builtinTools` 的前缀严格对齐（见「工具列表顺序约定」），不要随意调整。
-
-`web_search` / `web_fetch` 在 write 白名单里看似冗余（写任务很少联网），但保留是为了让 write 子 Agent 工具列表也是父工具列表的连续前缀（前 9 个）；无害，且 LLM 用不到也不会调。
-
-**向后兼容**：fork 模式时期使用过 `explore` / `research` / `edit` 三种类型，`resolveAgentType` 保留映射（`explore` / `research` → `read`、`edit` → `write`），LLM 凭旧训练习惯传旧值也能 work。
-
-**执行时白名单（Defense in Depth）**：除了通过过滤工具列表让 LLM "看不到"禁用工具，运行时仍保留白名单检查（`allowedTools.has(toolName)`），万一 LLM 通过其它途径生成了禁用工具的调用，也会被运行时拦截并返回错误提示。
-
-**执行模式**：`dispatchSubAgents` 同步阻塞等待全部子任务完成后返回汇总结果。如果需要"边等边做"，主 Agent 应在同一次响应中并行调用其它工具（parallelizable tools），不需要单独的异步分支。
-
-**结果回收（摘要 + 产出物指针）**：子 Agent 最终结果 ≤ 8000 字符时原样回传；超过时**不再静默截断丢信息**——完整正文落盘到 `agent-workspace/scratch/sub-agents/<批次时间戳>/<taskId>.md`，回传「指针 notice（含文件路径与总字符数）+ 尾部截断文本」（结论通常在结尾）。主 Agent 需要细节时用 `read_file` 按需读取，与 L3 记忆「完整保存、按需检索」同构。同一次 dispatch 的所有子任务共享一个批次目录（懒创建，仅在出现超长结果时落盘）；放在 `scratch/` 下受既有过期自动清理管辖。落盘失败时退回纯截断，不影响子任务成功状态。回归用例见 `__tests__/sub-agent.test.ts`「结果回收」一节。
-
-**安全约束**：
-- 子 Agent 工具列表中**没有** `dispatch_agents`，物理上不可递归
-- 工具白名单保障安全（无终端操作等高危工具）
-- **确认策略**：子 Agent 不弹确认框（避免阻塞并行执行）。moderate 级操作自动放行，dangerous 级操作自动拒绝并打印工具参数预览（便于调试），子 Agent 可换策略重试或报告给主 Agent 处理
+超长结果落盘到工作区中转，对话里留指针和尾部摘要，主人需要细节时再读。高危命令做不到，必须如实告诉主人被拦了；宽松模式下本来就不问人的写文件和普通命令可以直接做。确认只走主人，伙计不能找用户签字。
 
 ### 流式工具并行执行 (`streaming-tool-executor.ts`)
 

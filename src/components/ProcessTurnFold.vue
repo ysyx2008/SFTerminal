@@ -102,6 +102,7 @@ const label = computed(() => {
   const idle = props.fold.thinkingOnly ? t('ai.processFold.thought') : t('ai.processFold.working')
   if (!props.fold.live) return actionLine.value || idle
   if (shownLiveText.value) return shownLiveText.value
+  if (props.fold.liveColleagueCount) return t('ai.processFold.colleagues', { n: props.fold.liveColleagueCount })
   if (props.fold.liveAction) return t(`ai.processFold.doing.${props.fold.liveAction}`)
   return props.fold.thinkingOnly ? t('ai.processFold.thinking') : t('ai.processFold.working')
 })

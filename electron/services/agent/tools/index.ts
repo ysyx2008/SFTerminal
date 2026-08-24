@@ -25,7 +25,7 @@ import { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 import { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 import { checkContext, compressContext, recallCompressed, manageMemory } from './context'
 import { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, awaitFileTransfer, messageUser, executeMcpTool, loadMcpServer, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
-import { dispatchSubAgents } from './sub-agent'
+import { dispatchSubAgents, followupAgent, waitAgents, interruptAgent, denyIfParentOnly } from './sub-agent'
 import { executeWebSearch } from './web-search'
 import { executeWebFetch } from './web-fetch'
 import { listSshSessionsTool, managePaneTool } from './split-pane'
@@ -61,7 +61,7 @@ export { createPlan, updatePlan, clearPlan, dispatchPlan } from './plan'
 export { recallTask, deepRecall, searchHistory, dispatchRecall } from './memory'
 export { checkContext, compressContext, recallCompressed, manageMemory } from './context'
 export { wait, askUser, sendFileToChat, sendImageToChat, sendToChat, awaitFileTransfer, messageUser, executeMcpTool, loadSkillTool, unloadSkillTool, dispatchSkill, loadUserSkillTool, executeSkillTool } from './misc'
-export { dispatchSubAgents, getSubAgentTools } from './sub-agent'
+export { dispatchSubAgents, followupAgent, waitAgents, interruptAgent, getSubAgentTools } from './sub-agent'
 export { executeWebSearch } from './web-search'
 export { executeWebFetch } from './web-fetch'
 
@@ -116,6 +116,9 @@ export async function executeTool(
   } catch {
     return { success: false, output: '', error: t('error.tool_param_parse_failed') }
   }
+
+  const denied = denyIfParentOnly(executor, name)
+  if (denied) return denied
 
   const id = ptyId ?? ''
 
@@ -246,6 +249,12 @@ export async function executeTool(
 
     case 'dispatch_agents':
       return dispatchSubAgents(args, config, executor, toolCall.id)
+    case 'followup_agent':
+      return followupAgent(args, executor)
+    case 'wait_agents':
+      return waitAgents(args, executor)
+    case 'interrupt_agent':
+      return interruptAgent(args, executor)
 
     case 'web_search':
       return executeWebSearch(args, executor)

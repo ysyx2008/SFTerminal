@@ -112,6 +112,8 @@ export interface ProcessFoldView {
   waitingHint?: boolean
   /** 没有思考可用时退回动作分类 */
   liveAction?: ActionKind
+  /** 还活着的伙计人数：等他们时折叠行要继续走秒 */
+  liveColleagueCount?: number
   /** 这一截只是想了想，没动手做任何事 */
   thinkingOnly: boolean
   /** 计时锚点：从上一步结束算起 */
@@ -207,9 +209,22 @@ function isPinnedRef(ref: ProcessStepRef): boolean {
   return isPinnedProcessStep(ref.step)
 }
 
-/** 这一步还没完：工具没回，或内容还在流。拆出来的那截思考——正文都出来了，它早想完了。 */
+function liveColleagueCountOf(step: ProcessStepLike): number {
+  const agents = step.subAgents
+  if (!Array.isArray(agents)) return 0
+  let n = 0
+  for (const item of agents) {
+    if (!item || typeof item !== 'object') continue
+    const status = (item as { status?: string }).status
+    if (status === 'pending' || status === 'running') n++
+  }
+  return n
+}
+
+/** 这一步还没完：工具没回，或内容还在流，或伙计还活着。 */
 function isUnfinished(ref: ProcessStepRef): boolean {
   if (ref.part === 'thinking') return false
+  if (liveColleagueCountOf(ref.step) > 0) return true
   if (ref.step.isStreaming) return true
   return ref.step.type === 'tool_call' && ref.step.success === undefined
 }
@@ -298,7 +313,8 @@ function pendingAction(steps: ReadonlyArray<ProcessStepLike>): ActionKind | unde
 function toFold(refs: ProcessStepRef[], nextStepAt?: number): ProcessFoldView {
   const steps = refs.map(ref => ref.step)
   const last = steps[steps.length - 1]
-  const live = refs.some(isUnfinished)
+  const colleagueCount = steps.reduce((n, step) => n + liveColleagueCountOf(step), 0)
+  const live = refs.some(isUnfinished) || colleagueCount > 0
   const startedAt = steps[0].timestamp
   const endedAt = nextStepAt ?? last.timestamp
   const elapsed =
@@ -318,6 +334,7 @@ function toFold(refs: ProcessStepRef[], nextStepAt?: number): ProcessFoldView {
     liveText: caption?.text,
     waitingHint: caption?.waitingHint,
     liveAction: live ? pendingAction(steps) : undefined,
+    liveColleagueCount: live && colleagueCount > 0 ? colleagueCount : undefined,
     startedAt,
     durationMs: !live && elapsed >= MIN_SHOWN_DURATION_MS ? elapsed : undefined,
     // 只有半截思考进来的不算收了这条步骤——它本人还在外面，找它就该找外面那条

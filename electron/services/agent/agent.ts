@@ -47,6 +47,8 @@ import {
 } from '../conversation/messages'
 import { inferConversationKind } from '@shared/types'
 import { estimateTextTokens } from './token-estimate'
+import { runUntilIdle } from './run-until-idle'
+import { SubAgentRoster } from './sub-agent-roster'
 import { isOemFeatureEnabled } from '@shared/oem-features'
 import { getBondService } from '../bond.service'
 import type { ToolExecutorConfig, ToolResult } from './tools/types'
@@ -136,6 +138,15 @@ export abstract class Agent {
 
   /** Agent 实例的逻辑 ID（用于路由 proactive message 等场景） */
   private _agentId?: string
+
+  /** 这场 run 里的伙计花名册（仅主人持有） */
+  private _subAgentRoster?: SubAgentRoster
+
+  /** 伙计：关掉落盘 / 侧栏 / L2 / L3 / 诞生引导 */
+  private _isSubAgent = false
+
+  /** 伙计开局：清洗后的父对话，第一次 run 用完即清空 */
+  private _seedMessages: AiMessage[] = []
 
   /**
    * 「持久命名 Agent」的显式覆盖位（仅测试 / 特殊场景用）。
@@ -330,6 +341,18 @@ export abstract class Agent {
     return this._persistentNamedAgent
   }
 
+  markAsSubAgent(): void {
+    this._isSubAgent = true
+  }
+
+  isSubAgent(): boolean {
+    return this._isSubAgent
+  }
+
+  seedOpeningMessages(messages: AiMessage[]): void {
+    this._seedMessages = messages
+  }
+
   
   /**
    * 获取技能会话（延迟初始化，Agent 实例级别持久化）
@@ -404,11 +427,17 @@ export abstract class Agent {
         : Promise.resolve()
 
       await Promise.all([cwdPromise, this.buildContext(run, message)])
-      let result = await this.executeLoop(run)
-      // 主循环返回后用户可能刚补充消息：继续处理直至队列清空
-      while (run.pendingUserMessages.length > 0 && !run.aborted) {
-        result = await this.executeLoop(run)
-      }
+      const result = await runUntilIdle({
+        executeLoop: () => this.executeLoop(run),
+        hasPendingMessages: () => run.pendingUserMessages.length > 0,
+        hasLiveChildren: () => this._subAgentRoster?.hasLive() ?? false,
+        waitForChildrenOrKnock: () => {
+          const signal = run.abortController?.signal
+          if (!this._subAgentRoster || !signal) return Promise.resolve()
+          return this._subAgentRoster.waitForKnock(signal)
+        },
+        isAborted: () => run.aborted,
+      })
       this.finalizeRun(run, result)
       const elapsed = ((Date.now() - taskStartTime) / 1000).toFixed(1)
       log.info(`Task completed: runId=${run.id}, duration=${elapsed}s, steps=${run.steps.length}`)
@@ -438,6 +467,7 @@ export abstract class Agent {
     this.currentRun.isRunning = false
     this.currentRun.abortController?.abort()
     this.currentStreamingExecutor?.abort()
+    this._subAgentRoster?.abortAll()
 
     // 释放待确认/安全输入等待，避免 abort 后 Promise 永久挂起、阻塞同实例下一次 run
     if (this.currentRun.pendingConfirmation) {
@@ -724,6 +754,9 @@ export abstract class Agent {
     }
     
     this.currentRun = run
+    if (!this._isSubAgent) {
+      this._subAgentRoster = new SubAgentRoster()
+    }
     
     // 注册运行级别回调
     if (options?.callbacks) {
@@ -732,6 +765,17 @@ export abstract class Agent {
     
     // 初始化会话聚合根（首次 run 时创建；applyForkSnapshot 已建则沿用，随后由 restoreFromHistory 装载）
     if (!this._conversation) {
+      if (this._isSubAgent) {
+        this._conversation = Conversation.create(
+          { agentKey: this._agentId ?? '', terminalType: context.terminalType },
+          {
+            id: `sub_${this._agentId ?? 'child'}_${Date.now()}`,
+            createdAt: Date.now(),
+            sshHost: context.sshHost
+          },
+          { taskMemory: this.taskMemory }
+        )
+      } else {
       const suppressSeed = this._suppressSessionSeed
       this._suppressSessionSeed = false
 
@@ -761,6 +805,7 @@ export abstract class Agent {
           },
           { taskMemory: this.taskMemory }
         )
+      }
       }
     }
 
@@ -800,7 +845,7 @@ export abstract class Agent {
     // 初始化 TaskMemory（仅首次 run 时，从 HistoryService 恢复）
     // 场景：用户恢复了历史对话，Agent 实例刚创建，TaskMemory 为空
     // 通过 sessionId 从 HistoryService 加载完整记录，避免前端反复传递大量数据
-    if (this.taskMemory.getTaskCount() === 0 && this._sessionId && !this._isRestoring) {
+    if (!this._isSubAgent && this.taskMemory.getTaskCount() === 0 && this._sessionId && !this._isRestoring) {
       this._isRestoring = true
       try {
         this.restoreFromHistory()
@@ -1030,34 +1075,36 @@ export abstract class Agent {
       tokenUsage: run.tokenUsage,
       imagesStripped: run.imagesStripped,
     })
-    this.saveSessionToHistory()
-    this.scheduleTitleRefreshIfDue()
+    if (!this._isSubAgent) {
+      this.saveSessionToHistory()
+      this.scheduleTitleRefreshIfDue()
 
-    // 诞生引导完成判定：调用了任何被标注 lifecycle.marksOnboardingComplete 的工具
-    // 即视为引导完成（基类不知道具体是哪个工具，由 ToolDefinition._meta.lifecycle 声明）
-    if (!(this.services.configService?.getAgentOnboardingCompleted())) {
-      const tools = this.getAvailableTools()
-      const onboardingMarkerCalled = run.steps.some(s => {
-        if (s.type !== 'tool_call' || !s.toolName) return false
-        return getMetaByName(tools, s.toolName)?.lifecycle?.marksOnboardingComplete === true
-      })
-      if (onboardingMarkerCalled) {
-        this.services.configService?.setAgentOnboardingCompleted(true)
-        notifyFrontendConfigChanged()
-        log.info('Agent onboarding completed — onboarding-marker tool was called')
+      // 诞生引导完成判定：调用了任何被标注 lifecycle.marksOnboardingComplete 的工具
+      // 即视为引导完成（基类不知道具体是哪个工具，由 ToolDefinition._meta.lifecycle 声明）
+      if (!(this.services.configService?.getAgentOnboardingCompleted())) {
+        const tools = this.getAvailableTools()
+        const onboardingMarkerCalled = run.steps.some(s => {
+          if (s.type !== 'tool_call' || !s.toolName) return false
+          return getMetaByName(tools, s.toolName)?.lifecycle?.marksOnboardingComplete === true
+        })
+        if (onboardingMarkerCalled) {
+          this.services.configService?.setAgentOnboardingCompleted(true)
+          notifyFrontendConfigChanged()
+          log.info('Agent onboarding completed — onboarding-marker tool was called')
+        }
       }
-    }
-    
-    // L2: 异步更新知识文档（唤醒 run 跳过，避免短问候污染知识文档）
-    this.updateContextKnowledgeAsync(run, result).catch(err => {
-      log.error('知识文档更新失败:', err)
-    })
 
-    // L3: 异步索引对话到向量库（供跨会话语义检索）
-    this.indexConversationAsync(run, 'success', result).catch(err => {
-      log.warn('对话向量索引失败:', err)
-    })
-    
+      // L2: 异步更新知识文档（唤醒 run 跳过，避免短问候污染知识文档）
+      this.updateContextKnowledgeAsync(run, result).catch(err => {
+        log.error('知识文档更新失败:', err)
+      })
+
+      // L3: 异步索引对话到向量库（供跨会话语义检索）
+      this.indexConversationAsync(run, 'success', result).catch(err => {
+        log.warn('对话向量索引失败:', err)
+      })
+    }
+
     // 触发完成回调
     this.callbacks?.onComplete?.(run.id, result, run.pendingUserMessages.map(m => m.message), { aborted: run.aborted })
   }
@@ -1094,6 +1141,7 @@ export abstract class Agent {
    * 以及原 record 缺 `kind` 字段、两份实现都漏 `toolCallId` 字段的问题。
    */
   private saveCheckpoint(run: AgentRun): void {
+    if (this._isSubAgent) return
     const historyService = this.services.historyService
     if (!historyService || !this._conversation) return
 
@@ -1427,6 +1475,8 @@ export abstract class Agent {
     
     run.isRunning = false
     this.currentStreamingExecutor = undefined
+    this._subAgentRoster?.abortAll()
+    this._subAgentRoster = undefined
   }
   
   /**
@@ -1484,13 +1534,15 @@ export abstract class Agent {
       tokenUsage: run.tokenUsage,
       imagesStripped: run.imagesStripped
     })
-    this.saveSessionToHistory()
-    this.scheduleTitleRefreshIfDue()
+    if (!this._isSubAgent) {
+      this.saveSessionToHistory()
+      this.scheduleTitleRefreshIfDue()
 
-    // L3: 异步索引失败的对话（失败经验同样有检索价值）
-    this.indexConversationAsync(run, 'failed', errorMessage).catch(err => {
-      log.warn('对话向量索引失败:', err)
-    })
+      // L3: 异步索引失败的对话（失败经验同样有检索价值）
+      this.indexConversationAsync(run, 'failed', errorMessage).catch(err => {
+        log.warn('对话向量索引失败:', err)
+      })
+    }
 
     this.callbacks?.onError?.(run.id, errorMessage, { aborted: run.aborted })
   }
@@ -1503,6 +1555,11 @@ export abstract class Agent {
   protected async buildContext(run: AgentRun, message: string): Promise<void> {
     // 逐任务状态清零（如「主动压缩压不动」的判定）——ContextWindowManager 跨 run 复用
     this._contextWindow.resetForNewRun()
+
+    if (this._isSubAgent && this._seedMessages.length > 0) {
+      this.buildSubAgentOpening(run, message)
+      return
+    }
 
     // ── Cache-optimized path ──
     // 同一 session 内，直接沿用上一个任务的完整 messages 作为前缀，只追加新 user 消息。
@@ -1677,6 +1734,22 @@ export abstract class Agent {
     const userMsg = await this.buildUserMessage(run, message, false)
     run.messages.push(userMsg)
     run.taskMessageLog.push({ ...userMsg })
+  }
+
+  private buildSubAgentOpening(run: AgentRun, message: string): void {
+    const systemPrompt = this.buildSystemPrompt(run.context, {
+      aiRules: this.services.configService?.getAiRules() ?? '',
+    })
+    this._contextWindow.recordSystemPromptTokens(systemPrompt, this.systemPromptScope(run.context))
+    const userBody = Agent.formatTimestamp() + Agent.formatWorkbenchTag(run.context.terminalType) + message
+    const seed = this._seedMessages
+    this._seedMessages = []
+    run.messages = [
+      { role: 'system', content: systemPrompt },
+      ...seed,
+      { role: 'user', content: userBody }
+    ]
+    run.taskMessageLog = [{ role: 'user', content: userBody }]
   }
 
   /** prompt cache 复用时刷新 system 消息中的浏览器助手章节（连接状态可能已变） */
@@ -3667,9 +3740,24 @@ export abstract class Agent {
   /**
    * 创建工具执行器配置
    */
+  protected collectToolCatalog(): ToolDefinition[] {
+    return this.getAvailableTools()
+  }
+
+  protected injectSubAgentKnock(message: string): void {
+    const run = this.currentRun
+    if (!run?.isRunning) return
+    run.pendingUserMessages.push({ message, silent: true })
+    if (run.executionPhase === 'thinking' && run.requestId) {
+      this.services.aiService.abort(run.requestId)
+    }
+    this._subAgentRoster?.wake()
+  }
+
   protected createToolExecutorConfig(run: AgentRun): ToolExecutorConfig {
     return {
       agentId: this._agentId || run.ptyId || undefined,
+      isSubAgent: this._isSubAgent,
       getSessionId: () => this.getSessionId(),
       terminalService: this.services.unifiedTerminalService || this.services.ptyService as any,
       hostProfileService: this.services.hostProfileService,
@@ -3747,6 +3835,10 @@ export abstract class Agent {
           currentTokensOverride ?? this._contextWindow.estimateCurrentPromptTokens(run.messages)
         return computeToolOutputBudget({ contextLength, currentTokens })
       },
+      getSubAgentRoster: () => this._subAgentRoster,
+      getParentMessages: () => run.messages,
+      knockParent: (message) => this.injectSubAgentKnock(message),
+      getToolCatalog: () => this.collectToolCatalog(),
     }
   }
   
@@ -3855,7 +3947,8 @@ export abstract class Agent {
     // 新 task 边界，使 message task 数 > step chunk 数，fork 截断时丢失最近 task 的上下文。
     run.taskMessageLog.push({ role: 'user', content: combinedText, _systemInjected: true })
 
-    if (this.currentPlan && !this.currentPlan.paused && this.currentPlan.steps.some(s => s.status === 'pending')) {
+    const heardFromUser = run.pendingUserMessages.some(pending => !pending.silent)
+    if (heardFromUser && this.currentPlan && !this.currentPlan.paused && this.currentPlan.steps.some(s => s.status === 'pending')) {
       const planHintMsg: AiMessage = { role: 'user', content: t('agent.user_supplement_with_plan'), _systemInjected: true }
       run.messages.push(planHintMsg)
       run.taskMessageLog.push({ ...planHintMsg })
@@ -3921,6 +4014,13 @@ export abstract class Agent {
     reasons?: string[],
     trustCommandOffer?: PendingConfirmationInternal['trustCommandOffer'],
   ): Promise<{ approved: boolean; modifiedArgs?: Record<string, unknown> }> {
+    if (this._isSubAgent) {
+      if (riskLevel === 'dangerous' || riskLevel === 'blocked') {
+        log.warn(`Sub-agent auto-rejected ${riskLevel} operation: ${toolName}`)
+        return Promise.resolve({ approved: false })
+      }
+      return Promise.resolve({ approved: true })
+    }
     if (!this.callbacks?.onNeedConfirm) {
       log.warn(`No confirmation channel available (tool=${toolName}, risk=${riskLevel}); treating as not approved`)
       return Promise.resolve({ approved: false })
@@ -3967,6 +4067,9 @@ export abstract class Agent {
     prompt: string,
     isUpdate?: boolean
   ): Promise<boolean> {
+    if (this._isSubAgent) {
+      return Promise.resolve(false)
+    }
     if (!this.callbacks?.onNeedSecureInput) {
       log.warn(`No secure input channel available (skill=${skillId}, env=${envName}); treating as cancelled`)
       return Promise.resolve(false)

@@ -347,34 +347,20 @@ describe('buildPreToolCallDisplay', () => {
           tasks: [{ description: 'analyze code', prompt: 'read file X and summarize' }]
         })
       )
-      // 未指定 agent_type 默认 read
-      expect(out).toBe('并行执行 1 个子任务（read）')
+      expect(out).toBe('派出 1 个伙计')
     })
 
-    it('多个子任务且全部同 agent_type 时显示具体类型', () => {
+    it('多个子任务显示人数', () => {
       const out = buildPreToolCallDisplay(
         'dispatch_agents',
         JSON.stringify({
           tasks: [
-            { description: 't1', prompt: 'p1', agent_type: 'read' },
-            { description: 't2', prompt: 'p2', agent_type: 'read' }
+            { description: 't1', prompt: 'p1' },
+            { description: 't2', prompt: 'p2' }
           ]
         })
       )
-      expect(out).toBe('并行执行 2 个子任务（read）')
-    })
-
-    it('子任务 agent_type 不一致显示 mixed', () => {
-      const out = buildPreToolCallDisplay(
-        'dispatch_agents',
-        JSON.stringify({
-          tasks: [
-            { description: 't1', prompt: 'p1', agent_type: 'read' },
-            { description: 't2', prompt: 'p2', agent_type: 'write' }
-          ]
-        })
-      )
-      expect(out).toBe('并行执行 2 个子任务（mixed）')
+      expect(out).toBe('派出 2 个伙计')
     })
 
     it('prompt + description 累计达到 100 字符追加字符数尾缀', () => {
@@ -385,7 +371,7 @@ describe('buildPreToolCallDisplay', () => {
         })
       )
       // 5 + 150 = 155 ≥ 100
-      expect(out).toBe('并行执行 1 个子任务（read） · 155 字符')
+      expect(out).toBe('派出 1 个伙计 · 155 字符')
     })
 
     it('多个子任务的 prompt 汇总后一起计数（体现所有指令都在增长）', () => {
@@ -409,7 +395,7 @@ describe('buildPreToolCallDisplay', () => {
         'x'.repeat(200)
       const out = buildPreToolCallDisplay('dispatch_agents', partial)
       // 第二个任务 prompt 容错闭合后会包含已到达的 200 个 'x'
-      expect(out).toContain('并行执行 2 个子任务')
+      expect(out).toContain('派出 2 个伙计')
       expect(out).toContain('字符')
     })
   })

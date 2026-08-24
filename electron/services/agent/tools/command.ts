@@ -157,6 +157,9 @@ export async function executeCommand(
   const assessment = await assessCommandRiskDetailed(command, auditContextFromConfig(config))
 
   if (assessment.level === 'blocked') {
+    if (executor.isSubAgent) {
+      return { success: false, output: '', error: t('dispatch.command_blocked', { command }) }
+    }
     return { 
       success: false, 
       output: '', 
@@ -165,7 +168,7 @@ export async function executeCommand(
   }
 
   if (isSubAgentBlocked(assessment, config.commandRiskPolicy) && executor.isSubAgent) {
-    return { success: false, output: '', error: '高危命令在子任务模式下被系统自动阻止。' }
+    return { success: false, output: '', error: t('dispatch.command_blocked', { command }) }
   }
 
   const needConfirm = commandNeedsConfirm(assessment, config.executionMode, config.commandRiskPolicy)

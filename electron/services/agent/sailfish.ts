@@ -14,7 +14,10 @@ import type {
   AgentServices,
   PromptOptions
 } from './types'
-import { getAgentTools, filterUnattendedTools, AgentMode } from './tools'
+import { getAgentTools, filterUnattendedTools, filterSubAgentTools, AgentMode } from './tools'
+import type { ToolExecutorConfig } from './tools/types'
+import type { AgentRun } from './types'
+import type { ChildAgentHandle } from './sub-agent-roster'
 import { PromptBuilder } from './prompt-builder'
 import type { SkillSession } from './skills'
 import { createLogger } from '../../utils/logger'
@@ -45,7 +48,7 @@ export class SailFish extends Agent {
   protected getSkillSession(): SkillSession {
     const session = super.getSkillSession()
     // 诞生引导时自动加载 personality 技能
-    if (this.currentRun && !this._personalitySkillLoaded) {
+    if (this.currentRun && !this._personalitySkillLoaded && !this.isSubAgent()) {
       const isOnboarding = !(this.services.configService?.getAgentOnboardingCompleted() ?? true)
       if (isOnboarding) {
         this._personalitySkillLoaded = true
@@ -90,10 +93,16 @@ export class SailFish extends Agent {
    * 如果有加载的技能，返回合并后的工具
    */
   getAvailableTools(): ToolDefinition[] {
+    const raw = this.collectToolCatalog()
+    const unattended = this.currentRun?.context?.unattended
+    const afterUnattended = unattended ? filterUnattendedTools(raw) : raw
+    return this.isSubAgent() ? filterSubAgentTools(afterUnattended) : afterUnattended
+  }
+
+  protected collectToolCatalog() {
     const mode = this.getAgentMode()
     let remoteChannel = this.currentRun?.context?.remoteChannel
 
-    // 没有 remoteChannel 时，检查 IM 最近联系人以决定是否注册 IM 工具
     if (!remoteChannel) {
       try {
         const { getIMService } = require('../../im/im.service')
@@ -115,21 +124,46 @@ export class SailFish extends Agent {
       mcpToolSession: this.getMcpToolSession(),
       unattended
     }, this.services.pluginRegistry)
-    
+
     if (this.currentRun?.skillSession) {
       this.currentRun.skillSession.updateCoreTools(baseTools)
-      const withSkills = this.currentRun.skillSession.getAvailableTools()
-      // 技能工具是在 SkillSession 合并后才成形的第四个来源，得单独再过一次
-      return unattended ? filterUnattendedTools(withSkills) : withSkills
+      return this.currentRun.skillSession.getAvailableTools()
     }
-    
     return baseTools
+  }
+
+  protected createToolExecutorConfig(run: AgentRun): ToolExecutorConfig {
+    const config = super.createToolExecutorConfig(run)
+    return {
+      ...config,
+      createChildAgent: (name) => this.spawnChild(name),
+    }
+  }
+
+  private spawnChild(name: string): ChildAgentHandle {
+    const child = new SailFish(this.services)
+    child.setAgentId(`${this.getAgentId()}:sub:${name}`)
+    child.markAsSubAgent()
+    child.updateConfig({
+      executionMode: this.executionMode,
+      commandTimeout: this.commandTimeout,
+      commandRiskPolicy: this.commandRiskPolicy,
+      profileId: this.profileId,
+    })
+    return child
   }
   
   /**
    * 构建系统提示词
    */
   protected buildSystemPrompt(context: AgentContext, options: PromptOptions): string {
+    if (this.isSubAgent()) {
+      return PromptBuilder.buildSubAgentSystemPrompt({
+        context,
+        aiRules: options.aiRules,
+        hostProfileService: this.services.hostProfileService,
+      })
+    }
     return new PromptBuilder({
       context,
       hostProfileService: this.services.hostProfileService,

@@ -123,6 +123,8 @@ export interface PendingUserMessage {
   images?: string[]
   /** 旁路工作台上下文（不上 user_supplement 气泡） */
   workbenchContext?: import('@shared/types').WorkbenchContext
+  /** 伙计敲门：注入对话但不上墙为 user_supplement */
+  silent?: boolean
 }
 
 // Agent 运行状态

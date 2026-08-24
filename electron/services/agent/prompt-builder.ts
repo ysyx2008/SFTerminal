@@ -547,12 +547,12 @@ export class PromptBuilder {
    * 反复点名反而是诱导。
    */
   static buildSubAgentSystemPrompt(options: {
-    typePromptPrefix: string
+    typePromptPrefix?: string
     context: AgentContext
     aiRules?: string
     hostProfileService?: HostProfileServiceInterface
   }): string {
-    const { typePromptPrefix, context, aiRules, hostProfileService } = options
+    const { context, aiRules, hostProfileService } = options
     const sections: string[] = [
       LANGUAGE_RULE,
       PromptBuilder.buildHostEnvironment(context, hostProfileService),
@@ -563,13 +563,15 @@ export class PromptBuilder {
       sections.push(`# 用户自定义规则（必须遵守）\n\n${trimmedRules}`)
     }
 
-    sections.push(typePromptPrefix)
+    sections.push('你是这场任务里的同事，负责把交代的事做完，向主人汇报。')
+    const scratch = getScratchPath()
     sections.push([
       '## 工作契约',
       '- **数据真实性**：通过工具获取真实数据，禁止编造或推测工具结果',
-      '- **失败如实上报**：任何工具返回 `Error:` 都要原样写进最终汇报；不允许私自换命令、改路径或绕路径"补救"完成同一目标——失败信息本身就是父 Agent 需要的关键信号，由父 Agent 决定是否换方案',
+      '- **失败如实上报**：任何工具返回 `Error:` 都要原样写进最终汇报；不允许私自换命令、改路径或绕路径"补救"完成同一目标——失败信息本身就是主人需要的关键信号',
       '- **结论结构化**：最终汇报需明确区分「做到了什么 / 没做到什么 / 为什么没做到」，简洁、按要点列出',
-      '- **高风险操作限制**：高风险命令（如删除文件、修改系统配置、执行破坏性脚本等）在子任务模式下会被自动阻止，这是系统限制，不是暂时性失败',
+      '- **高风险操作限制**：高风险命令会被自动阻止，不会问人签字。这是系统限制，不是暂时性失败。需要签字的事交给主人。',
+      `- **写删免确认**：只认绝对路径，且目标落在 \`${scratch}\` 或系统临时目录。相对路径、先 cd 再删、桌面等正式目录的删除一律当高危并被拦住，不会弹确认。被拦了如实上报。`,
     ].join('\n'))
 
     return sections.filter(Boolean).join('\n\n')
@@ -786,14 +788,13 @@ export class PromptBuilder {
 
   private buildParallelAgentRule(): string {
     return [
-      '**并行子任务**（`dispatch_agents`）：',
-      '- 当任务可拆分为 2+ 个**互不依赖**的子问题时，使用 `dispatch_agents` 并行执行',
-      '- 典型场景：同时分析多个文件、并行调研不同方向、批量检查多个配置',
-      '- 每个子任务的 prompt 须**自包含**：包含完整上下文（文件路径、目标、约束等），子 Agent 看不到你的对话历史',
-      '- Agent 类型选择：`read`（默认，只读分析与调研）、`write`（可修改文件）',
-      '- 每个子任务可单独指定 `agent_type` 覆盖全局设置',
-      '- 子 Agent 只能使用 exec、读文件、搜索、知识库、web 等基础工具；不能使用技能（`skill`/`load_user_skill`）、MCP、终端交互或向用户提问',
-      '- 需要技能的子任务（如 browser/excel/email/chart）应由你亲自执行，不要分派给子 Agent',
+      '**并行同事**（`dispatch_agents`）：',
+      '- 任务可拆成互不依赖的子问题时，派出伙计并行干，立刻拿到名字，自己继续干，不必马上等',
+      '- 用 fork_turns 决定带多少对话：all（默认）全带；正整数只带最近几轮；none 不带，伙计只看见这条任务。后面还有还没轮到的安排时，不要把整段原文转过去',
+      '- 他们能读写文件、跑命令、加载技能；不能找用户签字、不能再派人、不能对外发信或改日程',
+      '- 完成后会敲门汇报。用 `followup_agent` 再交代（他还在跑就先记下，等当前操作走完再消化）、`wait_agents` 等下一条敲门（不重复正文）、`interrupt_agent` 打断',
+      '- 只有下一步被挡住了才 `wait_agents`。不要派出就干等',
+      '- 高危被拦是系统限制，接到失败后由你决定怎么做',
     ].join('\n')
   }
 

@@ -142,6 +142,16 @@ export interface ToolExecutorConfig {
    * @param currentTokensOverride 子 Agent 等独立消息链可传入自己的 prompt_tokens
    */
   getToolOutputBudget?: (currentTokensOverride?: number) => import('../tool-output-budget').ToolOutputBudget
+  /** 这场 run 的伙计花名册（仅主人有） */
+  getSubAgentRoster?: () => import('../sub-agent-roster').SubAgentRoster | undefined
+  /** 父对话 messages，供伙计清洗开局 */
+  getParentMessages?: () => import('../../ai.service').AiMessage[]
+  /** 伙计完成时敲门 */
+  knockParent?: (message: string) => void
+  /** 未按听众过滤的工具目录，供硬拦 */
+  getToolCatalog?: () => import('../../ai.service').ToolDefinition[]
+  /** 创建不进会话表的伙计实例 */
+  createChildAgent?: (name: string) => import('../sub-agent-roster').ChildAgentHandle
 }
 
 /** 常见图片扩展名（AI Vision 模型可直接处理的格式） */

@@ -260,6 +260,25 @@ describe('foldProcessSteps', () => {
     expect(readingOrder(segs)).toEqual(steps.map(s => s.id))
   })
 
+  it('keeps the fold live while colleagues are still running even after dispatch returned', () => {
+    const steps = [
+      thinkingMessage('m1', '先派人'),
+      step({
+        id: 'd1',
+        type: 'tool_call',
+        toolName: 'dispatch_agents',
+        success: true,
+        subAgents: [
+          { id: 'alice', status: 'running' },
+          { id: 'bob', status: 'pending' },
+        ],
+      }),
+    ]
+    const segs = foldProcessSteps(steps, { enabled: true })
+    expect(segs[0].kind === 'fold' && segs[0].fold.live).toBe(true)
+    expect(segs[0].kind === 'fold' && segs[0].fold.liveColleagueCount).toBe(2)
+  })
+
   it('marks the stretch in flight as live and says what it is busy with', () => {
     const steps = [
       ...longRun(),

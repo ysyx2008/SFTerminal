@@ -165,7 +165,8 @@ MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可
         },
         required: ['name', 'email', 'provider', 'password']
       }
-    }
+    },
+    _meta: { allowedForSubAgent: false }
   },
   {
     type: 'function',
@@ -179,7 +180,8 @@ MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可
         },
         required: ['accountId']
       }
-    }
+    },
+    _meta: { allowedForSubAgent: false }
   },
   {
     type: 'function',
@@ -220,7 +222,8 @@ MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可
         },
         required: ['name', 'username', 'provider', 'password']
       }
-    }
+    },
+    _meta: { allowedForSubAgent: false }
   },
   {
     type: 'function',
@@ -234,7 +237,8 @@ MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可
         },
         required: ['accountId']
       }
-    }
+    },
+    _meta: { allowedForSubAgent: false }
   },
   {
     type: 'function',

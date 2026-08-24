@@ -273,15 +273,17 @@ export interface AgentContext {
   workbenchPrompt?: string
 }
 
-/** 子 Agent 类型（与 sub-agent.ts 中 SUB_AGENT_TYPES 注册表对应） */
+/** @deprecated 伙计不再分 read/write 两档，保留仅为旧记录兼容 */
 export type SubAgentTypeName = 'read' | 'write'
 
 /** 子 Agent 任务描述（dispatch_agents 工具参数） */
 export interface SubAgentTask {
   id: string
+  /** 这场任务里招呼他的名字 */
+  name?: string
   description: string
   prompt: string
-  /** Agent 类型：read(只读分析/调研) / write(可修改文件)，默认 read */
+  /** @deprecated 不再使用 */
   agentType?: SubAgentTypeName
 }
 
@@ -305,12 +307,16 @@ export interface WebSearchResultItem {
 /** 子 Agent 执行结果（通过 AgentStep.subAgents 推送进度） */
 export interface SubAgentResult {
   id: string
+  /** 这场任务里招呼他的名字 */
+  name?: string
   description: string
   /** 主 Agent 下达的具体任务指令 */
   prompt?: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'interrupted'
   result?: string
   error?: string
+  /** 卡住原因（高危被拦等） */
+  blockedReason?: string
   tokensUsed?: TokenUsage
   /** 子 Agent 工具调用步骤（实时更新，提供执行过程透明度） */
   steps?: SubAgentToolStep[]
