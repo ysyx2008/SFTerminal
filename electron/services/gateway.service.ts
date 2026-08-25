@@ -28,6 +28,9 @@ import { WebChatService, VISIBLE_STEP_TYPES } from './web-chat.service'
 import { createLogger } from '../utils/logger'
 import { getWatchStore } from './watch/store'
 import { getEventBus } from './sensor/event-bus'
+import type { HttpRouteEntry } from './plugin/types'
+import { PLUGIN_ROUTE_PREFIX, isCanonicalPluginRouteEntry } from './plugin/loader'
+import { resolvePluginRouteConflicts } from './plugin/registry'
 
 const log = createLogger('Gateway')
 
@@ -73,7 +76,7 @@ export class GatewayService {
   }
   private auditLog: AuditLogEntry[] = []
   private static readonly MAX_AUDIT_LOG = 500  // 最多保留 500 条记录
-  private pluginRoutes: Array<{ method: string; path: string; handler: (req: http.IncomingMessage, res: http.ServerResponse) => void | Promise<void> }> = []
+  private pluginRoutes: HttpRouteEntry[] = []
 
   /** 便捷访问 Web Chat 服务 */
   private get chat(): WebChatService {
@@ -97,13 +100,34 @@ export class GatewayService {
   }
 
   /**
-   * 注册插件 HTTP 路由
+   * 注册插件 HTTP 路由（整体替换语义）。
+   * Gateway 是安全边界的最终执行点，不信任上游输入：
+   * 1. 逐条做 canonical entry 校验（规则唯一来源是 plugin loader 的
+   *    isCanonicalPluginRouteEntry，含完整运行时类型检查），非法 entry 拒绝并记录错误；
+   * 2. 再做 method+path 冲突检测：同一 path 只能有一个 owner，冲突时拒绝后注册者。
    */
-  registerPluginRoutes(routes: Array<{ method: string; path: string; handler: (req: http.IncomingMessage, res: http.ServerResponse) => void | Promise<void> }>): void {
-    this.pluginRoutes = routes
-    if (routes.length > 0) {
-      log.info(`Registered ${routes.length} plugin HTTP route(s)`)
+  registerPluginRoutes(routes: HttpRouteEntry[]): void {
+    if (!Array.isArray(routes)) {
+      log.error('registerPluginRoutes called with non-array payload, ignoring')
+      return
     }
+    const valid = routes.filter(r => this.guardPluginRouteEntry(r))
+    this.pluginRoutes = resolvePluginRouteConflicts(valid)
+    if (this.pluginRoutes.length > 0) {
+      log.info(`Registered ${this.pluginRoutes.length} plugin HTTP route(s)`)
+    }
+  }
+
+  /** 校验单条插件路由 entry，非法时记录错误日志。规则实现见 plugin loader。 */
+  private guardPluginRouteEntry(route: unknown): boolean {
+    if (isCanonicalPluginRouteEntry(route)) return true
+    const desc = route && typeof route === 'object'
+      ? ['method', 'path', 'pluginId']
+          .map(k => `${k}: ${String((route as Record<string, unknown>)[k])}`)
+          .join(' ')
+      : String(route)
+    log.error(`Rejected illegal plugin route entry: ${desc} — path must stay under ${PLUGIN_ROUTE_PREFIX}/{pluginId}/`)
+    return false
   }
 
   /**

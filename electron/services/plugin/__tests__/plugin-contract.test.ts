@@ -17,9 +17,9 @@ vi.mock('../../../utils/logger', () => ({
   })
 }))
 
-import { PluginRegistry } from '../registry'
+import { PluginRegistry, resolvePluginRouteConflicts } from '../registry'
 import { HookBus } from '../hook-bus'
-import { loadManifest, loadPlugin } from '../loader'
+import { loadManifest, loadPlugin, createRegistrationAPI, normalizePluginRoutePath } from '../loader'
 import type {
   PluginManifest,
   PluginEntry,
@@ -29,7 +29,9 @@ import type {
   HookEvent,
   HookDecision,
   ProviderRegistration,
-  ChannelRegistration
+  ChannelRegistration,
+  HttpRouteEntry,
+  LoadedPlugin
 } from '../types'
 
 // ==================== 1. Manifest 契约 ====================
@@ -189,7 +191,7 @@ describe('Registration API 契约', () => {
         collected.hooks.push({ event })
       },
       registerHttpRoute(method, path) {
-        plugin.httpRoutes.push({ method: method.toUpperCase(), path, handler: () => {} })
+        plugin.httpRoutes.push({ pluginId: manifest.id, method: method.toUpperCase(), path, handler: () => {} })
         collected.routes.push({ method: method.toUpperCase(), path })
       }
     })
@@ -639,8 +641,9 @@ describe('插件生命周期契约', () => {
       createAdapter: () => ({} as any)
     })
     plugin.httpRoutes.push({
+      pluginId: 'aggregation-test',
       method: 'GET',
-      path: '/test',
+      path: '/api/plugins/aggregation-test/test',
       handler: () => {}
     })
 
@@ -694,8 +697,127 @@ describe('配置契约', () => {
   })
 })
 
-// ==================== 8. 发现路径契约 ====================
+// ==================== 8. HTTP 路由命名空间与冲突契约 ====================
 
+describe('HTTP 路由命名空间与冲突契约', () => {
+  describe('normalizePluginRoutePath', () => {
+    it('普通路径自动加上插件命名空间前缀', () => {
+      expect(normalizePluginRoutePath('my-plugin', '/status')).toBe('/api/plugins/my-plugin/status')
+      expect(normalizePluginRoutePath('my-plugin', 'status')).toBe('/api/plugins/my-plugin/status')
+      expect(normalizePluginRoutePath('my-plugin', '/a/b/')).toBe('/api/plugins/my-plugin/a/b')
+      expect(normalizePluginRoutePath('my-plugin', '//a//b')).toBe('/api/plugins/my-plugin/a/b')
+    })
+
+    it('已带本插件前缀的路径原样接受（幂等）', () => {
+      expect(normalizePluginRoutePath('my-plugin', '/api/plugins/my-plugin/status'))
+        .toBe('/api/plugins/my-plugin/status')
+    })
+
+    it('命名空间根路径归一化为插件根', () => {
+      expect(normalizePluginRoutePath('my-plugin', '/')).toBe('/api/plugins/my-plugin')
+    })
+
+    it('核心保留路径一律拒绝', () => {
+      const reserved = [
+        '/api/chat',
+        '/api/chat/history',
+        '/api/auth/validate',
+        '/api/health',
+        '/hooks/some-token',
+        '/chat'
+      ]
+      for (const p of reserved) {
+        expect(normalizePluginRoutePath('my-plugin', p)).toBeNull()
+      }
+    })
+
+    it('不得占用其他插件的命名空间', () => {
+      expect(normalizePluginRoutePath('evil', '/api/plugins/victim/x')).toBeNull()
+      expect(normalizePluginRoutePath('evil', '/api/plugins')).toBeNull()
+    })
+
+    it('拒绝路径穿越和空路径', () => {
+      expect(normalizePluginRoutePath('my-plugin', '/../api/chat')).toBeNull()
+      expect(normalizePluginRoutePath('my-plugin', '')).toBeNull()
+      expect(normalizePluginRoutePath('my-plugin', '   ')).toBeNull()
+    })
+  })
+
+  describe('registerHttpRoute 注册行为', () => {
+    function createTestPlugin(): LoadedPlugin {
+      return {
+        manifest: { id: 'my-plugin', configSchema: {} },
+        rootDir: '/tmp/my-plugin',
+        tools: [],
+        providers: [],
+        channels: [],
+        ttsProviders: [],
+        hooks: new Map(),
+        httpRoutes: [],
+        enabled: true
+      }
+    }
+
+    it('注册的路由携带 pluginId 并落在命名空间内', () => {
+      const plugin = createTestPlugin()
+      const api = createRegistrationAPI('my-plugin', plugin)
+
+      api.registerHttpRoute('get', '/status', () => {})
+
+      expect(plugin.httpRoutes).toHaveLength(1)
+      expect(plugin.httpRoutes[0].pluginId).toBe('my-plugin')
+      expect(plugin.httpRoutes[0].method).toBe('GET')
+      expect(plugin.httpRoutes[0].path).toBe('/api/plugins/my-plugin/status')
+    })
+
+    it('核心路径注册被拒绝，不会进入路由表', () => {
+      const plugin = createTestPlugin()
+      const api = createRegistrationAPI('my-plugin', plugin)
+
+      api.registerHttpRoute('POST', '/api/chat', () => {})
+      api.registerHttpRoute('GET', '/api/plugins/other-plugin/x', () => {})
+
+      expect(plugin.httpRoutes).toHaveLength(0)
+    })
+  })
+
+  describe('resolvePluginRouteConflicts', () => {
+    const handler = () => {}
+    function route(pluginId: string, method: string, path: string): HttpRouteEntry {
+      return { pluginId, method, path, handler }
+    }
+
+    it('同一 method+path 只保留先注册者', () => {
+      const result = resolvePluginRouteConflicts([
+        route('plugin-a', 'GET', '/api/plugins/plugin-a/x'),
+        route('plugin-b', 'GET', '/api/plugins/plugin-a/x')
+      ])
+
+      expect(result).toHaveLength(1)
+      expect(result[0].pluginId).toBe('plugin-a')
+    })
+
+    it('不同 method 的同 path 不冲突', () => {
+      const result = resolvePluginRouteConflicts([
+        route('plugin-a', 'GET', '/api/plugins/plugin-a/x'),
+        route('plugin-a', 'POST', '/api/plugins/plugin-a/x')
+      ])
+
+      expect(result).toHaveLength(2)
+    })
+
+    it('无冲突时原样返回', () => {
+      const result = resolvePluginRouteConflicts([
+        route('plugin-a', 'GET', '/api/plugins/plugin-a/x'),
+        route('plugin-b', 'GET', '/api/plugins/plugin-b/y')
+      ])
+
+      expect(result).toHaveLength(2)
+    })
+  })
+})
+
+// ==================== 9. 发现路径契约 ====================
 describe('发现路径契约', () => {
   it('发现路径按 SPEC 定义的优先级排列', () => {
     const registry = new PluginRegistry({

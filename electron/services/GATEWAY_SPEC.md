@@ -82,7 +82,7 @@ interface AuditLogEntry {
 | `/api/chat/clear` | POST | Bearer | `handleChatClear` | 清空对话上下文 |
 | `/api/chat/events` | GET | Bearer | `handleChatEvents` | SSE 事件流（多通道旁听） |
 | `POST /hooks/:token` | POST | Token-in-URL | `handleWebhook` | 外部 Webhook 触发 Watch |
-| 插件路由（任意） | 自定义 | Bearer | 插件注册 handler | 由 `registerPluginRoutes` 注入 |
+| 插件路由 | 自定义 | Bearer | 插件注册 handler | 由 `registerPluginRoutes` 注入；路径强制约束在 `/api/plugins/{pluginId}/` 命名空间内（loader 归一化 + Gateway 入口二次校验归属与合法性），无法覆盖核心 API；method+path 冲突时保留先注册者 |
 
 ## 关键行为 / 数据流
 

@@ -19,13 +19,93 @@ import type {
   TtsProviderRegistration,
   HookEvent,
   HookHandler,
-  RouteHandler
+  RouteHandler,
+  HttpRouteEntry
 } from './types'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('PluginLoader')
 
 const MANIFEST_FILENAME = 'openclaw.plugin.json'
+
+/** 插件 HTTP 路由的强制命名空间前缀：/api/plugins/{pluginId}/... */
+export const PLUGIN_ROUTE_PREFIX = '/api/plugins'
+
+/**
+ * Gateway 核心保留路径（无前导斜杠的归一化形式）。
+ * 插件显式注册这些路径一律拒绝，避免劫持核心端点语义。
+ */
+const RESERVED_ROUTE_PREFIXES = ['api/chat', 'api/auth', 'api/health', 'hooks', 'chat']
+
+function isReservedRoutePath(normalized: string): boolean {
+  return RESERVED_ROUTE_PREFIXES.some(
+    prefix => normalized === prefix || normalized.startsWith(prefix + '/')
+  )
+}
+
+/**
+ * 归一化插件路由路径，把插件路由强制约束在 /api/plugins/{pluginId}/ 命名空间内。
+ *
+ * - 普通路径（如 "/status"）：自动加上本插件的命名空间前缀；
+ * - 已带本插件前缀的路径：原样接受（幂等）；
+ * - 命中核心保留路径、试图占用其他插件命名空间、含 ".." 分段、空路径：返回 null，调用方应拒绝注册。
+ */
+export function normalizePluginRoutePath(pluginId: string, rawPath: string): string | null {
+  // pluginId 本身必须是一个合法的单段路径分量，否则命名空间约束无从谈起
+  if (!pluginId || pluginId.includes('/') || pluginId.includes('..')) return null
+  if (typeof rawPath !== 'string' || !rawPath.trim()) return null
+
+  // 去掉多余斜杠，统一成分段形式
+  const segments = rawPath.split('/').filter(s => s.length > 0)
+  if (segments.includes('..')) return null
+
+  const joined = segments.join('/')
+
+  // 插件自己的命名空间根：/api/plugins/{pluginId}
+  if (joined === '') return `${PLUGIN_ROUTE_PREFIX}/${pluginId}`
+
+  // 已带 /api/plugins/ 前缀：只允许落在本插件自己的命名空间内
+  if (joined === 'api/plugins' || joined.startsWith('api/plugins/')) {
+    const rest = joined.slice('api/plugins/'.length)
+    const owner = rest.split('/')[0]
+    if (!rest || owner !== pluginId) return null
+    return `${PLUGIN_ROUTE_PREFIX}/${rest}`
+  }
+
+  // 显式指向核心 API 路径：拒绝并给出明确错误，而不是静默改名
+  if (isReservedRoutePath(joined)) return null
+
+  return `${PLUGIN_ROUTE_PREFIX}/${pluginId}/${joined}`
+}
+
+/**
+ * 校验一条插件路由 entry 是否为合法的 canonical 形态。
+ *
+ * 这是 loader 归一化规则的唯一权威校验方，Gateway 在注册入口直接复用本函数，
+ * 双方不各自维护规则，避免校验逻辑漂移。
+ *
+ * 运行时完整校验（不信任 TypeScript 类型）：entry 必须是非空对象，
+ * method/path/pluginId 必须是非空字符串，handler 必须是函数；
+ * pluginId 不得含 "/" 或 ".."，path 不得含 ".." 分段；
+ * path 必须落在该插件自己的 /api/plugins/{pluginId}/ 命名空间内。
+ */
+export function isCanonicalPluginRouteEntry(route: unknown): route is HttpRouteEntry {
+  if (!route || typeof route !== 'object') return false
+
+  const r = route as Partial<Record<keyof HttpRouteEntry, unknown>>
+  if (typeof r.method !== 'string' || r.method.length === 0) return false
+  if (typeof r.path !== 'string' || r.path.length === 0) return false
+  if (typeof r.handler !== 'function') return false
+
+  const pluginId = r.pluginId
+  if (typeof pluginId !== 'string' || pluginId.length === 0) return false
+  if (pluginId.includes('/') || pluginId.includes('..')) return false
+
+  if (r.path.split('/').includes('..')) return false
+
+  const prefix = `${PLUGIN_ROUTE_PREFIX}/${pluginId}`
+  return r.path === prefix || r.path.startsWith(prefix + '/')
+}
 
 /**
  * 从指定目录扫描所有插件目录
@@ -140,7 +220,11 @@ export async function loadPlugin(
   return plugin
 }
 
-function createRegistrationAPI(pluginId: string, plugin: LoadedPlugin): PluginRegistrationAPI {
+/**
+ * 构建传给插件 register(api) 的注册 API。
+ * 导出供契约测试直接验证注册行为（命名空间、拒绝逻辑）。
+ */
+export function createRegistrationAPI(pluginId: string, plugin: LoadedPlugin): PluginRegistrationAPI {
   return {
     registerTool(def: ToolRegistration, opts?: ToolRegistrationOptions) {
       plugin.tools.push({ ...def, optional: opts?.optional })
@@ -168,8 +252,19 @@ function createRegistrationAPI(pluginId: string, plugin: LoadedPlugin): PluginRe
       log.debug(`Plugin "${pluginId}" registered hook: ${event}`)
     },
     registerHttpRoute(method: string, routePath: string, handler: RouteHandler) {
-      plugin.httpRoutes.push({ method: method.toUpperCase(), path: routePath, handler })
-      log.debug(`Plugin "${pluginId}" registered route: ${method.toUpperCase()} ${routePath}`)
+      const normalized = normalizePluginRoutePath(pluginId, routePath)
+      if (!normalized) {
+        log.error(
+          `Plugin "${pluginId}" route rejected: ${method.toUpperCase()} ${routePath} ` +
+          `(routes must stay under ${PLUGIN_ROUTE_PREFIX}/${pluginId}/ and must not target core API paths)`
+        )
+        return
+      }
+      if (normalized !== routePath) {
+        log.info(`Plugin "${pluginId}" route namespaced: ${method.toUpperCase()} ${routePath} -> ${normalized}`)
+      }
+      plugin.httpRoutes.push({ pluginId, method: method.toUpperCase(), path: normalized, handler })
+      log.debug(`Plugin "${pluginId}" registered route: ${method.toUpperCase()} ${normalized}`)
     }
   }
 }
