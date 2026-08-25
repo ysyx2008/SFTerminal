@@ -46,6 +46,8 @@ api.registerHook(event: HookEvent, handler: HookHandler): void
 api.registerHttpRoute(method: string, path: string, handler: RouteHandler): void
 ```
 
+`registerHttpRoute` 的路径会被强制约束在 `/api/plugins/{pluginId}/` 命名空间内（相对路径自动加前缀）；核心 API 保留路径（`/api/chat`、`/api/auth`、`/api/health`、`/hooks`、`/chat` 及子路径）和其他插件的命名空间一律拒绝注册。同一 method + path 只允许一个 owner，冲突时保留先注册者并记录错误。
+
 ### ToolRegistration 签名
 
 ```typescript

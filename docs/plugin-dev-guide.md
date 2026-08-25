@@ -188,12 +188,20 @@ Adapter 需实现 `IMAdapter` 接口（参考 `electron/services/im/types.ts`）
 
 在 Gateway 上注册自定义 HTTP 端点（需鉴权后才可访问）。
 
+插件路由被强制约束在 `/api/plugins/{pluginId}/` 命名空间内：传入的相对路径会自动加上该前缀。例如下面注册的实际端点是 `GET /api/plugins/my-plugin/status`：
+
 ```javascript
-api.registerHttpRoute("GET", "/api/plugin/status", (req, res) => {
+api.registerHttpRoute("GET", "/status", (req, res) => {
   res.writeHead(200, { "Content-Type": "application/json" })
   res.end(JSON.stringify({ status: "ok", version: "1.0.0" }))
 })
 ```
+
+注意：
+
+- 不得注册核心 API 保留路径（`/api/chat`、`/api/auth`、`/api/health`、`/hooks`、`/chat` 及其子路径），此类注册会被拒绝并记录错误日志。
+- 不得占用其他插件的命名空间（`/api/plugins/{其他插件id}/...`），同样会被拒绝。
+- 同一 method + path 只能有一个插件持有，冲突时保留先注册者，后注册者会被拒绝并记录错误日志。
 
 ## 使用 TypeScript
 

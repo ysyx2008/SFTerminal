@@ -391,6 +391,34 @@ function registerSdkShim(): void {
   }
 }
 
+// ==================== 路由冲突检测 ====================
+
+/**
+ * 解决插件路由冲突：同一 method + path 只能有一个 owner。
+ * 保留先注册者，拒绝后来者并记录明确错误（含双方 pluginId）。
+ * Gateway 在 registerPluginRoutes 时应用此函数。
+ */
+export function resolvePluginRouteConflicts(routes: HttpRouteEntry[]): HttpRouteEntry[] {
+  const seen = new Map<string, HttpRouteEntry>()
+  const result: HttpRouteEntry[] = []
+
+  for (const route of routes) {
+    const key = `${route.method} ${route.path}`
+    const existing = seen.get(key)
+    if (existing) {
+      log.error(
+        `Plugin route conflict: ${key} is already owned by plugin "${existing.pluginId}", ` +
+        `rejected duplicate registration from plugin "${route.pluginId}"`
+      )
+      continue
+    }
+    seen.set(key, route)
+    result.push(route)
+  }
+
+  return result
+}
+
 // ==================== 单例工厂 ====================
 
 let instance: PluginRegistry | null = null

@@ -120,6 +120,8 @@ export type RouteHandler = (
 
 /** HTTP 路由注册项 */
 export interface HttpRouteEntry {
+  /** 路由归属的插件 id（撤销、冲突检测与审计的凭据） */
+  pluginId: string
   method: string
   path: string
   handler: RouteHandler
