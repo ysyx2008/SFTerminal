@@ -23,6 +23,8 @@ export const translations = {
       dataPrivacy: '数据安全',
       github: 'GitHub',
       cta: '立即下载',
+      menu: '打开菜单',
+      closeMenu: '关闭菜单',
     },
     hero: {
       brand: '旗鱼',
@@ -976,6 +978,8 @@ export const translations = {
       dataPrivacy: 'Data Safety',
       github: 'GitHub',
       cta: 'Download',
+      menu: 'Open menu',
+      closeMenu: 'Close menu',
     },
     hero: {
       brand: 'SailFish',
