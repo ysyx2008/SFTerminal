@@ -7,6 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as path from 'path'
 
 vi.mock('../../../utils/logger', () => ({
   createLogger: () => ({
@@ -827,10 +828,12 @@ describe('发现路径契约', () => {
     })
 
     const paths: string[] = (registry as any).getDiscoveryPaths()
+    // 路径断言统一走 path.join / 分隔符归一化，保证 Windows 与 POSIX 行为一致
+    const normalize = (p: string) => p.replace(/\\/g, '/')
 
     expect(paths[0]).toBe('/custom/path')
-    expect(paths).toContain('/fake/userData/plugins')
-    expect(paths).toContain('/fake/userData/plugins/node_modules')
-    expect(paths.some((p: string) => p.includes('.openclaw/extensions'))).toBe(true)
+    expect(paths).toContain(path.join('/fake/userData', 'plugins'))
+    expect(paths).toContain(path.join('/fake/userData', 'plugins', 'node_modules'))
+    expect(paths.some((p: string) => normalize(p).includes('.openclaw/extensions'))).toBe(true)
   })
 })
