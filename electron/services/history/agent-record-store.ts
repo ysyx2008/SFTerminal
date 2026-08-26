@@ -121,6 +121,23 @@ export interface SearchAgentRecordsResult {
   hasMore: boolean
 }
 
+/** 全文搜索命中：会话标题、最终结果、用户消息/追加（含附件标题）、主动找人。 */
+function recordMatchesSearchKeyword(record: AgentRecord, lowerKeyword: string): boolean {
+  if (record.userTask?.toLowerCase().includes(lowerKeyword)) return true
+  if (record.finalResult?.toLowerCase().includes(lowerKeyword)) return true
+  return record.steps?.some(step => {
+    if (step.type === 'user_task' || step.type === 'user_supplement') {
+      if (step.content?.toLowerCase().includes(lowerKeyword)) return true
+      if (step.attachments?.some(a => a.filename?.toLowerCase().includes(lowerKeyword))) return true
+    }
+    if (step.toolName === 'talk_to_user') {
+      const message = (step.toolArgs as Record<string, unknown> | undefined)?.message
+      if (message?.toString().toLowerCase().includes(lowerKeyword)) return true
+    }
+    return false
+  }) ?? false
+}
+
 export class AgentRecordStore {
   private readonly historyDir: string
   private readonly agentDir: string
@@ -844,7 +861,7 @@ export class AgentRecordStore {
 
   /**
    * 关键字搜索 Agent 历史记录
-   * 搜索范围：userTask、finalResult、以及过程中用户追加的消息（user_task / user_supplement steps）
+   * 搜索范围：userTask、finalResult、用户消息/追加（含附件标题）、主动找人
    */
   async searchAgentRecords(keyword: string, limit: number = 10): Promise<AgentRecord[]> {
     return (await this.searchAgentRecordsAdvanced({ keyword, limit })).records
@@ -857,7 +874,7 @@ export class AgentRecordStore {
    *
    * 性能：先用内存索引（含 userTask/timestamp 等）筛出候选，再按需异步读取日期文件。
    * - titleOnly：关键字匹配在索引层完成，仅为前 limit 条命中读回完整记录，零全量扫描；
-   * - full：关键字可能命中 finalResult/steps 正文，须读完整记录二次匹配，但仅读「时间窗 +
+   * - full：关键字可能命中 finalResult/steps 正文/附件标题，须读完整记录二次匹配，但仅读「时间窗 +
    *   filter 命中」的候选所在文件，且逐文件 `await`（fs.promises）让出事件循环，避免历史量大时
    *   同步遍历阻塞主进程导致界面冻结。
    *
@@ -909,16 +926,7 @@ export class AgentRecordStore {
       throwIfAborted(options.signal)
       const r = await this.readAgentRecordFromDiskAsync(entry.dateStr, entry.id, { omitCanvasData: true })
       if (!r) continue
-      const matchedByKeyword = !hasKeyword || Boolean(
-        r.userTask?.toLowerCase().includes(lowerKeyword) ||
-          r.finalResult?.toLowerCase().includes(lowerKeyword) ||
-          r.steps?.some(s =>
-            ((s.type === 'user_task' || s.type === 'user_supplement') &&
-              s.content?.toLowerCase().includes(lowerKeyword)) ||
-            (s.toolName === 'talk_to_user' &&
-              (s.toolArgs as Record<string, unknown>)?.message?.toString().toLowerCase().includes(lowerKeyword))
-          )
-      )
+      const matchedByKeyword = !hasKeyword || recordMatchesSearchKeyword(r, lowerKeyword)
       if (matchedByKeyword) {
         totalMatched++
         if (results.length < limit) {

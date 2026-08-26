@@ -389,6 +389,37 @@ describe('HistoryService - searchAgentRecordsAdvanced', () => {
     expect(new Set(res.records.map(r => r.id))).toEqual(new Set(['by-title', 'by-result', 'by-step']))
   })
 
+  it('full 模式命中用户消息和追加消息上的附件标题', async () => {
+    const svc = new HistoryService()
+    const t = new Date('2026-03-18T10:00:00').getTime()
+
+    svc.saveAgentRecord(makeRecord({
+      id: 'by-task-attachment', timestamp: t, duration: 1, userTask: '帮我看看',
+      steps: [{
+        type: 'user_task', content: '帮我看看', timestamp: t,
+        attachments: [{ filename: 'Q3财务报告.xlsx', fileSize: 12, fileType: 'xlsx' }]
+      } as any]
+    }))
+    svc.saveAgentRecord(makeRecord({
+      id: 'by-supplement-attachment', timestamp: t + 1000, duration: 1, userTask: '继续',
+      steps: [{
+        type: 'user_supplement', content: '再看这个', timestamp: t,
+        attachments: [{ filename: '财务预测草案.pdf', fileSize: 8, fileType: 'pdf' }]
+      } as any]
+    }))
+    svc.saveAgentRecord(makeRecord({
+      id: 'no-match', timestamp: t + 2000, duration: 1, userTask: '完全无关',
+      steps: [{
+        type: 'user_task', content: '完全无关', timestamp: t,
+        attachments: [{ filename: '会议纪要.docx', fileSize: 4, fileType: 'docx' }]
+      } as any]
+    }))
+
+    const res = await svc.searchAgentRecordsAdvanced({ keyword: '财务', limit: 10 })
+    expect(res.totalMatched).toBe(2)
+    expect(new Set(res.records.map(r => r.id))).toEqual(new Set(['by-task-attachment', 'by-supplement-attachment']))
+  })
+
   it('titleOnly 模式只匹配 userTask，不扫描正文', async () => {
     const svc = new HistoryService()
     const t = new Date('2026-03-18T10:00:00').getTime()
