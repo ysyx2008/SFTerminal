@@ -72,5 +72,6 @@ export default {
   im: {
     channelConnected: '{platform} 已连接',
     channelDisconnected: '{platform} 连接已断开',
+    wechatSendFailed: '回复没发到微信。请在微信里再给旗鱼发一条，对话就能接上。',
   },
 }

@@ -132,6 +132,11 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
   onMessage: ((msg: IMIncomingMessage) => void) | null = null
   onConnectionChange: ((connected: boolean) => void) | null = null
   /**
+   * 出站软失败（ilink -2）持续时通知一次。用户再发一条进来后清掉，才能再提示。
+   * 不抛错，避免过程消息变成未处理拒绝。
+   */
+  onSoftSendFailure: ((userId: string) => void) | null = null
+  /**
    * 扫码确认拿到 bot_token 时触发一次（早于 startPolling / onConnectionChange）。
    * 与连接态解耦：断线重连不会再次触发，避免重复落盘或强行改写 autoConnect。
    */
@@ -188,6 +193,8 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
 
   /** 按 userId 的过程消息 digest 缓冲（beginOutboundSession bufferProgress 时创建） */
   private progressByUser = new Map<string, WechatOutboundProgress>()
+  /** 已提示过软失败的用户；入站新消息后清除，避免同一轮刷屏 */
+  private softFailNotifiedUsers = new Set<string>()
 
   /** 已拉到、待下载/分发的入站消息。长轮询只入队，不在 poll 里等下载。 */
   private inboundQueue: WeixinMessage[] = []
@@ -288,7 +295,13 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
     if (options?.bufferProgress) {
       const ctx = replyContext
       this.progressByUser.set(userId, new WechatOutboundProgress({
-        sendDigest: (text) => this.sendText(ctx, text),
+        sendDigest: async (text) => {
+          try {
+            await this.sendText(ctx, text)
+          } catch {
+            this.reportSoftSendFailure(ctx.userId)
+          }
+        },
       }))
     }
 
@@ -584,17 +597,25 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
 
     const session = this.getOutboundSession(ctx.userId)
     if (session) {
-      await this.guarded(() => session.sendText(truncated))
+      const result = await this.guarded(() => session.sendText(truncated))
+      if (result.softFailed) this.reportSoftSendFailure(ctx.userId)
       return
     }
 
-    await this.runWithContextToken(ctx.userId, contextToken, (token) =>
+    const result = await this.runWithContextToken(ctx.userId, contextToken, (token) =>
       this.guarded(() => sendMessageWeixin({
         to: ctx.userId,
         text: truncated,
         opts: { ...this.apiOpts, contextToken: token, runId: ctx.runId },
       })),
     )
+    if (result.softFailed) this.reportSoftSendFailure(ctx.userId)
+  }
+
+  private reportSoftSendFailure(userId: string): void {
+    if (!userId || this.softFailNotifiedUsers.has(userId)) return
+    this.softFailNotifiedUsers.add(userId)
+    this.onSoftSendFailure?.(userId)
   }
 
   async sendMarkdown(replyContext: any, _title: string, content: string): Promise<void> {
@@ -644,11 +665,8 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
         })),
       )
     const session = this.getOutboundSession(ctx.userId)
-    if (session) {
-      await session.enqueue(() => send())
-      return
-    }
-    await send()
+    const result = session ? await session.enqueue(() => send()) : await send()
+    if (result.softFailed) this.reportSoftSendFailure(ctx.userId)
   }
 
   async sendFile(replyContext: any, filePath: string, fileName?: string): Promise<void> {
@@ -666,11 +684,8 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
         })),
       )
     const session = this.getOutboundSession(ctx.userId)
-    if (session) {
-      await session.enqueue(() => send())
-      return
-    }
-    await send()
+    const result = session ? await session.enqueue(() => send()) : await send()
+    if (result.softFailed) this.reportSoftSendFailure(ctx.userId)
   }
 
   // ==================== 长轮询 ====================
@@ -931,6 +946,7 @@ export class WeChatAdapter implements IMAdapter, IMProgressOutboundCapable {
       log.debug(`Skipping empty message from ${userId}`)
       return
     }
+    this.softFailNotifiedUsers.delete(userId)
 
     const incoming: IMIncomingMessage = {
       platform: 'wechat',

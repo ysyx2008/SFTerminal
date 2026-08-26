@@ -957,6 +957,7 @@ export class IMService {
 
       this.wechatAdapter = new WeChatAdapter({ enabled: true, token: '', baseUrl: '' })
       this.wechatAdapter.onMessage = (msg: IMIncomingMessage) => this.handleIncomingMessage(msg)
+      this.wechatAdapter.onSoftSendFailure = (userId) => this.notifyWechatSoftSendFailure(userId)
       this.wechatAdapter.onConnectionChange = (connected: boolean) =>
         this.handleConnectionChange('wechat', connected)
       this.wechatAdapter.onLoginStatus = (status) =>
@@ -1012,6 +1013,7 @@ export class IMService {
       this.wechatAdapter = new WeChatAdapter(config)
 
       this.wechatAdapter.onMessage = (msg: IMIncomingMessage) => this.handleIncomingMessage(msg)
+      this.wechatAdapter.onSoftSendFailure = (userId) => this.notifyWechatSoftSendFailure(userId)
       this.wechatAdapter.onConnectionChange = (connected: boolean) =>
         this.handleConnectionChange('wechat', connected)
 
@@ -1089,6 +1091,16 @@ export class IMService {
    */
   getLastContact(): IMLastContact | null {
     return this.lastContact
+  }
+
+  /** 微信软失败（-2）持续时只走桌面提示，不再往微信里发「请再发一条」——那条同样发不出去 */
+  private notifyWechatSoftSendFailure(userId: string): void {
+    log.warn('WeChat outbound soft failure surfaced to desktop', { userId })
+    this.sendToDesktop('im:sendFailure', {
+      platform: 'wechat',
+      userId,
+      userName: userId,
+    })
   }
 
   /**

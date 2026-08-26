@@ -3711,6 +3711,15 @@ const electronAPI = {
         ipcRenderer.removeListener('im:wechatLoginStatus', handler)
       }
     },
+
+    onSendFailure: (callback: (data: { platform: string; userId?: string; userName?: string; reason?: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { platform: string; userId?: string; userName?: string; reason?: string }) =>
+        callback(data)
+      ipcRenderer.on('im:sendFailure', handler)
+      return () => {
+        ipcRenderer.removeListener('im:sendFailure', handler)
+      }
+    },
   },
 
   feishuOAuth: {

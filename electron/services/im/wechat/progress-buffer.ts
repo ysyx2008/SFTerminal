@@ -72,7 +72,7 @@ export class WechatProgressBuffer {
     this.entries.push({ kind: 'tool', text: trimmed })
     const toolCount = this.countTools()
     if (toolCount >= this.maxLines) {
-      void this.flush()
+      void this.flush().catch(() => undefined)
       return
     }
     this.scheduleFlush()
@@ -94,12 +94,12 @@ export class WechatProgressBuffer {
     // flush() 的同步部分（取 entries、算 text、清空 entries）立即完成，异步发送在 Promise 链里；
     // 因此 body 的 push 发生在 entries 已清空之后，不会混入工具进度那条 digest。
     if (this.entries.some((e) => e.kind === 'tool')) {
-      void this.flush()
+      void this.flush().catch(() => undefined)
     }
     this.entries.push({ kind: 'body', text: trimmed })
     if (!this.firstBodySent) {
       this.firstBodySent = true
-      void this.flush()
+      void this.flush().catch(() => undefined)
       return
     }
     this.scheduleFlush()
@@ -115,7 +115,7 @@ export class WechatProgressBuffer {
     if (this.disposed || this.timer != null) return
     this.timer = setTimeout(() => {
       this.timer = null
-      void this.flush()
+      void this.flush().catch(() => undefined)
     }, this.flushIntervalMs)
   }
 
@@ -137,7 +137,11 @@ export class WechatProgressBuffer {
     this.entries = []
 
     const run = async () => {
-      await this.send(text)
+      try {
+        await this.send(text)
+      } catch {
+        // 出站失败由 send 路径自己上报；缓冲必须继续排空，不能把链卡成拒绝。
+      }
     }
     this.flushChain = this.flushChain.then(run, run)
     return this.flushChain

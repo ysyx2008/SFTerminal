@@ -480,6 +480,7 @@ let cleanupSchedulerTaskStarted: (() => void) | null = null
 let cleanupGatewayRemoteTab: (() => void) | null = null
 let cleanupGatewayRemoteTask: (() => void) | null = null
 let cleanupImConnectionChange: (() => void) | null = null
+let cleanupImSendFailure: (() => void) | null = null
 let cleanupAiProfileFallback: (() => void) | null = null
 let cleanupRunTask: (() => void) | null = null
 let cleanupInstallSkill: (() => void) | null = null
@@ -1035,6 +1036,7 @@ onMounted(async () => {
     slack: t('settings.im.slack'),
     telegram: t('settings.im.telegram'),
     wecom: t('settings.im.wecom'),
+    wechat: t('settings.im.wechat'),
   }
   const imConnectedState = new Map<string, boolean>()
   cleanupImConnectionChange = window.electronAPI.im.onConnectionChange((data) => {
@@ -1047,6 +1049,12 @@ onMounted(async () => {
       toast.success(t('im.channelConnected', { platform: name }))
     } else {
       toast.warning(t('im.channelDisconnected', { platform: name }))
+    }
+  })
+
+  cleanupImSendFailure = window.electronAPI.im.onSendFailure((data) => {
+    if (data.platform === 'wechat') {
+      toast.warning(t('im.wechatSendFailed'), 8000)
     }
   })
 
@@ -1593,6 +1601,7 @@ onUnmounted(() => {
   cleanupGatewayRemoteTab?.()
   cleanupGatewayRemoteTask?.()
   cleanupImConnectionChange?.()
+  cleanupImSendFailure?.()
   cleanupAiProfileFallback?.()
   cleanupRunTask?.()
   cleanupInstallSkill?.()

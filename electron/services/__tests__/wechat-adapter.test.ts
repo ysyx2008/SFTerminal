@@ -111,6 +111,42 @@ describe('WeChatAdapter', () => {
     vi.clearAllMocks()
   })
 
+  it('sendText reports soft failure once until a new inbound arrives', async () => {
+    sendMessageWeixinMock.mockResolvedValue({ messageId: 'cid-1', softFailed: true })
+    const adapter = new WeChatAdapter({ token: 'tok' } as any)
+    const onSoft = vi.fn()
+    adapter.onSoftSendFailure = onSoft
+
+    await adapter.sendText({ userId: 'u1', contextToken: 'ctx' }, 'hello')
+    await adapter.sendText({ userId: 'u1', contextToken: 'ctx' }, 'again')
+    expect(onSoft).toHaveBeenCalledTimes(1)
+    expect(onSoft).toHaveBeenCalledWith('u1')
+
+    await (adapter as any).dispatchInbound(
+      { from_user_id: 'u1', context_token: 'ctx', item_list: [{ type: 1, text_item: { text: 'hi' } }] },
+      [],
+    )
+    await adapter.sendText({ userId: 'u1', contextToken: 'ctx' }, 'after inbound')
+    expect(onSoft).toHaveBeenCalledTimes(2)
+  })
+
+  it('empty inbound does not reset the soft-failure notice', async () => {
+    sendMessageWeixinMock.mockResolvedValue({ messageId: 'cid-1', softFailed: true })
+    const adapter = new WeChatAdapter({ token: 'tok' } as any)
+    const onSoft = vi.fn()
+    adapter.onSoftSendFailure = onSoft
+
+    await adapter.sendText({ userId: 'u1', contextToken: 'ctx' }, 'hello')
+    expect(onSoft).toHaveBeenCalledTimes(1)
+
+    await (adapter as any).dispatchInbound(
+      { from_user_id: 'u1', context_token: 'ctx', item_list: [] },
+      [],
+    )
+    await adapter.sendText({ userId: 'u1', contextToken: 'ctx' }, 'still failing')
+    expect(onSoft).toHaveBeenCalledTimes(1)
+  })
+
   it('sendText forwards to vendored sendMessageWeixin with contextToken', async () => {
     const adapter = new WeChatAdapter({ token: 'tok-12345678' } as any)
 
@@ -223,16 +259,13 @@ describe('WeChatAdapter', () => {
   })
 
   it('sendText does NOT retry on errcode=-2 (aligned with official SDK)', async () => {
-    // 官方 SDK 在 api 层静默吞掉 errcode=-2；适配器不再做"刷新 config 后重试一次"，
-    // 失败直接透传，sendmessage 只调用一次。
-    sendMessageWeixinMock.mockRejectedValueOnce(
-      new Error('sendMessage 200: {"errcode":-2,"errmsg":"unknown"}'),
-    )
+    // api 层把 -2 收成 softFailed，适配器不再刷新 config 后重试，sendmessage 只调用一次。
+    sendMessageWeixinMock.mockResolvedValueOnce({ messageId: 'cid-1', softFailed: true })
     const adapter = new WeChatAdapter({ token: 'tok' } as any)
 
     await expect(
       adapter.sendText({ userId: 'u1', contextToken: 'ctx-1' }, 'hello'),
-    ).rejects.toThrow()
+    ).resolves.toBeUndefined()
 
     expect(sendMessageWeixinMock).toHaveBeenCalledTimes(1)
   })
@@ -305,16 +338,14 @@ describe('WeChatAdapter', () => {
     await adapter.beginOutboundSession({ userId: 'u1', contextToken: 'ctx-1' })
     await Promise.resolve(); await Promise.resolve()
 
-    sendMessageWeixinMock.mockRejectedValueOnce(
-      new Error('sendMessage 200: {"errcode":-2,"errmsg":"unknown"}'),
-    )
+    sendMessageWeixinMock.mockResolvedValueOnce({ messageId: 'cid-1', softFailed: true })
     invalidateUserMock.mockClear()
     const getForUserCallsBefore = getForUserMock.mock.calls.length
 
-    // 对齐官方 SDK：失败不再重试，也不刷新 keepalive ticket，异常原样透传
+    // 对齐官方 SDK：-2 不再重试，也不刷新 keepalive ticket
     await expect(
       adapter.sendText({ userId: 'u1', contextToken: 'ctx-1' }, 'hello'),
-    ).rejects.toThrow()
+    ).resolves.toBeUndefined()
 
     expect(sendMessageWeixinMock).toHaveBeenCalledTimes(1)
     expect(invalidateUserMock).not.toHaveBeenCalled()

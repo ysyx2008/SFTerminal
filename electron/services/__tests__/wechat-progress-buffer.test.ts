@@ -190,6 +190,23 @@ describe('WechatProgressBuffer', () => {
       expect(send.mock.calls[1][0]).toBe('我来查一下')
     })
 
+    it('fire-and-forget flush swallows send errors so later flushes still run', async () => {
+      const send = vi.fn()
+        .mockRejectedValueOnce(new Error('sendMessage ret=-2 errmsg=prepare failed'))
+        .mockResolvedValue(undefined)
+      const buffer = new WechatProgressBuffer(send, {})
+
+      buffer.pushBody('首条')
+      await expect(buffer.flush()).resolves.toBeUndefined()
+      expect(send).toHaveBeenCalledTimes(1)
+
+      buffer.pushBody('第二条')
+      await buffer.flush()
+
+      expect(send).toHaveBeenCalledTimes(2)
+      expect(send.mock.calls[1][0]).toBe('第二条')
+    })
+
     it('flushProgress (flush) on task end sends subsequent body even without follow-up tool', async () => {
       const send = vi.fn().mockResolvedValue(undefined)
       const buffer = new WechatProgressBuffer(send, {})

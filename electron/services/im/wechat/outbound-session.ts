@@ -3,7 +3,7 @@
  * 对齐上游 process-message.ts 的 deliver 串行链与 reply-progress-sender。
  */
 import type { WeixinApiOptions } from './api/api.js'
-import { sendMessageItemWeixin, sendMessageWeixin } from './messaging/send.js'
+import { sendMessageItemWeixin, sendMessageWeixin, type WeixinSendResult } from './messaging/send.js'
 import { SfWeixinReplyProgressSender } from './sf-reply-progress.js'
 
 /** 两条 sendmessage 之间的最小间隔，避免短时间 burst */
@@ -91,7 +91,7 @@ export class WeixinOutboundSession {
     return task
   }
 
-  sendText(text: string): Promise<void> {
+  sendText(text: string): Promise<WeixinSendResult> {
     return this.enqueue(() =>
       this.runWithContextToken((contextToken) =>
         sendMessageWeixin({
@@ -103,7 +103,7 @@ export class WeixinOutboundSession {
             runId: this.runId,
           },
         }),
-      ).then(() => undefined),
+      ),
     )
   }
 

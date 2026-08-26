@@ -502,10 +502,23 @@ export async function getUploadUrl(
   return resp;
 }
 
+export type SendMessageResult = { softFailed?: boolean };
+
+/**
+ * ilink 的 -2 是软失败（限流 / 会话未就绪 / prepare failed），官方 SDK 只看 HTTP
+ * 状态、不解析 body。抛出去会变成未处理拒绝，还会把整段对话当成硬失败。
+ */
+export function isWeixinSoftSendFailure(resp: {
+  ret?: number;
+  errcode?: number;
+}): boolean {
+  return resp.ret === -2 || resp.errcode === -2;
+}
+
 /** Send a single message downstream. */
 export async function sendMessage(
   params: WeixinApiOptions & { body: SendMessageReq },
-): Promise<void> {
+): Promise<SendMessageResult> {
   const rawText = await apiPostFetch({
     baseUrl: params.baseUrl,
     endpoint: "ilink/bot/sendmessage",
@@ -515,11 +528,18 @@ export async function sendMessage(
     label: "sendMessage",
   });
   const resp: SendMessageResp = JSON.parse(rawText);
+  if (isWeixinSoftSendFailure(resp)) {
+    logger.warn(
+      `sendMessage soft failure ret=${resp.ret ?? resp.errcode} errmsg=${resp.errmsg ?? "(none)"}`,
+    );
+    return { softFailed: true };
+  }
   if (resp.ret && resp.ret !== 0) {
     throw new Error(
       `sendMessage ret=${resp.ret} errmsg=${resp.errmsg ?? "(none)"}`,
     );
   }
+  return {};
 }
 
 /** Fetch bot config (includes typing_ticket) for a given user. */
