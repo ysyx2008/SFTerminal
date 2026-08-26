@@ -2490,37 +2490,37 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       </div>
                     </div>
                     <div v-else-if="item.step!.type === 'asking'" class="step-text asking-content">
-                      <div class="asking-question-row">
-                        <div class="asking-question">{{ item.step!.content }}</div>
+                      <div class="asking-question">{{ item.step!.content }}</div>
+                      <div class="asking-body">
+                        <div v-if="getAskingOptions(item.step!).length > 0" class="asking-options">
+                          <button 
+                            v-for="(opt, optIdx) in getAskingOptions(item.step!)" 
+                            :key="optIdx"
+                            class="asking-option-btn"
+                            :class="{ 
+                              'selected': isAskOptionSelected(item.step!, opt)
+                            }"
+                            :disabled="!isAskingInteractive(item.step!, item.group)"
+                            @click="handleOptionClick(item.step!.id, opt, !!item.step!.toolArgs?.allow_multiple)"
+                          >
+                            <span class="option-label">{{ String.fromCharCode(65 + optIdx) }}</span>
+                            <span class="option-text">{{ opt }}</span>
+                            <span v-if="isRecommendedAskOption(item.step!, opt)" class="option-recommended-badge">{{ t('ai.askingRecommended') }}</span>
+                          </button>
+                          <button 
+                            v-if="item.step!.toolArgs?.allow_multiple"
+                            class="asking-confirm-btn"
+                            :disabled="!isAskingInteractive(item.step!, item.group) || getSelectedOptions(item.step!.id).length === 0"
+                            @click="confirmMultiSelect(item.step!.id)"
+                          >
+                            {{ t('ai.confirmMultiSelect') }} ({{ getSelectedOptions(item.step!.id).length }})
+                          </button>
+                        </div>
                         <span
                           v-if="isAskingInteractive(item.step!, item.group) && getAskRemainingSeconds(item.step!) !== null"
                           class="asking-countdown"
                           :title="t('ai.askingCountdownTip')"
                         >{{ formatAskCountdown(getAskRemainingSeconds(item.step!)!) }}</span>
-                      </div>
-                      <div v-if="getAskingOptions(item.step!).length > 0" class="asking-options">
-                        <button 
-                          v-for="(opt, optIdx) in getAskingOptions(item.step!)" 
-                          :key="optIdx"
-                          class="asking-option-btn"
-                          :class="{ 
-                            'selected': isAskOptionSelected(item.step!, opt)
-                          }"
-                          :disabled="!isAskingInteractive(item.step!, item.group)"
-                          @click="handleOptionClick(item.step!.id, opt, !!item.step!.toolArgs?.allow_multiple)"
-                        >
-                          <span class="option-label">{{ String.fromCharCode(65 + optIdx) }}</span>
-                          <span class="option-text">{{ opt }}</span>
-                          <span v-if="isRecommendedAskOption(item.step!, opt)" class="option-recommended-badge">{{ t('ai.askingRecommended') }}</span>
-                        </button>
-                        <button 
-                          v-if="item.step!.toolArgs?.allow_multiple"
-                          class="asking-confirm-btn"
-                          :disabled="!isAskingInteractive(item.step!, item.group) || getSelectedOptions(item.step!.id).length === 0"
-                          @click="confirmMultiSelect(item.step!.id)"
-                        >
-                          {{ t('ai.confirmMultiSelect') }} ({{ getSelectedOptions(item.step!.id).length }})
-                        </button>
                       </div>
                       <div v-if="shouldShowAskingStatus(item.step!)" class="asking-status" :class="{ 
                         'status-waiting': item.step!.askingStatus === 'waiting',
@@ -4791,35 +4791,35 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   gap: 8px;
 }
 
-.asking-question-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
 .asking-question {
-  flex: 1;
-  min-width: 0;
   white-space: pre-wrap;
   line-height: 1.5;
   color: var(--text-primary);
 }
 
-.asking-countdown {
-  flex-shrink: 0;
+.asking-body {
+  display: flex;
+  align-items: center;
+  gap: 20px;
   margin-top: 2px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-  opacity: 0.75;
 }
 
 .asking-options {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 2px;
-  max-width: 400px;
+  flex: 0 1 400px;
+  min-width: 0;
+}
+
+.asking-countdown {
+  flex-shrink: 0;
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  line-height: 1;
 }
 
 .asking-option-btn {
