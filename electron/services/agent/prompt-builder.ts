@@ -858,7 +858,7 @@ export class PromptBuilder {
     ]
     // 无人值守时 ask_user 已不在工具列表里，这条会指向一个不存在的能力
     if (!this.context.unattended) {
-      rules.push('- 需要用户当场回答时用 `ask_user`。可以带上供点选的选项，其中一项可以标为更倾向的选择')
+      rules.push('- 需要用户当场回答时用 `ask_user`。可以带上供点选的选项；一般标出更倾向的那一项，用户少比较，确实没有就不标')
     }
     return rules.join('\n')
   }
