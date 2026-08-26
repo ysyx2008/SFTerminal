@@ -85,5 +85,7 @@ export default {
     expandPanelWithCount: 'Expand artifacts: {title} ({count} total)',
     jumpToSource: 'Jump to source',
     unsupportedRenderer: 'Preview for this type is not available yet',
+    focusDocument: 'Focus document',
+    splitDocument: 'Split view',
   },
 }

@@ -21,6 +21,7 @@ import ThinkingBlock from './ThinkingBlock.vue'
 import ProcessTurnFold from './ProcessTurnFold.vue'
 import { createReusableTemplate } from '../utils/reusable-template'
 import { hasSpokenBody } from '../utils/process-fold'
+import { lastSpokenBody, resolveFocusPeek } from '../utils/focus-peek'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
 import AttachmentContextMenu from './AttachmentContextMenu.vue'
@@ -76,10 +77,13 @@ const props = withDefaults(defineProps<{
   consumeWorkbenchContext?: () => import('@shared/types').WorkbenchContext | undefined
   /** 独立助手并排终端时藏头像，把对话区让出来 */
   hideAvatar?: boolean
+  /** 文档铺满：藏对话流，只留一句提醒和输入 */
+  peek?: boolean
 }>(), {
   visible: true,
   tabActive: true,
   hideAvatar: false,
+  peek: false,
 })
 
 // i18n
@@ -2104,6 +2108,52 @@ async function scrollToAgentStep(stepId: string) {
   }, 2500)
 }
 
+function isPeekNeedsYouItem(item: { type: string; step?: { type?: string; toolResult?: string } }): boolean {
+  if (item.type === 'confirm' || item.type === 'waiting_input') return true
+  const stepType = item.step?.type
+  if (stepType === 'waiting_password') return true
+  return stepType === 'asking' && (item.step?.toolResult?.includes('⏳') ?? false)
+}
+
+const peekNeedsYou = computed(() => {
+  if (pendingConfirm.value || pendingSecureInput.value) return true
+  return flattenedItems.value.some(isPeekNeedsYouItem)
+})
+
+const peekLiveText = computed(() => {
+  for (let i = flattenedItems.value.length - 1; i >= 0; i--) {
+    const item = flattenedItems.value[i]
+    if (item.type === 'folded_turn' && item.fold?.live && item.fold.liveText) {
+      return item.fold.liveText
+    }
+  }
+  return ''
+})
+
+const peekSpoken = computed(() => {
+  for (let g = agentTaskGroups.value.length - 1; g >= 0; g--) {
+    const spoken = lastSpokenBody(agentTaskGroups.value[g].steps || [])
+    if (spoken) return spoken
+  }
+  return ''
+})
+
+const focusPeek = computed(() => resolveFocusPeek({
+  needsYou: peekNeedsYou.value,
+  isRunning: isAgentRunning.value,
+  liveText: peekLiveText.value,
+  spoken: peekSpoken.value,
+}))
+
+const peekExpanded = ref(false)
+watch(focusPeek, () => { peekExpanded.value = false })
+
+const displayItems = computed(() => {
+  if (!props.peek) return flattenedItems.value
+  if (!peekNeedsYou.value) return []
+  return flattenedItems.value.filter(isPeekNeedsYouItem)
+})
+
 defineExpose({ analyzeText, addQuotedTerminalSelection, addComposerQuote, addComposerImage, setComposerDraft, submitComposerMessage, scrollToAgentStep })
 
 /** 首次展示从历史恢复的对话（尚无已存滚动位置）→ 应滚到底部 */
@@ -2243,7 +2293,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
     :class="{
       'mode-strict': executionMode === 'strict',
       'mode-relaxed': executionMode === 'relaxed',
-      'mode-free': executionMode === 'free'
+      'mode-free': executionMode === 'free',
+      'is-peek': peek,
+      'is-peek-needs-you': peek && peekNeedsYou
     }"
     @dragenter="handleDragEnter"
     @dragover="handleDragOver"
@@ -2298,7 +2350,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </div>
 
       <!-- 系统环境信息 + Agent 设置 -->
-      <div class="system-info-bar">
+      <div v-if="!peek" class="system-info-bar">
         <!-- Agent 模式设置 -->
         <div class="agent-settings">
           <!-- 执行模式选择器（三选一：严格/宽松/自由） -->
@@ -2407,7 +2459,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </div>
 
       <!-- Plan 固定顶部区域 -->
-      <div v-if="currentPlan" class="plan-sticky-header">
+      <div v-if="currentPlan && !peek" class="plan-sticky-header">
         <AgentPlanView 
           :plan="currentPlan" 
           :compact="!planExpanded" 
@@ -2416,7 +2468,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </div>
 
       <!-- 消息列表（虚拟滚动） -->
-      <div class="ai-messages-wrapper">
+      <div v-show="!peek || peekNeedsYou" class="ai-messages-wrapper">
         <div
           ref="messagesRef"
           class="ai-messages"
@@ -2428,7 +2480,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         >
             <!-- 欢迎页（无任务且无历史对话时显示） -->
             <WelcomePanel
-              v-if="!isAgentRunning && !agentUserTask && agentTaskGroups.length === 0"
+              v-if="!peek && !isAgentRunning && !agentUserTask && agentTaskGroups.length === 0"
               :is-standalone-assistant="isStandaloneAssistant"
               :is-companion-tab="isCompanionTab"
               :tab-active="tabActive"
@@ -2757,7 +2809,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
           <Virtualizer
             ref="virtuaRef"
-            :data="flattenedItems"
+            :data="displayItems"
             :item-size="48"
             :buffer-size="400"
           >
@@ -2971,12 +3023,35 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 
         <!-- 新消息指示器 -->
-        <div v-if="hasNewMessage" class="new-message-indicator" @click="scrollToBottom" :title="t('ai.newMessage')">
+        <div v-if="hasNewMessage && !peek" class="new-message-indicator" @click="scrollToBottom" :title="t('ai.newMessage')">
           <ChevronDown :size="14" />
           <span>{{ t('ai.newMessage') }}</span>
         </div>
       </div>
 
+
+      <button
+        v-if="peek && focusPeek.kind !== 'none'"
+        type="button"
+        class="ai-peek-card"
+        :class="{
+          'is-busy': focusPeek.kind === 'busy',
+          'is-expanded': peekExpanded
+        }"
+        @click="peekExpanded = !peekExpanded"
+      >
+        <span v-if="focusPeek.kind === 'busy'" class="ai-peek-spinner" aria-hidden="true" />
+        <span
+          v-if="peekExpanded && focusPeek.kind === 'spoken'"
+          class="ai-peek-text markdown-content"
+          v-html="renderMarkdown(focusPeek.text)"
+        />
+        <span
+          v-else
+          class="ai-peek-text"
+          :class="{ 'is-clamped': !peekExpanded }"
+        >{{ focusPeek.text || (focusPeek.kind === 'busy' ? t('ai.processFold.working') : '') }}</span>
+      </button>
 
       <AiComposer
         ref="composerRef"
@@ -3143,6 +3218,77 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   flex-direction: column;
   height: 100%;
   position: relative;
+}
+
+.ai-panel.is-peek {
+  height: auto;
+}
+
+.ai-panel.is-peek .ai-messages-wrapper {
+  max-height: 40vh;
+}
+
+.ai-panel.is-peek-needs-you .ai-messages-wrapper {
+  max-height: none;
+}
+
+.ai-peek-card {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: min(520px, calc(100% - 32px));
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--bg-secondary, rgba(30, 30, 30, 0.92));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-peek-card.is-busy {
+  align-items: center;
+}
+
+.ai-peek-text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ai-peek-text.is-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ai-peek-card.is-expanded .ai-peek-text {
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.ai-peek-spinner {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  border: 1.5px solid var(--text-secondary, #aaa);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ai-peek-spin 0.8s linear infinite;
+}
+
+@keyframes ai-peek-spin {
+  to { transform: rotate(360deg); }
 }
 
 @keyframes panelEnter {

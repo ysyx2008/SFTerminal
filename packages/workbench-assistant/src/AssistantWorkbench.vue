@@ -95,11 +95,26 @@ const MIN_CHAT_WIDTH = 300
 
 type DeskSeat = 'none' | 'terminal' | 'artifact'
 const seat = ref<DeskSeat>('none')
+/** 文件在座时的看法：铺满只活在这一次入座。跨页签能保住，是因为工作台用 v-show 常驻、不卸载。 */
+const focusMode = ref(false)
 
 const terminalSeated = computed(() => hasHostedTerminal.value && seat.value === 'terminal')
 const artifactSeated = computed(() =>
   seat.value === 'artifact' && artifactStore.isVisible(props.tab.id)
 )
+const focusActive = computed(() => focusMode.value && artifactSeated.value)
+
+const chatFocusEl = ref<HTMLElement | null>(null)
+const artifactFocusEl = ref<HTMLElement | null>(null)
+
+watch(artifactSeated, (seated) => {
+  if (!seated) focusMode.value = false
+})
+
+function toggleFocus() {
+  if (!artifactSeated.value) return
+  focusMode.value = !focusMode.value
+}
 const docExpanded = computed(() => artifactSeated.value)
 const hasArtifacts = computed(() => artifactStore.hasArtifacts(props.tab.id))
 const showDeskList = computed(() =>
@@ -346,6 +361,7 @@ defineExpose({
     class="assistant-workbench"
     :class="{
       'is-panel-open': docExpanded,
+      'is-artifact-focus': focusActive,
       'is-terminal-stage': terminalSeated,
       'is-chat-collapsed': terminalSeated && !chatVisible,
       'is-stage-resizing': stageResizing,
@@ -357,6 +373,7 @@ defineExpose({
       <TerminalPaneHost :tab="tab" :is-active="isActive" show-stage-chrome @send-to-ai="handleSendToAi" />
     </div>
     <div
+      v-show="!focusActive"
       class="assistant-chat-column"
       :style="terminalSeated && chatVisible ? { width: chatWidth + 'px' } : undefined"
     >
@@ -373,77 +390,125 @@ defineExpose({
         toggle-side="right"
       >
         <template #anchor>
-          <div class="assistant-chat">
-            <AiPanel
-              ref="aiPanelRef"
-              :tab-id="tab.id"
-              :tab-active="isActive"
-              :hide-avatar="terminalSeated"
-              :consume-workbench-context="consumeWorkbenchContext"
-            />
-            <div v-if="showDeskChrome" class="artifact-chrome artifact-chrome--cluster">
-              <div
-                v-if="showDeskList"
-                class="artifact-list-slot"
-                @mouseenter="openList"
-                @mouseleave="closeList"
-                @focusin="openList"
-                @focusout="onListFocusOut"
-              >
-                <button
-                  type="button"
-                  class="artifact-chrome-btn"
-                  :class="{ 'is-open': listOpen }"
-                  :aria-label="t('canvas.artifactList')"
-                  :aria-expanded="listOpen"
-                >
-                  <List :size="14" />
-                </button>
-                <Transition name="artifact-list-pop">
-                  <ArtifactListPopover
-                    v-if="listOpen"
-                    :artifacts="artifacts"
-                    :active-artifact-id="activeArtifactId"
-                    :show-terminal="hasHostedTerminal"
-                    :terminal-title="deskTerminalTitle"
-                    :terminal-active="terminalSeated"
-                    @select="openArtifact"
-                    @select-terminal="seatTerminal"
-                    @remove="removeFromDesk"
-                    @close="listOpen = false"
-                  />
-                </Transition>
+          <div class="assistant-teleport-slot">
+            <Teleport :disabled="!focusActive" :to="chatFocusEl || 'body'">
+              <div class="assistant-chat">
+                <AiPanel
+                  ref="aiPanelRef"
+                  :tab-id="tab.id"
+                  :tab-active="isActive"
+                  :hide-avatar="terminalSeated || focusActive"
+                  :peek="focusActive"
+                  :consume-workbench-context="consumeWorkbenchContext"
+                />
+                <div v-if="showDeskChrome && !focusActive" class="artifact-chrome artifact-chrome--cluster">
+                  <div
+                    v-if="showDeskList"
+                    class="artifact-list-slot"
+                    @mouseenter="openList"
+                    @mouseleave="closeList"
+                    @focusin="openList"
+                    @focusout="onListFocusOut"
+                  >
+                    <button
+                      type="button"
+                      class="artifact-chrome-btn"
+                      :class="{ 'is-open': listOpen }"
+                      :aria-label="t('canvas.artifactList')"
+                      :aria-expanded="listOpen"
+                    >
+                      <List :size="14" />
+                    </button>
+                    <Transition name="artifact-list-pop">
+                      <ArtifactListPopover
+                        v-if="listOpen"
+                        :artifacts="artifacts"
+                        :active-artifact-id="activeArtifactId"
+                        :show-terminal="hasHostedTerminal"
+                        :terminal-title="deskTerminalTitle"
+                        :terminal-active="terminalSeated"
+                        @select="openArtifact"
+                        @select-terminal="seatTerminal"
+                        @remove="removeFromDesk"
+                        @close="listOpen = false"
+                      />
+                    </Transition>
+                  </div>
+                  <button
+                    v-if="showArtifactFold && !docExpanded"
+                    type="button"
+                    class="artifact-chrome-btn"
+                    :title="panelToggleTitle"
+                    :aria-label="panelToggleTitle"
+                    :aria-expanded="docExpanded"
+                    @click="togglePanel"
+                  >
+                    <PanelRightOpen :size="14" />
+                  </button>
+                </div>
               </div>
-              <button
-                v-if="showArtifactFold && !docExpanded"
-                type="button"
-                class="artifact-chrome-btn"
-                :title="panelToggleTitle"
-                :aria-label="panelToggleTitle"
-                :aria-expanded="docExpanded"
-                @click="togglePanel"
-              >
-                <PanelRightOpen :size="14" />
-              </button>
-            </div>
+            </Teleport>
           </div>
         </template>
         <template #toggle>
-          <ArtifactPanel
-            v-if="hasArtifacts"
-            ref="artifactPanelRef"
-            :tab-id="tab.id"
-            :scroll-to-agent-step="scrollToAgentStep"
-            :add-composer-quote="addComposerQuote"
-            :add-composer-image="addComposerImage"
-            :set-composer-draft="setComposerDraft"
-            :submit-composer-message="submitComposerMessage"
-          />
+          <div class="assistant-teleport-slot">
+            <Teleport :disabled="!focusActive" :to="artifactFocusEl || 'body'">
+              <ArtifactPanel
+                v-if="hasArtifacts"
+                ref="artifactPanelRef"
+                :tab-id="tab.id"
+                :focus-active="focusActive"
+                :scroll-to-agent-step="scrollToAgentStep"
+                :add-composer-quote="addComposerQuote"
+                :add-composer-image="addComposerImage"
+                :set-composer-draft="setComposerDraft"
+                :submit-composer-message="submitComposerMessage"
+                @toggle-focus="toggleFocus"
+              />
+            </Teleport>
+          </div>
         </template>
       </WorkbenchShell>
     </div>
-    <div v-if="showArtifactFold && docExpanded" class="artifact-chrome artifact-chrome--fold">
+    <div v-show="focusActive" class="assistant-focus-stage">
+      <div ref="artifactFocusEl" class="assistant-focus-doc" />
+      <div ref="chatFocusEl" class="assistant-focus-chat" />
+    </div>
+    <div v-if="(showArtifactFold && docExpanded) || focusActive" class="artifact-chrome artifact-chrome--fold">
+      <div
+        v-if="focusActive && showDeskList"
+        class="artifact-list-slot"
+        @mouseenter="openList"
+        @mouseleave="closeList"
+        @focusin="openList"
+        @focusout="onListFocusOut"
+      >
+        <button
+          type="button"
+          class="artifact-chrome-btn"
+          :class="{ 'is-open': listOpen }"
+          :aria-label="t('canvas.artifactList')"
+          :aria-expanded="listOpen"
+        >
+          <List :size="14" />
+        </button>
+        <Transition name="artifact-list-pop">
+          <ArtifactListPopover
+            v-if="listOpen"
+            :artifacts="artifacts"
+            :active-artifact-id="activeArtifactId"
+            :show-terminal="hasHostedTerminal"
+            :terminal-title="deskTerminalTitle"
+            :terminal-active="terminalSeated"
+            @select="openArtifact"
+            @select-terminal="seatTerminal"
+            @remove="removeFromDesk"
+            @close="listOpen = false"
+          />
+        </Transition>
+      </div>
       <button
+        v-if="showArtifactFold"
         type="button"
         class="artifact-chrome-btn"
         :title="panelToggleTitle"
@@ -521,6 +586,61 @@ defineExpose({
   min-width: 0;
   min-height: 0;
   height: 100%;
+}
+
+.assistant-teleport-slot {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.assistant-focus-stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.assistant-focus-doc {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.assistant-focus-chat {
+  flex: 0 0 auto;
+  min-width: 0;
+  position: relative;
+  z-index: 4;
+  overflow: visible;
+  border-top: 1px solid var(--border-color);
+}
+
+.assistant-workbench.is-artifact-focus {
+  flex-direction: column;
+}
+
+.assistant-workbench.is-artifact-focus .assistant-chat-column {
+  display: none;
+}
+
+.assistant-teleport-slot > .assistant-chat,
+.assistant-focus-doc > .canvas-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.assistant-focus-chat > .assistant-chat {
+  height: auto;
 }
 
 .stage-resizer {

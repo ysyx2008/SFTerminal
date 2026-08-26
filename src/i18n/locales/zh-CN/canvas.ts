@@ -85,5 +85,7 @@ export default {
     expandPanelWithCount: '展开产出物：{title}（共 {count} 个）',
     jumpToSource: '跳到生成处',
     unsupportedRenderer: '该类型预览尚未实现',
+    focusDocument: '铺满文档',
+    splitDocument: '分栏显示',
   },
 }

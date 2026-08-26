@@ -9,7 +9,9 @@ import { useI18n } from 'vue-i18n'
 import {
   FolderOpen,
   ChevronDown,
+  Columns2,
   Download,
+  Maximize2,
   Smartphone,
   X
 } from 'lucide-vue-next'
@@ -66,6 +68,12 @@ const props = defineProps<{
   setComposerDraft?: (text: string) => void
   /** 岗壳注入：当场发出一条消息（右键快捷指令） */
   submitComposerMessage?: SubmitComposerMessageFn
+  /** 文件在座时是否铺满（文档为主） */
+  focusActive?: boolean
+}>()
+
+const emit = defineEmits<{
+  toggleFocus: []
 }>()
 
 provide(ADD_COMPOSER_QUOTE_KEY, (snippet) => {
@@ -909,7 +917,7 @@ defineExpose({ minimizePanel })
 </script>
 
 <template>
-  <div ref="panelRoot" class="canvas-panel">
+  <div ref="panelRoot" class="canvas-panel" :class="{ 'is-focus': focusActive }">
     <div
       class="canvas-header"
       @contextmenu="openHeaderCtxMenu"
@@ -1043,6 +1051,17 @@ defineExpose({ minimizePanel })
             <Smartphone :size="14" />
           </button>
         </div>
+        <button
+          type="button"
+          class="canvas-text-btn canvas-icon-btn"
+          :aria-pressed="focusActive"
+          :aria-label="focusActive ? t('canvas.splitDocument') : t('canvas.focusDocument')"
+          :title="focusActive ? t('canvas.splitDocument') : t('canvas.focusDocument')"
+          @click="emit('toggleFocus')"
+        >
+          <Columns2 v-if="focusActive" :size="14" />
+          <Maximize2 v-else :size="14" />
+        </button>
       </div>
     </div>
 
@@ -1336,6 +1355,14 @@ defineExpose({ minimizePanel })
   min-height: 0;
   background: var(--bg-primary, #1e1e1e);
   border-left: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+}
+
+.canvas-panel.is-focus {
+  border-left: none;
+}
+
+.canvas-panel.is-focus .canvas-header {
+  padding-right: 64px;
 }
 
 .canvas-header {
