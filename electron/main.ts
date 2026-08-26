@@ -4202,9 +4202,9 @@ ipcMain.handle('agent:remapPtyId', async (_event, agentKey: string, oldPtyId: st
   return agentService.remapPtyId(agentKey, oldPtyId, newPtyId)
 })
 
-ipcMain.handle('agent:addMessage', async (_event, ptyId: string, message: string, attachments?: AttachmentInfo[], documentContext?: string, images?: string[], workbenchContext?: import('@shared/types').WorkbenchContext) => {
+ipcMain.handle('agent:addMessage', async (_event, ptyId: string, message: string, attachments?: AttachmentInfo[], documentContext?: string, images?: string[], workbenchContext?: import('@shared/types').WorkbenchContext, silent?: boolean) => {
   const { agentService } = await rt()
-  return agentService.addUserMessage(ptyId, message, attachments, documentContext, images, workbenchContext)
+  return agentService.addUserMessage(ptyId, message, attachments, documentContext, images, workbenchContext, silent)
 })
 
 // 运行独立助手 Agent（无终端绑定）

@@ -11,6 +11,7 @@ import { HostProfileService } from '../services/host-profile.service'
 import { generateConversationTitle } from '../services/conversation/title-generator'
 import { createLogger, initLogging } from '../utils/logger'
 import { getDefaultShell, getLocalOS } from '../utils/platform'
+import { clampAskUserTimeout } from '@shared/types/agent'
 
 const log = createLogger('CLI')
 
@@ -1110,7 +1111,7 @@ async function agentRun(args: string[]): Promise<void> {
     options.forEach((opt, i) => console.log(`   ${i + 1}. ${opt}`))
 
     // 与工具自身的等待窗口对齐（misc.ts 同款上下限），过期后不再占着 stdin
-    const deadline = Math.min(600, Math.max(30, (args.timeout as number | undefined) ?? 120)) * 1000
+    const deadline = clampAskUserTimeout(args.timeout) * 1000
     const startedAt = Date.now()
 
     // 误按回车不该让用户失去作答机会——重新提示，直到有内容或窗口耗尽

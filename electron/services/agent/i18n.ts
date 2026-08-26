@@ -1359,8 +1359,7 @@ const translations = {
     // 等待/询问错误
     'error.wait_seconds_positive': '等待秒数必须是正数',
     'error.question_required': '问题不能为空',
-    'error.ask_options_required': '必须给出至少 2 个推荐选项，用户点一下就能答。请补上具体选项后重新提问，不要用「其他」凑数。',
-    'error.ask_default_required': '必须标明最推荐的那一个，且必须是选项里的某一个。',
+    'error.ask_options_required': '选项至少要有 2 个才能点选。',
     'error.user_reply_timeout': '用户未及时回复。你可以：1) 再次询问用户；2) 采用合理的默认方案；3) 向用户说明需要更多信息才能继续。',
 
     // 计划错误
@@ -2931,8 +2930,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     // Wait/ask errors
     'error.wait_seconds_positive': 'Wait seconds must be positive',
     'error.question_required': 'Question cannot be empty',
-    'error.ask_options_required': 'Provide at least 2 recommended options the user can tap. Add concrete choices and ask again; do not pad with "Other".',
-    'error.ask_default_required': 'Name the most recommended option; it must be one of the given choices.',
+    'error.ask_options_required': 'Clickable options need at least 2 choices.',
     'error.user_reply_timeout': 'The user did not reply in time. You can: 1) Ask again; 2) Use a reasonable default; 3) Explain that more info is needed.',
 
     // Plan errors

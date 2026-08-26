@@ -73,6 +73,21 @@ export function isAskingSettled(status?: AskingStatus): boolean {
   return status === 'received' || status === 'timeout' || status === 'cancelled'
 }
 
+/** 提问等待：没设用 120 秒；最短 1 秒；最长 600 秒。 */
+export const ASK_USER_TIMEOUT_DEFAULT_SEC = 120
+export const ASK_USER_TIMEOUT_MIN_SEC = 1
+export const ASK_USER_TIMEOUT_MAX_SEC = 600
+
+export function clampAskUserTimeout(timeout?: unknown): number {
+  if (typeof timeout === 'number' && Number.isFinite(timeout)) {
+    return Math.min(
+      ASK_USER_TIMEOUT_MAX_SEC,
+      Math.max(ASK_USER_TIMEOUT_MIN_SEC, Math.round(timeout))
+    )
+  }
+  return ASK_USER_TIMEOUT_DEFAULT_SEC
+}
+
 /**
  * 命令风险策略（按 executionMode 分档 + 若干开关）
  *

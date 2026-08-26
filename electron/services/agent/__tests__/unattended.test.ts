@@ -65,14 +65,14 @@ describe('无人值守时的工具可见性', () => {
     expect(blockingToolNames(attended)).toEqual(['ask_user'])
   })
 
-  it('ask_user 必须带至少两个推荐选项', () => {
+  it('ask_user 只需问题，选项和倾向都是可选的', () => {
     const ask = getAgentTools(undefined, { mode: 'assistant' })
       .find(tool => tool.function.name === 'ask_user')
     const params = ask?.function.parameters as {
       required?: string[]
       properties?: { options?: { minItems?: number; maxItems?: number } }
     }
-    expect(params.required).toEqual(['question', 'options', 'default_value'])
+    expect(params.required).toEqual(['question'])
     expect(params.properties?.options?.minItems).toBe(2)
     expect(params.properties?.options?.maxItems).toBe(10)
   })

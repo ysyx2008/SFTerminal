@@ -39,45 +39,56 @@ describe('askUser 推荐选项', () => {
     consumePendingUserMessage: () => undefined
   })
 
-  it('没有推荐选项时不真正提问', async () => {
+  it('没有选项时仍能提问', async () => {
     const executor = makeExecutor()
-    const result = await askUser({ question: '选哪个？' }, executor as never)
+    await askUser({ question: '你怎么看？' }, executor as never)
+    expect(executor.addStep).toHaveBeenCalled()
+    expect(executor.addStep.mock.calls[0][0].toolArgs.options).toEqual([])
+    expect(executor.addStep.mock.calls[0][0].toolArgs.default_value).toBeUndefined()
+  })
+
+  it('只有一个选项时不真正提问', async () => {
+    const executor = makeExecutor()
+    const result = await askUser(
+      { question: '选哪个？', options: ['只要一个'] },
+      executor as never
+    )
     expect(result.success).toBe(false)
-    expect(result.error).toMatch(/至少 2 个推荐选项|at least 2 recommended/i)
+    expect(result.error).toMatch(/至少要有 2 个|at least 2/i)
     expect(executor.addStep).not.toHaveBeenCalled()
   })
 
-  it('没标明最推荐的那一个时不真正提问', async () => {
+  it('没标更倾向的那一项时照样提问，不改顺序', async () => {
     const executor = makeExecutor()
-    const result = await askUser(
+    await askUser(
       { question: '选哪个？', options: ['甲', '乙'] },
       executor as never
     )
-    expect(result.success).toBe(false)
-    expect(result.error).toMatch(/最推荐|most recommended/i)
-    expect(executor.addStep).not.toHaveBeenCalled()
+    expect(executor.addStep).toHaveBeenCalled()
+    expect(executor.addStep.mock.calls[0][0].toolArgs.options).toEqual(['甲', '乙'])
+    expect(executor.addStep.mock.calls[0][0].toolArgs.default_value).toBeUndefined()
   })
 
-  it('最推荐的不在选项里时不真正提问', async () => {
+  it('更倾向的不在选项里时当作没标，照样提问', async () => {
     const executor = makeExecutor()
-    const result = await askUser(
+    await askUser(
       { question: '选哪个？', options: ['甲', '乙'], default_value: '丙' },
       executor as never
     )
-    expect(result.success).toBe(false)
-    expect(executor.addStep).not.toHaveBeenCalled()
+    expect(executor.addStep).toHaveBeenCalled()
+    expect(executor.addStep.mock.calls[0][0].toolArgs.options).toEqual(['甲', '乙'])
+    expect(executor.addStep.mock.calls[0][0].toolArgs.default_value).toBeUndefined()
   })
 
-  it('选项够了并标明最推荐才会进入提问，最推荐排在最前', async () => {
+  it('标了更倾向的那一项时排在最前', async () => {
     const executor = makeExecutor()
-    const result = await askUser(
+    await askUser(
       { question: '选哪个？', options: ['甲', '乙'], default_value: '乙' },
       executor as never
     )
     expect(executor.addStep).toHaveBeenCalled()
     expect(executor.addStep.mock.calls[0][0].toolArgs.options).toEqual(['乙', '甲'])
     expect(executor.addStep.mock.calls[0][0].toolArgs.default_value).toBe('乙')
-    expect(result.success).toBe(false)
   })
 })
 

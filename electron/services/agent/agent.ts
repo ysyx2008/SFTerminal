@@ -540,14 +540,16 @@ export abstract class Agent {
     attachments?: import('@shared/types').AttachmentInfo[],
     documentContext?: string,
     images?: string[],
-    workbenchContext?: import('@shared/types').WorkbenchContext
+    workbenchContext?: import('@shared/types').WorkbenchContext,
+    silent?: boolean
   ): boolean {
     const pending: PendingUserMessage = {
       message,
       attachments: attachments?.length ? attachments : undefined,
       documentContext: documentContext || undefined,
       images: images?.length ? images : undefined,
-      workbenchContext: workbenchContext || undefined
+      workbenchContext: workbenchContext || undefined,
+      silent: silent || undefined
     }
 
     if (!this.currentRun?.isRunning) {
@@ -557,12 +559,15 @@ export abstract class Agent {
     }
     
     // 立即创建 user_supplement 步骤（追加到当前时间线末尾；流式输出会被 abort 打断，补充自然落在中断内容之后）
-    this.addStep({
-      type: 'user_supplement',
-      content: message,
-      attachments: attachments?.length ? attachments : undefined,
-      images: images?.length ? images : undefined
-    })
+    // 点选答题等 silent 回复只注入 pending，不上墙
+    if (!silent) {
+      this.addStep({
+        type: 'user_supplement',
+        content: message,
+        attachments: attachments?.length ? attachments : undefined,
+        images: images?.length ? images : undefined
+      })
+    }
     
     this.currentRun.pendingUserMessages.push(pending)
     
@@ -824,6 +829,7 @@ export abstract class Agent {
       const queued = this.preRunUserMessages.splice(0)
       for (const supplement of queued) {
         run.pendingUserMessages.push(supplement)
+        if (supplement.silent) continue
         this.addStep({
           type: 'user_supplement',
           content: supplement.message,

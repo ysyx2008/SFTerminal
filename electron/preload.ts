@@ -1034,9 +1034,10 @@ const electronAPI = {
       attachments?: import('@shared/types').AttachmentInfo[],
       documentContext?: string,
       images?: string[],
-      workbenchContext?: import('@shared/types').WorkbenchContext
+      workbenchContext?: import('@shared/types').WorkbenchContext,
+      silent?: boolean
     ) =>
-      ipcRenderer.invoke('agent:addMessage', ptyId, message, attachments, documentContext, images, workbenchContext) as Promise<boolean>,
+      ipcRenderer.invoke('agent:addMessage', ptyId, message, attachments, documentContext, images, workbenchContext, silent) as Promise<boolean>,
 
     // 获取执行阶段状态（用于智能打断判断，使用 ptyId）
     getExecutionPhase: (ptyId: string) =>

@@ -416,6 +416,26 @@ describe('Agent', () => {
       const steps = agent.exposeCurrentRun()!.steps
       expect(steps.map(s => s.type)).toEqual(['message', 'tool_call', 'user_supplement'])
     })
+
+    it('should queue silent reply without user_supplement step', () => {
+      agent.injectCurrentRun({
+        id: 'run-1',
+        isRunning: true,
+        executionPhase: 'waiting',
+        pendingUserMessages: [],
+        steps: [
+          { id: 'ask-1', type: 'tool_call', content: 'ask_user', timestamp: 1 },
+        ],
+      })
+
+      expect(agent.addUserMessage('方案A', undefined, undefined, undefined, undefined, true)).toBe(true)
+
+      const run = agent.exposeCurrentRun()!
+      expect(run.steps.map(s => s.type)).toEqual(['tool_call'])
+      expect(run.pendingUserMessages).toHaveLength(1)
+      expect(run.pendingUserMessages[0].message).toBe('方案A')
+      expect(run.pendingUserMessages[0].silent).toBe(true)
+    })
   })
 
   // ==================== 工具确认 ====================

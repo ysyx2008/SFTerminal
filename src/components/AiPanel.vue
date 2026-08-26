@@ -60,7 +60,7 @@ import { isOemFeatureEnabled } from '@shared/oem-features'
 import type { BondTrustLevel } from '@shared/types/bond'
 import type { AgentRecord, AgentHistorySummary, AttachmentInfo, AskingStatus } from '@shared/types'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
-import { COMPANION_AGENT_KEY, isAskingSettled } from '@shared/types'
+import { COMPANION_AGENT_KEY, isAskingSettled, clampAskUserTimeout } from '@shared/types'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = withDefaults(defineProps<{
@@ -1107,10 +1107,7 @@ function shouldShowAskingStatus(step: { toolResult?: string; askingStatus?: Aski
 function getAskRemainingSeconds(step: { timestamp?: number; toolArgs?: { timeout?: unknown }; askingStatus?: AskingStatus }): number | null {
   if (step.askingStatus && step.askingStatus !== 'waiting') return null
   if (typeof step.timestamp !== 'number') return null
-  const raw = step.toolArgs?.timeout
-  const timeoutSec = typeof raw === 'number' && Number.isFinite(raw)
-    ? Math.min(600, Math.max(30, raw))
-    : 120
+  const timeoutSec = clampAskUserTimeout(step.toolArgs?.timeout)
   return Math.max(0, timeoutSec - Math.floor((askClock.value - step.timestamp) / 1000))
 }
 

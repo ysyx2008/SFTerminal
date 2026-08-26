@@ -1596,6 +1596,7 @@ export function useAgentMode(
     documentContext?: string
     images?: string[]
     workbenchContext?: WorkbenchContext
+    silent?: boolean
   }): Promise<boolean> => {
     const agentKey = getAgentKey()
     if (!agentKey) return false
@@ -1605,7 +1606,8 @@ export function useAgentMode(
       payload.attachments,
       payload.documentContext,
       payload.images,
-      payload.workbenchContext
+      payload.workbenchContext,
+      payload.silent
     )
   }
 
@@ -1876,7 +1878,7 @@ export function useAgentMode(
     const key = getAgentKey()
     if (!isAgentRunning.value || !key) return
 
-    await appendToCurrentConversation({ message })
+    await appendToCurrentConversation({ message, silent: true })
   }
 
   // 获取步骤类型的图标

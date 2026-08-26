@@ -2,6 +2,7 @@
  * 其他工具
  * 包括：等待、向用户提问、MCP 工具、技能工具
  */
+import { clampAskUserTimeout } from '@shared/types/agent'
 import { t } from '../i18n'
 import { createLogger } from '../../../utils/logger'
 const log = createLogger('tools/misc')
@@ -146,7 +147,7 @@ export async function wait(
 const ASK_OPTIONS_MIN = 2
 const ASK_OPTIONS_MAX = 10
 
-/** 最推荐的必须是选项里的某一个。 */
+/** 更倾向的那一项须是选项里已有的；没有或对不上则视为不标。 */
 export function resolveAskDefault(raw: unknown, options: string[]): string | null {
   if (typeof raw !== 'string') return null
   const trimmed = raw.trim()
@@ -179,41 +180,45 @@ export async function askUser(
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   const question = args.question as string
-  const normalizedOptions = normalizeAskOptions(args.options)
   const allowMultiple = args.allow_multiple as boolean | undefined
   
   if (!question || typeof question !== 'string') {
     return { success: false, output: '', error: t('error.question_required') }
   }
 
-  if (!normalizedOptions) {
-    return { success: false, output: '', error: t('error.ask_options_required') }
+  const rawOptions = args.options
+  const omittedOptions = rawOptions === undefined || rawOptions === null
+    || (Array.isArray(rawOptions) && rawOptions.length === 0)
+  let options: string[] = []
+  let defaultValue: string | null = null
+
+  if (!omittedOptions) {
+    const normalizedOptions = normalizeAskOptions(rawOptions)
+    if (!normalizedOptions) {
+      return { success: false, output: '', error: t('error.ask_options_required') }
+    }
+    defaultValue = resolveAskDefault(args.default_value, normalizedOptions)
+    options = defaultValue
+      ? [defaultValue, ...normalizedOptions.filter(option => option !== defaultValue)]
+      : normalizedOptions
   }
 
-  const defaultValue = resolveAskDefault(args.default_value, normalizedOptions)
-  if (!defaultValue) {
-    return { success: false, output: '', error: t('error.ask_default_required') }
-  }
-
-  const options = [defaultValue, ...normalizedOptions.filter(option => option !== defaultValue)]
-
-  const timeout = args.timeout as number | undefined
-  const maxWaitSeconds = Math.min(600, Math.max(30, timeout ?? 120))
+  const maxWaitSeconds = clampAskUserTimeout(args.timeout)
 
   const step = executor.addStep({
     type: 'asking',
     content: question,
     toolName: 'ask_user',
-    toolArgs: { question, options, allow_multiple: allowMultiple, default_value: defaultValue, timeout },
+    toolArgs: { question, options, allow_multiple: allowMultiple, default_value: defaultValue ?? undefined, timeout: maxWaitSeconds },
     toolResult: t('ask.waiting_reply'),
     askingStatus: 'waiting',
     riskLevel: 'safe'
   })
-  const pollInterval = 2
-  let elapsedSeconds = 0
+  const deadline = Date.now() + maxWaitSeconds * 1000
+  const pollIntervalMs = 2000
   let userResponse: string | undefined
 
-  while (elapsedSeconds < maxWaitSeconds) {
+  while (true) {
     if (executor.isAborted()) {
       executor.updateStep(step.id, {
         toolResult: t('ask.cancelled'),
@@ -227,16 +232,18 @@ export async function askUser(
       break
     }
 
-    await new Promise(resolve => setTimeout(resolve, pollInterval * 1000))
-    elapsedSeconds += pollInterval
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) break
 
-    const remainingSeconds = maxWaitSeconds - elapsedSeconds
+    await new Promise(resolve => setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)))
+
+    const remainingSeconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
     const remainingMinutes = Math.floor(remainingSeconds / 60)
     const remainingSecs = remainingSeconds % 60
-    const remainingDisplay = remainingMinutes > 0 
+    const remainingDisplay = remainingMinutes > 0
       ? t('time.minutes_seconds', { minutes: remainingMinutes, seconds: remainingSecs })
       : t('time.seconds', { seconds: remainingSecs })
-    
+
     executor.updateStep(step.id, {
       toolResult: t('ask.waiting_remaining', { remaining: remainingDisplay }),
       askingStatus: 'waiting'
