@@ -459,6 +459,22 @@ describe('IMService sendFileToChannel / getChannelSendTargets', () => {
     expect(wechat?.contactName).toBeUndefined()
   })
 
+  it('微信软失败后 hasContact 为 false，回到无会话', () => {
+    const service = new IMService() as any
+    service.wechatAdapter = createAdapter(true)
+    const wechat = createContact('wechat', Date.now())
+    const dingtalk = createContact('dingtalk', Date.now() - 1000)
+    service.contactsByPlatform = { wechat, dingtalk }
+    service.lastContact = wechat
+
+    service.notifyWechatSoftSendFailure('user-1')
+
+    const targets = service.getChannelSendTargets() as Array<{ platform: string; hasContact: boolean }>
+    expect(targets.find(t => t.platform === 'wechat')?.hasContact).toBe(false)
+    expect(service.contactsByPlatform.wechat).toBeUndefined()
+    expect(service.lastContact).toBe(dingtalk)
+  })
+
   it('联系人过期后 hasContact 为 false 且发送被拒绝', async () => {
     const service = new IMService() as any
     const adapter = createAdapter(true)

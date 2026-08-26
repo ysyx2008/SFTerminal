@@ -233,6 +233,7 @@ const sendTargets = ref<ChannelSendTarget[]>([])
 const sendTargetsLoading = ref(false)
 const sendingPlatform = ref<string | null>(null)
 let offImConnectionChange: (() => void) | null = null
+let offImSendFailure: (() => void) | null = null
 
 const canSendActive = computed(() => Boolean(filePath.value) && pathExistsOnDisk(filePath.value))
 
@@ -277,12 +278,17 @@ async function toggleSendMenu() {
   offImConnectionChange = window.electronAPI?.im?.onConnectionChange?.(() => {
     void refreshSendTargets()
   }) ?? null
+  offImSendFailure = window.electronAPI?.im?.onSendFailure?.(() => {
+    void refreshSendTargets()
+  }) ?? null
 }
 
 function closeSendMenu() {
   showSendMenu.value = false
   offImConnectionChange?.()
   offImConnectionChange = null
+  offImSendFailure?.()
+  offImSendFailure = null
 }
 
 function sendTargetTip(target: ChannelSendTarget): string | undefined {

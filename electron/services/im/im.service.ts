@@ -1093,9 +1093,14 @@ export class IMService {
     return this.lastContact
   }
 
-  /** 微信软失败（-2）持续时只走桌面提示，不再往微信里发「请再发一条」——那条同样发不出去 */
+  /** 微信软失败（-2）：桌面提示 + 回到「无会话」黄灯，不再往微信里发「请再发一条」 */
   private notifyWechatSoftSendFailure(userId: string): void {
     log.warn('WeChat outbound soft failure surfaced to desktop', { userId })
+    delete this.contactsByPlatform.wechat
+    if (this.lastContact?.platform === 'wechat') {
+      this.lastContact = this.pickMostRecentContact(this.contactsByPlatform)
+    }
+    this.persistContacts()
     this.sendToDesktop('im:sendFailure', {
       platform: 'wechat',
       userId,

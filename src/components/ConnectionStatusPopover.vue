@@ -438,6 +438,7 @@ const openSettings = (tab?: string) => {
 // ==================== 生命周期 ====================
 
 let unsubImChange: (() => void) | null = null
+let unsubImSendFailure: (() => void) | null = null
 let unsubMcpConnected: (() => void) | null = null
 let unsubMcpDisconnected: (() => void) | null = null
 let unsubMcpError: (() => void) | null = null
@@ -449,6 +450,9 @@ onMounted(async () => {
   unsubImChange = window.electronAPI.im.onConnectionChange(async () => {
     await loadIMData()
   })
+  unsubImSendFailure = window.electronAPI.im.onSendFailure?.(() => {
+    void loadIMData()
+  }) ?? null
   unsubMcpConnected = window.electronAPI.mcp.onConnected(async () => { await loadMcpData() })
   unsubMcpDisconnected = window.electronAPI.mcp.onDisconnected(async () => { await loadMcpData() })
   unsubMcpError = window.electronAPI.mcp.onError(async () => { await loadMcpData() })
@@ -466,6 +470,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   unsubImChange?.()
+  unsubImSendFailure?.()
   unsubMcpConnected?.()
   unsubMcpDisconnected?.()
   unsubMcpError?.()
