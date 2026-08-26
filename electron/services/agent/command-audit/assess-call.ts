@@ -155,6 +155,8 @@ export function assessAuditedCall(
     {
       outsideWritesUpgrade: resolveOutsideWritesUpgrade(ctx),
       extraFreeDirs: resolveExtraFreeDirs(ctx),
+      cmd: call.cmd,
+      redirectWritePaths: redirectPaths,
     },
   )
   reasons.push(...pathAdjust.reasons)

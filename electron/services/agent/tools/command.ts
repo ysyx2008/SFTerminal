@@ -6,7 +6,7 @@ import stripAnsi from 'strip-ansi'
 import { t } from '../i18n'
 import { assessCommandRiskDetailed, analyzeCommand, isSudoCommand, detectPasswordPrompt } from '../risk-assessor'
 import { auditContextFromConfig } from '../audit-context-from-config'
-import { commandNeedsConfirm, isSubAgentBlocked } from '../command-audit/confirm-policy'
+import { commandNeedsConfirm, isSubAgentBlocked, formatHardBlockedMessage } from '../command-audit/confirm-policy'
 import { resolveCommandToolConfirmation } from '../allowlist/resolve-command-confirm'
 import { getTerminalStateService } from '../../terminal-state.service'
 import { getTerminalAwarenessService, getProcessMonitor } from '../../terminal-awareness'
@@ -169,14 +169,7 @@ export async function executeCommand(
   const assessment = await assessCommandRiskDetailed(command, auditContextFromConfig(config))
 
   if (assessment.level === 'blocked') {
-    if (executor.isSubAgent) {
-      return { success: false, output: '', error: t('dispatch.command_blocked', { command }) }
-    }
-    return { 
-      success: false, 
-      output: '', 
-      error: t('hint.security_blocked')
-    }
+    return { success: false, output: '', error: formatHardBlockedMessage(assessment) }
   }
 
   if (isSubAgentBlocked(assessment, config.commandRiskPolicy) && executor.isSubAgent) {

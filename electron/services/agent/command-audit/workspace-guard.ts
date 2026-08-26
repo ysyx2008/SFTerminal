@@ -29,8 +29,17 @@ import {
   WORKSPACE_FREE_DIRS,
   type WorkspaceZone,
 } from './types'
+import { basenameCommand } from './whitelist'
 import { isUserDataForbidden } from './userdata-guard'
 import { unescapeShellWordLiteral } from './unescape-shell-literal'
+
+/** 只改权限/属主：在 critical 路径上可恢复，不硬拒 */
+const ATTR_CHANGE_COMMANDS = new Set(['chmod', 'chown', 'chgrp'])
+
+function isAttrChangeCommand(cmd?: string): boolean {
+  if (!cmd) return false
+  return ATTR_CHANGE_COMMANDS.has(basenameCommand(cmd).toLowerCase())
+}
 
 /** 展开 ~ / ~/…（与 file 工具一致；不展开 ~user） */
 function expandTilde(filePath: string): string {
@@ -253,7 +262,7 @@ function isDevNullPath(targetPath: string, cwd?: string): boolean {
  * 写路径分级（取最严）：
  * 1. userData 禁区 -> blocked（写一律拦；读仅拦非只读白名单）
  * 2. 黑洞设备（/dev/null 等）-> 从写路径判定中豁免（写它们无害）
- * 3. critical 系统路径（/、/boot）-> blocked（不可逆系统灾难）
+ * 3. critical 系统路径（/、/boot）：删/覆写 -> blocked；改权限或属主 -> dangerous
  * 4. hardened 系统路径（/etc、/dev、/sys 等）-> dangerous（弹确认放行）
  * 5. 工作区 free -> safe（仅词法绝对路径）；protected/workspace -> moderate；
  *    outside 不升级 safe 命令。相对路径即使按 cwd 落在 free，也按 outside 处理（不降级）。
@@ -263,7 +272,8 @@ function isDevNullPath(targetPath: string, cwd?: string): boolean {
  * @param writePaths 真正的写路径（命令写时含参数路径 + 写重定向；只读时仅写重定向）
  * @param writesTo 是否涉及写操作（命令写 或 有写重定向）
  * @param cwd 工作目录
- * @param opts 用户策略：outside 升级、额外自由区
+ * @param opts 用户策略：outside 升级、额外自由区；cmd 区分改权限/属主与删覆写；
+ *   redirectWritePaths 为写重定向目标（命中 critical 一律硬拒，不因 chmod 降级）
  */
 export function adjustRiskByPathZones(
   commandLevel: RiskLevel,
@@ -271,7 +281,12 @@ export function adjustRiskByPathZones(
   writePaths: string[],
   writesTo: boolean,
   cwd?: string,
-  opts?: { outsideWritesUpgrade?: boolean; extraFreeDirs?: string[] },
+  opts?: {
+    outsideWritesUpgrade?: boolean
+    extraFreeDirs?: string[]
+    cmd?: string
+    redirectWritePaths?: string[]
+  },
 ): { level: RiskLevel; zones: WorkspaceZone[]; reasons: string[] } {
   const reasons: string[] = []
   const extraFreeDirs = opts?.extraFreeDirs ?? []
@@ -301,9 +316,29 @@ export function adjustRiskByPathZones(
     return { level: 'safe', zones, reasons: [t('risk.reason.devnull_safe')] }
   }
 
-  // critical 系统路径 -> blocked（/、/boot 等不可逆灾难）
+  // 写重定向覆写 critical：一律硬拒（chmod … > /boot/foo 不是改权限）
+  const redirectWrites = opts?.redirectWritePaths ?? []
+  const criticalRedirect = redirectWrites.find(
+    p => !isDevNullPath(p, cwd) && getSystemPathSeverity(p, cwd) === 'critical',
+  )
+  if (criticalRedirect) {
+    return {
+      level: 'blocked',
+      zones,
+      reasons: [t('risk.reason.system_critical_blocked')],
+    }
+  }
+
+  // critical 系统路径：删/覆写硬拒；改权限或属主先确认
   const criticalHit = nonDevNullPaths.find(p => getSystemPathSeverity(p, cwd) === 'critical')
   if (criticalHit) {
+    if (isAttrChangeCommand(opts?.cmd)) {
+      return {
+        level: 'dangerous',
+        zones,
+        reasons: [t('risk.reason.system_critical_attr')],
+      }
+    }
     return {
       level: 'blocked',
       zones,

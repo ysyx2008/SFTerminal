@@ -342,18 +342,17 @@ export function assessCommandRiskLegacy(command: string): RiskLevel {
     /rm\s+(-[rf]+\s+)*\/(?:\s|$)/,    // rm -rf /
     /rm\s+(-[rf]+\s+)*\/\*/,           // rm -rf /*
     /:\(\)\{.*:\|:.*\}/,               // fork bomb
-    /mkfs\./,                           // 格式化磁盘
-    /dd\s+.*of=\/dev\/[sh]d[a-z]/,     // dd 写入磁盘
-    />\s*\/dev\/[sh]d[a-z]/,           // 重定向到磁盘
-    /chmod\s+777\s+\//,                 // chmod 777 /
-    /chown\s+.*\s+\//,                  // chown /
+    /mkfs\S*\s+\/(?:\s|$)/,            // mkfs /
+    /mkfs\S*\s+\/boot(?:\/|\s|$)/,     // mkfs /boot
+    /dd\s+.*of=\/(?:\s|$)/,            // dd of=/
+    /dd\s+.*of=\/boot(?:\/|\s|$)/,     // dd of=/boot
+    /\bformat\b(?=.*\bc:\\?(?:\s|$))/, // format C:
+    /\bformat-volume\b(?=.*-driveletter\s+c\b)/,
     />\s*\/etc\/(passwd|shadow|sudoers)/, // 清空系统关键文件
     // Windows CMD: rd/rmdir /s 删除驱动器根目录（用 lookahead 处理参数任意顺序）
     /\b(rd|rmdir)\b(?=.*\/s\b)(?=.*\b[a-z]:\\["']?(?:\s|$))/,
     // Windows CMD: del /s 删除驱动器根目录所有文件
     /\bdel\b(?=.*\/s\b)(?=.*\b[a-z]:\\\*)/,
-    // Windows CMD: format 格式化驱动器
-    /\bformat\s+[a-z]:/,
     // PowerShell: Remove-Item 递归删除驱动器根目录
     /\bremove-item\b(?=.*-recurse)(?=.*\b[a-z]:\\["']?(?:\s|$))/,
   ]
@@ -368,6 +367,9 @@ export function assessCommandRiskLegacy(command: string): RiskLevel {
   // 高危 - 需要确认
   const dangerous = [
     // Unix
+    /\bmkfs\b/,                         // 格式化块设备（先确认）
+    /\bdd\s+/,                          // dd
+    /\bformat\s+[a-z]:/,                // format 盘符
     /\brm\s+(-[rf]+\s+)*/,             // rm 命令
     /\bkill\s+(-9\s+)?/,               // kill 命令
     /\bkillall\b/,                      // killall

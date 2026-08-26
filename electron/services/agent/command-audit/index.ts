@@ -20,7 +20,7 @@ export { assessAuditedCall, assessRedirectPaths, aggregateHasUnknown } from './a
 
 export { checkIndirectionGuard, dangerousByGuard } from './indirection-guard'
 
-export { isHardBlocked, riskNeedsConfirm, commandNeedsConfirm, isSubAgentBlocked, displayRiskLevel } from './confirm-policy'
+export { isHardBlocked, riskNeedsConfirm, commandNeedsConfirm, isSubAgentBlocked, displayRiskLevel, formatHardBlockedMessage } from './confirm-policy'
 
 export { assessShellRisk, shellNeedsConfirm } from './assess-shell'
 

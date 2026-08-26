@@ -123,11 +123,66 @@ describe('assessCommandRisk shell AST', () => {
     it('rm -rf /sys 降为 dangerous（hardened）', async () => {
       expect(await assessCommandRisk('rm -rf /sys')).toBe('dangerous')
     })
-    it('dd if=x of=/dev/sda 仍 blocked（整串规则兜底）', async () => {
-      expect(await assessCommandRisk('dd if=x of=/dev/sda')).toBe('blocked')
+    it('dd if=x of=/dev/sda 为 dangerous（格式化块设备先确认）', async () => {
+      expect(await assessCommandRisk('dd if=x of=/dev/sda')).toBe('dangerous')
+    })
+    it('dd of=/ 仍 blocked（明确冲着根目录）', async () => {
+      expect(await assessCommandRisk('dd if=/dev/zero of=/')).toBe('blocked')
+    })
+    it('mkfs.ext4 / 仍 blocked（格式化根目录）', async () => {
+      expect(await assessCommandRisk('mkfs.ext4 /')).toBe('blocked')
+    })
+    it('mkfs.ext4 /boot 仍 blocked（格式化引导分区）', async () => {
+      expect(await assessCommandRisk('mkfs.ext4 /boot')).toBe('blocked')
+    })
+    it('format C: 仍 blocked（Windows 系统盘）', async () => {
+      expect(await assessCommandRisk('format C:')).toBe('blocked')
+    })
+    it('format /FS:NTFS C: 仍 blocked（带参数的系统盘格式化）', async () => {
+      expect(await assessCommandRisk('format /FS:NTFS C:')).toBe('blocked')
     })
     it('ls /etc 仍 safe（只读命令不受路径分级影响）', async () => {
       expect(await assessCommandRisk('ls /etc')).toBe('safe')
+    })
+    it('chown root / 为 dangerous（改属主可恢复，先确认）', async () => {
+      expect(await assessCommandRisk('chown root /')).toBe('dangerous')
+    })
+    it('chmod 777 / 为 dangerous（改权限可恢复，先确认）', async () => {
+      expect(await assessCommandRisk('chmod 777 /')).toBe('dangerous')
+    })
+    it('chmod -R 777 / 为 dangerous（仍是改权限）', async () => {
+      expect(await assessCommandRisk('chmod -R 777 /')).toBe('dangerous')
+    })
+    it('chgrp root / 为 dangerous（改属组可恢复，先确认）', async () => {
+      expect(await assessCommandRisk('chgrp root /')).toBe('dangerous')
+    })
+    it('chown 绝对路径目录不误拦为 blocked', async () => {
+      expect(await assessCommandRisk('chown dmdba:dinstall /data')).toBe('moderate')
+    })
+    it('chmod 777 绝对路径目录不误拦为 blocked', async () => {
+      expect(await assessCommandRisk('chmod 777 /data')).toBe('moderate')
+    })
+    it('chmod 777 /etc 降为 dangerous（hardened，非根目录）', async () => {
+      expect(await assessCommandRisk('chmod 777 /etc')).toBe('dangerous')
+    })
+    it('chmod 777 /boot 为 dangerous（改权限可恢复，先确认）', async () => {
+      expect(await assessCommandRisk('chmod 777 /boot')).toBe('dangerous')
+    })
+    it('rm -rf / 与 chmod 777 / 同时出现仍 blocked', async () => {
+      expect(await assessCommandRisk('chmod 777 / && rm -rf /')).toBe('blocked')
+    })
+    it('chmod 重定向覆写 /boot 仍 blocked', async () => {
+      expect(await assessCommandRisk('chmod 777 /data > /boot/foo')).toBe('blocked')
+    })
+    it('chown /data 复合命令不误拦为 blocked', async () => {
+      expect(await assessCommandRisk(
+        'chown dmdba:dinstall /data && ls -ld /data /data/ZDFTA_EP01',
+      )).toBe('moderate')
+    })
+    it('install 后 chown /data 不误拦为 blocked', async () => {
+      expect(await assessCommandRisk(
+        'install -d -o dmdba -g dinstall -m 755 /data/ZDFTA_EP02 && chown dmdba:dinstall /data',
+      )).not.toBe('blocked')
     })
   })
 
@@ -309,9 +364,8 @@ describe('assessCommandRisk shell AST', () => {
       expect(await assessCommandRisk('dd if=/dev/zero of=/tmp/sft-dd-test.img bs=1M count=1', relaxed)).toBe('dangerous')
     })
 
-    it('mkfs.ext4 至少 dangerous（整串规则可升 blocked）', async () => {
-      const level = await assessCommandRisk('mkfs.ext4 /dev/sdb1', relaxed)
-      expect(['dangerous', 'blocked']).toContain(level)
+    it('mkfs.ext4 /dev/sdb1 为 dangerous（数据盘先确认）', async () => {
+      expect(await assessCommandRisk('mkfs.ext4 /dev/sdb1', relaxed)).toBe('dangerous')
     })
 
     it('reboot 为 dangerous', async () => {
@@ -323,9 +377,12 @@ describe('assessCommandRisk shell AST', () => {
       expect(await assessCommandRisk('mount /dev/sdb1 /mnt', relaxed)).toBe('dangerous')
     })
 
-    it('format 至少 dangerous（整串规则可升 blocked）', async () => {
-      const level = await assessCommandRisk('format C:', relaxed)
-      expect(['dangerous', 'blocked']).toContain(level)
+    it('format C: 仍 blocked（Windows 系统盘）', async () => {
+      expect(await assessCommandRisk('format C:', relaxed)).toBe('blocked')
+    })
+
+    it('format D: 为 dangerous（其它盘符先确认）', async () => {
+      expect(await assessCommandRisk('format D:', relaxed)).toBe('dangerous')
     })
 
     it('sudo 单独调用为 dangerous（有内层时 unwrap 按内层审计）', async () => {

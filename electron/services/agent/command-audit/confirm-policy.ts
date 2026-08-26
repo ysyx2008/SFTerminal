@@ -16,10 +16,27 @@
 import type { RiskLevel, ExecutionMode, CommandRiskPolicy } from '@shared/types/agent'
 import type { CommandRiskAssessment } from './types'
 import { resolveSubAgentBlockDangerous } from './fail-closed-policy'
+import { t } from '../i18n'
 
 /** blocked = 硬拒绝，不弹确认、不执行 */
 export function isHardBlocked(level: RiskLevel): boolean {
   return level === 'blocked'
+}
+
+/** 硬拒时给秘书看的中性说明：事实 + 审计原因，不含行动指导 */
+export function formatHardBlockedMessage(assessment: CommandRiskAssessment): string {
+  const seen = new Set<string>()
+  const reasons: string[] = []
+  for (const call of assessment.calls) {
+    if (call.level !== 'blocked') continue
+    for (const r of call.reasons) {
+      if (!r || seen.has(r)) continue
+      seen.add(r)
+      reasons.push(r)
+    }
+  }
+  if (reasons.length === 0) return t('hint.security_blocked')
+  return t('hint.security_blocked_with_reason', { reason: reasons.join('；') })
 }
 
 /**

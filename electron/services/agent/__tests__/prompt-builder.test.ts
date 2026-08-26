@@ -467,6 +467,9 @@ describe('PromptBuilder', () => {
       
       expect(prompt).toContain('严格')
       expect(prompt).toContain('所有命令需用户确认')
+      expect(prompt).toContain('另有硬墙')
+      expect(prompt).toContain('不排除存在误报可能')
+      expect(prompt).not.toContain('不要换写法')
     })
 
     it('should show relaxed mode note', () => {
@@ -479,6 +482,7 @@ describe('PromptBuilder', () => {
       
       expect(prompt).toContain('宽松')
       expect(prompt).toContain('仅危险命令需确认')
+      expect(prompt).toContain('另有硬墙')
     })
 
     it('should show free mode note', () => {
@@ -491,6 +495,7 @@ describe('PromptBuilder', () => {
       
       expect(prompt).toContain('自由')
       expect(prompt).toContain('自动执行')
+      expect(prompt).toContain('另有硬墙')
     })
   })
 
@@ -939,7 +944,8 @@ describe('伙计自己的工作契约', () => {
     const prompt = PromptBuilder.buildSubAgentSystemPrompt({
       context: createMockContext({ terminalType: 'assistant' }),
     })
-    expect(prompt).toContain('不会问人签字')
+    expect(prompt).toContain('不会向用户确认')
+    expect(prompt).toContain('不排除存在误报可能')
     expect(prompt).toContain('只认绝对路径')
     expect(prompt).toContain('scratch')
     expect(prompt).toContain('桌面等正式目录')

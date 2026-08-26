@@ -4,6 +4,7 @@ import {
   riskNeedsConfirm,
   commandNeedsConfirm,
   isSubAgentBlocked,
+  formatHardBlockedMessage,
 } from '../confirm-policy'
 import type { CommandRiskAssessment } from '../types'
 
@@ -109,5 +110,44 @@ describe('isSubAgentBlocked', () => {
     expect(isSubAgentBlocked(assessment('blocked'), {
       subAgentBlockDangerous: false,
     } as any)).toBe(true)
+  })
+})
+
+describe('formatHardBlockedMessage', () => {
+  it('无原因时只陈述硬拒事实', () => {
+    const msg = formatHardBlockedMessage(assessment('blocked'))
+    expect(msg).toContain('不会执行')
+    expect(msg).toContain('不会征求确认')
+    expect(msg).not.toContain('原因：')
+    expect(msg).not.toContain('不要')
+  })
+
+  it('带上触发硬拒的原因，不含行动指导', () => {
+    const msg = formatHardBlockedMessage({
+      level: 'blocked',
+      parsed: false,
+      calls: [{
+        level: 'blocked',
+        commandLevel: 'blocked',
+        reasons: ['整串命令命中 blocked 规则'],
+      }],
+    })
+    expect(msg).toContain('不会执行')
+    expect(msg).toContain('原因：整串命令命中 blocked 规则')
+    expect(msg).not.toContain('换写法')
+    expect(msg).not.toContain('请主人')
+  })
+
+  it('只收录 blocked 子命令的原因', () => {
+    const msg = formatHardBlockedMessage({
+      level: 'blocked',
+      parsed: true,
+      calls: [
+        { level: 'moderate', commandLevel: 'moderate', reasons: ['日常改权限'] },
+        { level: 'blocked', commandLevel: 'blocked', reasons: ['禁止写入或删除'] },
+      ],
+    })
+    expect(msg).toContain('禁止写入或删除')
+    expect(msg).not.toContain('日常改权限')
   })
 })

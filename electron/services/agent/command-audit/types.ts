@@ -131,16 +131,18 @@ export interface CommandRiskAssessment {
  * 系统路径黑名单条目（跨平台）
  *
  * severity 分两级：
- * - critical：写操作 → blocked（硬墙，任何 executionMode 都拒绝）。
+ * - critical：删除或覆写 → blocked（硬墙）；改权限或属主 → dangerous。
  *   仅保留真正不可逆的系统级灾难路径：`/`（根）、`/boot`（引导）。
- *   这些路径的写操作即使 dd/烧录也是灾难性，且整串规则已对
- *   `rm -rf /`、`dd of=/dev/sdX` 等模式做了兜底，critical 是第二道铁壁。
+ *   删除或覆写这些路径 → blocked；改权限或属主 → dangerous（可恢复，先确认）。
+ *   整串规则已对 `rm -rf /`、`dd of=/`、`mkfs /boot` 等模式做了兜底。
+ *   格式化 `/dev/sdX`、非 C: 盘符不在硬墙内，走 dangerous 确认。
+ *   Windows `format C:` 仍硬拒。
  * - hardened：写操作 → dangerous（弹确认，用户知情后可放行）。
  *   `/etc` `/dev` `/sys` `/proc` `/System` 等系统目录，写它们有风险但可恢复，
  *   或存在合法操作（如 `dd of=/dev/sdX` 烧录、`> /dev/null` 丢弃输出）。
  *
  * 注意：read-only 命令（cat、ls）对这些路径的读取是 safe，
- * 黑名单只对写操作（rm、mv、>、chmod 等）生效。
+ * 黑名单只对写操作（rm、mv、>、chmod 等）生效；chmod/chown/chgrp 在 critical 上不硬拒。
  *
  * /dev/null 等黑洞设备由 DEV_NULL_EXEMPTIONS 单独豁免为 safe。
  */
@@ -151,14 +153,14 @@ export interface SystemPathPattern {
   description: string
   /**
    * 严重程度：
-   * - critical：写操作 hard block（不可恢复的系统级灾难）
+   * - critical：删除或覆写 hard block；改权限或属主为 dangerous
    * - hardened：写操作降为 dangerous（弹确认即可放行）
    */
   severity: 'critical' | 'hardened'
 }
 
 export const SYSTEM_PATH_PATTERNS: readonly SystemPathPattern[] = [
-  // === critical：写操作 hard block（不可逆系统灾难）===
+  // === critical：删/覆写 hard block；改权限或属主为 dangerous ===
   // Unix 文件系统根（整串规则已拦 rm -rf /，此为路径守卫兜底）
   { pattern: /^\/$/, description: '/ (文件系统根)', severity: 'critical' },
   // 引导分区（写错系统起不来）

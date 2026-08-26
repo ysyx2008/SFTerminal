@@ -1167,7 +1167,8 @@ const translations = {
     // 提示信息
     'hint.long_running_command': '这是一个长耗时命令，超时不代表失败。建议使用 wait 工具等待一段时间后再检查状态。',
     'hint.command_cannot_execute': '无法执行',
-    'hint.security_blocked': '该命令被安全策略阻止执行',
+    'hint.security_blocked': '系统安全策略已硬拒该命令：不会执行，也不会征求确认。',
+    'hint.security_blocked_with_reason': '系统安全策略已硬拒该命令：不会执行，也不会征求确认。原因：{reason}',
     'hint.command_empty': '命令不能为空',
 
     // 命令风险评估原因（reasons）- 用于确认卡片展示
@@ -1179,6 +1180,7 @@ const translations = {
     'risk.reason.userdata_protected': '目标位于受保护的 userData 路径，禁止访问',
     'risk.reason.devnull_safe': '写重定向目标为黑洞设备（/dev/null 等），无害',
     'risk.reason.system_critical_blocked': '目标路径位于系统关键目录（critical），禁止写入或删除',
+    'risk.reason.system_critical_attr': '在系统关键目录改权限或属主，需确认后执行',
     'risk.reason.system_hardened': '目标路径位于系统目录，需确认后执行',
     'risk.reason.workspace_free': '目标位于自由区（scratch/charts/系统临时目录），允许自动执行',
     'risk.reason.workspace_outside': '目标位于工作区外',
@@ -2744,7 +2746,8 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     // Hints
     'hint.long_running_command': 'This is a long-running command, timeout does not mean failure. Consider using wait tool to wait and then check status.',
     'hint.command_cannot_execute': 'Cannot execute',
-    'hint.security_blocked': 'This command is blocked by security policy',
+    'hint.security_blocked': 'This command was hard-blocked by security policy: it will not run and will not ask for confirmation.',
+    'hint.security_blocked_with_reason': 'This command was hard-blocked by security policy: it will not run and will not ask for confirmation. Reason: {reason}',
     'hint.command_empty': 'Command cannot be empty',
 
     // Command risk assessment reasons - shown in confirmation card
@@ -2756,6 +2759,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'risk.reason.userdata_protected': 'Target is in protected userData path, access denied',
     'risk.reason.devnull_safe': 'Write redirect target is a null device (/dev/null etc.), harmless',
     'risk.reason.system_critical_blocked': 'Target path is in a system-critical directory (critical), write/delete blocked',
+    'risk.reason.system_critical_attr': 'Changing permissions or ownership on a system-critical path requires confirmation',
     'risk.reason.system_hardened': 'Target path is in a system directory, requires confirmation',
     'risk.reason.workspace_free': 'Target is in a free zone (scratch/charts/system temp), auto-approved',
     'risk.reason.workspace_outside': 'Target is outside the workspace',

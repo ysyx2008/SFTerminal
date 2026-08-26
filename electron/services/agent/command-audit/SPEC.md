@@ -8,6 +8,8 @@
 - **日志和会话历史可以只读**：秘书要能打开应用日志和会话记录，用来回溯对话、排查消息有没有到。不能改、不能删这两处。
 - **其余应用数据仍完全不能碰**：凭据、安全规则、配置等照旧读和写都拦。不开放整个数据目录。
 - **不做第二套查询口**：已有历史搜索；再放开只读文件访问即可，不为日志另做专用接口。
+- **硬墙只拦毁机，不拦改得回来的事**：在根目录或引导分区上改权限、改属主，先问再跑，不直接拒绝。删根、格式化根目录或引导分区、格式化 Windows 系统盘（C:），照旧硬拒。格式化某块数据盘或 U 盘先确认，不硬拒——`/dev/sdX` 看不出哪块是系统盘，不猜；C: 就是系统盘，不跟它们混。用户不能改这条硬墙，秘书也不能改。
+- **硬拒回传原因**：命令被硬拒时，把审计原因原样告诉秘书，只陈述事实，不附加该怎么做。
 
 ## 职责
 
@@ -96,13 +98,14 @@ command-audit/
 
 guard 把"确实危险的间接执行模式"鉴别出来标 dangerous，让 strict/relaxed 弹确认时理由清楚。**free 模式照常放行**--用户既然选了信任，不该由 guard 越俎代庖硬拦。
 
-### 2. blocked 级别只留给路径守卫
+### 2. blocked 级别只留给不可逆伤害
 
-`blocked` 表示"绝对禁止"，不受 executionMode 影响。触发条件：
-- 写 **critical 系统路径**（`/`、`/boot`）--不可逆系统灾难
+`blocked` 表示"绝对禁止"，不受执行模式影响。触发条件：
+- **删除或覆写** critical 系统路径（`/`、`/boot`）——不可逆系统灾难
 - 访问 **userData 禁区**（凭据等安全文件读+写都拦；日志和会话历史只允许读）
 
-写 **hardened 系统路径**（`/etc`、`/dev`、`/sys` 等）标 `dangerous`（弹确认放行），不标 `blocked`。guard 命中的间接执行模式也标 `dangerous`，不标 `blocked`。
+在 critical 路径上**只改权限或属主**不是毁机：改得回来，标危险（先确认），不硬拒。
+写 **hardened 系统路径**（`/etc`、`/dev`、`/sys` 等）仍标危险（弹确认放行）。间接执行也标危险，不标 blocked。
 
 ### 3. 自由区降级只认「静态可证」的绝对路径（写/删）
 
@@ -128,11 +131,11 @@ Fail-Closed 的「只认绝对路径」才是可靠不变量。
 | 等级 | 含义 | strict | relaxed | free |
 |---|---|---|---|---|
 | safe | 只读，工作区内 | 确认 | 放行 | 放行 |
-| dangerous | 高危：不可逆破坏/提权/关机/防火墙/账户（dd/mkfs/sudo/reboot/iptables/userdel 等）/ 写 hardened 系统路径 / 解析失败与未知命令（strict 默认） | 确认 | 确认 | 放行 |
-| moderate | 写 protected 或 workspace 内 / 未知命令（relaxed 默认）/ 轻度写（mv/touch/chmod）/ 日常运维（pip/brew/docker/kill/systemctl/mount/crontab 等） | 确认 | 放行 | 放行 |
-| **blocked** | 写 critical 系统路径（/ /boot）或碰 userData 禁区（含改/删日志和会话历史） | **拒绝** | **拒绝** | **拒绝** |
+| dangerous | 高危：不可逆破坏/提权/关机/防火墙/账户（dd/mkfs/sudo/reboot/iptables/userdel 等）/ 写 hardened 系统路径 / 在 / 或 /boot 上改权限或属主 / 解析失败与未知命令（strict 默认） | 确认 | 确认 | 放行 |
+| moderate | 写 protected 或 workspace 内 / 未知命令（relaxed 默认）/ 轻度写（mv/touch/chmod 普通路径）/ 日常运维（pip/brew/docker/kill/systemctl/mount/crontab 等） | 确认 | 放行 | 放行 |
+| **blocked** | 删除或覆写 critical 系统路径（/ /boot），或碰 userData 禁区（含改/删日志和会话历史） | **拒绝** | **拒绝** | **拒绝** |
 
-注意：blocked 是硬墙（路径守卫），dangerous 是风险标记（guard 命中 / hardened 系统路径）。
+注意：blocked 是硬墙（不可逆伤害），dangerous 是风险标记（先确认）。在根目录改权限不算毁机。
 
 ### Fail-Closed 兜底（解析失败 / 未知命令 / 间接执行 / 动态路径）
 
@@ -155,10 +158,10 @@ Fail-Closed 的「只认绝对路径」才是可靠不变量。
 
 ### 系统路径分级（仅对写操作生效）
 
-| severity | 路径 | 写操作 | 说明 |
-|---|---|---|---|
-| critical | `/`、`/boot` | blocked | 不可逆系统灾难；整串规则已对 `rm -rf /`、`dd of=/dev/sdX` 等做兜底 |
-| hardened | `/etc`、`/dev`、`/sys`、`/proc`、`/System`、`/Library`、`/root` 等 | dangerous | 有风险但可恢复，或存在合法操作（如 `dd of=/dev/sdX` 烧录） |
+| severity | 路径 | 删除/覆写 | 改权限或属主 | 说明 |
+|---|---|---|---|---|
+| critical | `/`、`/boot` | blocked | dangerous | 删根、格式化这两处仍硬拒；Windows 格式化 C: 仍硬拒；格式化其它盘符或 `/dev/sdX` 先确认；改权限或属主先问再跑 |
+| hardened | `/etc`、`/dev`、`/sys`、`/proc`、`/System`、`/Library`、`/root` 等 | dangerous | dangerous | 有风险但可恢复，或存在合法操作（如往设备里烧录） |
 
 **黑洞设备豁免**：`/dev/null`、`/dev/stdout`、`/dev/stderr` 作为写重定向目标时直接判 safe（写它们等于丢弃或重定向输出）。命令参数中的 `/dev/null` 不受此豁免影响。
 
@@ -187,6 +190,7 @@ npx vitest run electron/services/agent/command-audit/__tests__/
 
 ## 变更历史
 
+- 2026-08-26：格式化某块盘（`/dev/sdX`、非 C: 盘符）改为危险（先确认），格式化根目录、引导分区或 Windows 系统盘 C: 仍硬拒；硬拒回传审计原因；在 `/`、`/boot` 上改权限或属主改为危险
 - 2026-07-18：自由区降级只认词法绝对路径（不变量 3）。相对路径写/删不再按审计 cwd 解析进 free，修复 `cd ~/Desktop && rm foo.txt` 在宽松模式免确认删除工作区外文件
 - 2026-07-14：`resolveCommandPath` 展开 `~`/`~/`，修复宽松模式下 `rm ~/…` 误判 free/safe 不弹确认
 - 2026-07-13：明确 blocked 不走确认弹窗（硬拒绝）；`riskNeedsConfirm('blocked')` 恒 false，新增 `isHardBlocked`
