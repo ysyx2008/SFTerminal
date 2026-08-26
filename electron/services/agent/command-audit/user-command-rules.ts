@@ -1,8 +1,8 @@
 /**
  * 用户命令规则（追加式 CommandRule）
  *
- * - 只允许补充内置 ARGV_COMMAND_RULES 未收录的命令名
- * - 不可覆盖内置；不可自建 blocked
+ * - 未收录命令可设 safe / moderate / dangerous / blocked
+ * - 内置命令只允许升成 blocked，不能放松
  * - Agent 不可读写存储文件（userdata-guard 禁区）
  */
 import { app } from 'electron'
@@ -17,8 +17,8 @@ const log = createLogger('UserCommandRules')
 
 export const USER_COMMAND_RULES_FILENAME = 'agent-command-rules.json'
 
-/** 用户可设的基础风险（不含 blocked） */
-export const USER_RULE_ALLOWED_LEVELS: readonly RiskLevel[] = ['safe', 'moderate', 'dangerous'] as const
+/** 用户可设的基础风险（内置命令仅允许 blocked） */
+export const USER_RULE_ALLOWED_LEVELS: readonly RiskLevel[] = ['safe', 'moderate', 'dangerous', 'blocked'] as const
 
 export type UserCommandRulePathMode = 'all' | 'fixed' | 'none'
 
@@ -86,8 +86,9 @@ function sanitizeRecord(raw: unknown): UserCommandRuleRecord | null {
   const o = raw as Record<string, unknown>
   if (typeof o.cmd !== 'string' || !o.cmd.trim()) return null
   const cmd = normalizeCmd(o.cmd)
-  if (!cmd || ARGV_COMMAND_RULES[cmd]) return null
+  if (!cmd) return null
   if (!isAllowedLevel(o.baseLevel)) return null
+  if (ARGV_COMMAND_RULES[cmd] && o.baseLevel !== 'blocked') return null
   const writesTo = o.writesTo === true
   // v1 不支持 fixed（缺 pathArgIndices 会静默丢路径）；只读默认 none，写盘默认 all
   let pathMode: UserCommandRulePathMode = writesTo ? 'all' : 'none'
@@ -171,8 +172,10 @@ export class UserCommandRules {
     this.ensureLoadedSync()
     const cmd = normalizeCmd(input.cmd)
     if (!cmd || cmd === '.' || cmd === '..') return { ok: false, error: 'empty_cmd' }
-    if (ARGV_COMMAND_RULES[cmd]) return { ok: false, error: 'builtin_conflict' }
     if (!isAllowedLevel(input.baseLevel)) return { ok: false, error: 'invalid_level' }
+    if (ARGV_COMMAND_RULES[cmd] && input.baseLevel !== 'blocked') {
+      return { ok: false, error: 'builtin_conflict' }
+    }
 
     const writesTo = input.writesTo === true
     // v1：不支持 fixed（无 pathArgIndices）；显式传入 fixed 则拒绝

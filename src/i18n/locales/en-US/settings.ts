@@ -91,7 +91,7 @@ export default {
       },
       userCommandRules: {
         title: 'My Command Rules',
-        description: 'Set a default risk for commands the app doesn’t know yet (e.g. fd, bat). Check “Path zoning” if the command may modify files. “Option allowlist” lists common safe options; they don’t all have to appear together. Any option not listed bumps risk to medium. Cannot override built-ins or set blocked.',
+        description: 'Set a default risk for commands the app doesn’t know yet (e.g. fd, bat), or raise a known command to hard-block. Check “Path zoning” if the command may modify files. Built-in hard-blocks cannot be relaxed, and the assistant cannot change this list.',
         cmdPlaceholder: 'Command name, e.g. fd',
         flagsPlaceholder: 'Option allowlist, e.g. -H -I (optional)',
         flagsFieldLabel: 'Option allowlist',
@@ -100,7 +100,7 @@ export default {
         flagsTip: 'An allowlist of common options that do not raise risk—not a set that must all be present. If you list -H -I, the command may use -H, -I, or both. Any option not listed bumps risk to medium. Leaving this empty is fine—extra options will just bump the level sooner.',
         add: 'Add rule',
         empty: 'No custom command rules yet',
-        errBuiltin: 'This command is already in the built-in baseline and cannot be overridden.',
+        errBuiltin: 'Built-in commands can only be raised to hard-block, not changed to another level.',
         errLevel: 'Invalid risk level.',
         errGeneric: 'Failed to add. Please try again.',
       },

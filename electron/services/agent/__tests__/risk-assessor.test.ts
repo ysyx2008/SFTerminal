@@ -56,6 +56,7 @@ describe('assessCommandRiskLegacy', () => {
       ['mkfs.ext4 /dev/sda', 'format data disk'],
       ['mkfs.xfs /dev/sdb', 'format data disk xfs'],
       ['dd if=/dev/zero of=/dev/sda', 'dd to disk'],
+      ['echo x > /dev/sda', 'redirect to disk'],
       ['format D:', 'format data drive'],
       ['format d:', 'format data drive lowercase'],
       ['chmod 755 /etc/nginx', 'chmod etc'],

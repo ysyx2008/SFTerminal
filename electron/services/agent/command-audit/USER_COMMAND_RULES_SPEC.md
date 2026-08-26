@@ -2,17 +2,23 @@
 
 ## 职责
 
-允许用户**追加**未收录命令的 `CommandRule`（命令名 + 基础风险 + 写盘/路径模式 + 安全 flags），供审计与内置 `ARGV_COMMAND_RULES` 合并查找。
+允许用户给命令指定默认风险档，供审计与内置规则合并查找。
+
+## 设计目标
+
+- **可以加严，不能放松**：还不认识的命令可以设安全 / 中危 / 危险 / 硬拒。已经认识的命令只能升成硬拒，不能改成更松的档，也关不掉内置硬墙。
+- **秘书改不了**：这份名单在应用数据里，秘书读不了、也改不了；确认时「允许并记住」只能记成中危，不能写成硬拒或改掉硬拒。
 
 ## 约束
 
-- **只追加**：不可覆盖 / 删除内置命令
-- **不可自建 blocked**（仅 `safe` / `moderate` / `dangerous`）
+- 未收录命令：可设 `safe` / `moderate` / `dangerous` / `blocked`
+- 内置命令：只允许升成 `blocked`；其它档仍拒绝
+- 查找：用户把某条标成硬拒时，硬拒优先；否则仍用内置，没有内置再看用户规则
 - Agent 不可读写 `{userData}/agent-command-rules.json`（userData 禁区）
 
 ## 查找顺序
 
-`getArgvCommandRule`（`resolve-argv-rule.ts`）：内置 → 用户规则 → `undefined`（未知命令 Fail-Closed）
+`getArgvCommandRule`：用户硬拒覆盖 → 内置 → 其它用户规则 → 未知（Fail-Closed）
 
 ## 存储
 
@@ -23,6 +29,7 @@
 
 - `commandRules:list` / `commandRules:upsert` / `commandRules:remove` / `commandRules:clear`
 - `upsert` 错误码：`empty_cmd` / `builtin_conflict` / `invalid_level` / `fixed_path_mode_unsupported`
+- 内置命令写非 `blocked` → `builtin_conflict`
 - v1 `pathMode` 仅 `all` | `none`（不支持 `fixed`，缺 `pathArgIndices`）
 
 ## 确认弹窗快捷入口

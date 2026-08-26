@@ -67,7 +67,7 @@ const newUserRuleCmd = ref('')
 const newUserRuleLevel = ref<RiskLevel>('safe')
 const newUserRuleWrites = ref(false)
 const newUserRuleFlags = ref('')
-const USER_RULE_LEVELS: RiskLevel[] = ['safe', 'moderate', 'dangerous']
+const USER_RULE_LEVELS: RiskLevel[] = ['safe', 'moderate', 'dangerous', 'blocked']
 
 async function loadUserCommandRules() {
   userRulesLoading.value = true

@@ -21,7 +21,7 @@ import {
   lookupUserCommandRule,
 } from '../user-command-rules'
 import { getArgvCommandRule } from '../resolve-argv-rule'
-import type { RiskLevel } from '@shared/types/agent'
+import { assessCommandRisk } from '../../risk-assessor'
 
 describe('UserCommandRules', () => {
   const tmpDir = path.join(os.tmpdir(), `sft-user-cmd-rules-${Date.now()}`)
@@ -58,33 +58,61 @@ describe('UserCommandRules', () => {
     expect(getArgvCommandRule('/usr/local/bin/mycli')?.writesTo).toBe(false)
   })
 
-  it('拒绝覆盖内置命令', async () => {
+  it('拒绝放松内置命令', async () => {
     const store = resetUserCommandRulesForTest(storePath)
     const r = await store.upsert({ cmd: 'rm', baseLevel: 'safe', writesTo: false })
     expect(r.ok).toBe(false)
     if (r.ok) return
     expect(r.error).toBe('builtin_conflict')
-    // 内置仍生效
     expect(getArgvCommandRule('rm')?.baseLevel).toBe('dangerous')
   })
 
-  it('拒绝 blocked 等级', async () => {
+  it('未收录命令可标硬拒', async () => {
     const store = resetUserCommandRulesForTest(storePath)
-    const r = await store.upsert({ cmd: 'mytool', baseLevel: 'blocked' as RiskLevel, writesTo: false })
-    expect(r.ok).toBe(false)
-    if (r.ok) return
-    expect(r.error).toBe('invalid_level')
+    const r = await store.upsert({ cmd: 'mytool', baseLevel: 'blocked', writesTo: false })
+    expect(r.ok).toBe(true)
+    expect(getArgvCommandRule('mytool')?.baseLevel).toBe('blocked')
   })
 
-  it('内置优先于用户规则同名（即使文件被篡改）', async () => {
+  it('内置命令可升成硬拒，去掉规则后回到内置档', async () => {
+    const store = resetUserCommandRulesForTest(storePath)
+    const r = await store.upsert({ cmd: 'rm', baseLevel: 'blocked', writesTo: true })
+    expect(r.ok).toBe(true)
+    expect(getArgvCommandRule('rm')?.baseLevel).toBe('blocked')
+    await store.remove('rm')
+    expect(getArgvCommandRule('rm')?.baseLevel).toBe('dangerous')
+  })
+
+  it('篡改文件放松内置档会被丢掉；升成硬拒会保留', async () => {
     fs.writeFileSync(storePath, JSON.stringify({
       version: 1,
       rules: [{ cmd: 'ls', baseLevel: 'dangerous', writesTo: true, pathMode: 'all', safeFlags: [] }],
     }))
     resetUserCommandRulesForTest(storePath)
-    // sanitize 丢弃与内置冲突的条目
     expect(lookupUserCommandRule('ls')).toBeUndefined()
     expect(getArgvCommandRule('ls')?.baseLevel).toBe('safe')
+
+    fs.writeFileSync(storePath, JSON.stringify({
+      version: 1,
+      rules: [{ cmd: 'ls', baseLevel: 'blocked', writesTo: false, pathMode: 'none', safeFlags: [] }],
+    }))
+    resetUserCommandRulesForTest(storePath)
+    expect(getArgvCommandRule('ls')?.baseLevel).toBe('blocked')
+  })
+
+  it('升成硬拒后该命令一律 blocked，不受路径降级', async () => {
+    const store = resetUserCommandRulesForTest(storePath)
+    await store.upsert({ cmd: 'rm', baseLevel: 'blocked', writesTo: true })
+    expect(await assessCommandRisk('rm file.txt')).toBe('blocked')
+  })
+
+  it('硬拒不被间接执行或动态路径降级', async () => {
+    const store = resetUserCommandRulesForTest(storePath)
+    const free = { executionMode: 'free' as const }
+    await store.upsert({ cmd: 'python3', baseLevel: 'blocked' })
+    expect(await assessCommandRisk('python3 -c "print(1)"', free)).toBe('blocked')
+    await store.upsert({ cmd: 'rm', baseLevel: 'blocked', writesTo: true })
+    expect(await assessCommandRisk('rm $FOO', free)).toBe('blocked')
   })
 
   it('remove 删除规则后回到未知', async () => {

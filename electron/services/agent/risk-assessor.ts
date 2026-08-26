@@ -387,6 +387,7 @@ export function assessCommandRiskLegacy(command: string): RiskLevel {
     /\bdnf\s+remove/,                   // dnf remove
     />\s*\/etc\//,                      // 重定向到 /etc
     />\s*\/var\//,                      // 重定向到 /var
+    />\s*\/dev\/(?!null|stdout|stderr)/, // 重定向到块设备（先确认；黑洞除外）
     /\bcurl\s+.*\|\s*(ba)?sh/,          // curl ... | bash (远程代码执行)
     /\bwget\s+.*-O\s*-?\s*\|\s*(ba)?sh/, // wget -O- | sh (远程代码执行)
     // Windows CMD

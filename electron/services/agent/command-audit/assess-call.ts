@@ -84,12 +84,19 @@ export function assessAuditedCall(
 ): CallRiskAssessment {
   // 间接执行守卫：解释器内联 / 包装器 / 调度器 / 结构性 flag 规则
   // 命中后等级由用户策略决定（默认 strict→dangerous、relaxed→moderate）。
-  // 若命令本身在 ARGV 表中为 dangerous（sudo/docker 等），保底 dangerous，策略只能升级。
-  // blocked 级别留给路径守卫（写系统路径等绝对禁止场景）。
+  // 若命令本身为 dangerous，保底 dangerous；用户升成硬拒则保底 blocked。
   const guardHit = checkIndirectionGuard(call)
   if (guardHit) {
     const policyLevel = resolveFailClosedLevel('indirection', ctx)
     const argvRule = getArgvCommandRule(call.cmd)
+    if (argvRule?.baseLevel === 'blocked') {
+      return {
+        level: 'blocked',
+        commandLevel: 'blocked',
+        cmd: call.cmd,
+        reasons: [t('risk.reason.user_blocked_cmd', { cmd: call.cmd })],
+      }
+    }
     const level =
       argvRule?.baseLevel === 'dangerous'
         ? maxRisk(policyLevel, 'dangerous')
@@ -111,7 +118,15 @@ export function assessAuditedCall(
 
   if (call.dynamicPaths && rule.writesTo) {
     // 动态路径无法静态审计：等级由用户策略决定。
-    // 高危命令（rm 等）保底 dangerous，不允许策略降到 moderate。
+    // 高危命令保底 dangerous；用户升成硬拒则保底 blocked。
+    if (rule.baseLevel === 'blocked') {
+      return {
+        level: 'blocked',
+        commandLevel: 'blocked',
+        cmd: call.cmd,
+        reasons: [t('risk.reason.user_blocked_cmd', { cmd: call.cmd })],
+      }
+    }
     const policyLevel = resolveFailClosedLevel('dynamicPath', ctx)
     const dynamicLevel = rule.baseLevel === 'dangerous'
       ? maxRisk(policyLevel, 'dangerous')
@@ -138,7 +153,9 @@ export function assessAuditedCall(
   const commandLevel = assessCommandFlags(rule, call.flags)
   const reasons: string[] = []
 
-  if (rule.baseLevel === 'dangerous') {
+  if (rule.baseLevel === 'blocked') {
+    reasons.push(t('risk.reason.user_blocked_cmd', { cmd: call.cmd }))
+  } else if (rule.baseLevel === 'dangerous') {
     reasons.push(t('risk.reason.dangerous_cmd', { cmd: call.cmd }))
   }
 
@@ -162,7 +179,7 @@ export function assessAuditedCall(
   reasons.push(...pathAdjust.reasons)
 
   let level: RiskLevel
-  if (pathAdjust.level === 'blocked') {
+  if (commandLevel === 'blocked' || pathAdjust.level === 'blocked') {
     level = 'blocked'
   } else if (writes && writePaths.length > 0) {
     // free 区可降级为 safe；outside 等 moderate 不覆盖 rm 等命令级 dangerous
