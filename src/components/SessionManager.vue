@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Monitor, FolderPlus, Download, FileText, Folder, ListFilter, FileEdit, AlignLeft, AlignRight, Clock, Terminal, ChevronDown, ExternalLink, Settings, Plug, Pencil, Trash2 } from 'lucide-vue-next'
+import { Plus, Monitor, FolderPlus, Download, FileText, Folder, ListFilter, FileEdit, AlignLeft, AlignRight, Clock, Terminal, ChevronDown, ExternalLink, Settings, Plug, Pencil, Trash2, Columns2, Rows2 } from 'lucide-vue-next'
 import { useConfigStore, type SshSession, type SessionGroup, type JumpHostConfig, type SessionSortBy } from '../stores/config'
 import { useTerminalStore } from '../stores/terminal'
 import { v4 as uuidv4 } from 'uuid'
@@ -34,6 +34,12 @@ const credentialSession = ref<SshSession | null>(null)
 const searchText = ref('')
 const collapsedGroups = ref<Set<string>>(new Set())
 
+type OpenIntent = 'new-tab' | 'split-h' | 'split-v'
+const pendingOpenIntent = ref<OpenIntent>('new-tab')
+const ctxMenu = ref<{ show: boolean; x: number; y: number; session: SshSession | null }>({
+  show: false, x: 0, y: 0, session: null,
+})
+
 // ==================== Composables ====================
 const { groupedSessions } = useSessionList(searchText)
 const {
@@ -63,7 +69,8 @@ const groupDropLineAnchor = computed<{ name: string; edge: 'top' | 'bottom' } | 
 // ==================== 菜单键盘/点击 ====================
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
-    if (showImportMenu.value) { e.stopImmediatePropagation(); showImportMenu.value = false }
+    if (ctxMenu.value.show) { e.stopImmediatePropagation(); closeCtxMenu() }
+    else if (showImportMenu.value) { e.stopImmediatePropagation(); showImportMenu.value = false }
     else if (showNewMenu.value) { e.stopImmediatePropagation(); showNewMenu.value = false }
   }
 }
@@ -73,6 +80,7 @@ const handleClickOutside = (e: MouseEvent) => {
   if (!target.closest('.import-dropdown')) showImportMenu.value = false
   if (!target.closest('.new-dropdown')) showNewMenu.value = false
   if (!target.closest('.sort-dropdown')) showSortMenu.value = false
+  if (!target.closest('.host-ctx-menu')) closeCtxMenu()
 }
 
 watch(showNewMenu, (isOpen) => {
@@ -88,6 +96,11 @@ watch(showImportMenu, (isOpen) => {
 watch(showSortMenu, (isOpen) => {
   if (isOpen) document.addEventListener('click', handleClickOutside)
   else if (!showNewMenu.value && !showImportMenu.value) document.removeEventListener('click', handleClickOutside)
+})
+
+watch(() => ctxMenu.value.show, (isOpen) => {
+  if (isOpen) document.addEventListener('keydown', handleKeydown)
+  else if (!showNewMenu.value && !showImportMenu.value) document.removeEventListener('keydown', handleKeydown)
 })
 
 const handleMenuImportXshell = () => { showImportMenu.value = true }
@@ -153,11 +166,35 @@ const deleteSession = async (session: SshSession) => {
   }
 }
 
+const currentSessionTab = computed(() => terminalStore.activeTab || terminalStore.hubFocusedTab)
+const canSplitIntoCurrent = computed(() => Boolean(currentSessionTab.value))
+
+const closeCtxMenu = () => {
+  ctxMenu.value = { show: false, x: 0, y: 0, session: null }
+}
+
+const openCtxMenu = (e: MouseEvent, session: SshSession) => {
+  e.preventDefault()
+  e.stopPropagation()
+  const menuW = 180
+  const menuH = 120
+  let x = e.clientX
+  let y = e.clientY
+  if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8
+  if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8
+  ctxMenu.value = { show: true, x: Math.max(8, x), y: Math.max(8, y), session }
+}
+
 const connectSession = async (session: SshSession) => {
-  // JumpServer 会话由堡垒机处理认证，不需要目标主机凭据
+  await openHost(session, 'new-tab')
+}
+
+const openHost = async (session: SshSession, intent: OpenIntent) => {
+  closeCtxMenu()
+  pendingOpenIntent.value = intent
   const jumpHost = configStore.getEffectiveJumpHost(session)
   if (jumpHost) {
-    await doConnect(session)
+    await executeOpen(session, intent)
     return
   }
   const needsCredentials = !session.username || (!session.password && !session.privateKeyPath)
@@ -165,7 +202,7 @@ const connectSession = async (session: SshSession) => {
     credentialSession.value = session
     return
   }
-  await doConnect(session)
+  await executeOpen(session, intent)
 }
 
 const doConnect = async (session: SshSession, overrideCredentials?: { username: string; password: string }) => {
@@ -180,17 +217,56 @@ const doConnect = async (session: SshSession, overrideCredentials?: { username: 
   })
 }
 
+const executeOpen = async (
+  session: SshSession,
+  intent: OpenIntent,
+  overrideCredentials?: { username: string; password: string }
+) => {
+  if (intent === 'new-tab') {
+    await doConnect(session, overrideCredentials)
+    return
+  }
+  const tab = currentSessionTab.value
+  if (!tab) {
+    await doConnect(session, overrideCredentials)
+    return
+  }
+  await configStore.updateSessionLastUsed(session.id)
+  const prevUser = session.username
+  const prevPass = session.password
+  if (overrideCredentials) {
+    session.username = overrideCredentials.username
+    session.password = overrideCredentials.password
+  }
+  const target = { kind: 'ssh' as const, sessionId: session.id }
+  try {
+    const opened = terminalStore.tabHostsTerminal(tab)
+      ? await terminalStore.splitTerminal(intent === 'split-h' ? 'horizontal' : 'vertical', target, tab.id)
+      : await terminalStore.openTerminalOnTab(tab.id, target)
+    if (!opened) {
+      const err = terminalStore.getLastSplitError()
+      await showAlert(t('common.error'), err || t('session.splitNeedSession'))
+    }
+  } finally {
+    if (overrideCredentials) {
+      session.username = prevUser
+      session.password = prevPass
+    }
+  }
+}
+
 const handleCredentialConnect = async (credentials: { username: string; password: string; save: boolean }) => {
   const session = credentialSession.value
   if (!session) return
   credentialSession.value = null
+  const intent = pendingOpenIntent.value
 
   if (credentials.save) {
     const updated = { ...session, username: credentials.username, password: credentials.password }
     await configStore.updateSshSession(updated)
-    await doConnect(updated)
+    await executeOpen(updated, intent)
   } else {
-    await doConnect(session, credentials)
+    await executeOpen(session, intent, credentials)
   }
 }
 
@@ -431,6 +507,7 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
               @drop="handleDropToSession(session.id, groupName as string, $event)"
               @dragend="handleDragEnd"
               @dblclick="connectSession(session)"
+              @contextmenu="openCtxMenu($event, session)"
             >
               <div class="session-icon">
                 <Monitor :size="16" />
@@ -490,6 +567,42 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
       @connect="handleCredentialConnect"
       @cancel="credentialSession = null"
     />
+
+    <Teleport to="body">
+      <div v-if="ctxMenu.show" class="context-menu-overlay" @click="closeCtxMenu" />
+      <div
+        v-if="ctxMenu.show && ctxMenu.session"
+        class="dropdown-menu host-ctx-menu"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <button class="dropdown-item" @click="openHost(ctxMenu.session!, 'new-tab')">
+          <Terminal :size="14" />
+          {{ t('tabs.newTab') }}
+        </button>
+        <button
+          class="dropdown-item"
+          :class="{ disabled: !canSplitIntoCurrent }"
+          :title="canSplitIntoCurrent ? undefined : t('session.splitNeedSession')"
+          :disabled="!canSplitIntoCurrent"
+          @click="canSplitIntoCurrent && openHost(ctxMenu.session!, 'split-h')"
+        >
+          <Columns2 :size="14" />
+          {{ t('terminal.split.menu.horizontal') }}
+        </button>
+        <button
+          class="dropdown-item"
+          :class="{ disabled: !canSplitIntoCurrent }"
+          :title="canSplitIntoCurrent ? undefined : t('session.splitNeedSession')"
+          :disabled="!canSplitIntoCurrent"
+          @click="canSplitIntoCurrent && openHost(ctxMenu.session!, 'split-v')"
+        >
+          <Rows2 :size="14" />
+          {{ t('terminal.split.menu.vertical') }}
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -623,6 +736,28 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
 
 .dropdown-item.active svg {
   color: var(--accent-primary);
+}
+
+.dropdown-item:disabled,
+.dropdown-item.disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.dropdown-item:disabled:hover,
+.dropdown-item.disabled:hover {
+  background: transparent;
+}
+
+.context-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+
+.host-ctx-menu {
+  position: fixed;
+  z-index: 10000;
 }
 
 /* ==================== 快速入口（本地终端） ==================== */

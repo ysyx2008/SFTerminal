@@ -28,6 +28,7 @@ export default {
     defaultGroup: '默认',
     localTerminal: '本地终端',
     connect: '连接',
+    splitNeedSession: '先打开一个会话再分屏',
     openSftp: '打开 SFTP',
     fileManager: '文件管理',
     duplicate: '复制',

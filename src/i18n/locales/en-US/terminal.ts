@@ -28,6 +28,7 @@ export default {
     defaultGroup: 'Default',
     localTerminal: 'Local Terminal',
     connect: 'Connect',
+    splitNeedSession: 'Open a session first to split',
     openSftp: 'Open SFTP',
     fileManager: 'File Manager',
     duplicate: 'Duplicate',
