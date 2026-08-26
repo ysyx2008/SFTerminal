@@ -1045,6 +1045,40 @@ const switchToRelaxedMode = () => {
 // 点击中的选项（用于即时视觉反馈，单选时使用）
 const clickingOption = ref<string | null>(null)
 
+// 用户已点选/回复、后端提问步还没标成已收到：本地立刻锁住，避免还能再点
+const answeredAskStepId = ref<string | null>(null)
+
+function isAskStepSettled(step: { toolResult?: string }): boolean {
+  const result = step.toolResult ?? ''
+  return result.includes('✅') || result.includes('⏰') || result.includes('🛑')
+}
+
+function hasUserReplyAfterAsk(
+  step: { id: string },
+  group?: { steps: { id: string; type: string }[] }
+): boolean {
+  if (!group) return false
+  const idx = group.steps.findIndex(s => s.id === step.id)
+  if (idx < 0) return false
+  return group.steps.slice(idx + 1).some(s => s.type === 'user_supplement')
+}
+
+function isAskingInteractive(
+  step: { id: string; toolResult?: string },
+  group?: { steps: { id: string; type: string }[] }
+): boolean {
+  if (!isAgentRunning.value) return false
+  if (isAskStepSettled(step)) return false
+  if (!step.toolResult?.includes('⏳')) return false
+  if (answeredAskStepId.value === step.id) return false
+  if (hasUserReplyAfterAsk(step, group)) return false
+  return true
+}
+
+function markAskAnswered(stepId?: string | null) {
+  if (stepId) answeredAskStepId.value = stepId
+}
+
 // 多选已选中的选项（stepId -> 已选选项数组）
 const multiSelectOptions = ref<Map<string, string[]>>(new Map())
 
@@ -1069,6 +1103,8 @@ const toggleMultiOption = (stepId: string, opt: string) => {
 const confirmMultiSelect = (stepId: string) => {
   const selected = multiSelectOptions.value.get(stepId) || []
   if (selected.length === 0) return
+  if (answeredAskStepId.value === stepId) return
+  markAskAnswered(stepId)
   // 发送 JSON 数组格式
   sendAgentReply(JSON.stringify(selected))
   // 清理本地状态
@@ -1077,12 +1113,14 @@ const confirmMultiSelect = (stepId: string) => {
 
 // 处理选项点击（添加即时视觉反馈）
 const handleOptionClick = (stepId: string, opt: string, allowMultiple: boolean) => {
+  if (answeredAskStepId.value === stepId) return
   if (allowMultiple) {
     // 多选：切换选中状态
     toggleMultiOption(stepId, opt)
   } else {
     // 单选：直接发送
     clickingOption.value = opt
+    markAskAnswered(stepId)
     sendAgentReply(opt)
   }
 }
@@ -1092,7 +1130,7 @@ const waitingAskStep = computed(() => {
   for (const group of agentTaskGroups.value) {
     if (group.isCurrentTask) {
       for (const step of group.steps) {
-        if (step.type === 'asking' && step.toolResult?.includes('⏳')) {
+        if (step.type === 'asking' && isAskingInteractive(step, group)) {
           return step
         }
       }
@@ -1264,7 +1302,10 @@ const handleComposerEmptySubmit = async () => {
   }
   const agentKey = getAgentKey()
   if (!agentKey || !isAgentRunning.value || !canSendEmpty.value) return
-  await window.electronAPI.agent.addMessage(agentKey, '')
+  const askId = waitingAskStep.value?.id
+  markAskAnswered(askId)
+  const sent = await window.electronAPI.agent.addMessage(agentKey, '')
+  if (!sent && answeredAskStepId.value === askId) answeredAskStepId.value = null
 }
 
 const clearComposerDraft = () => {
@@ -2438,7 +2479,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       <div class="asking-question">{{ item.step!.content }}</div>
                       <div v-if="item.step!.toolArgs?.default_value" class="asking-default">
                         <span class="default-label">{{ t('ai.askingDefault') }}</span>{{ item.step!.toolArgs.default_value }}
-                        <span v-if="item.step!.toolResult?.includes('⏳')" class="default-hint">{{ t('ai.askingDefaultHint') }}</span>
+                        <span v-if="isAskingInteractive(item.step!, item.group)" class="default-hint">{{ t('ai.askingDefaultHint') }}</span>
                       </div>
                       <div v-if="item.step!.toolArgs?.options && (item.step!.toolArgs.options as string[]).length > 0" class="asking-options">
                         <button 
@@ -2447,16 +2488,16 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                           class="asking-option-btn"
                           :class="{ 
                             'selected': item.step!.toolResult?.includes(opt) || getSelectedOptions(item.step!.id).includes(opt),
-                            'clicking': clickingOption === opt && item.step!.toolResult?.includes('⏳') && !item.step!.toolArgs?.allow_multiple
+                            'clicking': clickingOption === opt && answeredAskStepId === item.step!.id && !item.step!.toolArgs?.allow_multiple
                           }"
-                          :disabled="!isAgentRunning || item.step!.toolResult?.includes('✅') || item.step!.toolResult?.includes('⏰') || item.step!.toolResult?.includes('🛑')"
+                          :disabled="!isAskingInteractive(item.step!, item.group)"
                           @click="handleOptionClick(item.step!.id, opt, !!item.step!.toolArgs?.allow_multiple)"
                         >
                           <span class="option-label">{{ String.fromCharCode(65 + optIdx) }}</span>
                           {{ opt }}
                         </button>
                         <button 
-                          v-if="item.step!.toolArgs?.allow_multiple && item.step!.toolResult?.includes('⏳')"
+                          v-if="item.step!.toolArgs?.allow_multiple && isAskingInteractive(item.step!, item.group)"
                           class="asking-confirm-btn"
                           :disabled="getSelectedOptions(item.step!.id).length === 0"
                           @click="confirmMultiSelect(item.step!.id)"
@@ -2464,7 +2505,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                           {{ t('ai.confirmMultiSelect') }} ({{ getSelectedOptions(item.step!.id).length }})
                         </button>
                       </div>
-                      <div v-if="item.step!.toolResult && !item.step!.toolResult.includes('✅')" class="asking-status" :class="{ 
+                      <div v-if="item.step!.toolResult && !item.step!.toolResult.includes('✅') && (isAskStepSettled(item.step!) || isAskingInteractive(item.step!, item.group))" class="asking-status" :class="{ 
                         'status-waiting': item.step!.toolResult.includes('⏳'),
                         'status-timeout': item.step!.toolResult.includes('⏰'),
                         'status-cancelled': item.step!.toolResult.includes('🛑')
