@@ -706,8 +706,7 @@ export default {
       // 配置技能
       config_ai_profile: '管理 AI 模型'
     },
-    askingDefault: '默认：',
-    askingDefaultHint: '（直接按回车使用默认值）',
+    askingRecommended: '推荐',
     confirmMultiSelect: '确认选择',
     subAgentPending: '等待中',
     subAgentRunning: '执行中',

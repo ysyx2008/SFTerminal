@@ -65,6 +65,18 @@ describe('无人值守时的工具可见性', () => {
     expect(blockingToolNames(attended)).toEqual(['ask_user'])
   })
 
+  it('ask_user 必须带至少两个推荐选项', () => {
+    const ask = getAgentTools(undefined, { mode: 'assistant' })
+      .find(tool => tool.function.name === 'ask_user')
+    const params = ask?.function.parameters as {
+      required?: string[]
+      properties?: { options?: { minItems?: number; maxItems?: number } }
+    }
+    expect(params.required).toEqual(['question', 'options', 'default_value'])
+    expect(params.properties?.options?.minItems).toBe(2)
+    expect(params.properties?.options?.maxItems).toBe(10)
+  })
+
   it('伙计清单是主人清单的子集，且不含仅主人工具', () => {
     const parent = new Set(getAgentTools(undefined, { mode: 'assistant', unattended: true }).map(t => t.function.name))
     const child = getSubAgentTools().map(t => t.function.name)

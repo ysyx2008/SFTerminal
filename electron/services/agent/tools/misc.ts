@@ -143,6 +143,34 @@ export async function wait(
   }
 }
 
+const ASK_OPTIONS_MIN = 2
+const ASK_OPTIONS_MAX = 10
+
+/** 最推荐的必须是选项里的某一个。 */
+export function resolveAskDefault(raw: unknown, options: string[]): string | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed || !options.includes(trimmed)) return null
+  return trimmed
+}
+
+/** 清洗推荐选项：至少 2 个互不相同的非空字符串，最多 10 个。不合规则返回 null。 */
+export function normalizeAskOptions(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null
+  const seen = new Set<string>()
+  const options: string[] = []
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const trimmed = item.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    options.push(trimmed)
+    if (options.length >= ASK_OPTIONS_MAX) break
+  }
+  if (options.length < ASK_OPTIONS_MIN) return null
+  return options
+}
+
 /**
  * 向用户提问并等待回复
  */
@@ -151,17 +179,23 @@ export async function askUser(
   executor: ToolExecutorConfig
 ): Promise<ToolResult> {
   const question = args.question as string
-  let options = args.options as string[] | undefined
+  const normalizedOptions = normalizeAskOptions(args.options)
   const allowMultiple = args.allow_multiple as boolean | undefined
-  const defaultValue = args.default_value as string | undefined
   
   if (!question || typeof question !== 'string') {
     return { success: false, output: '', error: t('error.question_required') }
   }
 
-  if (options && options.length > 10) {
-    options = options.slice(0, 10)
+  if (!normalizedOptions) {
+    return { success: false, output: '', error: t('error.ask_options_required') }
   }
+
+  const defaultValue = resolveAskDefault(args.default_value, normalizedOptions)
+  if (!defaultValue) {
+    return { success: false, output: '', error: t('error.ask_default_required') }
+  }
+
+  const options = [defaultValue, ...normalizedOptions.filter(option => option !== defaultValue)]
 
   const timeout = args.timeout as number | undefined
   const maxWaitSeconds = Math.min(600, Math.max(30, timeout ?? 120))
@@ -172,6 +206,7 @@ export async function askUser(
     toolName: 'ask_user',
     toolArgs: { question, options, allow_multiple: allowMultiple, default_value: defaultValue, timeout },
     toolResult: t('ask.waiting_reply'),
+    askingStatus: 'waiting',
     riskLevel: 'safe'
   })
   const pollInterval = 2
@@ -181,7 +216,8 @@ export async function askUser(
   while (elapsedSeconds < maxWaitSeconds) {
     if (executor.isAborted()) {
       executor.updateStep(step.id, {
-        toolResult: t('ask.cancelled')
+        toolResult: t('ask.cancelled'),
+        askingStatus: 'cancelled'
       })
       return { success: false, output: '', error: t('error.operation_aborted') }
     }
@@ -202,7 +238,8 @@ export async function askUser(
       : t('time.seconds', { seconds: remainingSecs })
     
     executor.updateStep(step.id, {
-      toolResult: t('ask.waiting_remaining', { remaining: remainingDisplay })
+      toolResult: t('ask.waiting_remaining', { remaining: remainingDisplay }),
+      askingStatus: 'waiting'
     })
   }
 
@@ -221,7 +258,7 @@ export async function askUser(
       }
     }
     
-    if (options && options.length > 0 && selectedOptions.length === 0) {
+    if (selectedOptions.length === 0) {
       const numMatch = finalResponse.match(/^(\d+)$/)
       if (numMatch) {
         const idx = parseInt(numMatch[1], 10) - 1
@@ -236,7 +273,8 @@ export async function askUser(
     }
 
     executor.updateStep(step.id, {
-      toolResult: t('ask.received', { response: finalResponse || t('ask.empty') })
+      toolResult: t('ask.received', { response: finalResponse || t('ask.empty') }),
+      askingStatus: 'received'
     })
 
     return {
@@ -245,7 +283,8 @@ export async function askUser(
     }
   } else {
     executor.updateStep(step.id, {
-      toolResult: t('ask.timeout')
+      toolResult: t('ask.timeout'),
+      askingStatus: 'timeout'
     })
 
     if (defaultValue) {

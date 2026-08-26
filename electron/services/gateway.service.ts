@@ -1374,10 +1374,11 @@ function buildStepBody(step) {
     var question = (step.toolArgs && step.toolArgs.question) || step.content || '';
     html += '<div class="ask-question">' + escapeHtml(question) + '</div>';
     if (step.toolArgs && step.toolArgs.options && step.toolArgs.options.length > 0) {
+      var askClosed = step.askingStatus && step.askingStatus !== 'waiting';
       html += '<div class="ask-options">';
       for (var oi = 0; oi < step.toolArgs.options.length; oi++) {
         var optText = step.toolArgs.options[oi];
-        html += '<button class="ask-option" data-option="' + escapeHtml(optText) + '">' +
+        html += '<button class="ask-option"' + (askClosed ? ' disabled' : '') + ' data-option="' + escapeHtml(optText) + '">' +
           escapeHtml(optText) + '</button>';
       }
       html += '</div>';
@@ -1594,7 +1595,7 @@ document.getElementById('token-input').addEventListener('keydown', function(e) {
 // 事件委托：ask_user 选项按钮点击（统一走 sendMessage，服务端自动降级为 supplement）
 document.getElementById('messages').addEventListener('click', function(e) {
   var btn = e.target.closest('.ask-option');
-  if (btn && btn.dataset.option) {
+  if (btn && !btn.disabled && btn.dataset.option) {
     var input = document.getElementById('msg-input');
     input.value = btn.dataset.option;
     sendMessage();

@@ -58,9 +58,9 @@ import { pickTaskCompleteLabel } from '../composables/useTaskCompleteLabel'
 import { loadBondTrustLevel } from '../composables/useRandomPlaceholder'
 import { isOemFeatureEnabled } from '@shared/oem-features'
 import type { BondTrustLevel } from '@shared/types/bond'
-import type { AgentRecord, AgentHistorySummary, AttachmentInfo } from '@shared/types'
+import type { AgentRecord, AgentHistorySummary, AttachmentInfo, AskingStatus } from '@shared/types'
 import { resolveConversationDisplayTitle } from '../utils/conversation-title'
-import { COMPANION_AGENT_KEY } from '@shared/types'
+import { COMPANION_AGENT_KEY, isAskingSettled } from '@shared/types'
 
 // Props - 每个 AiPanel 实例绑定到特定的 tab
 const props = withDefaults(defineProps<{
@@ -1048,11 +1048,6 @@ const clickingOption = ref<string | null>(null)
 // 用户已点选/回复、后端提问步还没标成已收到：本地立刻锁住，避免还能再点
 const answeredAskStepId = ref<string | null>(null)
 
-function isAskStepSettled(step: { toolResult?: string }): boolean {
-  const result = step.toolResult ?? ''
-  return result.includes('✅') || result.includes('⏰') || result.includes('🛑')
-}
-
 function hasUserReplyAfterAsk(
   step: { id: string },
   group?: { steps: { id: string; type: string }[] }
@@ -1064,14 +1059,39 @@ function hasUserReplyAfterAsk(
 }
 
 function isAskingInteractive(
-  step: { id: string; toolResult?: string },
+  step: { id: string; askingStatus?: AskingStatus },
   group?: { steps: { id: string; type: string }[] }
 ): boolean {
   if (!isAgentRunning.value) return false
-  if (isAskStepSettled(step)) return false
-  if (!step.toolResult?.includes('⏳')) return false
+  if (isAskingSettled(step.askingStatus)) return false
   if (answeredAskStepId.value === step.id) return false
   if (hasUserReplyAfterAsk(step, group)) return false
+  return true
+}
+
+function getAskingRecommended(step: { toolArgs?: { default_value?: unknown } }): string {
+  const raw = step.toolArgs?.default_value
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
+function getAskingOptions(step: { toolArgs?: { options?: unknown; default_value?: unknown } }): string[] {
+  const raw = step.toolArgs?.options
+  const options = Array.isArray(raw)
+    ? raw.filter((item): item is string => typeof item === 'string')
+    : []
+  const recommended = getAskingRecommended(step)
+  if (!recommended || !options.includes(recommended)) return options.slice(0, 10)
+  return [recommended, ...options.filter(option => option !== recommended)].slice(0, 10)
+}
+
+function isRecommendedAskOption(step: { toolArgs?: { default_value?: unknown } }, opt: string): boolean {
+  const recommended = getAskingRecommended(step)
+  return recommended !== '' && recommended === opt
+}
+
+function shouldShowAskingStatus(step: { toolResult?: string; askingStatus?: AskingStatus }): boolean {
+  if (!step.toolResult) return false
+  if (step.askingStatus === 'received') return false
   return true
 }
 
@@ -1124,27 +1144,6 @@ const handleOptionClick = (stepId: string, opt: string, allowMultiple: boolean) 
     sendAgentReply(opt)
   }
 }
-
-// 检查是否有等待回复的 asking 步骤（用于判断是否可以按回车发送默认值）
-const waitingAskStep = computed(() => {
-  for (const group of agentTaskGroups.value) {
-    if (group.isCurrentTask) {
-      for (const step of group.steps) {
-        if (step.type === 'asking' && isAskingInteractive(step, group)) {
-          return step
-        }
-      }
-    }
-  }
-  return null
-})
-
-// 是否可以发送空消息（有等待的提问且有默认值或选项）
-const canSendEmpty = computed(() => {
-  const step = waitingAskStep.value
-  if (!step) return false
-  return !!step.toolArgs?.default_value
-})
 
 let visionWarningShown = false
 const checkVisionSupport = async () => {
@@ -1298,14 +1297,7 @@ const handleCancelEditFollowUp = () => {
 const handleComposerEmptySubmit = async () => {
   if (isEditingFollowUp.value) {
     await handleComposerSubmit('')
-    return
   }
-  const agentKey = getAgentKey()
-  if (!agentKey || !isAgentRunning.value || !canSendEmpty.value) return
-  const askId = waitingAskStep.value?.id
-  markAskAnswered(askId)
-  const sent = await window.electronAPI.agent.addMessage(agentKey, '')
-  if (!sent && answeredAskStepId.value === askId) answeredAskStepId.value = null
 }
 
 const clearComposerDraft = () => {
@@ -2477,16 +2469,13 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     </div>
                     <div v-else-if="item.step!.type === 'asking'" class="step-text asking-content">
                       <div class="asking-question">{{ item.step!.content }}</div>
-                      <div v-if="item.step!.toolArgs?.default_value" class="asking-default">
-                        <span class="default-label">{{ t('ai.askingDefault') }}</span>{{ item.step!.toolArgs.default_value }}
-                        <span v-if="isAskingInteractive(item.step!, item.group)" class="default-hint">{{ t('ai.askingDefaultHint') }}</span>
-                      </div>
-                      <div v-if="item.step!.toolArgs?.options && (item.step!.toolArgs.options as string[]).length > 0" class="asking-options">
+                      <div v-if="getAskingOptions(item.step!).length > 0" class="asking-options">
                         <button 
-                          v-for="(opt, optIdx) in (item.step!.toolArgs.options as string[]).slice(0, 10)" 
+                          v-for="(opt, optIdx) in getAskingOptions(item.step!)" 
                           :key="optIdx"
                           class="asking-option-btn"
                           :class="{ 
+                            'recommended': isRecommendedAskOption(item.step!, opt),
                             'selected': item.step!.toolResult?.includes(opt) || getSelectedOptions(item.step!.id).includes(opt),
                             'clicking': clickingOption === opt && answeredAskStepId === item.step!.id && !item.step!.toolArgs?.allow_multiple
                           }"
@@ -2494,7 +2483,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                           @click="handleOptionClick(item.step!.id, opt, !!item.step!.toolArgs?.allow_multiple)"
                         >
                           <span class="option-label">{{ String.fromCharCode(65 + optIdx) }}</span>
-                          {{ opt }}
+                          <span class="option-text">{{ opt }}</span>
+                          <span v-if="isRecommendedAskOption(item.step!, opt)" class="option-recommended-badge">{{ t('ai.askingRecommended') }}</span>
                         </button>
                         <button 
                           v-if="item.step!.toolArgs?.allow_multiple && isAskingInteractive(item.step!, item.group)"
@@ -2505,10 +2495,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                           {{ t('ai.confirmMultiSelect') }} ({{ getSelectedOptions(item.step!.id).length }})
                         </button>
                       </div>
-                      <div v-if="item.step!.toolResult && !item.step!.toolResult.includes('✅') && (isAskStepSettled(item.step!) || isAskingInteractive(item.step!, item.group))" class="asking-status" :class="{ 
-                        'status-waiting': item.step!.toolResult.includes('⏳'),
-                        'status-timeout': item.step!.toolResult.includes('⏰'),
-                        'status-cancelled': item.step!.toolResult.includes('🛑')
+                      <div v-if="shouldShowAskingStatus(item.step!)" class="asking-status" :class="{ 
+                        'status-waiting': item.step!.askingStatus === 'waiting',
+                        'status-timeout': item.step!.askingStatus === 'timeout',
+                        'status-cancelled': item.step!.askingStatus === 'cancelled'
                       }">
                         {{ item.step!.toolResult }}
                       </div>
@@ -2890,7 +2880,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :is-attaching="isAttaching"
         :is-agent-running="isAgentRunning"
         :is-loading="isLoading"
-        :can-send-empty="canSendEmpty"
+        :can-send-empty="false"
         :has-images="hasImagesComputed"
         :is-recording="isRecording"
         :is-transcribing="isTranscribing"
@@ -4780,20 +4770,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   color: var(--text-primary);
 }
 
-.asking-default {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.asking-default .default-label {
-  font-style: italic;
-}
-
-.asking-default .default-hint {
-  color: var(--brand-vital);
-  margin-left: 6px;
-}
-
 .asking-options {
   display: flex;
   flex-direction: column;
@@ -4830,6 +4806,22 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   color: var(--text-muted);
   background: rgba(255, 255, 255, 0.08);
   border-radius: 4px;
+}
+
+.asking-option-btn .option-text {
+  flex: 1;
+}
+
+.asking-option-btn .option-recommended-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.asking-option-btn.recommended {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.12);
 }
 
 .asking-option-btn:hover:not(:disabled) {

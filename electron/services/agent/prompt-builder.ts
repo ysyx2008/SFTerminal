@@ -858,7 +858,7 @@ export class PromptBuilder {
     ]
     // 无人值守时 ask_user 已不在工具列表里，这条会指向一个不存在的能力
     if (!this.context.unattended) {
-      rules.push('- 需要确认时**必须用 `ask_user`**，不要只在消息里问然后等回复')
+      rules.push('- 需要确认时**必须用 `ask_user`**，给出可点的推荐选项并标明最推荐的那一个，不要只在消息里问然后等回复')
     }
     return rules.join('\n')
   }

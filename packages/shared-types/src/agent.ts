@@ -66,6 +66,13 @@ export type RemoteChannel = 'desktop' | 'web' | 'dingtalk' | 'feishu' | 'slack' 
 
 export type RiskLevel = 'safe' | 'moderate' | 'dangerous' | 'blocked'
 
+/** 向用户提问这道题的结果。说明文字不是状态。 */
+export type AskingStatus = 'waiting' | 'received' | 'timeout' | 'cancelled'
+
+export function isAskingSettled(status?: AskingStatus): boolean {
+  return status === 'received' || status === 'timeout' || status === 'cancelled'
+}
+
 /**
  * 命令风险策略（按 executionMode 分档 + 若干开关）
  *
@@ -407,6 +414,11 @@ export interface AgentStep {
    * 用于 UI 侧将"左侧风险色竖条"切换为"执行结果色竖条"，避免把风险红色误解为执行失败。
    */
   success?: boolean
+  /**
+   * 向用户提问这道题的结果。仅 asking 步骤使用。
+   * 旧记录可能缺失：任务已不在跑则当作已经结束。
+   */
+  askingStatus?: AskingStatus
   /**
    * 此步骤是否对应"被用户拒绝执行"。仅由工具层在拒绝场景显式标记。
    * UI 用此字段（而不是 content 关键词）渲染"灰色 + 半透明"的拒绝样式，

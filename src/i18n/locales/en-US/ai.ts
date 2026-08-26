@@ -705,8 +705,7 @@ export default {
       // Config skill
       config_ai_profile: 'Manage AI Model'
     },
-    askingDefault: 'Default:',
-    askingDefaultHint: '(Press Enter to use default value)',
+    askingRecommended: 'Recommended',
     confirmMultiSelect: 'Confirm Selection',
     subAgentPending: 'Pending',
     subAgentRunning: 'Running',

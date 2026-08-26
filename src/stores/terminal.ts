@@ -2909,6 +2909,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       timestamp: s.timestamp,
       webSearchResults: s.webSearchResults,
       success: s.success,
+      askingStatus: s.askingStatus,
       subAgents: s.subAgents,
       canvasData: s.canvasData
     }))

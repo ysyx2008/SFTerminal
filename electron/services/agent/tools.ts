@@ -947,7 +947,7 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
       type: 'function',
       function: {
         name: 'ask_user',
-        description: `向用户提问并等待回复。只在制定计划时提问，执行中优先用合理默认值。调用后暂停执行直到用户回复。`,
+        description: `向用户提问并等待回复。必须给出至少 2 个可点的推荐选项，并标明最推荐的那一个；用户仍可自己打字。只在制定计划时提问，执行中优先用合理默认值。调用后暂停执行直到用户回复。`,
         parameters: {
           type: 'object',
           properties: {
@@ -958,13 +958,15 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
             options: {
               type: 'array',
               items: { type: 'string' },
-              description: '可选项列表（最多 10 个）'
+              minItems: 2,
+              maxItems: 10,
+              description: '推荐选项，至少 2 个、最多 10 个。写出用户能直接点选的具体答案，不要用「其他」凑数'
             },
             allow_multiple: { type: 'boolean', description: '允许多选（默认 false）' },
-            default_value: { type: 'string', description: '默认值' },
+            default_value: { type: 'string', description: '最推荐的选项，必须是 options 里的某一个。超时未回复时也用它' },
             timeout: { type: 'number', description: '超时秒数（默认 120，范围 30-600）' }
           },
-          required: ['question']
+          required: ['question', 'options', 'default_value']
         }
       },
       _meta: {

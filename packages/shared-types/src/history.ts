@@ -29,6 +29,8 @@ export interface AgentStepRecord {
   webSearchResults?: import('./agent').WebSearchResultItem[]
   /** 工具执行成败标识，前端据此判断"失败的 tool_result 必须显示" */
   success?: boolean
+  /** 向用户提问这道题的结果。仅 asking 步骤使用；旧记录可能缺失 */
+  askingStatus?: import('./agent').AskingStatus
   /** 并行子 Agent 卡片组（dispatch_agents 工具专用） */
   subAgents?: import('./agent').SubAgentResult[]
   /** Canvas 预览数据（仅 UI / Artifact 面板消费，不发给 AI；历史重开时重放） */

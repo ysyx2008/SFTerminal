@@ -104,6 +104,7 @@ export function stepRecordToStep(s: AgentStepRecord): AgentStep {
     timestamp: s.timestamp,
     webSearchResults: s.webSearchResults,
     success: s.success,
+    askingStatus: s.askingStatus,
     subAgents: s.subAgents,
     canvasData: s.canvasData
   }
