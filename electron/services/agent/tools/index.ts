@@ -36,6 +36,7 @@ export type { ToolExecutorConfig, AgentConfig, ToolResult, ErrorCategory } from 
 
 // 工具参数到目标 PTY 的解析（分屏：args.pane_id 优先于默认 ptyId）
 import { resolveTargetPtyId } from './utils'
+import { notePaneHostOperationIfNeeded } from './host-identity'
 
 // 导出工具函数供外部使用
 export { executeCommand } from './command'
@@ -93,6 +94,14 @@ function requirePtyId(ptyId: string | undefined, toolName: string): string | Too
   }
 }
 
+function requireTargetPty(
+  args: Record<string, unknown>,
+  defaultPtyId: string | undefined,
+  toolName: string
+): string | ToolResult {
+  return requirePtyId(resolveTargetPtyId(args, defaultPtyId ?? '') || undefined, toolName)
+}
+
 /**
  * 执行工具调用 - 主入口函数
  */
@@ -120,17 +129,19 @@ export async function executeTool(
   const denied = denyIfParentOnly(executor, name)
   if (denied) return denied
 
+  notePaneHostOperationIfNeeded(name, args, ptyId, executor, toolCall.id)
+
   const id = ptyId ?? ''
 
   // 根据工具类型执行
   switch (name) {
     case 'execute_command': {
-      const requiredPtyId = requirePtyId(ptyId, name)
+      const requiredPtyId = requireTargetPty(args, ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
       // 分屏：args.pane_id 指定目标窗格，不传则用 Agent 创建时的默认 PTY
       // 不在此处做"窗格存活"预校验：底层 write/executeInTerminal 在实例不存在
       // 时会通过 boolean 返回值或 status:'no_instance' 明确报失败，自然冒泡更可靠
-      return executeCommand(resolveTargetPtyId(args, requiredPtyId), args, toolCall.id, config, executor)
+      return executeCommand(requiredPtyId, args, toolCall.id, config, executor)
     }
 
     case 'exec':
@@ -140,27 +151,27 @@ export async function executeTool(
       return awaitExec(args, executor)
 
     case 'get_terminal_context': {
-      const requiredPtyId = requirePtyId(ptyId, name)
+      const requiredPtyId = requireTargetPty(args, ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
-      return await getTerminalContext(resolveTargetPtyId(args, requiredPtyId), args, executor)
+      return await getTerminalContext(requiredPtyId, args, executor)
     }
 
     case 'check_terminal_status': {
-      const requiredPtyId = requirePtyId(ptyId, name)
+      const requiredPtyId = requireTargetPty(args, ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
-      return checkTerminalStatus(resolveTargetPtyId(args, requiredPtyId), config, executor)
+      return checkTerminalStatus(requiredPtyId, config, executor)
     }
 
     case 'send_control_key': {
-      const requiredPtyId = requirePtyId(ptyId, name)
+      const requiredPtyId = requireTargetPty(args, ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
-      return sendControlKey(resolveTargetPtyId(args, requiredPtyId), args, config, executor)
+      return sendControlKey(requiredPtyId, args, config, executor)
     }
 
     case 'send_input': {
-      const requiredPtyId = requirePtyId(ptyId, name)
+      const requiredPtyId = requireTargetPty(args, ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
-      return sendInput(resolveTargetPtyId(args, requiredPtyId), args, config, executor)
+      return sendInput(requiredPtyId, args, config, executor)
     }
 
     case 'read_file':
@@ -179,16 +190,16 @@ export async function executeTool(
       return writeRemoteTextFile(id, args, toolCall.id, config, executor)
 
     case 'sftp_put': {
-      const requiredPtyId = requirePtyId(ptyId, name)
+      const requiredPtyId = requireTargetPty(args, ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
       // 异构分屏：local 模式 tab 也能通过 pane_id 指向 SSH 窗格执行 SFTP
-      return sftpPut(resolveTargetPtyId(args, requiredPtyId), args, toolCall.id, config, executor)
+      return sftpPut(requiredPtyId, args, toolCall.id, config, executor)
     }
 
     case 'sftp_get': {
-      const requiredPtyId = requirePtyId(ptyId, name)
+      const requiredPtyId = requireTargetPty(args, ptyId, name)
       if (typeof requiredPtyId !== 'string') return requiredPtyId
-      return sftpGet(resolveTargetPtyId(args, requiredPtyId), args, toolCall.id, config, executor)
+      return sftpGet(requiredPtyId, args, toolCall.id, config, executor)
     }
 
     case 'search_knowledge':

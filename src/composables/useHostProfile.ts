@@ -21,6 +21,7 @@ export function useHostProfile() {
     try {
     const activeTab = terminalStore.activeTab
     if (!activeTab) return 'local'
+    if (activeTab.type === 'assistant') return 'personal'
     
     if (activeTab.type === 'ssh' && activeTab.sshConfig) {
         const hostId = await window.electronAPI.hostProfile.generateHostId(
@@ -43,6 +44,7 @@ export function useHostProfile() {
     try {
       const tab = terminalStore.tabs.find(t => t.id === tabId)
       if (!tab) return 'local'
+      if (tab.type === 'assistant') return 'personal'
       
       if (tab.type === 'ssh' && tab.sshConfig) {
         const hostId = await window.electronAPI.hostProfile.generateHostId(
@@ -110,6 +112,7 @@ export function useHostProfile() {
   const autoProbeHostProfile = async (): Promise<void> => {
     try {
       const hostId = await getHostId()
+      if (hostId === 'personal') return
       
       // 检查是否需要探测
       const needsProbe = await window.electronAPI.hostProfile.needsProbe(hostId)

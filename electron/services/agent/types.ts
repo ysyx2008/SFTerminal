@@ -197,6 +197,11 @@ export interface AgentRun {
    */
   streamEarlyFailures?: Map<string, { toolName: string; error: string; args: Record<string, unknown> }>
   /**
+   * 这场 run 里，哪次工具调用是对哪台主机动的手。
+   * 只记在内存里，不进对话历史、不改会话形态。
+   */
+  hostOperations?: Map<string, string>
+  /**
    * 工具执行期间记录 toolCallId → tool_call 步骤 ID 的映射。
    * 工具结束后，Agent 使用它反向把 ToolResult.success 回填到 tool_call 步骤上，
    * 让 UI 可以把左侧竖条颜色从"风险色"切换为"执行结果色"（失败=红 / 成功=淡色），

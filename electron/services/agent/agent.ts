@@ -62,6 +62,14 @@ import {
 import { buildTaskHistoryContext, type TaskHistoryOptions } from './context-builder'
 import { getKnowledgeService } from '../knowledge'
 import { getContextKnowledgeService } from '../knowledge/context-knowledge'
+import {
+  sessionKnowledgeHostId,
+  resolveKnowledgeUpdateTargets,
+  hostIdForKnowledgeRecord,
+  composeKnowledgeDocuments,
+  collectOpenPaneHostIds,
+  uniqueHosts,
+} from './tools/host-identity'
 import { getWatchService } from '../watch/watch.service'
 import { formatWatchListForPrompt } from './skills/watch/executor'
 import { consumeProactiveContext } from './proactive-store'
@@ -755,7 +763,8 @@ export abstract class Agent {
       workerOptions: options?.workerOptions,
       executionPhase: 'thinking',
       skillSession: this.getSkillSession(),  // 使用 Agent 级别的技能会话，跨 Run 持久化
-      taskMessageLog: []
+      taskMessageLog: [],
+      hostOperations: new Map()
     }
     
     this.currentRun = run
@@ -1381,28 +1390,55 @@ export abstract class Agent {
     // 唤醒 run 跳过（短问候不产生值得持久化的信息）
     if (run.context.wakeup) return
 
-    const contextId = run.context.hostId || 'personal'
+    const sessionHostId = sessionKnowledgeHostId({
+      terminalType: run.context.terminalType,
+      hostId: run.context.hostId,
+    })
+    const targets = resolveKnowledgeUpdateTargets({
+      terminalType: run.context.terminalType,
+      sessionHostId,
+      operatedHostIds: [...(run.hostOperations?.values() ?? [])],
+    })
+
     const MAX_ARG_DISPLAY = 200
     const MAX_RESULT_DISPLAY = 300
     const MAX_FINAL_RESULT_DISPLAY = 500
+    const ckService = getContextKnowledgeService()
+    const profileId = this.services.configService?.getActiveAiProfile() ?? undefined
+    const finalResponse = result ? result.substring(0, MAX_FINAL_RESULT_DISPLAY) : undefined
 
     const toolSteps = run.steps.filter(s => s.type === 'tool_call' && s.toolName)
 
-    // 纯对话（无工具调用）：把用户请求 + 最终回复一起交给 LLM 判断是否有值得记住的内容
+    // 纯对话（无工具调用）：助手只写个人；终端页仍写自己那台
     if (toolSteps.length === 0) {
-      if (!result) return
-      const ckService = getContextKnowledgeService()
-      const profileId = this.services.configService?.getActiveAiProfile() ?? undefined
-      await ckService.updateWithLLM(contextId, aiService, profileId, {
-        userRequest: run.originalUserRequest,
-        commandRecords: [],
-        finalResponse: result.substring(0, MAX_FINAL_RESULT_DISPLAY)
-      })
+      if (!finalResponse) return
+      const contextIds = targets.personal ? ['personal'] : [sessionHostId]
+      await Promise.all(contextIds.map(contextId =>
+        ckService.updateWithLLM(contextId, aiService, profileId, {
+          userRequest: run.originalUserRequest,
+          commandRecords: [],
+          finalResponse
+        })
+      ))
       return
     }
 
-    const commandRecords: string[] = []
+    const recordsByHost = new Map<string, string[]>()
+    const pushRecord = (hostId: string, line: string) => {
+      const list = recordsByHost.get(hostId) ?? []
+      list.push(line)
+      recordsByHost.set(hostId, list)
+    }
+
     for (const step of run.steps) {
+      const mapped = step.toolCallId
+        ? run.hostOperations?.get(step.toolCallId)
+        : undefined
+      const bucket = hostIdForKnowledgeRecord({
+        mappedHostId: mapped,
+        sessionHostId,
+        terminalType: run.context.terminalType,
+      })
       if (step.type === 'tool_call' && step.toolName && step.toolArgs) {
         const argsStr = Object.entries(step.toolArgs)
           .map(([k, v]) => {
@@ -1415,26 +1451,57 @@ export abstract class Agent {
             return `${k}=${str.substring(0, MAX_ARG_DISPLAY)}`
           })
           .join(', ')
-        commandRecords.push(`[${step.toolName}] ${argsStr}`)
+        pushRecord(bucket, `[${step.toolName}] ${argsStr}`)
       }
       if (step.type === 'tool_result' && step.toolName && step.toolResult) {
-        commandRecords.push(`  → ${step.toolResult.substring(0, MAX_RESULT_DISPLAY)}`)
+        pushRecord(bucket, `  → ${step.toolResult.substring(0, MAX_RESULT_DISPLAY)}`)
       }
     }
 
-    if (result) {
-      commandRecords.push(`\n最终结果: ${result.substring(0, MAX_FINAL_RESULT_DISPLAY)}`)
+    const jobs: Promise<unknown>[] = []
+
+    if (targets.personal) {
+      const records = [...(recordsByHost.get('personal') ?? [])]
+      if (records.length > 0) {
+        if (finalResponse) records.push(`\n最终结果: ${finalResponse}`)
+        jobs.push(ckService.updateWithLLM('personal', aiService, profileId, {
+          userRequest: run.originalUserRequest,
+          commandRecords: records
+        }))
+      } else if (finalResponse) {
+        jobs.push(ckService.updateWithLLM('personal', aiService, profileId, {
+          userRequest: run.originalUserRequest,
+          commandRecords: [],
+          finalResponse
+        }))
+      }
     }
 
-    if (commandRecords.length === 0) return
+    for (const hostId of targets.hostIds) {
+      const records = [...(recordsByHost.get(hostId) ?? [])]
+      if (records.length === 0) continue
+      if (finalResponse && hostId === sessionHostId) {
+        records.push(`\n最终结果: ${finalResponse}`)
+      }
+      jobs.push(ckService.updateWithLLM(hostId, aiService, profileId, {
+        userRequest: run.originalUserRequest,
+        commandRecords: records
+      }))
+    }
 
-    const ckService = getContextKnowledgeService()
-    const profileId = this.services.configService?.getActiveAiProfile() ?? undefined
+    if (jobs.length === 0) return
+    await Promise.all(jobs)
+  }
 
-    await ckService.updateWithLLM(contextId, aiService, profileId, {
-      userRequest: run.originalUserRequest,
-      commandRecords
-    })
+  private hostIdentityDeps() {
+    return {
+      getTerminalType: (id: string): 'local' | 'ssh' | null => {
+        const unified = this.services.unifiedTerminalService
+        if (unified) return unified.getTerminalType(id)
+        return this.services.ptyService ? 'local' : null
+      },
+      getSshConfig: (id: string) => this.services.sshService?.getConfig(id) || null,
+    }
   }
 
   /**
@@ -1453,7 +1520,10 @@ export abstract class Agent {
     const knowledgeService = getKnowledgeService()
     if (!knowledgeService || !knowledgeService.isEnabled()) return
 
-    const hostId = run.context.hostId || 'personal'
+    const hostId = sessionKnowledgeHostId({
+      terminalType: run.context.terminalType,
+      hostId: run.context.hostId,
+    })
 
     await knowledgeService.indexConversation({
       taskId: run.id,
@@ -1636,13 +1706,17 @@ export abstract class Agent {
     this._conversation?.setLastPromptTokens(undefined)
 
     // 提前并行启动两个异步操作（均需 embedding + 向量搜索，相互独立）
-    const knowledgeResultPromise = this.loadKnowledgeContextWithTimeout(message, run.context.hostId)
+    const sessionHostId = sessionKnowledgeHostId({
+      terminalType: run.context.terminalType,
+      hostId: run.context.hostId,
+    })
+    const knowledgeResultPromise = this.loadKnowledgeContextWithTimeout(message, sessionHostId)
 
     const L3_RECALL_TIMEOUT_MS = 2000
     const recallPromise: Promise<Array<{ userRequest: string; finalResult: string; status: string; timestamp: number; relevance: number }>> = (() => {
       const ks = getKnowledgeService()
       if (!ks || !ks.isEnabled() || message.trim().length < 5) return Promise.resolve([])
-      const searchPromise = ks.searchConversations(message, run.context.hostId, 3)
+      const searchPromise = ks.searchConversations(message, sessionHostId, 3)
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('L3 recall timeout')), L3_RECALL_TIMEOUT_MS)
       )
@@ -1689,10 +1763,18 @@ export abstract class Agent {
     }
     
     let contextKnowledgeDoc = ''
-    const contextId = run.context.hostId || 'personal'
     try {
       const ckService = getContextKnowledgeService()
-      contextKnowledgeDoc = ckService.getDocument(contextId)
+      const openHostIds = collectOpenPaneHostIds(
+        [run.ptyId, run.context.ptyId, ...(run.context.panes ?? []).map(p => p.ptyId)],
+        this.hostIdentityDeps()
+      )
+      contextKnowledgeDoc = composeKnowledgeDocuments(
+        uniqueHosts([sessionHostId, ...openHostIds]).map(contextId => ({
+          contextId,
+          content: ckService.getDocument(contextId)
+        }))
+      )
     } catch (e) {
       log.warn('ContextKnowledge load error:', e)
     }
@@ -1783,7 +1865,13 @@ export abstract class Agent {
 
     let knowledgeRefs = ''
     if (injectKnowledge) {
-      const knowledgeResult = await this.loadKnowledgeContextWithTimeout(message, run.context.hostId)
+      const knowledgeResult = await this.loadKnowledgeContextWithTimeout(
+        message,
+        sessionKnowledgeHostId({
+          terminalType: run.context.terminalType,
+          hostId: run.context.hostId,
+        })
+      )
       knowledgeRefs = knowledgeResult.context
     }
 
@@ -3789,7 +3877,10 @@ export abstract class Agent {
       },
       isAborted: () => run.aborted,
       getAbortSignal: () => run.abortController?.signal,
-      getHostId: () => run.context.hostId,
+      getHostId: () => sessionKnowledgeHostId({
+        terminalType: run.context.terminalType,
+        hostId: run.context.hostId,
+      }),
       hasPendingUserMessage: () => run.pendingUserMessages.length > 0,
       peekPendingUserMessage: () => run.pendingUserMessages[0]?.message,
       consumePendingUserMessage: () => run.pendingUserMessages.shift()?.message,
@@ -3845,6 +3936,10 @@ export abstract class Agent {
       getParentMessages: () => run.messages,
       knockParent: (message) => this.injectSubAgentKnock(message),
       getToolCatalog: () => this.collectToolCatalog(),
+      noteHostOperation: (hostId, meta) => {
+        if (!run.hostOperations) run.hostOperations = new Map()
+        if (meta?.toolCallId) run.hostOperations.set(meta.toolCallId, hostId)
+      },
     }
   }
   

@@ -212,6 +212,9 @@ ${docSection}
 **执行记录**:
 ${taskContext.commandRecords.join('\n')}
 
+## 范围
+${this.describeUpdateScope(contextId)}
+
 ## 规则
 - 只记录在**未来多次任务中都会用到**的核心事实（系统配置、软件版本、关键路径、服务架构、用户偏好等）
 - 不记录：一次性操作结果、临时状态（CPU/内存占用、PID）、命令输出原文、操作过程描述
@@ -265,6 +268,16 @@ ${docSection}
     if (contextId === 'personal') return '个人'
     if (contextId.includes('@') || contextId.includes('_')) return '远程主机'
     return '当前上下文'
+  }
+
+  private describeUpdateScope(contextId: string): string {
+    if (contextId === 'personal') {
+      return '这份文档是个人记忆。只记用户偏好、约定和跨机器都成立的事实，不要把某台机器上的配置写进来。'
+    }
+    if (contextId === 'local') {
+      return '这份文档属于本机这条连接。只记录本机上的事实。执行记录里已经明显转到别处时，回复 NO_CHANGE。'
+    }
+    return `这份文档属于连接 ${contextId}。只记录这条连接上的事实。执行记录里已经明显转到别处（例如又登录了其他机器）时，回复 NO_CHANGE。`
   }
 
   private parseUpdateResponse(response: string, currentDoc: string): DocumentUpdateResult {

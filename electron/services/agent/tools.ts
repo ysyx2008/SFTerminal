@@ -131,6 +131,12 @@ export interface ToolMeta {
   descriptionForSubAgent?: string
 
   /**
+   * 动手范围。pane = 对着看得见的那扇窗干活（跑命令、动那台的文件）。
+   * 执行时按这扇窗当初打开的连接认主机；没声明则不算对主机动手。
+   */
+  hostScope?: 'pane'
+
+  /**
    * 参数角色：用于历史摘要等场景"知道哪个字段是重点"
    */
   argRole?: {
@@ -847,6 +853,7 @@ ${execWaitAndUsage}`
       _meta: {
         supportedModes: ['ssh'],
         phase: 'writing_file',
+        hostScope: 'pane',
         // 白名单键只取 path：同一路径的任意远程写入操作共享「本次允许」
         idempotencyKey: ['path'],
         // 与 write_text_file 共享同一套预卡片渲染（mode 切换文案、path 占位符、字符数尾缀）
@@ -898,6 +905,7 @@ ${execWaitAndUsage}`
         // local 模式 tab 通过 pane_id 指向 SSH 窗格也能用；assistant 模式无终端，工具不可用
         supportedModes: ['local', 'ssh'],
         phase: 'writing_file',
+        hostScope: 'pane',
         streamDisplay: {
           titleKey: 'sftp.upload',
           titleField: 'remote_path'
@@ -937,6 +945,7 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
       },
       _meta: {
         supportedModes: ['local', 'ssh'],
+        hostScope: 'pane',
         streamDisplay: {
           titleKey: 'sftp.download',
           titleField: 'remote_path'
