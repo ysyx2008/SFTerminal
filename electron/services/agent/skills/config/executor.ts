@@ -22,6 +22,12 @@ import {
   formatAiProfilesSummary,
   type AiProfileTestFn,
 } from './ai-profiles'
+import {
+  executeSshSessionAction,
+  formatSessionGroupsSummary,
+  formatSshSessionsDetail,
+  formatSshSessionsSummary,
+} from './ssh-sessions'
 import type { AiProfile } from '@shared/types'
 
 // ==================== 配置项元数据 ====================
@@ -102,8 +108,8 @@ const CONFIG_REGISTRY: ConfigMeta[] = [
 
   // Readonly
   { key: 'aiProfiles', label: 'AI 模型配置', category: 'agent', type: 'array', readonly: true },
-  { key: 'sshSessions', label: 'SSH 会话', category: 'agent', type: 'array' },
-  { key: 'sessionGroups', label: '会话分组', category: 'agent', type: 'array' },
+  { key: 'sshSessions', label: 'SSH 主机', category: 'agent', type: 'array', readonly: true },
+  { key: 'sessionGroups', label: '会话分组', category: 'agent', type: 'array', readonly: true },
   /** 仅整体展示；增删改须用 config_mcp_server_* 工具，禁止 config_set 覆盖列表 */
   { key: 'mcpServers', label: 'MCP 连接器', category: 'mcp', type: 'array', readonly: true },
 ]
@@ -135,6 +141,8 @@ export async function executeConfigTool(
       return deleteMcpServerConfig(args, executor)
     case 'config_ai_profile':
       return runAiProfileAndNotify(args, executor)
+    case 'config_ssh_session':
+      return runSshSessionAndNotify(args)
     case 'im_connect':
       return connectIM(args)
     case 'email_verify':
@@ -207,6 +215,14 @@ function listConfig(args: Record<string, unknown>): ToolResult {
         lines.push(formatAiProfilesSummary(config))
         continue
       }
+      if (m.key === 'sshSessions') {
+        lines.push(formatSshSessionsSummary(config))
+        continue
+      }
+      if (m.key === 'sessionGroups') {
+        lines.push(formatSessionGroupsSummary(config))
+        continue
+      }
       const sensitive = isSensitiveKey(m.key)
       const display = sensitive
         ? (resolveConfigValue(config, m.key) ? '_(已配置)_' : '_(未配置)_')
@@ -249,6 +265,9 @@ function getConfig(args: Record<string, unknown>): ToolResult {
   if (key === 'aiProfiles') {
     return { success: true, output: `**${meta.label}** (\`${key}\`)\n${formatAiProfilesDetail(config)}` }
   }
+  if (key === 'sshSessions') {
+    return { success: true, output: `**${meta.label}** (\`${key}\`)\n${formatSshSessionsDetail(config)}` }
+  }
   return { success: true, output: `**${meta.label}** (\`${key}\`) = ${formatValue(val, meta)}` }
 }
 
@@ -269,6 +288,8 @@ function setConfig(args: Record<string, unknown>): ToolResult {
       ? ' 请改用 config_mcp_server_add、config_mcp_server_update、config_mcp_server_delete。'
       : key === 'aiProfiles'
         ? ' 请改用 config_ai_profile（action=add/update/delete）。'
+        : key === 'sshSessions' || key === 'sessionGroups'
+          ? ' 请改用 config_ssh_session（action=add/update/delete）。'
         : key === 'emailAccounts'
           ? ' 请改用 email_account_add、email_account_delete。'
           : key === 'calendarAccounts'
@@ -612,6 +633,18 @@ async function runAiProfileAndNotify(
     inUseProfileId: executor.getActiveProfileId?.(),
   })
   if (result.success) notifyFrontendConfigChanged()
+  return result
+}
+
+function runSshSessionAndNotify(args: Record<string, unknown>): ToolResult {
+  const config = getConfigService()
+  const result = executeSshSessionAction(config, args)
+  if (result.success) {
+    notifyFrontendConfigChanged({
+      sshSessions: config.getSshSessions().map(({ password: _p, passphrase: _k, ...rest }) => rest),
+      sessionGroups: [...config.getSessionGroups()],
+    })
+  }
   return result
 }
 
@@ -1144,13 +1177,16 @@ function isSensitiveKey(key: string): boolean {
   return /secret|token|password|key|passphrase/i.test(key) && !/autoconnect/i.test(key)
 }
 
-/** 通知前端配置已变更，触发 loadConfig() 刷新 */
-export function notifyFrontendConfigChanged(): void {
+/** 通知前端配置已变更。主机增删改时带上最新列表，界面立刻换，不用等整份配置重载。 */
+export function notifyFrontendConfigChanged(payload?: {
+  sshSessions?: unknown
+  sessionGroups?: unknown
+}): void {
   try {
     const windows = BrowserWindow.getAllWindows()
     for (const win of windows) {
       if (!win.isDestroyed()) {
-        win.webContents.send('config:changed')
+        win.webContents.send('config:changed', payload)
       }
     }
   } catch (err) {

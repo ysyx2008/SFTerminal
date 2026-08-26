@@ -1544,6 +1544,10 @@ const translations = {
     'config.ai_profile.add': '添加 AI 模型',
     'config.ai_profile.update': '更新 AI 模型',
     'config.ai_profile.delete': '删除 AI 模型',
+    'config.ssh_session.manage': '管理主机',
+    'config.ssh_session.add': '添加主机',
+    'config.ssh_session.update': '更新主机',
+    'config.ssh_session.delete': '删除主机',
 
     // dispatch_agents 并行子任务（customRender 与执行器 addStep 共享前缀，两边必须字节对齐）
     'dispatch.running': '派出 {count} 个伙计',
@@ -3117,6 +3121,10 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'config.ai_profile.add': 'Add AI model',
     'config.ai_profile.update': 'Update AI model',
     'config.ai_profile.delete': 'Delete AI model',
+    'config.ssh_session.manage': 'Manage host',
+    'config.ssh_session.add': 'Add host',
+    'config.ssh_session.update': 'Update host',
+    'config.ssh_session.delete': 'Delete host',
 
     // dispatch_agents sub-tasks (customRender and executor addStep share the same prefix; must stay byte-aligned)
     'dispatch.running': 'Sending {count} colleague(s)',

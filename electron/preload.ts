@@ -782,8 +782,8 @@ const electronAPI = {
     get: (key: string) => ipcRenderer.invoke('config:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('config:set', key, value),
     getAll: () => ipcRenderer.invoke('config:getAll'),
-    onChanged: (callback: () => void) => {
-      const handler = () => callback()
+    onChanged: (callback: (payload?: { sshSessions?: SshSession[]; sessionGroups?: SessionGroup[] }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload?: { sshSessions?: SshSession[]; sessionGroups?: SessionGroup[] }) => callback(payload)
       ipcRenderer.on('config:changed', handler)
       return () => { ipcRenderer.removeListener('config:changed', handler) }
     },

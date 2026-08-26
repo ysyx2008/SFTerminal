@@ -437,7 +437,7 @@ interface Window {
       get: (key: string) => Promise<unknown>
       set: (key: string, value: unknown) => Promise<void>
       getAll: () => Promise<Record<string, unknown>>
-      onChanged: (callback: () => void) => () => void
+      onChanged: (callback: (payload?: { sshSessions?: unknown[]; sessionGroups?: unknown[] }) => void) => () => void
       getRecoveryNotice: () => Promise<{
         kind: 'restored' | 'reset'
         from?: string

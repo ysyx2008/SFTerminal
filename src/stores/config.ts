@@ -582,8 +582,22 @@ export const useConfigStore = defineStore('config', () => {
   let cleanupConfigChanged: (() => void) | null = null
   function listenConfigChanged(): void {
     if (cleanupConfigChanged) return
-    cleanupConfigChanged = window.electronAPI.config.onChanged(() => {
-      console.log('[ConfigStore] Backend config changed, reloading...')
+    cleanupConfigChanged = window.electronAPI.config.onChanged((payload) => {
+      if (Array.isArray(payload?.sshSessions)) {
+        const prev = new Map(sshSessions.value.map(s => [s.id, s]))
+        sshSessions.value = payload.sshSessions.map((incoming) => {
+          const next = incoming as SshSession
+          const old = prev.get(next.id)
+          return {
+            ...next,
+            password: next.password ?? old?.password,
+            passphrase: next.passphrase ?? old?.passphrase,
+          }
+        })
+      }
+      if (Array.isArray(payload?.sessionGroups)) {
+        sessionGroups.value = [...payload.sessionGroups] as SessionGroup[]
+      }
       loadConfig()
     })
   }

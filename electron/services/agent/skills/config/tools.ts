@@ -19,6 +19,20 @@ function formatAiProfileStreamTitle(args: Record<string, unknown>): string {
   return hint ? `${t(key)}: ${hint}` : t(key)
 }
 
+function formatSshSessionStreamTitle(args: Record<string, unknown>): string {
+  const action = typeof args.action === 'string' ? args.action : ''
+  const key = action === 'add'
+    ? 'config.ssh_session.add'
+    : action === 'update'
+      ? 'config.ssh_session.update'
+      : action === 'delete'
+        ? 'config.ssh_session.delete'
+        : 'config.ssh_session.manage'
+  const hintKeys = ['name', 'host', 'sessionId', 'id']
+  const hint = hintKeys.map(k => args[k]).find(v => typeof v === 'string' && v.trim())
+  return hint ? `${t(key)}: ${hint}` : t(key)
+}
+
 export const configTools: ToolDefinitionWithMeta[] = [
   {
     type: 'function',
@@ -30,6 +44,7 @@ export const configTools: ToolDefinitionWithMeta[] = [
 每项标注是否可直接修改或需要用户确认。
 邮箱和日历账户会显示已配置的账户列表、服务商和当前连接状态。
 AI 模型配置会列出名称、模型名、接口地址、是否已填 Key、是否当前默认；增删改用 config_ai_profile（不可用 config_set 整表覆盖）。
+SSH 主机会列出名称、地址、账号、分组、认证是否已填（不回显密码）；增删改用 config_ssh_session（不可用 config_set 整表覆盖）。
 MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可用 config_set 整表覆盖）。`,
       parameters: {
         type: 'object',
@@ -52,6 +67,7 @@ MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可
 支持的配置 key 见 config_list 的输出。
 特殊用法：
 - key="aiProfiles" 查看已配置的 AI 模型（名称、模型名、地址、Key 是否已填；不回显 Key）
+- key="sshSessions" 查看已配置的 SSH 主机（名称、地址、账号、分组、认证是否已填；不回显密码）
 - key="mcpServers" 查看所有已配置的 MCP 连接器详情（id、transport、command/url 等）
 在执行对应的 add/update/delete 前建议先用此工具了解现状。`,
       parameters: {
@@ -75,7 +91,7 @@ MCP 连接器列表可通过 config_mcp_server_add/update/delete 管理（不可
 **安全类配置**（界面语言、主题、终端字号等）直接生效。
 **敏感类配置**（IM 凭证、网关、代理）也可设置，写入后建议用 im_connect 测试连接。
 
-**AI 模型列表（aiProfiles）和 MCP 连接器列表（mcpServers）不可通过本工具整表写入**，否则会覆盖已有项。模型请用 \`config_ai_profile\`（action=add/update/delete）；MCP 请用 \`config_mcp_server_add\` / \`config_mcp_server_update\` / \`config_mcp_server_delete\`。
+**AI 模型列表（aiProfiles）、SSH 主机（sshSessions）和 MCP 连接器列表（mcpServers）不可通过本工具整表写入**，否则会覆盖已有项。模型请用 \`config_ai_profile\`；主机请用 \`config_ssh_session\`；MCP 请用 \`config_mcp_server_add\` / \`config_mcp_server_update\` / \`config_mcp_server_delete\`。
 
 常见用法：
 - 切换语言: key="language", value="en-US"
@@ -362,6 +378,42 @@ Key 不会回显。`,
       streamDisplay: {
         customRender: formatAiProfileStreamTitle
       }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'config_ssh_session',
+      description: `管理已保存的 SSH 主机（一条一条加/改/删，不会整表覆盖）。
+
+**add**：必填 host。可选 name（默认用 host）、port（默认 22）、username（默认 root）、password、privateKeyPath、passphrase、authType、group（组名，没有就新建）、encoding。
+**update**：按 sessionId 或唯一 name 部分更新。省略的字段保持原样（改地址不必重填密码）。
+**delete**：按 sessionId 或唯一 name 删除。删除前请与用户确认。
+
+密码和密钥口令不回显。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add', 'update', 'delete'], description: 'add 追加 / update 修改 / delete 删除' },
+          sessionId: { type: 'string', description: 'update/delete：主机 id（重名时必须用这个）' },
+          name: { type: 'string', description: '显示名称' },
+          host: { type: 'string', description: '主机地址' },
+          port: { type: 'number', description: '端口，默认 22' },
+          username: { type: 'string', description: '用户名，默认 root' },
+          password: { type: 'string', description: '登录密码（写入后不回显；update 时省略则保留）' },
+          privateKeyPath: { type: 'string', description: '私钥文件路径' },
+          passphrase: { type: 'string', description: '私钥口令（写入后不回显）' },
+          authType: { type: 'string', enum: ['password', 'privateKey'], description: '认证方式' },
+          group: { type: 'string', description: '分组名；没有则新建。空字符串表示未分组' },
+          encoding: { type: 'string', description: '终端编码，默认 utf-8' },
+          id: { type: 'string', description: 'add：唯一 id，省略则自动生成' }
+        },
+        required: ['action']
+      }
+    },
+    _meta: {
+      allowedForSubAgent: false,
+      streamDisplay: { customRender: formatSshSessionStreamTitle }
     }
   }
 ]
