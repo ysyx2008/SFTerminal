@@ -72,6 +72,6 @@ export default {
   im: {
     channelConnected: '{platform} connected',
     channelDisconnected: '{platform} disconnected',
-    wechatSendFailed: "Replies aren't reaching WeChat. Send another message to SailFish in WeChat to continue.",
+    wechatSendFailed: "Couldn't send to WeChat. Please send me any message in WeChat.",
   },
 }
