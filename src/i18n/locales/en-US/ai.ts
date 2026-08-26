@@ -706,6 +706,7 @@ export default {
       config_ai_profile: 'Manage AI Model'
     },
     askingRecommended: 'Recommended',
+    askingCountdownTip: 'The recommended option will be used if time runs out',
     confirmMultiSelect: 'Confirm Selection',
     subAgentPending: 'Pending',
     subAgentRunning: 'Running',

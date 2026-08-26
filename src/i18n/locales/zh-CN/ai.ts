@@ -707,6 +707,7 @@ export default {
       config_ai_profile: '管理 AI 模型'
     },
     askingRecommended: '推荐',
+    askingCountdownTip: '超时后将选推荐项',
     confirmMultiSelect: '确认选择',
     subAgentPending: '等待中',
     subAgentRunning: '执行中',

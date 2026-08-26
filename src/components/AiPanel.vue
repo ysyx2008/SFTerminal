@@ -411,16 +411,21 @@ const handleGlobalClickForGroupMenu = (e: MouseEvent) => {
 // 滚动 / 窗口尺寸变化时关闭菜单：fixed 定位的菜单不会跟随滚动，留在原位会与触发按钮失去视觉关联
 const handleScrollForGroupMenu = () => closeGroupMenu()
 
+const askClock = ref(Date.now())
+let askClockTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
   document.addEventListener('mousedown', handleGlobalClickForGroupMenu)
   window.addEventListener('resize', closeGroupMenu)
   // 监听虚拟滚动容器的 scroll 事件（capture 阶段，覆盖各种内部滚动场景）
   document.addEventListener('scroll', handleScrollForGroupMenu, true)
+  askClockTimer = setInterval(() => { askClock.value = Date.now() }, 1000)
 })
 onUnmounted(() => {
   document.removeEventListener('mousedown', handleGlobalClickForGroupMenu)
   window.removeEventListener('resize', closeGroupMenu)
   document.removeEventListener('scroll', handleScrollForGroupMenu, true)
+  if (askClockTimer) clearInterval(askClockTimer)
 })
 
 // 识别 createRun 一开始插入的 startup 占位步骤（type='thinking' + isStreaming=true）。
@@ -1089,10 +1094,30 @@ function isRecommendedAskOption(step: { toolArgs?: { default_value?: unknown } }
   return recommended !== '' && recommended === opt
 }
 
+function isAskOptionSelected(step: { id: string; toolResult?: string }, opt: string): boolean {
+  if (getSelectedOptions(step.id).includes(opt)) return true
+  if (clickingOption.value === opt && answeredAskStepId.value === step.id) return true
+  return !!step.toolResult?.includes(opt)
+}
+
 function shouldShowAskingStatus(step: { toolResult?: string; askingStatus?: AskingStatus }): boolean {
-  if (!step.toolResult) return false
-  if (step.askingStatus === 'received') return false
-  return true
+  return step.askingStatus === 'timeout' || step.askingStatus === 'cancelled'
+}
+
+function getAskRemainingSeconds(step: { timestamp?: number; toolArgs?: { timeout?: unknown }; askingStatus?: AskingStatus }): number | null {
+  if (step.askingStatus && step.askingStatus !== 'waiting') return null
+  if (typeof step.timestamp !== 'number') return null
+  const raw = step.toolArgs?.timeout
+  const timeoutSec = typeof raw === 'number' && Number.isFinite(raw)
+    ? Math.min(600, Math.max(30, raw))
+    : 120
+  return Math.max(0, timeoutSec - Math.floor((askClock.value - step.timestamp) / 1000))
+}
+
+function formatAskCountdown(seconds: number): string {
+  const minutes = Math.floor(seconds / 60)
+  const rest = seconds % 60
+  return `${minutes}:${String(rest).padStart(2, '0')}`
 }
 
 function markAskAnswered(stepId?: string | null) {
@@ -1125,10 +1150,7 @@ const confirmMultiSelect = (stepId: string) => {
   if (selected.length === 0) return
   if (answeredAskStepId.value === stepId) return
   markAskAnswered(stepId)
-  // 发送 JSON 数组格式
   sendAgentReply(JSON.stringify(selected))
-  // 清理本地状态
-  multiSelectOptions.value.delete(stepId)
 }
 
 // 处理选项点击（添加即时视觉反馈）
@@ -2468,16 +2490,21 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                       </div>
                     </div>
                     <div v-else-if="item.step!.type === 'asking'" class="step-text asking-content">
-                      <div class="asking-question">{{ item.step!.content }}</div>
+                      <div class="asking-question-row">
+                        <div class="asking-question">{{ item.step!.content }}</div>
+                        <span
+                          v-if="isAskingInteractive(item.step!, item.group) && getAskRemainingSeconds(item.step!) !== null"
+                          class="asking-countdown"
+                          :title="t('ai.askingCountdownTip')"
+                        >{{ formatAskCountdown(getAskRemainingSeconds(item.step!)!) }}</span>
+                      </div>
                       <div v-if="getAskingOptions(item.step!).length > 0" class="asking-options">
                         <button 
                           v-for="(opt, optIdx) in getAskingOptions(item.step!)" 
                           :key="optIdx"
                           class="asking-option-btn"
                           :class="{ 
-                            'recommended': isRecommendedAskOption(item.step!, opt),
-                            'selected': item.step!.toolResult?.includes(opt) || getSelectedOptions(item.step!.id).includes(opt),
-                            'clicking': clickingOption === opt && answeredAskStepId === item.step!.id && !item.step!.toolArgs?.allow_multiple
+                            'selected': isAskOptionSelected(item.step!, opt)
                           }"
                           :disabled="!isAskingInteractive(item.step!, item.group)"
                           @click="handleOptionClick(item.step!.id, opt, !!item.step!.toolArgs?.allow_multiple)"
@@ -2487,9 +2514,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                           <span v-if="isRecommendedAskOption(item.step!, opt)" class="option-recommended-badge">{{ t('ai.askingRecommended') }}</span>
                         </button>
                         <button 
-                          v-if="item.step!.toolArgs?.allow_multiple && isAskingInteractive(item.step!, item.group)"
+                          v-if="item.step!.toolArgs?.allow_multiple"
                           class="asking-confirm-btn"
-                          :disabled="getSelectedOptions(item.step!.id).length === 0"
+                          :disabled="!isAskingInteractive(item.step!, item.group) || getSelectedOptions(item.step!.id).length === 0"
                           @click="confirmMultiSelect(item.step!.id)"
                         >
                           {{ t('ai.confirmMultiSelect') }} ({{ getSelectedOptions(item.step!.id).length }})
@@ -4764,10 +4791,27 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   gap: 8px;
 }
 
+.asking-question-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 .asking-question {
+  flex: 1;
+  min-width: 0;
   white-space: pre-wrap;
   line-height: 1.5;
   color: var(--text-primary);
+}
+
+.asking-countdown {
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  opacity: 0.75;
 }
 
 .asking-options {
@@ -4790,7 +4834,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   border: 1px solid rgba(var(--accent-rgb), 0.2);
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   text-align: left;
 }
 
@@ -4816,12 +4860,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   flex-shrink: 0;
   font-size: 10px;
   font-weight: 600;
-  color: var(--accent-primary);
-}
-
-.asking-option-btn.recommended {
-  border-color: rgba(var(--accent-rgb), 0.45);
-  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--text-muted);
 }
 
 .asking-option-btn:hover:not(:disabled) {
@@ -4838,18 +4877,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   cursor: not-allowed;
 }
 
-.asking-option-btn.clicking {
-  background: rgba(var(--accent-rgb), 0.2);
-  border-color: rgba(var(--accent-rgb), 0.5);
-  color: var(--accent-primary);
-}
-
-.asking-option-btn.clicking .option-label {
-  background: rgba(var(--accent-rgb), 0.3);
-  color: var(--accent-primary);
-}
-
-.asking-option-btn.selected {
+.asking-option-btn.selected,
+.asking-option-btn.selected:disabled {
+  opacity: 1;
   background: rgba(var(--brand-vital-rgb), 0.12);
   border-color: rgba(var(--brand-vital-rgb), 0.35);
   color: var(--brand-vital);

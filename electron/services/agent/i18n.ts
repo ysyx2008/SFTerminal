@@ -1361,7 +1361,7 @@ const translations = {
     'error.question_required': '问题不能为空',
     'error.ask_options_required': '必须给出至少 2 个推荐选项，用户点一下就能答。请补上具体选项后重新提问，不要用「其他」凑数。',
     'error.ask_default_required': '必须标明最推荐的那一个，且必须是选项里的某一个。',
-    'error.user_reply_timeout': '等待用户回复超时（5分钟）。你可以：1) 再次询问用户；2) 采用合理的默认方案；3) 向用户说明需要更多信息才能继续。',
+    'error.user_reply_timeout': '用户未及时回复。你可以：1) 再次询问用户；2) 采用合理的默认方案；3) 向用户说明需要更多信息才能继续。',
 
     // 计划错误
     'error.plan_title_required': '计划标题不能为空',
@@ -1393,7 +1393,7 @@ const translations = {
     'ask.user_replied': '用户回复：{response}\n\n请根据用户的回复继续执行任务。',
     'ask.user_no_content': '(用户未提供内容)',
     'ask.timeout': '⏰ 等待超时',
-    'ask.using_default': '用户未在 5 分钟内回复，使用默认值：{default}\n\n请使用默认值继续执行任务。',
+    'ask.using_default': '用户未及时回复，使用默认值：{default}',
 
     // 命令执行
     'command.initial_output': '初始输出:\n{output}\n\n💡 {hint}',
@@ -2933,7 +2933,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'error.question_required': 'Question cannot be empty',
     'error.ask_options_required': 'Provide at least 2 recommended options the user can tap. Add concrete choices and ask again; do not pad with "Other".',
     'error.ask_default_required': 'Name the most recommended option; it must be one of the given choices.',
-    'error.user_reply_timeout': 'User reply timeout (5 minutes). You can: 1) Ask user again; 2) Use a reasonable default; 3) Explain that more info is needed.',
+    'error.user_reply_timeout': 'The user did not reply in time. You can: 1) Ask again; 2) Use a reasonable default; 3) Explain that more info is needed.',
 
     // Plan errors
     'error.plan_title_required': 'Plan title cannot be empty',
@@ -2965,7 +2965,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'ask.user_replied': 'User replied: {response}\n\nPlease continue task based on user\'s reply.',
     'ask.user_no_content': '(User did not provide content)',
     'ask.timeout': '⏰ Timeout',
-    'ask.using_default': 'User did not reply within 5 minutes, using default: {default}\n\nPlease continue task with default value.',
+    'ask.using_default': 'The user did not reply in time, using default: {default}',
 
     // Command execution
     'command.initial_output': 'Initial output:\n{output}\n\n💡 {hint}',
