@@ -14,6 +14,9 @@ export interface PreviewHighlights {
 
 interface PreviewCell {
   value: unknown
+  font?: unknown
+  fill?: unknown
+  alignment?: unknown
 }
 
 interface PreviewRow {
@@ -163,6 +166,130 @@ function findMergeAt(merges: PreviewMerge[], row: number, col: number): PreviewM
   return merges.find(m => row >= m.top && row <= m.bottom && col >= m.left && col <= m.right)
 }
 
+/** Office 默认主题：dk1 / lt1 / dk2 / lt2 / accent1–6。没有工作簿主题时用这套对上常见表。 */
+const OFFICE_THEME_RGB = [
+  '000000',
+  'FFFFFF',
+  '44546A',
+  'E7E6E6',
+  '4472C4',
+  'ED7D31',
+  'A5A5A5',
+  'FFC000',
+  '5B9BD5',
+  '70AD47'
+]
+
+function applyTint(hex: string, tint: number): string {
+  const channel = (c: number): number => {
+    if (tint < 0) return Math.round(c * (1 + tint))
+    return Math.round(c + (255 - c) * tint)
+  }
+  const r = channel(parseInt(hex.slice(0, 2), 16))
+  const g = channel(parseInt(hex.slice(2, 4), 16))
+  const b = channel(parseInt(hex.slice(4, 6), 16))
+  return [r, g, b].map(n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0')).join('')
+}
+
+function resolveColor(color: unknown): string | null {
+  if (!color || typeof color !== 'object') return null
+  const c = color as { argb?: unknown; theme?: unknown; tint?: unknown }
+  let hex: string | null = null
+  let alpha = 255
+
+  if (typeof c.argb === 'string') {
+    const raw = c.argb.replace(/^#/, '')
+    if (raw.length === 8 && /^[0-9A-Fa-f]{8}$/.test(raw)) {
+      alpha = parseInt(raw.slice(0, 2), 16)
+      hex = raw.slice(2)
+    } else if (raw.length === 6 && /^[0-9A-Fa-f]{6}$/.test(raw)) {
+      hex = raw
+    }
+  } else if (typeof c.theme === 'number' && c.theme >= 0 && c.theme < OFFICE_THEME_RGB.length) {
+    hex = OFFICE_THEME_RGB[c.theme]
+  }
+  if (!hex || alpha === 0) return null
+  if (typeof c.tint === 'number' && c.tint !== 0) hex = applyTint(hex, c.tint)
+  hex = hex.toUpperCase()
+  if (alpha < 255) {
+    const r = parseInt(hex.slice(0, 2), 16)
+    const g = parseInt(hex.slice(2, 4), 16)
+    const b = parseInt(hex.slice(4, 6), 16)
+    return `rgba(${r},${g},${b},${Math.round((alpha / 255) * 1000) / 1000})`
+  }
+  return `#${hex}`
+}
+
+function safeFontFamily(name: unknown): string | null {
+  if (typeof name !== 'string') return null
+  const cleaned = name.replace(/["';<>\\]/g, '').trim()
+  return cleaned ? `'${cleaned}'` : null
+}
+
+function fontFromCell(cell: PreviewCell): Record<string, unknown> | null {
+  if (cell.font && typeof cell.font === 'object') return cell.font as Record<string, unknown>
+  const value = cell.value
+  if (value && typeof value === 'object' && 'richText' in value) {
+    const first = (value as { richText?: { font?: unknown }[] }).richText?.[0]?.font
+    if (first && typeof first === 'object') return first as Record<string, unknown>
+  }
+  return null
+}
+
+function fillColorFromCell(cell: PreviewCell): string | null {
+  const fill = cell.fill
+  if (!fill || typeof fill !== 'object') return null
+  const f = fill as { type?: unknown; pattern?: unknown; fgColor?: unknown; bgColor?: unknown }
+  if (f.pattern === 'none') return null
+  return resolveColor(f.fgColor) ?? resolveColor(f.bgColor)
+}
+
+/** 把格子上的字体、颜色、底色、对齐转成内联 CSS。只输出我们自己拼的值，不回写用户原文。 */
+export function previewCellCss(cell: PreviewCell): string {
+  const parts: string[] = []
+  const font = fontFromCell(cell)
+  if (font) {
+    const family = safeFontFamily(font.name)
+    if (family) parts.push(`font-family:${family}`)
+    if (typeof font.size === 'number' && font.size > 0 && font.size <= 200) {
+      parts.push(`font-size:${font.size}pt`)
+    }
+    if (font.bold) parts.push('font-weight:700')
+    if (font.italic) parts.push('font-style:italic')
+    if (font.underline) parts.push('text-decoration:underline')
+    const color = resolveColor(font.color)
+    if (color) parts.push(`color:${color}`)
+  }
+
+  const bg = fillColorFromCell(cell)
+  if (bg) parts.push(`background-color:${bg}`)
+
+  const alignment = cell.alignment
+  if (alignment && typeof alignment === 'object') {
+    const a = alignment as { horizontal?: unknown; vertical?: unknown; wrapText?: unknown }
+    if (a.horizontal === 'left' || a.horizontal === 'center' || a.horizontal === 'right') {
+      parts.push(`text-align:${a.horizontal}`)
+    } else if (a.horizontal === 'justify' || a.horizontal === 'distributed') {
+      parts.push('text-align:justify')
+    } else if (a.horizontal === 'centerContinuous') {
+      parts.push('text-align:center')
+    }
+    if (a.vertical === 'top' || a.vertical === 'middle' || a.vertical === 'bottom') {
+      parts.push(`vertical-align:${a.vertical}`)
+    }
+    if (a.wrapText) {
+      parts.push('white-space:pre-wrap')
+    }
+  }
+
+  // 预览格子默认 20px 高，约等于 11pt；更大字号或换行时放开，避免裁切
+  const fontSize = typeof font?.size === 'number' ? font.size : 0
+  const wrap = alignment && typeof alignment === 'object' && (alignment as { wrapText?: unknown }).wrapText
+  if (fontSize > 11 || wrap) parts.push('height:auto')
+
+  return parts.join(';')
+}
+
 function highlightClass(key: string, highlights?: PreviewHighlights): string | undefined {
   if (!highlights) return undefined
   if (highlights.deleting?.has(key)) return 'deleting'
@@ -176,14 +303,16 @@ function renderEmptySheet(): string {
   return '<div class="sheet-empty">这张表是空的</div>'
 }
 
+type PreviewCellData = { val: string; isNum: boolean; css: string }
+
 function sheetHasVisibleContent(
-  dataRows: Map<number, Map<number, { val: string; isNum: boolean }>>,
+  dataRows: Map<number, Map<number, PreviewCellData>>,
   merges: PreviewMerge[]
 ): boolean {
   if (merges.length > 0) return true
   for (const row of dataRows.values()) {
     for (const cell of row.values()) {
-      if (cell.val !== '') return true
+      if (cell.val !== '' || cell.css) return true
     }
   }
   return false
@@ -209,17 +338,19 @@ function renderSheetTable(
   const maxCols = extent.cols
 
   // 只读遍历已有数据，避免 getRow/getCell 创建空对象污染 workbook
-  const dataRows: Map<number, Map<number, { val: string; isNum: boolean }>> = new Map()
+  const dataRows: Map<number, Map<number, PreviewCellData>> = new Map()
   let actualMaxCol = 0
 
   sheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
     if (rowNum > maxRows) return
-    const cellMap = new Map<number, { val: string; isNum: boolean }>()
+    const cellMap = new Map<number, PreviewCellData>()
     row.eachCell({ includeEmpty: true }, (cell, colNum) => {
       if (colNum > maxCols) return
+      const css = previewCellCss(cell)
       cellMap.set(colNum, {
         val: formatCellValue(cell.value),
-        isNum: isNumericCellValue(cell.value)
+        isNum: isNumericCellValue(cell.value),
+        css
       })
       if (colNum > actualMaxCol) actualMaxCol = colNum
     })
@@ -265,7 +396,8 @@ function renderSheetTable(
 
       const classAttr = classes.length > 0 ? ` class="${classes.join(' ')}"` : ''
       const spanAttr = `${colspan > 1 ? ` colspan="${colspan}"` : ''}${rowspan > 1 ? ` rowspan="${rowspan}"` : ''}`
-      cells.push(`<td${classAttr}${spanAttr} data-r="${r}" data-c="${c}">${data ? escapePreviewHtml(data.val) : ''}</td>`)
+      const styleAttr = data?.css ? ` style="${data.css}"` : ''
+      cells.push(`<td${classAttr}${spanAttr}${styleAttr} data-r="${r}" data-c="${c}">${data ? escapePreviewHtml(data.val) : ''}</td>`)
     }
     htmlRows.push(`<tr>${cells.join('')}</tr>`)
   }

@@ -542,6 +542,7 @@ onUnmounted(() => {
 .spreadsheet-body :deep(td) {
   color: #1a1a1a;
   background: #fff;
+  vertical-align: bottom;
 }
 
 .spreadsheet-body :deep(td.num) {
@@ -558,22 +559,22 @@ onUnmounted(() => {
 }
 
 .spreadsheet-body :deep(td.sf-ss-selected) {
-  background-color: #cfe2f8;
-  box-shadow: inset 0 0 0 1px #4a90d9;
+  background-image: linear-gradient(rgba(79, 144, 217, 0.32), rgba(79, 144, 217, 0.32));
+  box-shadow: inset 0 0 0 1.5px #4a90d9;
 }
 
 .spreadsheet-body :deep(td.modified) {
-  background-color: #e8f0fe;
+  background-image: linear-gradient(rgba(66, 133, 244, 0.18), rgba(66, 133, 244, 0.18));
 }
 
 .spreadsheet-body :deep(td.deleting) {
-  background-color: #fee2e2;
+  background-image: linear-gradient(rgba(254, 202, 202, 0.72), rgba(254, 202, 202, 0.72));
   animation: cell-deleting-flash 1s ease-out;
 }
 
 @keyframes cell-deleting-flash {
-  0% { background-color: #fca5a5; }
-  100% { background-color: #fee2e2; }
+  0% { background-image: linear-gradient(rgba(252, 165, 165, 0.85), rgba(252, 165, 165, 0.85)); }
+  100% { background-image: linear-gradient(rgba(254, 202, 202, 0.72), rgba(254, 202, 202, 0.72)); }
 }
 
 .spreadsheet-body :deep(td.shifted) {

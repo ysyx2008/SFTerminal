@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  previewCellCss,
   previewTableExtent,
   renderExcelWorkbookPreviewHtml,
   type PreviewWorksheet
@@ -181,6 +182,101 @@ describe('renderExcelWorkbookPreviewHtml', () => {
   })
 })
 
+describe('previewCellCss', () => {
+  it('无样式不输出', () => {
+    expect(previewCellCss({ value: 'x' })).toBe('')
+  })
+
+  it('字体、颜色、底色、对齐写成内联 CSS', () => {
+    const css = previewCellCss({
+      value: '标题',
+      font: { name: '微软雅黑', size: 14, bold: true, color: { argb: 'FFFFFFFF' } },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } },
+      alignment: { horizontal: 'center', vertical: 'middle' }
+    })
+    expect(css).toContain("font-family:'微软雅黑'")
+    expect(css).toContain('font-size:14pt')
+    expect(css).toContain('font-weight:700')
+    expect(css).toContain('color:#FFFFFF')
+    expect(css).toContain('background-color:#4472C4')
+    expect(css).toContain('text-align:center')
+    expect(css).toContain('vertical-align:middle')
+  })
+
+  it('主题色按 Office 默认色板解析', () => {
+    const css = previewCellCss({
+      value: 'x',
+      font: { color: { theme: 4 } },
+      fill: { fgColor: { theme: 0 } }
+    })
+    expect(css).toContain('color:#4472C4')
+    expect(css).toContain('background-color:#000000')
+  })
+
+  it('主题色带 tint 时变浅或变深', () => {
+    const css = previewCellCss({
+      value: 'x',
+      fill: { fgColor: { theme: 4, tint: 0.4 } }
+    })
+    expect(css).toMatch(/background-color:#[8A-F][0-9A-F]{5}/)
+    expect(css).not.toContain('background-color:#4472C4')
+  })
+
+  it('字体名去掉引号和尖括号，避免污染 HTML', () => {
+    const css = previewCellCss({
+      value: 'x',
+      font: { name: 'Arial";color:red' }
+    })
+    expect(css).toBe("font-family:'Arialcolor:red'")
+  })
+})
+
+describe('renderExcelWorkbookPreviewHtml 样式', () => {
+  it('格子带上字体和颜色', () => {
+    const html = renderExcelWorkbookPreviewHtml([{
+      name: 'Sheet1',
+      rowCount: 1,
+      columnCount: 1,
+      eachRow(_opts, cb) {
+        cb({
+          eachCell(_cOpts, cellCb) {
+            cellCb({
+              value: '标题',
+              font: { bold: true, color: { argb: 'FFFFFFFF' } },
+              fill: { fgColor: { argb: 'FF2B579A' } }
+            }, 1)
+          }
+        }, 1)
+      }
+    }])
+    expect(html).toContain('font-weight:700')
+    expect(html).toContain('color:#FFFFFF')
+    expect(html).toContain('background-color:#2B579A')
+    expect(html).toContain('>标题<')
+  })
+
+  it('只有底色没有字的格子也画出来，不当空表', () => {
+    const html = renderExcelWorkbookPreviewHtml([{
+      name: 'Sheet1',
+      rowCount: 1,
+      columnCount: 1,
+      eachRow(_opts, cb) {
+        cb({
+          eachCell(_cOpts, cellCb) {
+            cellCb({
+              value: '',
+              fill: { fgColor: { argb: 'FFFFC000' } }
+            }, 1)
+          }
+        }, 1)
+      }
+    }])
+    expect(html).toContain('<table>')
+    expect(html).toContain('background-color:#FFC000')
+    expect(html).not.toContain('这张表是空的')
+  })
+})
+
 describe('renderExcelWorkbookPreviewHtml + ExcelJS', () => {
   it('从真实工作表读取合并区', async () => {
     const ExcelJS = await import('exceljs')
@@ -197,5 +293,43 @@ describe('renderExcelWorkbookPreviewHtml + ExcelJS', () => {
     expect(html).toContain('>标题<')
     const dataRow = html.match(/<td class="row-header">1<\/td>(.*?)<\/tr>/)?.[1] ?? ''
     expect(dataRow.match(/<td/g)?.length).toBe(1)
+  })
+
+  it('从真实工作表带上字体和颜色', async () => {
+    const ExcelJS = await import('exceljs')
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Sheet1')
+    const cell = ws.getCell('A1')
+    cell.value = '标题'
+    cell.font = { name: '微软雅黑', size: 16, bold: true, color: { argb: 'FFFFFFFF' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } }
+    cell.alignment = { horizontal: 'center' }
+
+    const html = renderExcelWorkbookPreviewHtml(wb.worksheets)
+    expect(html).toContain("font-family:'微软雅黑'")
+    expect(html).toContain('font-size:16pt')
+    expect(html).toContain('font-weight:700')
+    expect(html).toContain('color:#FFFFFF')
+    expect(html).toContain('background-color:#4472C4')
+    expect(html).toContain('text-align:center')
+  })
+
+  it('写盘再读回后预览仍带颜色', async () => {
+    const ExcelJS = await import('exceljs')
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Sheet1')
+    const cell = ws.getCell('A1')
+    cell.value = '标题'
+    cell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2B579A' } }
+
+    const buf = await wb.xlsx.writeBuffer()
+    const loaded = new ExcelJS.Workbook()
+    await loaded.xlsx.load(buf)
+
+    const html = renderExcelWorkbookPreviewHtml(loaded.worksheets)
+    expect(html).toContain('font-weight:700')
+    expect(html).toContain('color:#FFFFFF')
+    expect(html).toContain('background-color:#2B579A')
   })
 })
