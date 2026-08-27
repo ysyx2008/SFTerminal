@@ -271,10 +271,11 @@ function renderSheetTable(
   }
 
   const parts = [`<table>${htmlRows.join('')}</table>`]
-  if (sheet.rowCount > maxRows || sheet.columnCount > maxCols) {
-    parts.push(
-      `<p style="color: #888; font-size: 11px; margin-top: 4px;">显示 ${maxRows}/${sheet.rowCount} 行, ${maxCols}/${sheet.columnCount} 列</p>`
-    )
+  const trunc: string[] = []
+  if (sheet.rowCount > maxRows) trunc.push(`${maxRows}/${sheet.rowCount} 行`)
+  if (sheet.columnCount > maxCols) trunc.push(`${maxCols}/${sheet.columnCount} 列`)
+  if (trunc.length > 0) {
+    parts.push(`<div class="sheet-truncated">只预览了 ${trunc.join('、')}，后面没有画出来</div>`)
   }
   return parts.join('\n')
 }

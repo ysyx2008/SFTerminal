@@ -168,7 +168,8 @@ describe('renderExcelWorkbookPreviewHtml', () => {
     ])
     expect(html).toContain('<th>ET</th>')
     expect(html).not.toContain('<th>EU</th>')
-    expect(html).toContain('显示 1/1 行, 150/151 列')
+    expect(html).toContain('class="sheet-truncated"')
+    expect(html).toContain('只预览了 150/151 列，后面没有画出来')
   })
 
   it('带 sheet 前缀的合并区也能解析', () => {

@@ -168,6 +168,17 @@ async function selectSheet(name: string) {
   font-size: 13px;
 }
 
+.spreadsheet-body :deep(.sheet-truncated) {
+  margin: 0;
+  padding: 10px 14px;
+  background: #fff4cc;
+  color: #5c4a00;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  border-top: 2px solid #d4a017;
+}
+
 .spreadsheet-body :deep(table) {
   border-collapse: collapse;
   font-size: 12px;
