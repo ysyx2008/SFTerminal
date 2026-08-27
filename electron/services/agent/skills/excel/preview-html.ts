@@ -172,6 +172,23 @@ function highlightClass(key: string, highlights?: PreviewHighlights): string | u
   return undefined
 }
 
+function renderEmptySheet(): string {
+  return '<div class="sheet-empty">这张表是空的</div>'
+}
+
+function sheetHasVisibleContent(
+  dataRows: Map<number, Map<number, { val: string; isNum: boolean }>>,
+  merges: PreviewMerge[]
+): boolean {
+  if (merges.length > 0) return true
+  for (const row of dataRows.values()) {
+    for (const cell of row.values()) {
+      if (cell.val !== '') return true
+    }
+  }
+  return false
+}
+
 function renderSheetTable(
   sheet: PreviewWorksheet,
   highlights?: PreviewHighlights
@@ -181,7 +198,7 @@ function renderSheetTable(
   const mergeMaxCol = merges.reduce((acc, m) => Math.max(acc, m.right), 0)
 
   if (sheet.rowCount === 0 && mergeMaxRow === 0) {
-    return '<p><em>(空工作表)</em></p>'
+    return renderEmptySheet()
   }
 
   const extent = previewTableExtent(
@@ -213,6 +230,10 @@ function renderSheetTable(
     if (merge.top <= maxRows && merge.left <= maxCols) {
       actualMaxCol = Math.max(actualMaxCol, Math.min(merge.right, maxCols))
     }
+  }
+
+  if (!sheetHasVisibleContent(dataRows, merges)) {
+    return renderEmptySheet()
   }
 
   const colCount = Math.min(actualMaxCol, maxCols) || 1
@@ -266,7 +287,7 @@ export function renderExcelWorkbookPreviewHtml(
   worksheets: readonly PreviewWorksheet[],
   options?: { activeSheet?: string; highlights?: PreviewHighlights }
 ): string {
-  if (worksheets.length === 0) return '<p><em>(空工作簿)</em></p>'
+  if (worksheets.length === 0) return '<div class="sheet-empty">这份工作簿是空的</div>'
 
   const activeName = options?.activeSheet && worksheets.some(ws => ws.name === options.activeSheet)
     ? options.activeSheet

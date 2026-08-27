@@ -42,7 +42,7 @@ describe('previewTableExtent', () => {
 
 describe('renderExcelWorkbookPreviewHtml', () => {
   it('空工作簿', () => {
-    expect(renderExcelWorkbookPreviewHtml([])).toBe('<p><em>(空工作簿)</em></p>')
+    expect(renderExcelWorkbookPreviewHtml([])).toContain('这份工作簿是空的')
   })
 
   it('单表不渲染切表标签', () => {
@@ -80,13 +80,23 @@ describe('renderExcelWorkbookPreviewHtml', () => {
     expect(html).toContain('data-sheet="支出">支出</span>')
   })
 
-  it('空表仍保留 pane，方便切走', () => {
+  it('空表仍保留 pane，并写明是空的', () => {
     const html = renderExcelWorkbookPreviewHtml([
       sheet('空表', [], { rowCount: 0, columnCount: 0 }),
       sheet('有数', [['ok']])
     ])
-    expect(html).toContain('(空工作表)')
+    expect(html).toContain('class="sheet-empty"')
+    expect(html).toContain('这张表是空的')
     expect(html).toContain('sheet-tabs')
+    expect(html).toContain('data-sheet="空表"')
+  })
+
+  it('只有空格子的表也写明是空的，不画一片空白格', () => {
+    const html = renderExcelWorkbookPreviewHtml([
+      sheet('空白', [['', ''], ['', '']], { rowCount: 2, columnCount: 2 })
+    ])
+    expect(html).toContain('这张表是空的')
+    expect(html).not.toContain('<table>')
   })
 
   it('高亮只落在当前展示的表', () => {

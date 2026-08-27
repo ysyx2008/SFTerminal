@@ -155,6 +155,19 @@ async function selectSheet(name: string) {
   display: none;
 }
 
+.spreadsheet-body :deep(.sheet-pane:not([hidden])) {
+  min-height: 100%;
+}
+
+.spreadsheet-body :deep(.sheet-empty) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  color: #8a8a8a;
+  font-size: 13px;
+}
+
 .spreadsheet-body :deep(table) {
   border-collapse: collapse;
   font-size: 12px;
