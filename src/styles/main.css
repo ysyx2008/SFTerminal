@@ -2246,11 +2246,16 @@ textarea:focus {
 }
 
 .tab-view-workbench .system-info-bar > *,
-.tab-view-workbench .canvas-header > *,
+.tab-view-workbench .canvas-header > *:not(.canvas-header-fill),
 .tab-view-workbench .artifact-chrome,
 .settings-modal > .settings-header > *,
 .watch-panel > .panel-header > * {
   -webkit-app-region: no-drag;
+}
+
+/* 页签和右侧按钮之间的空白：跟对话顶栏一样，拖窗口、双击最大化 */
+.tab-view-workbench .canvas-header-fill {
+  -webkit-app-region: drag;
 }
 
 /* tab-view-workbench 与 assistant-workbench 是同一节点；顶栏只给实际出现的按钮让位 */

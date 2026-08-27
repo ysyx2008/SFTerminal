@@ -917,6 +917,7 @@ defineExpose({ minimizePanel })
       <div
         ref="tabsEl"
         class="artifact-tabs"
+        :class="{ 'is-overflow': tabsOverflow }"
         role="tablist"
         @wheel="onTabsWheel"
         @keydown.left.prevent="stepTab(-1)"
@@ -950,6 +951,7 @@ defineExpose({ minimizePanel })
           </span>
         </button>
       </div>
+      <div class="canvas-header-fill" aria-hidden="true" />
       <div v-if="tabsOverflow" ref="tabPickerRef" class="artifact-tab-picker">
         <button
           type="button"
@@ -1357,13 +1359,23 @@ defineExpose({ minimizePanel })
   align-items: center;
   gap: 3px;
   min-width: 0;
-  flex: 1 1 auto;
+  /* 只占页签自己的宽度，中间空白留给顶栏（窗口拖拽 / 双击最大化） */
+  flex: 0 1 auto;
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  /* 挤不下时右缘渐隐，让截断看起来是「还有更多」而不是画坏了 */
+}
+
+/* 挤不下时右缘渐隐，让截断看起来是「还有更多」而不是画坏了 */
+.artifact-tabs.is-overflow {
   mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+}
+
+.canvas-header-fill {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
 }
 
 .artifact-tabs::-webkit-scrollbar {
