@@ -12,6 +12,8 @@ export interface PreviewFont {
   family?: string
   size?: string
   weight?: string
+  /** 首行缩进。含 `0`：文档顶格时必须写出，否则预览页会按正文缩两字。 */
+  indent?: string
 }
 
 /** 本机常见别名。先写文档里的真名，后面是同族/系统代用，找不到再走 serif/sans。 */
@@ -69,6 +71,24 @@ function parseRunFonts(xml: string): { font?: string; size?: string; weight?: st
   }
 }
 
+function parseFirstLineIndent(xml: string): string | undefined {
+  const ind = xml.match(/<w:ind\b[^>]*\/?>/)?.[0]
+  if (!ind) return undefined
+  const chars = attr(ind, 'w:firstLineChars')
+  if (chars !== undefined) {
+    const n = parseInt(chars, 10)
+    if (!Number.isFinite(n)) return undefined
+    return n <= 0 ? '0' : `${n / 100}em`
+  }
+  const twips = attr(ind, 'w:firstLine')
+  if (twips !== undefined) {
+    const n = parseInt(twips, 10)
+    if (!Number.isFinite(n)) return undefined
+    return n <= 0 ? '0' : `${n / 20}pt`
+  }
+  return undefined
+}
+
 interface RawStyle {
   styleId: string
   basedOnId?: string
@@ -76,6 +96,7 @@ interface RawStyle {
   font?: string
   size?: string
   weight?: string
+  indent?: string
 }
 
 function parseStyleBlocks(stylesXml: string): Map<string, RawStyle> {
@@ -91,7 +112,8 @@ function parseStyleBlocks(stylesXml: string): Map<string, RawStyle> {
       isDefault: /w:default="1"/.test(block),
       font: run.font,
       size: run.size,
-      weight: run.weight
+      weight: run.weight,
+      indent: parseFirstLineIndent(block)
     })
   }
   return byId
@@ -133,7 +155,8 @@ function resolveStyle(
   const resolved: PreviewFont = {
     family: raw.font ? cssFontFamily(raw.font) : base.family,
     size: raw.size ?? base.size,
-    weight: raw.weight ?? base.weight
+    weight: raw.weight ?? base.weight,
+    indent: raw.indent ?? base.indent
   }
   cache.set(styleId, resolved)
   return resolved
@@ -186,7 +209,8 @@ export function collectParagraphFonts(
     fonts.push({
       family: run.font ? cssFontFamily(run.font) : fromStyle.family,
       size: run.size ?? fromStyle.size,
-      weight: run.weight ?? fromStyle.weight
+      weight: run.weight ?? fromStyle.weight,
+      indent: parseFirstLineIndent(para) ?? fromStyle.indent ?? '0'
     })
   }
   return fonts
@@ -199,7 +223,7 @@ export function applyFontsToHtml(html: string, fonts: PreviewFont[]): string {
   let i = 0
   return html.replace(/<(p|h[1-6])(\s[^>]*)?>/gi, (full, tag: string, attrs = '') => {
     const font = fonts[i++]
-    if (!font?.family && !font?.size && !font?.weight) return full
+    if (!font?.family && !font?.size && !font?.weight && font?.indent === undefined) return full
 
     const styleMatch = attrs.match(/style="([^"]*)"/)
     const existing = (styleMatch?.[1] || '').replace(/;+$/, '')
@@ -207,6 +231,7 @@ export function applyFontsToHtml(html: string, fonts: PreviewFont[]): string {
     if (font.family && !existing.includes('font-family')) parts.push(`font-family:${font.family}`)
     if (font.size && !existing.includes('font-size')) parts.push(`font-size:${font.size}`)
     if (font.weight && !existing.includes('font-weight')) parts.push(`font-weight:${font.weight}`)
+    if (font.indent !== undefined && !existing.includes('text-indent')) parts.push(`text-indent:${font.indent}`)
     if (parts.length === 0 || (parts.length === 1 && existing)) return full
 
     const styleAttr = `style="${parts.join(';')}"`

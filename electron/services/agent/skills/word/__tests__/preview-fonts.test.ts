@@ -78,6 +78,8 @@ describe('collectParagraphFonts + applyFontsToHtml', () => {
     expect(fonts[1].family).toContain('黑体')
     expect(fonts[2].family).toContain('仿宋')
     expect(fonts[2].size).toBe('16pt')
+    expect(fonts[0].indent).toBe('0')
+    expect(fonts[2].indent).toBe('0')
 
     const html = [
       '<h1 class="document-title">标题</h1>',
@@ -97,6 +99,36 @@ describe('collectParagraphFonts + applyFontsToHtml', () => {
       [{ family: cssFontFamily('方正小标宋简体') }]
     )
     expect(out).not.toContain('font-family')
+  })
+
+  it('keeps 主送 flush and body first-line indented', () => {
+    const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:pPr><w:pStyle w:val="Title"/></w:pPr>
+      <w:r><w:t>通知标题</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:r><w:t>各部门、各分支机构：</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:ind w:firstLine="640"/></w:pPr>
+      <w:r><w:t>为深入贯彻落实公司科技赋能。</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>`
+    const fonts = collectParagraphFonts(document, STYLES)
+    expect(fonts[1].indent).toBe('0')
+    expect(fonts[2].indent).toBe('32pt')
+
+    const out = applyFontsToHtml(
+      '<h1 class="document-title">通知标题</h1><p>各部门、各分支机构：</p><p>为深入贯彻落实公司科技赋能。</p>',
+      fonts
+    )
+    const paragraphs = [...out.matchAll(/<p[^>]*>/g)].map(m => m[0])
+    expect(paragraphs[0]).toContain('text-indent:0')
+    expect(paragraphs[1]).toContain('text-indent:32pt')
   })
 
   it('keeps an existing font-family on the tag', () => {
@@ -176,6 +208,10 @@ describe('enrichHtmlFonts', () => {
       'title: 国元证券股份有限公司关于进一步加强金融科技人才培养的通知',
       '---',
       '',
+      '<p>各部门、各分支机构：</p>',
+      '',
+      '为深入贯彻落实公司科技赋能、创新驱动发展战略。',
+      '',
       '# 一、充分认识金融科技人才培养的重要意义',
       '',
       '各单位要高度重视。'
@@ -194,10 +230,13 @@ describe('enrichHtmlFonts', () => {
     const out = await enrichHtmlFonts(html, buf)
     const title = out.match(/<h1 class="document-title"[^>]*>/)?.[0] ?? ''
     const heading = out.match(/<h1(?![^>]*document-title)[^>]*>/)?.[0] ?? ''
-    const body = out.match(/<p[^>]*>/)?.[0] ?? ''
+    const paragraphs = [...out.matchAll(/<p[^>]*>/g)].map(m => m[0])
     expect(title).toContain('方正小标宋简体')
     expect(title).toContain('font-weight:normal')
     expect(heading).toContain('黑体')
-    expect(body).toContain('仿宋')
+    expect(paragraphs[0]).toContain('仿宋')
+    expect(paragraphs[0]).toContain('text-indent:0')
+    expect(paragraphs[1]).toContain('仿宋')
+    expect(paragraphs[1]).toMatch(/text-indent:(?!0(?:;|"))/)
   })
 })
