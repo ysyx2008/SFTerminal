@@ -410,13 +410,14 @@ onUnmounted(() => {
 .document-content {
   --doc-sel-bg: color-mix(in srgb, var(--accent-primary, #4d9eff) 35%, transparent);
   color: #1a1a1a;
-  font-family: 'Songti SC', 'SimSun', 'Times New Roman', serif;
+  font-family: '仿宋', '仿宋_GB2312', 'STFangsong', 'FangSong', '华文仿宋', 'Songti SC', 'SimSun', 'Times New Roman', serif;
   font-size: 14px;
   line-height: 1.8;
   word-wrap: break-word;
   text-align: justify;
   user-select: text;
   -webkit-user-select: text;
+  font-synthesis: none;
 }
 
 .document-content :deep(::selection) {
@@ -430,24 +431,24 @@ onUnmounted(() => {
 }
 
 .document-content :deep(h1.document-title) {
-  font-family: 'STXiaoBiaoSong', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  font-family: '方正小标宋简体', '方正小标宋', 'FZXiaoBiaoSong-B05S', 'STXiaoBiaoSong', '华文中宋', 'STZhongsong', 'Songti SC', serif;
   font-size: 22px;
-  font-weight: 700;
+  font-weight: normal;
   margin: 0.5em 0 0.8em;
   color: #000;
   text-align: center;
 }
 
 .document-content :deep(h1) {
-  font-family: 'STHeiti', 'Heiti SC', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  font-family: '黑体', 'SimHei', 'STHeiti', 'Heiti SC', '华文黑体', sans-serif;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: normal;
   margin: 1em 0 0.5em;
   color: #000;
 }
 
 .document-content :deep(h2) {
-  font-family: 'STKaiti', 'Kaiti SC', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  font-family: '楷体', '楷体_GB2312', 'STKaiti', 'Kaiti SC', 'KaiTi', '华文楷体', serif;
   font-size: 16px;
   font-weight: 600;
   margin: 0.8em 0 0.4em;
@@ -455,7 +456,7 @@ onUnmounted(() => {
 }
 
 .document-content :deep(h3) {
-  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  font-family: '仿宋', '仿宋_GB2312', 'STFangsong', 'FangSong', '华文仿宋', serif;
   font-size: 15px;
   font-weight: 600;
   margin: 0.6em 0 0.3em;

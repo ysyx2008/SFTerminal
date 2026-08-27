@@ -74,6 +74,7 @@ import {
   modifyParagraphStyle
 } from './docx-xml'
 import { mergeDocxFile } from './template-merge'
+import { enrichHtmlFonts } from './preview-fonts'
 import JSZip from 'jszip'
 import { app } from 'electron'
 import { getKnowledgeService } from '../../../knowledge'
@@ -296,9 +297,9 @@ async function enrichHtmlNumbering(html: string, source: string | Buffer): Promi
         attrs = attrs.replace(/\s*style="[^"]*"/, '')
       }
       const parts: string[] = existingStyle ? [existingStyle] : []
-      if (info.font) parts.push(`font-family:${info.font}`)
-      if (info.fontSize) parts.push(`font-size:${info.fontSize}`)
-      if (info.fontWeight) parts.push(`font-weight:${info.fontWeight}`)
+      if (info.font && !existingStyle.includes('font-family')) parts.push(`font-family:${info.font}`)
+      if (info.fontSize && !existingStyle.includes('font-size')) parts.push(`font-size:${info.fontSize}`)
+      if (info.fontWeight && !existingStyle.includes('font-weight')) parts.push(`font-weight:${info.fontWeight}`)
       if (info.textAlign && !existingStyle.includes('text-align')) parts.push(`text-align:${info.textAlign}`)
       if (info.textIndent) parts.push(`text-indent:${info.textIndent}`)
       else if (info.textAlign === 'center') parts.push('text-indent:0')
@@ -310,6 +311,14 @@ async function enrichHtmlNumbering(html: string, source: string | Buffer): Promi
     log.warn('enrichHtmlNumbering failed:', e)
     return html
   }
+}
+
+/** 预览 HTML：对齐 + 文档字体 + 编号前缀 */
+async function enrichPreviewHtml(html: string, source: string | Buffer): Promise<string> {
+  let out = await enrichHtmlAlignment(html, source)
+  out = await enrichHtmlFonts(out, source)
+  out = await enrichHtmlNumbering(out, source)
+  return out
 }
 
 /**
@@ -329,9 +338,7 @@ async function generatePreviewHtml(filePath: string): Promise<string> {
       const outBuf = await cloned.generateAsync({ type: 'nodebuffer' })
       const mammoth = await import('mammoth')
       const result = await mammoth.convertToHtml({ buffer: outBuf }, MAMMOTH_OPTIONS)
-      let previewHtml = await enrichHtmlAlignment(result.value, outBuf)
-      previewHtml = await enrichHtmlNumbering(previewHtml, outBuf)
-      return previewHtml
+      return enrichPreviewHtml(result.value, outBuf)
     } catch (e) {
       log.warn('Failed to generate mammoth preview, falling back to text:', e)
       try {
@@ -909,9 +916,7 @@ async function wordOpen(
     // 从 HTML 解析出结构化内容（用于 word_read 等文本操作）
     parseHtmlToSections(html, session.sections)
 
-    // 对齐 + 编号增强后用于 Canvas 预览
-    let enrichedHtml = await enrichHtmlAlignment(html, filePath)
-    enrichedHtml = await enrichHtmlNumbering(enrichedHtml, filePath)
+    const enrichedHtml = await enrichPreviewHtml(html, filePath)
 
     // 生成内容预览
     const textResult = await mammoth.extractRawText({ path: filePath })
@@ -2679,8 +2684,7 @@ async function wordFromMarkdown(
     try {
       const mammoth = await import('mammoth')
       const htmlResult = await mammoth.convertToHtml({ path: filePath }, MAMMOTH_OPTIONS)
-      let enrichedHtml = await enrichHtmlAlignment(htmlResult.value, filePath)
-      enrichedHtml = await enrichHtmlNumbering(enrichedHtml, filePath)
+      const enrichedHtml = await enrichPreviewHtml(htmlResult.value, filePath)
       canvasData = {
         action: 'open',
         renderer: 'document',
@@ -3372,8 +3376,7 @@ async function wordMergeTemplate(
     try {
       const mammoth = await import('mammoth')
       const htmlResult = await mammoth.convertToHtml({ path: outputPath }, MAMMOTH_OPTIONS)
-      previewHtml = await enrichHtmlAlignment(htmlResult.value, outputPath)
-      previewHtml = await enrichHtmlNumbering(previewHtml, outputPath)
+      previewHtml = await enrichPreviewHtml(htmlResult.value, outputPath)
     } catch (e) {
       log.warn('Failed to generate merge preview HTML:', e)
     }
