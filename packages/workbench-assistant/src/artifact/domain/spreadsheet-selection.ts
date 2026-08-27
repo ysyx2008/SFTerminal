@@ -2,8 +2,6 @@
  * Excel 预览圈选：从带 data-r/data-c 的格子算出矩形范围和给助手的摘录。
  */
 
-import { boxFromRect, type ContextMenuBox } from './context-menu-position'
-
 export const SPREADSHEET_SELECTED_CLASS = 'sf-ss-selected'
 export const SPREADSHEET_EXCERPT_CELL_CAP = 80
 
@@ -217,24 +215,4 @@ export function readSelectedCells(
   }
   cells.sort((a, b) => a.row - b.row || a.col - b.col)
   return cells.map(({ address, value }) => ({ address, value }))
-}
-
-export function spreadsheetSelectionBox(pane: Element | null): ContextMenuBox | null {
-  if (!pane) return null
-  const selected = [...pane.querySelectorAll(`.${SPREADSHEET_SELECTED_CLASS}`)]
-  if (selected.length === 0) return null
-  let left = Infinity
-  let top = Infinity
-  let right = -Infinity
-  let bottom = -Infinity
-  for (const el of selected) {
-    const r = el.getBoundingClientRect()
-    if (r.width <= 0 && r.height <= 0) continue
-    left = Math.min(left, r.left)
-    top = Math.min(top, r.top)
-    right = Math.max(right, r.right)
-    bottom = Math.max(bottom, r.bottom)
-  }
-  if (!Number.isFinite(left) || right <= left || bottom <= top) return null
-  return boxFromRect(new DOMRect(left, top, right - left, bottom - top))
 }

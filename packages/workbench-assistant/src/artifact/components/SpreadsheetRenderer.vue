@@ -4,14 +4,12 @@
  *
  * 渲染 Excel 表格的 HTML 预览，仿 Excel 白底绿色主题。
  * 预览只读；多 sheet 时底部标签由本组件绘制，点击切换（不改文件）。
- * 圈选即作用域：圈一块格子后发送时静默附带范围，右键快捷指令当场发出。
+ * 圈选即作用域：圈一块格子后发送时静默附带范围。
  */
-import { computed, inject, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Wand2 } from 'lucide-vue-next'
 import { useAssistantArtifactStore } from '../store'
 import { useArtifactContentHydration } from '../composables/useArtifactContentHydration'
-import { requireArtifactDesktopHost } from '../host'
 import { artifactBasename } from '../domain/artifact-actions'
 import {
   applySpreadsheetActiveSheet,
@@ -28,24 +26,16 @@ import {
   listCellElements,
   normalizeRect,
   readSelectedCells,
-  rectsIntersect,
   selectionRectStillOnSheet,
   shouldKeepSpreadsheetSelection,
   spanToRect,
-  spreadsheetSelectionBox,
   visibleSheetPane,
   type SpreadsheetCellEl,
   type SpreadsheetCellSpan,
   type SpreadsheetRect
 } from '../domain/spreadsheet-selection'
-import { SET_COMPOSER_DRAFT_KEY, SUBMIT_COMPOSER_MESSAGE_KEY, type ArtifactComposerQuote } from '../composer-quote'
+import { type ArtifactComposerQuote } from '../composer-quote'
 import { registerSelectionScopeProvider } from '../selection-scope'
-import { clampContextMenuPosition, intersectViewport } from '../domain/context-menu-position'
-import { useSelectionActionHint } from '../composables/useSelectionActionHint'
-import SelectionActionHint from '../ui/SelectionActionHint.vue'
-import '../ui/quote-context-menu.css'
-
-const CTX_MENU_ESTIMATE = { width: 200, height: 200 }
 
 const props = defineProps<{
   tabId: string
@@ -55,9 +45,6 @@ const props = defineProps<{
 const { t } = useI18n()
 const artifactStore = useAssistantArtifactStore()
 const { loadingFromDisk } = useArtifactContentHydration(props.tabId, toRef(props, 'artifactId'))
-const setComposerDraft = inject(SET_COMPOSER_DRAFT_KEY, undefined)
-const submitComposerMessage = inject(SUBMIT_COMPOSER_MESSAGE_KEY, undefined)
-const desktopHost = requireArtifactDesktopHost()
 
 const artifact = computed(() => artifactStore.getArtifactById(props.tabId, props.artifactId))
 const content = computed(() => artifact.value?.content ?? '')
@@ -70,12 +57,6 @@ const upgrading = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const bodyRef = ref<HTMLElement | null>(null)
 
-const ctxVisible = ref(false)
-const ctxX = ref(0)
-const ctxY = ref(0)
-const ctxMenuRef = ref<HTMLElement | null>(null)
-const assistantName = computed(() => desktopHost.getAssistantName())
-
 let dragStart: SpreadsheetCellSpan | null = null
 let dragEnd: SpreadsheetCellSpan | null = null
 let stickyRect: SpreadsheetRect | null = null
@@ -87,48 +68,8 @@ const activeName = computed(() => {
   return parsed.value.activeSheet || sheets.value[0]?.name || ''
 })
 
-const panelActive = computed(() => {
-  const root = rootRef.value
-  if (!root?.isConnected) return false
-  if (!artifactStore.isVisible(props.tabId)) return false
-  if (artifactStore.getActiveArtifact(props.tabId)?.id !== props.artifactId) return false
-  if (artifactStore.getActiveArtifact(props.tabId)?.renderer !== 'spreadsheet') return false
-  return desktopHost.isTabActive(props.tabId)
-})
-
 function currentPane(): HTMLElement | null {
   return visibleSheetPane(bodyRef.value)
-}
-
-const {
-  anchor: hintAnchor,
-  show: showSelectionHint,
-  hide: hideSelectionHint,
-  hideOnTyping: hideHintOnTyping
-} = useSelectionActionHint(
-  () => currentPane(),
-  () => spreadsheetSelectionBox(currentPane())
-)
-
-function placeCtxMenu(x: number, y: number, size = CTX_MENU_ESTIMATE) {
-  const placed = clampContextMenuPosition({
-    x,
-    y,
-    menuWidth: size.width,
-    menuHeight: size.height,
-    viewport: intersectViewport(rootRef.value?.getBoundingClientRect())
-  })
-  ctxX.value = placed.left
-  ctxY.value = placed.top
-}
-
-function refineCtxMenu(x: number, y: number) {
-  void nextTick(() => {
-    const el = ctxMenuRef.value
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    placeCtxMenu(x, y, { width: r.width, height: r.height })
-  })
 }
 
 function invalidateCellCache(): void {
@@ -149,7 +90,6 @@ function clearSticky(): void {
   dragStart = null
   dragEnd = null
   stickyRect = null
-  hideSelectionHint()
   clearSpreadsheetSelection(bodyRef.value)
 }
 
@@ -177,39 +117,6 @@ function buildSelectionScope(): ArtifactComposerQuote | null {
   }
 }
 
-const QUOTE_ACTION_KEYS = ['rewrite', 'polish', 'proofread', 'translate', 'expand'] as const
-
-function applyCtxQuoteAction(actionKey: string) {
-  if (!stickyRect) {
-    closeCtxMenu()
-    return
-  }
-  submitComposerMessage?.(t(`canvas.quoteActions.${actionKey}`))
-  closeCtxMenu()
-}
-
-function openCtxMenu(e: MouseEvent) {
-  const cell = cellFromTarget(e.target, currentPane())
-  if (!cell) return
-  const hit = expandRectToSpans(spanToRect(cell), ensureCellCache().map(c => c.span))
-  if (!stickyRect || !rectsIntersect(stickyRect, spanToRect(cell))) {
-    paintRect(hit)
-  }
-  if (!stickyRect) return
-  e.preventDefault()
-  e.stopPropagation()
-  hideSelectionHint()
-  placeCtxMenu(e.clientX, e.clientY)
-  requestAnimationFrame(() => {
-    ctxVisible.value = true
-    refineCtxMenu(e.clientX, e.clientY)
-  })
-}
-
-function closeCtxMenu() {
-  ctxVisible.value = false
-}
-
 function onPointerDown(e: PointerEvent) {
   if (e.button !== 0) return
   const pane = currentPane()
@@ -224,7 +131,6 @@ function onPointerDown(e: PointerEvent) {
   dragStart = start
   dragEnd = start
   paintRect(expandRectToSpans(spanToRect(start), ensureCellCache().map(c => c.span)))
-  hideSelectionHint()
   bodyRef.value?.setPointerCapture(e.pointerId)
 }
 
@@ -247,7 +153,6 @@ function onPointerUp(e: PointerEvent) {
   } catch {
     /* already released */
   }
-  if (stickyRect) showSelectionHint()
 }
 
 async function loadFullPreview(): Promise<boolean> {
@@ -317,43 +222,6 @@ async function selectSheet(name: string) {
   syncVisibleSheet()
 }
 
-function pinIfPointerLeftPreview(target: EventTarget | null): void {
-  const el = target as HTMLElement | null
-  if (el?.closest?.('.md-ctx-menu')) return
-  const inside = !!(rootRef.value && el && rootRef.value.contains(el))
-  if (inside) {
-    hideSelectionHint()
-    return
-  }
-  if (stickyRect) hideSelectionHint()
-}
-
-function onGlobalKeydown(e: KeyboardEvent) {
-  hideHintOnTyping(e)
-  if (e.key === 'Escape') closeCtxMenu()
-}
-
-function onGlobalMouseDown(e: MouseEvent) {
-  if (e.button !== 0) return
-  const t = e.target as HTMLElement
-  if (t.closest?.('.md-ctx-menu')) return
-  closeCtxMenu()
-  pinIfPointerLeftPreview(e.target)
-}
-
-function onWindowKeydown(e: KeyboardEvent) {
-  const meta = e.metaKey || e.ctrlKey
-  if (!meta || e.shiftKey || e.altKey) return
-  if (e.key.toLowerCase() !== 'l') return
-  if (!panelActive.value) return
-  if (!stickyRect) return
-  e.preventDefault()
-  e.stopPropagation()
-  setComposerDraft?.('')
-  hideSelectionHint()
-  closeCtxMenu()
-}
-
 let unregisterSelectionScope: (() => void) | null = null
 
 onMounted(() => {
@@ -362,20 +230,12 @@ onMounted(() => {
     clearScope: () => clearSticky(),
     retainAfterConsume: true
   })
-  rootRef.value?.addEventListener('contextmenu', openCtxMenu)
-  window.addEventListener('keydown', onWindowKeydown, true)
-  window.addEventListener('keydown', onGlobalKeydown)
-  document.addEventListener('mousedown', onGlobalMouseDown, true)
 })
 
 onUnmounted(() => {
   unregisterSelectionScope?.()
   unregisterSelectionScope = null
-  rootRef.value?.removeEventListener('contextmenu', openCtxMenu)
   clearSticky()
-  window.removeEventListener('keydown', onWindowKeydown, true)
-  window.removeEventListener('keydown', onGlobalKeydown)
-  document.removeEventListener('mousedown', onGlobalMouseDown, true)
 })
 </script>
 
@@ -405,32 +265,6 @@ onUnmounted(() => {
         {{ sheet.name }}
       </button>
     </div>
-
-    <Teleport to="body">
-      <div
-        v-if="ctxVisible"
-        ref="ctxMenuRef"
-        class="md-ctx-menu"
-        :style="{ left: ctxX + 'px', top: ctxY + 'px' }"
-        role="menu"
-        @mousedown.prevent
-      >
-        <div class="md-ctx-group">{{ t('canvas.quoteActionGroup', { name: assistantName }) }}</div>
-        <button
-          v-for="key in QUOTE_ACTION_KEYS"
-          :key="key"
-          type="button"
-          role="menuitem"
-          class="md-ctx-item"
-          @click="applyCtxQuoteAction(key)"
-        >
-          <Wand2 :size="14" aria-hidden="true" />
-          <span>{{ t(`canvas.quoteActions.${key}`) }}</span>
-        </button>
-      </div>
-    </Teleport>
-
-    <SelectionActionHint :anchor="hintAnchor" :clip-el="rootRef" />
   </div>
 </template>
 
