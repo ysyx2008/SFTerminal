@@ -4,6 +4,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
+import type { CanvasData } from '@shared/types'
 import type { ToolResult, AgentConfig } from '../../types'
 import type { ToolExecutorConfig } from '../../tool-executor'
 import { t } from '../../i18n'
@@ -175,6 +176,23 @@ function generateExcelPreviewHtml(filePath: string, activeSheet?: string, highli
   return renderExcelWorkbookPreviewHtml(session.workbook.worksheets, { activeSheet, highlights })
 }
 
+/** 实时预览仍带 content；历史按 filePath 重建，避免大表 HTML 撑爆记录。 */
+function spreadsheetCanvasData(
+  action: 'open' | 'update',
+  filePath: string,
+  content: string,
+  extras?: { title?: string }
+): CanvasData {
+  return {
+    action,
+    renderer: 'spreadsheet',
+    content,
+    filePath,
+    contentFromFile: true,
+    ...(extras?.title ? { title: extras.title } : {})
+  }
+}
+
 
 /**
  * 执行 Excel 技能工具
@@ -301,13 +319,9 @@ async function excelOpen(
       content: output,
       toolName: 'excel_open',
       toolResult: output,
-      canvasData: {
-        action: 'open',
-        renderer: 'spreadsheet',
-        title: path.basename(filePath),
-        content: previewHtml,
-        filePath
-      }
+      canvasData: spreadsheetCanvasData('open', filePath, previewHtml, {
+        title: path.basename(filePath)
+      })
     })
 
     return { success: true, output }
@@ -442,11 +456,7 @@ async function excelRead(
     content: `${t('excel.read_success')}: ${sheetName} (${rows.length} ${t('excel.rows')})`,
     toolName: 'excel_read',
     toolResult: truncateFromEnd(markdown, 500),
-    canvasData: previewHtml ? {
-      action: 'update',
-      renderer: 'spreadsheet',
-      content: previewHtml
-    } : undefined
+    canvasData: previewHtml ? spreadsheetCanvasData('update', filePath, previewHtml) : undefined
   })
 
   return { success: true, output: markdown }
@@ -670,7 +680,7 @@ async function excelModify(
           content: '',
           toolName: 'excel_modify',
           toolResult: '',
-          canvasData: { action: 'update', renderer: 'spreadsheet', content: preDeleteHtml }
+          canvasData: spreadsheetCanvasData('update', filePath, preDeleteHtml)
         })
         await new Promise(resolve => setTimeout(resolve, 1100))
       }
@@ -715,7 +725,7 @@ async function excelModify(
           content: '',
           toolName: 'excel_modify',
           toolResult: '',
-          canvasData: { action: 'update', renderer: 'spreadsheet', content: preDeleteHtml }
+          canvasData: spreadsheetCanvasData('update', filePath, preDeleteHtml)
         })
         await new Promise(resolve => setTimeout(resolve, 1100))
       }
@@ -814,11 +824,7 @@ async function excelModify(
     content: output,
     toolName: 'excel_modify',
     toolResult: output,
-    canvasData: previewHtml ? {
-      action: 'update',
-      renderer: 'spreadsheet',
-      content: previewHtml
-    } : undefined
+    canvasData: previewHtml ? spreadsheetCanvasData('update', filePath, previewHtml) : undefined
   })
 
   return { success: true, output }
@@ -1148,13 +1154,9 @@ async function excelFromMarkdown(
       content: output,
       toolName: 'excel_from_markdown',
       toolResult: output,
-      canvasData: previewHtml ? {
-        action: 'open',
-        renderer: 'spreadsheet',
-        title: path.basename(filePath),
-        content: previewHtml,
-        filePath
-      } : undefined
+      canvasData: previewHtml
+        ? spreadsheetCanvasData('open', filePath, previewHtml, { title: path.basename(filePath) })
+        : undefined
     })
 
     return { success: true, output }
@@ -2547,13 +2549,9 @@ async function excelMergeTemplate(
       content: output,
       toolName: 'excel_merge_template',
       toolResult: output,
-      canvasData: previewHtml ? {
-        action: 'open',
-        renderer: 'spreadsheet',
-        title: path.basename(outputPath),
-        content: previewHtml,
-        filePath: outputPath
-      } : undefined
+      canvasData: previewHtml
+        ? spreadsheetCanvasData('open', outputPath, previewHtml, { title: path.basename(outputPath) })
+        : undefined
     })
 
     return { success: true, output }
