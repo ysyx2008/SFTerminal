@@ -265,7 +265,7 @@ function renderSheetTable(
 
       const classAttr = classes.length > 0 ? ` class="${classes.join(' ')}"` : ''
       const spanAttr = `${colspan > 1 ? ` colspan="${colspan}"` : ''}${rowspan > 1 ? ` rowspan="${rowspan}"` : ''}`
-      cells.push(`<td${classAttr}${spanAttr}>${data ? escapePreviewHtml(data.val) : ''}</td>`)
+      cells.push(`<td${classAttr}${spanAttr} data-r="${r}" data-c="${c}">${data ? escapePreviewHtml(data.val) : ''}</td>`)
     }
     htmlRows.push(`<tr>${cells.join('')}</tr>`)
   }

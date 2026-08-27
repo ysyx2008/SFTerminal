@@ -36,7 +36,10 @@ describe('shouldSyncArtifactsAfterStep', () => {
 
 describe('shouldRefreshPreviewAfterStep', () => {
   it('脚本或写文件落地后触发预览重建', () => {
-    for (const toolName of ['exec', 'await_exec', 'write_text_file', 'edit_file', 'word_save']) {
+    for (const toolName of [
+      'exec', 'await_exec', 'write_text_file', 'edit_file', 'word_save',
+      'excel_save', 'excel_from_markdown', 'excel_merge_template'
+    ]) {
       expect(shouldRefreshPreviewAfterStep({
         type: 'tool_result',
         toolName,
@@ -45,10 +48,15 @@ describe('shouldRefreshPreviewAfterStep', () => {
     }
   })
 
-  it('只改内存、尚未写盘的 Word 步骤不从磁盘重建', () => {
+  it('只改内存、尚未写盘的 Word / Excel 步骤不从磁盘重建', () => {
     expect(shouldRefreshPreviewAfterStep({
       type: 'tool_result',
       toolName: 'word_replace',
+      content: 'ok'
+    } as never)).toBe(false)
+    expect(shouldRefreshPreviewAfterStep({
+      type: 'tool_result',
+      toolName: 'excel_modify',
       content: 'ok'
     } as never)).toBe(false)
     expect(shouldRefreshPreviewAfterStep({

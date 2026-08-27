@@ -51,6 +51,7 @@ describe('renderExcelWorkbookPreviewHtml', () => {
     ])
     expect(html).toContain('data-sheet="Sheet1"')
     expect(html).toContain('>A<')
+    expect(html).toContain('data-r="1" data-c="1"')
     expect(html).not.toContain('sheet-tabs')
     expect(html).not.toContain(' hidden')
   })

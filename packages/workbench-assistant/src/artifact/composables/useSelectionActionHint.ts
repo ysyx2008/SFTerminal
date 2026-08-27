@@ -4,13 +4,17 @@ import { selectionAnchorBox, type ContextMenuBox } from '../domain/context-menu-
 /**
  * 选区提示的开关与锚点。Word/WPS 预览与 Markdown 编辑器共用一套，
  * 免得两边各写一份、改行为漏改一边。
+ * Excel 预览没有原生文字选区，可传入 getAnchor 用圈中的格子外框。
  */
-export function useSelectionActionHint(getRoot: () => Node | null) {
+export function useSelectionActionHint(
+  getRoot: () => Node | null,
+  getAnchor?: () => ContextMenuBox | null
+) {
   /** 提示锚点（选区外框）；null = 不显示 */
   const anchor = ref<ContextMenuBox | null>(null)
 
   function show() {
-    anchor.value = selectionAnchorBox(getRoot())
+    anchor.value = getAnchor ? getAnchor() : selectionAnchorBox(getRoot())
   }
 
   function hide() {

@@ -17,7 +17,10 @@ export const PREVIEW_REFRESH_AFTER_TOOLS = new Set([
   'write_text_file',
   'edit_file',
   'word_save',
-  'word_from_markdown'
+  'word_from_markdown',
+  'excel_save',
+  'excel_from_markdown',
+  'excel_merge_template'
 ])
 
 /** 预览 HTML 缓存在面板里、磁盘才是真相的只读类型 */
