@@ -50,6 +50,7 @@ const regionWidthPx = ref(0)
 let activeCleanup: (() => void) | null = null
 let resizeObserver: ResizeObserver | null = null
 let animTimer: ReturnType<typeof setTimeout> | null = null
+let lastWindowInnerWidth = 0
 
 const REGION_ANIM_MS = 400
 
@@ -67,7 +68,9 @@ function syncRegionWidth() {
   if (!el) return
   const w = el.getBoundingClientRect().width
   if (w <= 0) return
-  regionWidthPx.value = Math.round(w * props.toggleRatio)
+  const next = Math.round(w * props.toggleRatio)
+  if (next === regionWidthPx.value) return
+  regionWidthPx.value = next
 }
 
 /**
@@ -86,7 +89,7 @@ function startResize(e: PointerEvent) {
   if (!container) return
   const containerWidth = container.getBoundingClientRect().width
   if (containerWidth <= 0) return
-  // 窗体改过大小后，比例可能和眼前的像素宽对不上。以当前看到的宽度为起点，避免一拖就跳。
+  // 历史侧栏开合后，比例可能和眼前的像素宽对不上。以当前看到的宽度为起点，避免一拖就跳。
   const startRatio = regionWidthPx.value > 0
     ? regionWidthPx.value / containerWidth
     : props.toggleRatio
@@ -163,13 +166,16 @@ watch(
 )
 
 onMounted(() => {
+  lastWindowInnerWidth = window.innerWidth
   syncRegionWidth()
   if (shellRef.value) {
-    // 只在尚未量到宽度时补一次（首帧 layout）。历史侧栏开合、窗口缩放
-    // 不再按比例重算产出物宽——保持用户当时看到的宽度。
+    // 窗体缩放：按比例即时跟上。历史侧栏开合（窗体宽度没变）保持当时看到的宽度。
     resizeObserver = new ResizeObserver(() => {
       if (isResizing.value) return
-      if (regionWidthPx.value <= 0) {
+      const windowWidth = window.innerWidth
+      const windowResized = windowWidth !== lastWindowInnerWidth
+      lastWindowInnerWidth = windowWidth
+      if (regionWidthPx.value <= 0 || windowResized) {
         syncRegionWidth()
       }
     })
