@@ -82,6 +82,7 @@ import { createLogger } from '../../utils/logger'
 import { isAbortError } from '../../utils/abort'
 import { toSendableVisionImageUrl } from '../../utils/vision-image'
 import { assembleUserMessageContent, formatSelectionScopeBody, wrapSystemContext } from './message-envelope'
+import { buildUserImageNote, collectImageAttachmentPaths } from './image-note'
 import { notifyFrontendConfigChanged } from './skills/config/executor'
 import { getBrowserBridgeService } from '../browser-bridge/browser-bridge.service'
 import { patchBrowserBridgeSectionInSystemPrompt } from '../browser-bridge/prompt-section'
@@ -1890,13 +1891,16 @@ export abstract class Agent {
     if (hasImages) {
       const imageCount = run.context.images!.length
       const totalSize = run.context.images!.reduce((sum, img) => sum + img.length, 0)
-      log.info(`User images: ${imageCount} image(s), total base64 size: ${(totalSize / 1024).toFixed(0)}KB, vision=${visionAvailable}`)
-      if (visionAvailable) {
-        imageNote = t('agent.images_attached', { count: imageCount })
-      } else {
+      const imagePaths = collectImageAttachmentPaths(run.context.attachments)
+      log.info(`User images: ${imageCount} image(s), total base64 size: ${(totalSize / 1024).toFixed(0)}KB, vision=${visionAvailable}, paths=${imagePaths.length}`)
+      if (!visionAvailable) {
         log.warn(`Dropping ${imageCount} user image(s) due to no vision capability on current profile`)
-        imageNote = t('agent.user_image_no_vision', { count: imageCount })
       }
+      imageNote = buildUserImageNote({
+        count: imageCount,
+        paths: imagePaths,
+        visionAvailable,
+      })
     }
 
     const selectionScopeBody = run.context.workbenchContext?.selectionScope
@@ -4017,14 +4021,18 @@ export abstract class Agent {
       let imageNote = ''
       if (pending.images?.length) {
         const imageCount = pending.images.length
-        log.info(`Supplement images: ${imageCount} image(s), vision=${visionAvailable}`)
+        const imagePaths = collectImageAttachmentPaths(pending.attachments)
+        log.info(`Supplement images: ${imageCount} image(s), vision=${visionAvailable}, paths=${imagePaths.length}`)
         if (visionAvailable) {
-          imageNote = t('agent.images_attached', { count: imageCount })
           allImages.push(...pending.images)
         } else {
           log.warn(`Dropping ${imageCount} supplement image(s) due to no vision capability on current profile`)
-          imageNote = t('agent.user_image_no_vision', { count: imageCount })
         }
+        imageNote = buildUserImageNote({
+          count: imageCount,
+          paths: imagePaths,
+          visionAvailable,
+        })
       }
       const selectionScopeBody = pending.workbenchContext?.selectionScope
         ? formatSelectionScopeBody(pending.workbenchContext.selectionScope)

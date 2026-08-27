@@ -49,7 +49,9 @@ const {
   handleDroppedImages,
   removeImage,
   clearImages,
+  discardImages,
   loadPendingImages,
+  ensurePendingImagePaths,
   hasImages
 } = useImageUpload()
 
@@ -270,7 +272,7 @@ const guardVisionBeforeSend = async (): Promise<boolean> => {
     onNeutral: () => showSettings?.()
   })
   if (proceed) {
-    clearImages()
+    discardImages()
     toast.info(t('ai.visionGuardImagesDropped'))
   }
   return proceed
@@ -328,6 +330,7 @@ const noop = () => {}
 
 const handleComposerSubmit = async (message: string) => {
   if (!(await guardVisionBeforeSend())) return
+  await ensurePendingImagePaths()
 
   const imagesSnapshot = pendingImages.value.map(img => ({ ...img }))
   skipDraftPersist = true

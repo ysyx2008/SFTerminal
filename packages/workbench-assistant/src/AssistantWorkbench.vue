@@ -33,7 +33,7 @@ useArtifactAgentBridge(() => props.tab.id)
 const aiPanelRef = ref<{
   scrollToAgentStep: (stepId: string) => void | Promise<void>
   addComposerQuote: (snippet: ArtifactComposerQuote) => void
-  addComposerImage: (image: { dataUrl: string; name: string; width?: number; height?: number }) => void
+  addComposerImage: (image: { dataUrl: string; name: string; width?: number; height?: number; filePath?: string }) => void
   setComposerDraft: (text: string) => void
   submitComposerMessage: (text: string) => void
 } | null>(null)
@@ -48,8 +48,8 @@ function addComposerQuote(snippet: ArtifactComposerQuote) {
   aiPanelRef.value?.addComposerQuote(snippet)
 }
 
-function addComposerImage(image: { dataUrl: string; name: string; width?: number; height?: number }) {
-  aiPanelRef.value?.addComposerImage(image)
+function addComposerImage(image: { dataUrl: string; name: string; width?: number; height?: number; filePath?: string }) {
+  void aiPanelRef.value?.addComposerImage(image)
 }
 
 function setComposerDraft(text: string) {

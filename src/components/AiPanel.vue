@@ -546,7 +546,10 @@ const {
   handleDroppedImages,
   removeImage,
   clearImages,
+  discardImages,
   getImageDataUrls,
+  getImageAttachments,
+  ensurePendingImagePaths,
   hasImages,
   loadPendingImages,
   addImageDataUrl
@@ -726,8 +729,8 @@ const {
     clearImages
   },
   {
-    getAttachments: () => uploadedDocs.value
-      .map(d => ({
+    getAttachments: () => [
+      ...uploadedDocs.value.map(d => ({
         filename: d.filename,
         filePath: d.filePath,
         fileSize: d.fileSize,
@@ -735,6 +738,8 @@ const {
         totalPages: d.totalPages || d.pageCount,
         previewPages: d.images?.length
       })),
+      ...getImageAttachments(),
+    ],
     clearAttachments: clearUploadedDocs,
     getParsedDocs: () => uploadedDocs.value.map(d => ({ ...d })),
   },
@@ -1242,7 +1247,7 @@ const guardVisionBeforeSend = async (): Promise<boolean> => {
   // 用户确认"仍然发送"——按钮文案承诺了"不带图"，所以这里立刻清掉 pendingImages，
   // 避免几 MB 的 base64 仍走渲染→主进程 IPC（后端虽然会兜底剥图，但传输已经发生了）。
   if (proceed) {
-    clearImages()
+    discardImages()
     toast.info(t('ai.visionGuardImagesDropped'))
   }
   return proceed
@@ -1267,17 +1272,21 @@ const handleComposerSubmit = async (
   options?: { workbenchContext?: import('@shared/types').WorkbenchContext; enqueue?: boolean }
 ) => {
   if (isEditingFollowUp.value) {
+    await ensurePendingImagePaths()
     const pendingImagesOnly = getImageDataUrls()
     const images = [...pendingImagesOnly, ...getAllDocImages()]
     const previewImages = [...pendingImagesOnly, ...getDocPreviewImages()]
-    const attachments = uploadedDocs.value.map(d => ({
-      filename: d.filename,
-      filePath: d.filePath,
-      fileSize: d.fileSize,
-      fileType: d.fileType,
-      totalPages: d.totalPages || d.pageCount,
-      previewPages: d.images?.length
-    }))
+    const attachments = [
+      ...uploadedDocs.value.map(d => ({
+        filename: d.filename,
+        filePath: d.filePath,
+        fileSize: d.fileSize,
+        fileType: d.fileType,
+        totalPages: d.totalPages || d.pageCount,
+        previewPages: d.images?.length
+      })),
+      ...getImageAttachments(),
+    ]
     const documentContext = [
       await getDocumentContext(),
       getDocImagesContext()
@@ -1297,6 +1306,7 @@ const handleComposerSubmit = async (
     return
   }
   if (!(await guardVisionBeforeSend())) return
+  await ensurePendingImagePaths()
   await runAgent(message, options)
 }
 
@@ -1318,14 +1328,25 @@ const handleBeginEditFollowUp = (id: string) => {
     ? item.pendingImages
     : (!item.parsedDocs?.length && item.images?.length ? item.images : [])
   if (restoreImages.length) {
-    loadPendingImages(restoreImages.map((dataUrl, i) => ({
-      id: `followup_edit_${item.id}_${i}`,
-      dataUrl,
-      name: `image_${i + 1}`,
-      size: 0,
-    })))
+    const imageAtts = (item.attachments ?? []).filter((a) => {
+      const ext = (a.fileType || a.filename.split('.').pop() || '').toLowerCase().replace(/^\./, '')
+      return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)
+        || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.filename)
+        || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.filePath || '')
+    })
+    loadPendingImages(restoreImages.map((dataUrl, i) => {
+      const att = imageAtts[i]
+      return {
+        id: `followup_edit_${item.id}_${i}`,
+        dataUrl,
+        name: att?.filename || `image_${i + 1}`,
+        size: att?.fileSize ?? 0,
+        filePath: att?.filePath,
+        savedByApp: false,
+      }
+    }))
   } else {
-    clearImages()
+    discardImages()
   }
   if (item.parsedDocs?.length && currentTabId.value) {
     terminalStore.setUploadedDocs(currentTabId.value, item.parsedDocs.map(d => ({ ...d })))
@@ -1338,7 +1359,7 @@ const handleBeginEditFollowUp = (id: string) => {
 const handleCancelEditFollowUp = () => {
   cancelEditFollowUp()
   clearComposerDraft()
-  clearImages()
+  discardImages()
   clearUploadedDocs()
   composerQuoteStore.clearSnippets(props.tabId)
 }
@@ -1406,8 +1427,8 @@ function analyzeText(text: string) {
  * 产出物「截图反馈」：把预览截图加入 Composer 待发送图片区。
  * 由岗壳（AssistantWorkbench）从 ArtifactPanel 事件转发。
  */
-function addComposerImage(image: { dataUrl: string; name: string; width?: number; height?: number }) {
-  const added = addImageDataUrl(image.dataUrl, image.name, image.width ?? 0, image.height ?? 0)
+async function addComposerImage(image: { dataUrl: string; name: string; width?: number; height?: number; filePath?: string }) {
+  const added = await addImageDataUrl(image.dataUrl, image.name, image.width ?? 0, image.height ?? 0, image.filePath)
   if (!added) {
     toast.error(t('ai.composerImageLimit'))
     return
@@ -1487,7 +1508,7 @@ watch(
       activeProfileId.value = latestProfileId
     }
     if (!(await guardVisionBeforeSend())) {
-      clearImages()
+      discardImages()
       return
     }
     clearComposerDraft()
@@ -1535,7 +1556,7 @@ const handleDiagnoseError = () => {
   // 设置输入文本为诊断提示
   // 通过 Agent 执行分析
   clearComposerDraft()
-  clearImages()
+  discardImages()
   void runAgent(`${t('ai.analyzeErrorPrompt')}\n\`\`\`\n${error.content}\n\`\`\``)
 }
 
@@ -1547,7 +1568,7 @@ const handleAnalyzeSelection = () => {
   // 设置输入文本为分析提示
   // 通过 Agent 执行分析
   clearComposerDraft()
-  clearImages()
+  discardImages()
   void runAgent(`${t('ai.analyzeOutputPrompt')}\n\`\`\`\n${selection}\n\`\`\``)
 }
 

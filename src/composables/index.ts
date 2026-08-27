@@ -25,7 +25,7 @@ export {
   refreshSpeechPackStatus,
   installSpeechPackOnline,
 } from './useSpeechPackInstall'
-export { useImageUpload } from './useImageUpload'
+export { useImageUpload, pendingImageToAttachment } from './useImageUpload'
 export type { PendingImage } from './useImageUpload'
 export { useAttachmentActions } from './useAttachmentActions'
 export type { AttachmentActionTarget } from './useAttachmentActions'

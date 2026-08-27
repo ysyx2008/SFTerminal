@@ -1880,6 +1880,14 @@ interface Window {
       // 获取拖放文件的路径（Electron 24+ 推荐方式）
       getPathForFile: (file: File) => string
     }
+    workspace: {
+      savePastedImage: (dataUrl: string, suggestedName?: string) => Promise<{
+        success: boolean
+        filePath?: string
+        error?: string
+      }>
+      deletePastedImage: (filePath: string) => Promise<{ success: boolean }>
+    }
     // 插件系统
     plugin: {
       list: () => Promise<Array<{

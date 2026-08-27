@@ -438,6 +438,7 @@ import { BastionService } from './services/bastion.service'
 import type { IMService } from './services/im/im.service'
 import type { DingTalkConfig, FeishuConfig, SlackConfig, TelegramConfig, WeComConfig, IMPlatform } from './services/im/types'
 import { getWorkspacePath, ensureAgentWorkspaceDirs, cleanupScratch } from './services/agent/tools/file'
+import { deletePastedImage, savePastedImage } from './services/agent/pasted-image'
 import { initUserDataGuard } from './services/agent/command-audit/userdata-guard'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
 import {
@@ -3423,6 +3424,26 @@ ipcMain.handle('config:setAgentPersonalityText', async (_event, text: string) =>
 })
 
 // Agent 身份文件（IDENTITY.md / SOUL.md / USER.md / HEARTBEAT.md）
+ipcMain.handle('workspace:savePastedImage', async (_event, dataUrl: string, suggestedName?: string) => {
+  try {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+      return { success: false, error: 'invalid data url' }
+    }
+    const filePath = savePastedImage(
+      dataUrl,
+      typeof suggestedName === 'string' ? suggestedName : undefined,
+    )
+    return { success: true, filePath }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'save failed' }
+  }
+})
+
+ipcMain.handle('workspace:deletePastedImage', async (_event, filePath: string) => {
+  if (typeof filePath !== 'string') return { success: false }
+  return { success: deletePastedImage(filePath) }
+})
+
 ipcMain.handle('agent:readIdentityFile', async (_event, filename: string) => {
   switch (filename) {
     case 'IDENTITY.md': return readIdentityFile()

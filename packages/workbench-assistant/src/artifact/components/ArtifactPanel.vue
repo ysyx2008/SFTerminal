@@ -61,7 +61,7 @@ const props = defineProps<{
   /** 岗壳注入：引用摘录到 Composer（AiPanel.addComposerQuote） */
   addComposerQuote?: AddComposerQuoteFn
   /** 岗壳注入：图片加入 Composer 待发送区（AiPanel.addComposerImage） */
-  addComposerImage?: (image: { dataUrl: string; name: string; width?: number; height?: number }) => void
+  addComposerImage?: (image: { dataUrl: string; name: string; width?: number; height?: number; filePath?: string }) => void
   /** 岗壳注入：设置 Composer 草稿文本（AiPanel.setComposerDraft） */
   setComposerDraft?: (text: string) => void
   /** 岗壳注入：当场发出一条消息（右键快捷指令） */
@@ -532,7 +532,8 @@ async function onCaptureFeedback(payload: { webContentsId: number; suggestedName
     dataUrl: res.data.dataUrl,
     name: `${name}.png`,
     width: res.data.width,
-    height: res.data.height
+    height: res.data.height,
+    filePath: res.data.filePath,
   })
   props.setComposerDraft?.(t('canvas.captureFeedbackDraft', { title: active?.title || name }))
   toastSuccess(t('canvas.captureFeedbackReady'))

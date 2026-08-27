@@ -1381,10 +1381,11 @@ export function useAgentMode(
     const previewImages = queued
       ? (queued.previewImages ?? [])
       : (imageCallbacks?.getPreviewImages?.() || images)
+    // 图片路径挂在待发预览上；必须先取附件再清预览，否则路径到不了模型
+    const attachments = queued ? (queued.attachments ?? []) : (attachmentCallbacks?.getAttachments() || [])
     if (!queued && images.length > 0) {
       imageCallbacks?.clearImages()
     }
-    const attachments = queued ? (queued.attachments ?? []) : (attachmentCallbacks?.getAttachments() || [])
     // getDocumentContext 依赖 uploadedDocs，须在其完成后再 clearAttachments
 
     // 立即进入运行态 + 乐观 user_task，用户消息与「正在准备...」零等待上墙

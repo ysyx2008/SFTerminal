@@ -3498,6 +3498,17 @@ const electronAPI = {
     }
   },
 
+  workspace: {
+    savePastedImage: (dataUrl: string, suggestedName?: string) =>
+      ipcRenderer.invoke('workspace:savePastedImage', dataUrl, suggestedName) as Promise<{
+        success: boolean
+        filePath?: string
+        error?: string
+      }>,
+    deletePastedImage: (filePath: string) =>
+      ipcRenderer.invoke('workspace:deletePastedImage', filePath) as Promise<{ success: boolean }>,
+  },
+
   // Shell 操作
   shell: {
     openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path) as Promise<string>,
