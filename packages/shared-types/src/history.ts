@@ -81,6 +81,11 @@ export interface AgentRecord {
    * 字段缺失时（老记录）退化为按 steps 重放，保持向后兼容。
    */
   artifacts?: import('./canvas').CanvasArtifact[]
+  /**
+   * 这场对话结束时还装着的技能（含经同一入口加载的外部工具包）。
+   * 重开对话时按这份清单再装；字段缺失（老记录）则不补、不强行猜测。
+   */
+  loadedSkills?: string[]
 }
 
 /**

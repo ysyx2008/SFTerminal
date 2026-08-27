@@ -238,7 +238,7 @@ export class Conversation {
    * 序列化为持久化记录。忠实移植 Agent.saveSessionToHistory 的 record 构建。
    * 无 user_task（空会话）返回 null——与现状「找不到 firstUserTask 直接 return」对齐。
    */
-  toRecord(opts?: { terminalId?: string }): AgentRecord | null {
+  toRecord(opts?: { terminalId?: string; loadedSkills?: string[] }): AgentRecord | null {
     const firstUserTask = this._steps.find(s => s.type === 'user_task')
     if (!firstUserTask) return null
 
@@ -271,7 +271,8 @@ export class Conversation {
       finalResult: lastFinalResult?.content,
       duration: Date.now() - this.createdAt,
       status,
-      tokenUsage: this._tokenUsage
+      tokenUsage: this._tokenUsage,
+      ...(opts?.loadedSkills ? { loadedSkills: [...opts.loadedSkills] } : {})
     }
   }
 
@@ -293,6 +294,7 @@ export class Conversation {
     taskMessageLog: AiMessage[]
     tokenUsage?: TokenUsage
     contextPtyId?: string
+    loadedSkills?: string[]
   }): AgentRecord | null {
     const firstUserTask =
       this._steps.find(s => s.type === 'user_task') ??
@@ -318,7 +320,8 @@ export class Conversation {
       messages: mergedMessages.map(m => JSON.parse(JSON.stringify(m))),
       duration: Date.now() - this.createdAt,
       status: 'completed',
-      tokenUsage: checkpointTokenUsage
+      tokenUsage: checkpointTokenUsage,
+      ...(run.loadedSkills ? { loadedSkills: [...run.loadedSkills] } : {})
     }
   }
 
@@ -431,6 +434,7 @@ export class Conversation {
     const anchorTitle = Conversation.chunkDisplayTitle(anchorChunk)
     if (!anchorTitle) return null
     const lastFinalResult = [...selectedSteps].reverse().find(s => s.type === 'final_result' || s.type === 'proactive_notice')
+    const extractedSkills = [...ordered].reverse().find(r => Array.isArray(r.loadedSkills))?.loadedSkills
 
     // 独立 proactive_notice 段没有 user_task：补一条，便于落盘 / UI 分组
     let stepsForRecord = selectedSteps
@@ -477,7 +481,8 @@ export class Conversation {
       messages: selectedMessages,
       finalResult: lastFinalResult?.content,
       duration: 0,
-      status: 'completed'
+      status: 'completed',
+      ...(extractedSkills?.length ? { loadedSkills: [...extractedSkills] } : {})
     }
 
     const conversation = Conversation.fromRecord(record)
@@ -730,7 +735,8 @@ export class Conversation {
       messages,
       finalResult: lastFinalResult?.content,
       duration: 0,
-      status: 'completed'
+      status: 'completed',
+      ...(Array.isArray(source.loadedSkills) ? { loadedSkills: [...source.loadedSkills] } : {})
     }
   }
 

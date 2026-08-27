@@ -293,6 +293,53 @@ describe('Conversation 聚合根（领域模型）', () => {
     expect(conv.lastPromptTokens).toBe(900)
   })
 
+  it('toRecord / toCheckpointRecord：传入的技能清单会跟着落盘', () => {
+    const conv = Conversation.create(
+      { agentKey: 'tab-sk', terminalType: 'assistant' },
+      { id: 'sess_sk', createdAt: 1000 }
+    )
+    conv.commitRun({
+      runId: 'run1',
+      userRequest: '写文档',
+      steps: [userStep('写文档'), finalStep('好')],
+      taskMessageLog: [{ role: 'user', content: '写文档' }],
+      runMessages: [{ role: 'user', content: '写文档' }],
+      taskStatus: 'success',
+      result: '好'
+    })
+
+    const saved = conv.toRecord({ loadedSkills: ['word', 'mcp:qcc'] })!
+    expect(saved.loadedSkills).toEqual(['word', 'mcp:qcc'])
+
+    const ckpt = conv.toCheckpointRecord({
+      steps: [],
+      taskMessageLog: [],
+      loadedSkills: ['excel']
+    })!
+    expect(ckpt.loadedSkills).toEqual(['excel'])
+
+    expect(conv.toRecord()!.loadedSkills).toBeUndefined()
+  })
+
+  it('forkFromRecord：把源记录的技能清单带到新任务', () => {
+    const source: AgentRecord = {
+      id: 'sess_src',
+      timestamp: Date.now(),
+      terminalId: '',
+      agentKey: 'tab-1',
+      terminalType: 'assistant',
+      userTask: '写文档',
+      steps: [{ id: 'u1', type: 'user_task', content: '写文档', timestamp: Date.now() }],
+      messages: [{ role: 'user', content: '写文档' }, { role: 'assistant', content: '好' }],
+      duration: 0,
+      status: 'completed',
+      loadedSkills: ['word', 'mcp:qcc']
+    }
+    const forked = Conversation.forkFromRecord(source, 'sess_fork')
+    expect(forked?.record.loadedSkills).toEqual(['word', 'mcp:qcc'])
+    expect(Conversation.forkFromRecord({ ...source, loadedSkills: undefined }, 'sess_fork2')?.record.loadedSkills).toBeUndefined()
+  })
+
   it('rebind：会话漫游只换 agentKey，身份/形态不变', () => {
     const conv = Conversation.create({ agentKey: 'tab-A', terminalType: 'ssh' }, { id: 'sess_roam', sshHost: 'h1' })
     conv.rebind('tab-B')

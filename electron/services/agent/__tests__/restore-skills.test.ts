@@ -1,0 +1,307 @@
+/**
+ * 重开对话时把当时加载的技能再装回来。
+ * 只覆盖「新对话记下清单 → 再打开按清单装」；老记录没有字段则不动。
+ */
+import { describe, it, expect, vi } from 'vitest'
+
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn().mockReturnValue('/mock/user/data'),
+    getName: vi.fn().mockReturnValue('SailFish'),
+    getVersion: vi.fn().mockReturnValue('1.0.0')
+  },
+  BrowserWindow: vi.fn(),
+  ipcMain: { on: vi.fn(), handle: vi.fn() }
+}))
+
+vi.mock('../../im/im.service', () => ({
+  getIMService: vi.fn().mockReturnValue(null)
+}))
+
+import { Agent } from '../agent'
+import { ConversationManager, ConversationStore } from '../../conversation'
+import { configSkill } from '../skills/config'
+import type { ToolDefinition } from '../../ai.service'
+import type { AgentContext, AgentServices } from '../types'
+
+class TestAgent extends Agent {
+  getAvailableTools(): ToolDefinition[] {
+    return []
+  }
+  protected buildSystemPrompt(): string {
+    return 'test'
+  }
+  protected getAgentId(): string {
+    return 'test-agent'
+  }
+  exposeLoadedSkills() {
+    return this.getSkillSession().getLoadedSkills()
+  }
+  exposeMcpServers() {
+    return this.getMcpToolSession().getLoadedServerIds()
+  }
+}
+
+function createServices(overrides?: Partial<AgentServices>): AgentServices {
+  const historyService = overrides?.historyService ?? {
+    getAgentRecordById: vi.fn(),
+    saveAgentRecord: vi.fn(),
+    getAgentRecordStore: vi.fn(function (this: { getAgentRecordById: unknown }) {
+      return this
+    })
+  }
+  const services: AgentServices = {
+    aiService: {
+      chatWithToolsStream: vi.fn(
+        (_m: unknown, _t: unknown, onChunk: (s: string) => void, _otc: unknown, onDone: (r: unknown) => void) => {
+          onChunk('好')
+          onDone({ content: '好', tool_calls: undefined })
+          return Promise.resolve()
+        }
+      ),
+      abort: vi.fn()
+    } as never,
+    ptyService: { onData: vi.fn().mockReturnValue(() => {}), write: vi.fn() } as never,
+    configService: {
+      get: vi.fn().mockReturnValue(undefined),
+      getAgentMbti: vi.fn().mockReturnValue(null),
+      getAiRules: vi.fn().mockReturnValue(''),
+      getAgentPersonalityText: vi.fn().mockReturnValue(''),
+      getAgentName: vi.fn().mockReturnValue(''),
+      getLanguage: vi.fn().mockReturnValue('zh-CN'),
+      getAiProfiles: vi.fn().mockReturnValue([{ id: 'test', contextLength: 128000 }]),
+      getActiveAiProfile: vi.fn().mockReturnValue('test'),
+      getAgentOnboardingCompleted: vi.fn().mockReturnValue(true),
+      hasVisionCapability: vi.fn().mockReturnValue(true),
+      getMcpServers: vi.fn().mockReturnValue([])
+    } as never,
+    ...overrides,
+    historyService: historyService as never
+  }
+  if (!services.conversationManager) {
+    services.conversationManager = new ConversationManager(
+      new ConversationStore((services.historyService as { getAgentRecordStore: () => unknown }).getAgentRecordStore())
+    )
+  }
+  return services
+}
+
+function ctx(overrides?: Partial<AgentContext>): AgentContext {
+  return {
+    ptyId: 'test-pty',
+    terminalOutput: [],
+    systemInfo: { os: 'darwin', shell: '/bin/zsh' },
+    terminalType: 'assistant',
+    ...overrides
+  }
+}
+
+const priorRecord = (id: string, extra?: Record<string, unknown>) => ({
+  id,
+  timestamp: Date.now() - 5000,
+  terminalId: '',
+  terminalType: 'assistant' as const,
+  userTask: '上次的任务',
+  steps: [
+    { id: 'ut1', type: 'user_task', content: '上次的任务', timestamp: Date.now() - 5000 },
+    { id: 'fr1', type: 'final_result', content: '上次的结果', timestamp: Date.now() - 4000 }
+  ],
+  messages: [
+    { role: 'user', content: '上次的任务' },
+    { role: 'assistant', content: '上次的结果' }
+  ],
+  duration: 1000,
+  status: 'completed' as const,
+  ...extra
+})
+
+describe('重开对话恢复技能', () => {
+  it('新对话加载过技能后，检查点会记下清单', async () => {
+    const saved: Array<{ loadedSkills?: string[] }> = []
+    const historyService = {
+      getAgentRecordById: vi.fn(),
+      saveAgentRecord: vi.fn((record: { loadedSkills?: string[] }) => { saved.push(record) }),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const services = createServices({ historyService: historyService as never })
+    const agent = new TestAgent(services)
+    await agent.preloadSkills([configSkill.id])
+    expect(agent.exposeLoadedSkills()).toContain(configSkill.id)
+
+    await agent.run('继续', ctx({ sessionId: 'sess_new' }))
+
+    const withSkills = saved.filter(r => r.loadedSkills?.includes(configSkill.id))
+    expect(withSkills.length).toBeGreaterThan(0)
+  })
+
+  it('重开带清单的对话时，在组上下文之前把技能装回来', async () => {
+    const sessionId = 'sess_restore_skills'
+    const box: { agent?: TestAgent } = {}
+    const chatWithToolsStream = vi.fn(
+      (_m: unknown, _t: unknown, onChunk: (s: string) => void, _otc: unknown, onDone: (r: unknown) => void) => {
+        expect(box.agent!.exposeLoadedSkills()).toContain(configSkill.id)
+        expect(box.agent!.exposeMcpServers()).toContain('qcc')
+        onChunk('好')
+        onDone({ content: '好', tool_calls: undefined })
+        return Promise.resolve()
+      }
+    )
+    const ensureConnected = vi.fn().mockResolvedValue(undefined)
+    const mcpService = {
+      findConfiguredServer: vi.fn().mockReturnValue({ id: 'qcc', name: '企查查', enabled: true }),
+      resolveServerRef: vi.fn()
+        .mockReturnValueOnce(null)
+        .mockReturnValue({ serverId: 'qcc', name: '企查查', toolCount: 3 }),
+      ensureConnected
+    }
+    const historyService = {
+      getAgentRecordById: vi.fn().mockReturnValue(priorRecord(sessionId, {
+        loadedSkills: [configSkill.id, 'mcp:qcc']
+      })),
+      saveAgentRecord: vi.fn(),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const services = createServices({
+      historyService: historyService as never,
+      aiService: { chatWithToolsStream, abort: vi.fn() } as never,
+      mcpService: mcpService as never,
+      configService: {
+        get: vi.fn().mockReturnValue(undefined),
+        getAgentMbti: vi.fn().mockReturnValue(null),
+        getAiRules: vi.fn().mockReturnValue(''),
+        getAgentPersonalityText: vi.fn().mockReturnValue(''),
+        getAgentName: vi.fn().mockReturnValue(''),
+        getLanguage: vi.fn().mockReturnValue('zh-CN'),
+        getAiProfiles: vi.fn().mockReturnValue([{ id: 'test', contextLength: 128000 }]),
+        getActiveAiProfile: vi.fn().mockReturnValue('test'),
+        getAgentOnboardingCompleted: vi.fn().mockReturnValue(true),
+        hasVisionCapability: vi.fn().mockReturnValue(true),
+        getMcpServers: vi.fn().mockReturnValue([{ id: 'qcc', name: '企查查', enabled: true }])
+      } as never
+    })
+    const agent = new TestAgent(services)
+    box.agent = agent
+
+    await agent.run('接着写', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
+
+    expect(ensureConnected).toHaveBeenCalled()
+    expect(agent.exposeLoadedSkills()).toContain(configSkill.id)
+    expect(agent.exposeMcpServers()).toContain('qcc')
+    expect(chatWithToolsStream).toHaveBeenCalled()
+  })
+
+  it('老记录没有清单则不强行装技能', async () => {
+    const sessionId = 'sess_legacy'
+    const historyService = {
+      getAgentRecordById: vi.fn().mockReturnValue(priorRecord(sessionId)),
+      saveAgentRecord: vi.fn(),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const services = createServices({ historyService: historyService as never })
+    const agent = new TestAgent(services)
+
+    await agent.run('新问题', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
+
+    expect(agent.exposeLoadedSkills()).toEqual([])
+  })
+
+  it('清单里的技能已经不存在或被关掉，跳过，对话照常打开', async () => {
+    const sessionId = 'sess_missing'
+    const historyService = {
+      getAgentRecordById: vi.fn().mockReturnValue(priorRecord(sessionId, {
+        loadedSkills: ['not-a-real-skill', configSkill.id]
+      })),
+      saveAgentRecord: vi.fn(),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const configService = {
+      get: vi.fn((key: string) => key === 'disabledBuiltinSkills' ? [configSkill.id] : undefined),
+      getAgentMbti: vi.fn().mockReturnValue(null),
+      getAiRules: vi.fn().mockReturnValue(''),
+      getAgentPersonalityText: vi.fn().mockReturnValue(''),
+      getAgentName: vi.fn().mockReturnValue(''),
+      getLanguage: vi.fn().mockReturnValue('zh-CN'),
+      getAiProfiles: vi.fn().mockReturnValue([{ id: 'test', contextLength: 128000 }]),
+      getActiveAiProfile: vi.fn().mockReturnValue('test'),
+      getAgentOnboardingCompleted: vi.fn().mockReturnValue(true),
+      hasVisionCapability: vi.fn().mockReturnValue(true),
+      getMcpServers: vi.fn().mockReturnValue([])
+    }
+    const services = createServices({
+      historyService: historyService as never,
+      configService: configService as never
+    })
+    const agent = new TestAgent(services)
+
+    await expect(agent.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))).resolves.toBeTruthy()
+    expect(agent.exposeLoadedSkills()).toEqual([])
+  })
+
+  it('关切会话不按历史清单恢复技能', async () => {
+    const sessionId = 'sess_watch'
+    const historyService = {
+      getAgentRecordById: vi.fn().mockReturnValue(priorRecord(sessionId, {
+        kind: 'watch',
+        agentKey: '__watch__:abc',
+        loadedSkills: [configSkill.id]
+      })),
+      saveAgentRecord: vi.fn(),
+      getRecentAgentRecords: vi.fn().mockReturnValue([]),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const services = createServices({ historyService: historyService as never })
+    const agent = new TestAgent(services)
+    agent.setAgentId('__watch__:abc')
+
+    await agent.run('心跳', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
+
+    expect(agent.exposeLoadedSkills()).toEqual([])
+  })
+
+  it('已删除或关掉的外部工具包跳过，不留空名', async () => {
+    const sessionId = 'sess_mcp_gone'
+    const historyService = {
+      getAgentRecordById: vi.fn().mockReturnValue(priorRecord(sessionId, {
+        loadedSkills: ['mcp:gone', 'mcp:off']
+      })),
+      saveAgentRecord: vi.fn(),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const mcpService = {
+      findConfiguredServer: vi.fn((id: string) =>
+        id.includes('off') ? { id: 'off', name: '已关', enabled: false } : null
+      ),
+      resolveServerRef: vi.fn().mockReturnValue(null),
+      ensureConnected: vi.fn()
+    }
+    const services = createServices({
+      historyService: historyService as never,
+      mcpService: mcpService as never
+    })
+    const agent = new TestAgent(services)
+
+    await agent.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
+
+    expect(agent.exposeMcpServers()).toEqual([])
+    expect(mcpService.ensureConnected).not.toHaveBeenCalled()
+  })
+
+  it('点新对话后，上一场技能不写进新记录', async () => {
+    const saved: Array<{ loadedSkills?: string[] }> = []
+    const historyService = {
+      getAgentRecordById: vi.fn(),
+      saveAgentRecord: vi.fn((record: { loadedSkills?: string[] }) => { saved.push(record) }),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const services = createServices({ historyService: historyService as never })
+    const agent = new TestAgent(services)
+    await agent.preloadSkills([configSkill.id])
+    expect(agent.exposeLoadedSkills()).toContain(configSkill.id)
+
+    agent.resetSession()
+    await agent.run('全新开始', ctx())
+
+    expect(agent.exposeLoadedSkills()).toEqual([])
+    expect(saved.some(r => r.loadedSkills?.includes(configSkill.id))).toBe(false)
+  })
+})

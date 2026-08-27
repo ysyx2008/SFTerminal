@@ -76,7 +76,7 @@ import { consumeProactiveContext } from './proactive-store'
 import { applyParallelShare, computeToolOutputBudget } from './tool-output-budget'
 import { t, type TranslationKey } from './i18n'
 import { createSkillSession, SkillSession } from './skills'
-import { McpToolSession } from './mcp-tool-session'
+import { McpToolSession, parseMcpSkillId, toMcpSkillId } from './mcp-tool-session'
 import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
 import { isAbortError } from '../../utils/abort'
@@ -211,6 +211,13 @@ export abstract class Agent {
 
   /** MCP 工具渐进披露会话（Agent 实例级 sticky LRU） */
   private _mcpToolSession?: McpToolSession
+
+  /**
+   * 从历史记录取出、尚未装回技能会话的清单。
+   * `undefined`：这场恢复没有技能清单（老记录），不要动当前技能。
+   * 数组：按这份清单替换（含空数组 = 当时没装着）。
+   */
+  private _pendingRestoreSkillIds?: string[]
 
   /** 「本次允许」工具白名单（Agent 实例内存，跨 Run；关 tab / 重启清空） */
   private allowedTools = new Set<string>()
@@ -374,6 +381,97 @@ export abstract class Agent {
     return this._skillSession
   }
 
+  /**
+   * 预加载技能（Watch 等入口、以及重开对话恢复清单时真正 load，而不只是 prompt 文案提示）。
+   * `mcp:<serverId>` 记进 MCP 渐进披露会话；普通技能走技能会话。装不上的跳过。
+   */
+  async preloadSkills(skillIds: string[]): Promise<void> {
+    if (!skillIds.length) return
+    const disabled = this.services.configService?.get?.('disabledBuiltinSkills')
+    const disabledSet = new Set(Array.isArray(disabled) ? disabled.filter((id): id is string => typeof id === 'string') : [])
+    for (const skillId of skillIds) {
+      if (parseMcpSkillId(skillId)) {
+        await this.preloadMcpSkill(skillId)
+        continue
+      }
+      if (disabledSet.has(skillId)) {
+        log.warn(`Skip restoring disabled skill "${skillId}"`)
+        continue
+      }
+      const result = await this.getSkillSession().loadSkill(skillId)
+      if (!result.success) {
+        log.warn(`Failed to preload skill "${skillId}": ${result.error}`)
+      }
+    }
+  }
+
+  /**
+   * 静默装回 MCP：校验配置、必要时重连，再记进渐进披露会话。
+   * 不往当前对话塞加载卡片。已删除 / 已禁用 / 连不上的跳过。
+   */
+  private async preloadMcpSkill(skillId: string): Promise<void> {
+    const mcp = this.services.mcpService
+    if (!mcp) {
+      log.warn(`Skip restoring MCP skill "${skillId}": MCP service not available`)
+      return
+    }
+    const configs = this.services.configService?.getMcpServers?.() ?? []
+    const configured = mcp.findConfiguredServer(skillId, configs)
+    if (configured?.enabled === false) {
+      log.warn(`Skip restoring disabled MCP "${skillId}"`)
+      return
+    }
+    let resolved = mcp.resolveServerRef(skillId)
+    if (!resolved && configured) {
+      try {
+        await mcp.ensureConnected(configured)
+        resolved = mcp.resolveServerRef(configured.id)
+      } catch (err) {
+        log.warn(`Failed to reconnect MCP "${skillId}":`, err)
+        return
+      }
+    }
+    if (!resolved) {
+      log.warn(`Skip restoring missing MCP "${skillId}"`)
+      return
+    }
+    this.getMcpToolSession().loadServer(resolved.serverId)
+  }
+
+  /** 这场对话当前还装着的技能（含 MCP 虚拟 skill id），供检查点落盘 */
+  private collectPersistedSkillIds(): string[] | undefined {
+    const ids: string[] = []
+    if (this._skillSession) {
+      ids.push(...this._skillSession.getLoadedSkills())
+    }
+    if (this._mcpToolSession) {
+      for (const serverId of this._mcpToolSession.getLoadedServerIds()) {
+        ids.push(toMcpSkillId(serverId))
+      }
+    }
+    if (ids.length === 0 && this._pendingRestoreSkillIds?.length) {
+      return [...this._pendingRestoreSkillIds]
+    }
+    return ids.length > 0 ? ids : undefined
+  }
+
+  /**
+   * 把历史记录里的技能清单装回本实例。只在清单存在时替换；老记录没有字段则不动。
+   */
+  private async applyRestoredSkills(): Promise<void> {
+    if (this._pendingRestoreSkillIds === undefined) return
+    const skillIds = this._pendingRestoreSkillIds
+    this._pendingRestoreSkillIds = undefined
+    if (this._skillSession) {
+      await this._skillSession.cleanup()
+    }
+    this._mcpToolSession?.clear()
+    await this.preloadSkills(skillIds)
+    if (skillIds.length) {
+      log.info(`Restored ${this.collectPersistedSkillIds()?.length ?? 0} skill(s) from session record`)
+    }
+  }
+
   /** MCP 渐进披露会话（跨 Run；resetSession / cleanup 清空） */
   protected getMcpToolSession(): McpToolSession {
     if (!this._mcpToolSession) {
@@ -426,6 +524,9 @@ export abstract class Agent {
     const taskStartTime = Date.now()
     
     try {
+      // 历史恢复带出的技能清单要在组上下文 / 取工具表之前装上，否则模型会看见旧工具名却没有对应工具
+      await this.applyRestoredSkills()
+
       // CWD 刷新与上下文构建互不依赖，并行执行以缩短「正在准备...」阶段
       const cwdPromise = options?.cwdResolver
         ? options.cwdResolver().then(cwd => {
@@ -970,6 +1071,13 @@ export abstract class Agent {
     // taskMemory 上面已由 Agent 用自己的 split/seq 写入（与 restoreRecentTaskMemory 共享单调
     // 序号防同毫秒 task id 碰撞），故此处只补 transcript。
     this._conversation?.setRestoredTranscript(record.messages as AiMessage[] | undefined, record.steps)
+
+    // 关切 / 唤醒自己预装技能，不按历史清单恢复。
+    const kind = record.kind ?? inferConversationKind(record.agentKey)
+    if (kind === 'watch' || kind === 'wakeup') return
+    if (Array.isArray(record.loadedSkills)) {
+      this._pendingRestoreSkillIds = [...record.loadedSkills]
+    }
   }
 
   /**
@@ -1136,7 +1244,10 @@ export abstract class Agent {
     const historyService = this.services.historyService
     if (!historyService || !this._conversation) return
 
-    const record = this._conversation.toRecord({ terminalId: this.currentRun?.context.ptyId || '' })
+    const record = this._conversation.toRecord({
+      terminalId: this.currentRun?.context.ptyId || '',
+      loadedSkills: this.collectPersistedSkillIds()
+    })
     if (!record) return
 
     try {
@@ -1165,7 +1276,8 @@ export abstract class Agent {
       steps: run.steps,
       taskMessageLog: run.taskMessageLog,
       tokenUsage: run.tokenUsage,
-      contextPtyId: run.context.ptyId
+      contextPtyId: run.context.ptyId,
+      loadedSkills: this.collectPersistedSkillIds()
     })
     if (!record) return
 
@@ -1265,7 +1377,7 @@ export abstract class Agent {
    */
   toRecordForFork(): AgentRecord | null {
     if (!this._conversation) return null
-    return this._conversation.toRecord()
+    return this._conversation.toRecord({ loadedSkills: this.collectPersistedSkillIds() })
   }
 
   /**
@@ -1361,7 +1473,12 @@ export abstract class Agent {
     this._contextBar = {}
     this.resetConsumedUsage()
     this.taskMemory.clear()
+    if (this._skillSession) {
+      void this._skillSession.cleanup()
+      this._skillSession = undefined
+    }
     this._mcpToolSession?.clear()
+    this._pendingRestoreSkillIds = undefined
   }
 
   /**
@@ -1377,6 +1494,12 @@ export abstract class Agent {
     this._lastStatsProfileId = undefined
     this._contextBar = {}
     this.resetConsumedUsage()
+    if (this._skillSession) {
+      void this._skillSession.cleanup()
+      this._skillSession = undefined
+    }
+    this._mcpToolSession?.clear()
+    this._pendingRestoreSkillIds = undefined
   }
 
   
