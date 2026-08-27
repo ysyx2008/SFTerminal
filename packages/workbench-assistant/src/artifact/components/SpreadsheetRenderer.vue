@@ -409,7 +409,23 @@ onUnmounted(() => {
 }
 
 .spreadsheet-body :deep(td.modified) {
-  background-image: linear-gradient(rgba(66, 133, 244, 0.18), rgba(66, 133, 244, 0.18));
+  position: relative;
+  isolation: isolate;
+}
+
+.spreadsheet-body :deep(td.modified)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: rgba(66, 133, 244, 0.22);
+  animation: cell-modified-fade 1.4s ease-out forwards;
+}
+
+@keyframes cell-modified-fade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 .spreadsheet-body :deep(td.deleting) {
