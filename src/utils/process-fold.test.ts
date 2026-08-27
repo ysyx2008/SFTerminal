@@ -175,6 +175,26 @@ describe('foldProcessSteps', () => {
     expect(segs[0].kind === 'fold' && segs[0].fold.durationMs).toBeUndefined()
   })
 
+  it('stops the live clock when the user interrupts a write still in flight', () => {
+    const steps = [
+      step({
+        id: 'w1',
+        type: 'tool_call',
+        toolName: 'write_text_file',
+        success: undefined,
+        isStreaming: true,
+        timestamp: 1000,
+      }),
+      step({ id: 'u1', type: 'user_supplement', content: '改一下图', timestamp: 5000 }),
+    ]
+    const segs = foldProcessSteps(steps, { enabled: true })
+    expect(segs.map(s => s.kind)).toEqual(['fold', 'open'])
+    if (segs[0].kind !== 'fold') throw new Error('expected fold')
+    expect(segs[0].fold.live).toBe(false)
+    expect(segs[0].fold.counts).toEqual({ write: 1 })
+    expect(segs[0].fold.durationMs).toBe(4000)
+  })
+
   it('times a stretch up to the moment the next thing happened', () => {
     const steps = [
       step({ id: 't1', type: 'tool_call', toolName: 'read_file', timestamp: 1000 }),

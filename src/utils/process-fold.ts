@@ -310,11 +310,13 @@ function pendingAction(steps: ReadonlyArray<ProcessStepLike>): ActionKind | unde
  * 下一步的创建时间就是这一截的收尾时刻，段内只有一步时也才有耗时可言。
  * 后面没有步骤了（任务就此结束）只能退回最后一步的开始时间，会少算最后一步自己跑了多久。
  */
-function toFold(refs: ProcessStepRef[], nextStepAt?: number): ProcessFoldView {
+function toFold(refs: ProcessStepRef[], nextStepAt?: number, hasSuccessor = false): ProcessFoldView {
   const steps = refs.map(ref => ref.step)
   const last = steps[steps.length - 1]
   const colleagueCount = steps.reduce((n, step) => n + liveColleagueCountOf(step), 0)
-  const live = refs.some(isUnfinished) || colleagueCount > 0
+  // 后面已经发生了下一件事（用户插话、它说了话），这一截就结束了。
+  // 否则写文件被打断后卡片还会一直转圈计时。
+  const live = !hasSuccessor && (refs.some(isUnfinished) || colleagueCount > 0)
   const startedAt = steps[0].timestamp
   const endedAt = nextStepAt ?? last.timestamp
   const elapsed =
@@ -367,7 +369,8 @@ export function foldProcessSteps<T extends ProcessStepLike>(
 
   return runs.map((run, i) => {
     if (run.pinned) return { kind: 'open' as const, steps: run.refs }
-    const nextStepAt = runs[i + 1]?.refs[0]?.step.timestamp
-    return { kind: 'fold' as const, fold: toFold(run.refs, nextStepAt), steps: run.refs }
+    const next = runs[i + 1]
+    const nextStepAt = next?.refs[0]?.step.timestamp
+    return { kind: 'fold' as const, fold: toFold(run.refs, nextStepAt, next !== undefined), steps: run.refs }
   })
 }
