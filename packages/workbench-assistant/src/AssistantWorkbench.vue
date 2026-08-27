@@ -122,6 +122,7 @@ const panelToggleTitle = computed(() =>
   docExpanded.value ? t('canvas.minimizePanel') : t('canvas.expandPanel')
 )
 const listOpen = ref(false)
+let listHideTimer: ReturnType<typeof setTimeout> | null = null
 const artifacts = computed(() => artifactStore.getArtifacts(props.tab.id))
 const activeArtifactId = computed(() => artifactStore.getActiveArtifact(props.tab.id)?.id ?? null)
 const deskTerminalTitle = computed(() => {
@@ -234,6 +235,10 @@ function stopStageResize() {
 
 onUnmounted(() => {
   stopStageResize()
+  if (listHideTimer) {
+    clearTimeout(listHideTimer)
+    listHideTimer = null
+  }
 })
 
 function handleSendToAi(text: string) {
@@ -245,8 +250,27 @@ function handleSendToAi(text: string) {
   })
 }
 
-function toggleList() {
-  listOpen.value = !listOpen.value
+function openList() {
+  if (listHideTimer) {
+    clearTimeout(listHideTimer)
+    listHideTimer = null
+  }
+  listOpen.value = true
+}
+
+function closeList() {
+  if (listHideTimer) clearTimeout(listHideTimer)
+  listHideTimer = setTimeout(() => {
+    listOpen.value = false
+    listHideTimer = null
+  }, 120)
+}
+
+function onListFocusOut(e: FocusEvent) {
+  const next = e.relatedTarget as Node | null
+  const slot = e.currentTarget as HTMLElement
+  if (next && slot.contains(next)) return
+  closeList()
 }
 
 function openArtifact(artifactId: string) {
@@ -358,15 +382,20 @@ defineExpose({
               :consume-workbench-context="consumeWorkbenchContext"
             />
             <div v-if="showDeskChrome" class="artifact-chrome artifact-chrome--cluster">
-              <div v-if="showDeskList" class="artifact-list-slot">
+              <div
+                v-if="showDeskList"
+                class="artifact-list-slot"
+                @mouseenter="openList"
+                @mouseleave="closeList"
+                @focusin="openList"
+                @focusout="onListFocusOut"
+              >
                 <button
                   type="button"
                   class="artifact-chrome-btn"
                   :class="{ 'is-open': listOpen }"
-                  :title="t('canvas.artifactList')"
                   :aria-label="t('canvas.artifactList')"
                   :aria-expanded="listOpen"
-                  @click="toggleList"
                 >
                   <List :size="14" />
                 </button>
@@ -551,7 +580,8 @@ defineExpose({
   position: absolute;
   top: 0;
   right: 8px;
-  z-index: 5;
+  /* 高于对话区计划进度条，避免清单小面板被挡住 */
+  z-index: 20;
   display: flex;
   flex-direction: row;
   align-items: center;

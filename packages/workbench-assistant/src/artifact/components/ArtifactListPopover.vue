@@ -135,6 +135,16 @@ onUnmounted(() => {
   -webkit-app-region: no-drag;
 }
 
+/* 盖住按钮与面板之间的空隙，鼠标移过去时不会中途收起 */
+.artifact-list-pop::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 0;
+  right: 0;
+  height: 8px;
+}
+
 .artifact-list-pop-head {
   padding: 6px 8px 8px;
   color: var(--text-secondary, #aaa);
