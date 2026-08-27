@@ -8,12 +8,15 @@ import { createLogger } from '../../../../utils/logger'
 
 const log = createLogger('WordPreviewFonts')
 
+export type PreviewBlockKind = 'title' | 'heading' | 'body'
+
 export interface PreviewFont {
   family?: string
   size?: string
   weight?: string
   /** 首行缩进。含 `0`：文档顶格时必须写出，否则预览页会按正文缩两字。 */
   indent?: string
+  kind?: PreviewBlockKind
 }
 
 /** 本机常见别名。先写文档里的真名，后面是同族/系统代用，找不到再走 serif/sans。 */
@@ -191,6 +194,12 @@ function mapsToPreviewBlock(para: string): boolean {
   return heading || !list
 }
 
+function blockKind(styleId: string): PreviewBlockKind {
+  if (/^Title$/i.test(styleId)) return 'title'
+  if (/^Heading[1-6]$/i.test(styleId)) return 'heading'
+  return 'body'
+}
+
 export function collectParagraphFonts(
   documentXml: string,
   stylesXml: string
@@ -210,19 +219,28 @@ export function collectParagraphFonts(
       family: run.font ? cssFontFamily(run.font) : fromStyle.family,
       size: run.size ?? fromStyle.size,
       weight: run.weight ?? fromStyle.weight,
-      indent: parseFirstLineIndent(para) ?? fromStyle.indent ?? '0'
+      indent: parseFirstLineIndent(para) ?? fromStyle.indent ?? '0',
+      kind: blockKind(pStyle)
     })
   }
   return fonts
 }
 
 export function applyFontsToHtml(html: string, fonts: PreviewFont[]): string {
-  const tags = html.match(/<(p|h[1-6])(\s[^>]*)?>/gi) || []
-  if (tags.length !== fonts.length) return html
-
+  const titles = fonts.filter(f => f.kind === 'title')
+  const headings = fonts.filter(f => f.kind === 'heading')
+  const bodies = fonts.filter(f => !f.kind || f.kind === 'body')
+  const useBuckets = fonts.some(f => f.kind)
+  let ti = 0
+  let hi = 0
+  let bi = 0
   let i = 0
+
   return html.replace(/<(p|h[1-6])(\s[^>]*)?>/gi, (full, tag: string, attrs = '') => {
-    const font = fonts[i++]
+    const isTitle = tag.toLowerCase() === 'h1' && /(?:^|\s)class="[^"]*document-title/.test(attrs)
+    const font = useBuckets
+      ? (isTitle ? titles[ti++] : /^h[1-6]$/i.test(tag) ? headings[hi++] : bodies[bi++])
+      : fonts[i++]
     if (!font?.family && !font?.size && !font?.weight && font?.indent === undefined) return full
 
     const styleMatch = attrs.match(/style="([^"]*)"/)

@@ -93,12 +93,25 @@ describe('collectParagraphFonts + applyFontsToHtml', () => {
     expect(out).toMatch(/<p style="[^"]*font-family:[^"]*仿宋/)
   })
 
-  it('does not inject when paragraph count and HTML tags disagree', () => {
+  it('still styles title when extra body tags have no matching paragraph', () => {
     const out = applyFontsToHtml(
       '<h1 class="document-title">标题</h1><p>正文</p>',
-      [{ family: cssFontFamily('方正小标宋简体') }]
+      [{ family: cssFontFamily('方正小标宋简体'), kind: 'title' }]
     )
-    expect(out).not.toContain('font-family')
+    expect(out).toContain('方正小标宋简体')
+    expect(out).not.toMatch(/<p[^>]*font-family/)
+  })
+
+  it('indents the first body paragraph when the document has no 主送', () => {
+    const out = applyFontsToHtml(
+      '<h1 class="document-title">通知标题</h1><p>为深入贯彻落实。</p>',
+      [
+        { family: cssFontFamily('方正小标宋简体'), kind: 'title', indent: '0' },
+        { family: cssFontFamily('仿宋'), kind: 'body', indent: '32pt' }
+      ]
+    )
+    const p = out.match(/<p[^>]*>/)?.[0] ?? ''
+    expect(p).toContain('text-indent:32pt')
   })
 
   it('keeps 主送 flush and body first-line indented', () => {

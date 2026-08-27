@@ -465,7 +465,7 @@ onUnmounted(() => {
 
 .document-content :deep(p) {
   margin: 0.4em 0;
-  text-indent: 2em;
+  text-indent: 0;
 }
 
 .document-content :deep(ul),
