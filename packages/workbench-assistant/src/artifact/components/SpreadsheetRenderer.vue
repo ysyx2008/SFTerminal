@@ -217,6 +217,14 @@ async function selectSheet(name: string) {
   font-variant-numeric: tabular-nums;
 }
 
+.spreadsheet-body :deep(td.merged) {
+  max-width: none;
+  height: auto;
+  white-space: normal;
+  word-break: break-word;
+  vertical-align: middle;
+}
+
 .spreadsheet-body :deep(td.modified) {
   background-color: #e8f0fe;
 }

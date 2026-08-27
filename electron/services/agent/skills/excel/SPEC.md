@@ -10,6 +10,10 @@
 
 用户交来的新版 WPS 表格，应当能用现有 Excel 能力打开、改、存回原文件，不必先另存。新建仍用 Excel 格式。老格式或加密读不了时，请用户另存为 Excel。不做单独的 WPS 技能，也不在这一步做演示稿。
 
+### 预览给人看，读取给助手看
+
+产出物里的表格预览按表的实际大小画，人可以横竖滚动看完整内容。只有大到预览会卡顿的表才截断，并标明只预览了一部分。助手通过读取拿到的内容仍然受上下文限制，不跟预览一起变大。
+
 ## Canvas 产出物
 
 - `excel_open` / `excel_modify`（有预览 HTML 时 update）/ `excel_merge_template` / **`excel_from_markdown`** 成功时推送 `canvasData`（`renderer: 'spreadsheet'`）到独立助手产出物面板。

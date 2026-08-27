@@ -23,18 +23,38 @@ interface PreviewRow {
   ) => void
 }
 
+export interface PreviewMerge {
+  top: number
+  left: number
+  bottom: number
+  right: number
+}
+
 export interface PreviewWorksheet {
   name: string
   rowCount: number
   columnCount: number
+  /** 合并区（1-based）。缺省时从 ExcelJS 工作表上的合并记录读取。 */
+  merges?: readonly PreviewMerge[] | readonly string[]
   eachRow: (
     options: { includeEmpty: boolean },
     cb: (row: PreviewRow, rowNum: number) => void
   ) => void
 }
 
-const PREVIEW_MAX_ROWS = 100
-const PREVIEW_MAX_COLS = 20
+/** 普通表整张画；超过这些上限才截，避免 DOM 卡死。 */
+const PREVIEW_MAX_CELLS = 80_000
+const PREVIEW_MAX_ROWS = 5_000
+const PREVIEW_MAX_COLS = 150
+
+/** 预览画多少行/列：先按表的实际大小，再套卡顿上限。 */
+export function previewTableExtent(rowCount: number, colCount: number): { rows: number; cols: number } {
+  const rows = Math.min(Math.max(0, rowCount), PREVIEW_MAX_ROWS)
+  const cols = Math.min(Math.max(0, colCount), PREVIEW_MAX_COLS)
+  if (rows === 0 || cols === 0) return { rows, cols }
+  if (rows * cols <= PREVIEW_MAX_CELLS) return { rows, cols }
+  return { rows: Math.min(rows, Math.max(1, Math.floor(PREVIEW_MAX_CELLS / cols))), cols }
+}
 
 export function escapePreviewHtml(text: string): string {
   return text
@@ -63,16 +83,113 @@ function isNumericCellValue(value: unknown): boolean {
   return false
 }
 
+function letterToColumnNumber(letter: string): number {
+  let n = 0
+  for (let i = 0; i < letter.length; i++) {
+    const code = letter.charCodeAt(i)
+    const digit = code >= 97 ? code - 96 : code - 64
+    if (digit < 1 || digit > 26) return 0
+    n = n * 26 + digit
+  }
+  return n
+}
+
+function isMergeRect(value: unknown): value is PreviewMerge {
+  if (!value || typeof value !== 'object') return false
+  const o = value as Record<string, unknown>
+  return (
+    typeof o.top === 'number' &&
+    typeof o.left === 'number' &&
+    typeof o.bottom === 'number' &&
+    typeof o.right === 'number'
+  )
+}
+
+function parseA1MergeRange(range: string): PreviewMerge | null {
+  const bang = range.lastIndexOf('!')
+  const bare = bang >= 0 ? range.slice(bang + 1) : range
+  const m = /^([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)$/.exec(bare)
+  if (!m) return null
+  const left = letterToColumnNumber(m[1])
+  const right = letterToColumnNumber(m[3])
+  const top = Number(m[2])
+  const bottom = Number(m[4])
+  if (!left || !right || !top || !bottom) return null
+  return {
+    top: Math.min(top, bottom),
+    left: Math.min(left, right),
+    bottom: Math.max(top, bottom),
+    right: Math.max(left, right)
+  }
+}
+
+function addMerge(out: PreviewMerge[], seen: Set<string>, rect: PreviewMerge): void {
+  const key = `${rect.top},${rect.left},${rect.bottom},${rect.right}`
+  if (seen.has(key)) return
+  seen.add(key)
+  out.push(rect)
+}
+
+/**
+ * 合并区来源：测试桩的 merges，或 ExcelJS 工作表上的 _merges（避免走 model getter 扫全表）。
+ * _merges 的 Range 坐标是 1-based；ExcelJS 大版本升级时需核对。
+ */
+function collectMerges(sheet: PreviewWorksheet): PreviewMerge[] {
+  const out: PreviewMerge[] = []
+  const seen = new Set<string>()
+
+  if (sheet.merges) {
+    for (const item of sheet.merges) {
+      if (typeof item === 'string') {
+        const rect = parseA1MergeRange(item)
+        if (rect) addMerge(out, seen, rect)
+      } else if (isMergeRect(item)) {
+        addMerge(out, seen, item)
+      }
+    }
+  }
+
+  const excelMerges = (sheet as { _merges?: Record<string, unknown> })._merges
+  if (excelMerges && typeof excelMerges === 'object') {
+    for (const item of Object.values(excelMerges)) {
+      if (isMergeRect(item)) addMerge(out, seen, item)
+    }
+  }
+
+  return out
+}
+
+function findMergeAt(merges: PreviewMerge[], row: number, col: number): PreviewMerge | undefined {
+  return merges.find(m => row >= m.top && row <= m.bottom && col >= m.left && col <= m.right)
+}
+
+function highlightClass(key: string, highlights?: PreviewHighlights): string | undefined {
+  if (!highlights) return undefined
+  if (highlights.deleting?.has(key)) return 'deleting'
+  if (highlights.shifted?.has(key)) return 'shifted'
+  if (highlights.shiftedCol?.has(key)) return 'shifted-col'
+  if (highlights.modified?.has(key)) return 'modified'
+  return undefined
+}
+
 function renderSheetTable(
   sheet: PreviewWorksheet,
   highlights?: PreviewHighlights
 ): string {
-  if (sheet.rowCount === 0) {
+  const merges = collectMerges(sheet)
+  const mergeMaxRow = merges.reduce((acc, m) => Math.max(acc, m.bottom), 0)
+  const mergeMaxCol = merges.reduce((acc, m) => Math.max(acc, m.right), 0)
+
+  if (sheet.rowCount === 0 && mergeMaxRow === 0) {
     return '<p><em>(空工作表)</em></p>'
   }
 
-  const maxRows = Math.min(sheet.rowCount, PREVIEW_MAX_ROWS)
-  const maxCols = Math.min(sheet.columnCount, PREVIEW_MAX_COLS)
+  const extent = previewTableExtent(
+    Math.max(sheet.rowCount, mergeMaxRow),
+    Math.max(sheet.columnCount, mergeMaxCol)
+  )
+  const maxRows = extent.rows
+  const maxCols = extent.cols
 
   // 只读遍历已有数据，避免 getRow/getCell 创建空对象污染 workbook
   const dataRows: Map<number, Map<number, { val: string; isNum: boolean }>> = new Map()
@@ -92,6 +209,12 @@ function renderSheetTable(
     dataRows.set(rowNum, cellMap)
   })
 
+  for (const merge of merges) {
+    if (merge.top <= maxRows && merge.left <= maxCols) {
+      actualMaxCol = Math.max(actualMaxCol, Math.min(merge.right, maxCols))
+    }
+  }
+
   const colCount = Math.min(actualMaxCol, maxCols) || 1
   const htmlRows: string[] = []
 
@@ -105,18 +228,23 @@ function renderSheetTable(
     const cellMap = dataRows.get(r)
     const cells = [`<td class="row-header">${r}</td>`]
     for (let c = 1; c <= colCount; c++) {
+      const merge = findMergeAt(merges, r, c)
+      if (merge && (r !== merge.top || c !== merge.left)) continue
+
       const data = cellMap?.get(c)
       const key = `${r},${c}`
       const classes: string[] = []
       if (data?.isNum) classes.push('num')
-      if (highlights?.deleting?.has(key)) classes.push('deleting')
-      else if (highlights?.shifted?.has(key)) classes.push('shifted')
-      else if (highlights?.shiftedCol?.has(key)) classes.push('shifted-col')
-      else if (highlights?.modified?.has(key)) classes.push('modified')
+      const hl = highlightClass(key, highlights)
+      if (hl) classes.push(hl)
+
+      const colspan = merge ? Math.max(1, Math.min(merge.right, colCount) - merge.left + 1) : 1
+      const rowspan = merge ? Math.max(1, Math.min(merge.bottom, maxRows) - merge.top + 1) : 1
+      if (colspan > 1 || rowspan > 1) classes.push('merged')
+
       const classAttr = classes.length > 0 ? ` class="${classes.join(' ')}"` : ''
-      cells.push(data
-        ? `<td${classAttr}>${escapePreviewHtml(data.val)}</td>`
-        : `<td${classAttr}></td>`)
+      const spanAttr = `${colspan > 1 ? ` colspan="${colspan}"` : ''}${rowspan > 1 ? ` rowspan="${rowspan}"` : ''}`
+      cells.push(`<td${classAttr}${spanAttr}>${data ? escapePreviewHtml(data.val) : ''}</td>`)
     }
     htmlRows.push(`<tr>${cells.join('')}</tr>`)
   }
