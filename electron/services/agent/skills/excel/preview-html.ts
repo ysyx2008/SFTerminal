@@ -17,6 +17,10 @@ interface PreviewCell {
   font?: unknown
   fill?: unknown
   alignment?: unknown
+  numFmt?: unknown
+  type?: unknown
+  formula?: unknown
+  style?: { quotePrefix?: unknown }
 }
 
 interface PreviewRow {
@@ -293,6 +297,33 @@ export function previewCellCss(cell: PreviewCell): string {
   return parts.join(';')
 }
 
+function isExcelTextNumberFormat(numFmt: unknown): boolean {
+  return numFmt === '@' || (typeof numFmt === 'string' && numFmt.toLowerCase() === 'text')
+}
+
+function formulaAsText(formula: unknown): string {
+  const f = String(formula)
+  return f.startsWith('=') ? f : `=${f}`
+}
+
+/** 预览给人看：跟 Excel 打开一样。文字公式 / 文本格式的公式显示原文，正在算的公式显示值。 */
+export function formatPreviewCellValue(cell: PreviewCell): string {
+  const value = cell.value
+  const showFormulaText = isExcelTextNumberFormat(cell.numFmt) || !!cell.style?.quotePrefix
+
+  if (value && typeof value === 'object' && 'formula' in value) {
+    const formula = (value as { formula?: unknown }).formula
+    if (showFormulaText && formula != null && String(formula) !== '') {
+      return formulaAsText(formula)
+    }
+  } else if (showFormulaText && cell.formula != null && String(cell.formula) !== '') {
+    return formulaAsText(cell.formula)
+  }
+
+  if (typeof value === 'string') return value
+  return formatCellValue(value)
+}
+
 function highlightClass(key: string, highlights?: PreviewHighlights): string | undefined {
   if (!highlights) return undefined
   if (highlights.deleting?.has(key)) return 'deleting'
@@ -350,9 +381,10 @@ function renderSheetTable(
     row.eachCell({ includeEmpty: true }, (cell, colNum) => {
       if (colNum > maxCols) return
       const css = previewCellCss(cell)
+      const val = formatPreviewCellValue(cell)
       cellMap.set(colNum, {
-        val: formatCellValue(cell.value),
-        isNum: isNumericCellValue(cell.value),
+        val,
+        isNum: !val.startsWith('=') && isNumericCellValue(cell.value),
         css
       })
       if (colNum > actualMaxCol) actualMaxCol = colNum

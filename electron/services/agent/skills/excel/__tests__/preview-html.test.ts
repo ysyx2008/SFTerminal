@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  formatPreviewCellValue,
   previewCellCss,
   previewTableExtent,
   renderExcelWorkbookPreviewHtml,
@@ -182,6 +183,29 @@ describe('renderExcelWorkbookPreviewHtml', () => {
   })
 })
 
+describe('formatPreviewCellValue', () => {
+  it('文字公式原样显示', () => {
+    expect(formatPreviewCellValue({ value: '=SUM(销售明细!G2:G16)' })).toBe('=SUM(销售明细!G2:G16)')
+  })
+
+  it('真正在算的公式显示值', () => {
+    expect(formatPreviewCellValue({
+      value: { formula: 'SUM(销售明细!G2:G16)', result: 97100 }
+    })).toBe('97100')
+  })
+
+  it('文本格式的公式显示原文，不换成缓存值', () => {
+    expect(formatPreviewCellValue({
+      value: { formula: 'SUMIF(销售明细!B2:B16,"投资银行部",销售明细!G2:G16)', result: 38200 },
+      numFmt: '@'
+    })).toBe('=SUMIF(销售明细!B2:B16,"投资银行部",销售明细!G2:G16)')
+    expect(formatPreviewCellValue({
+      value: { formula: 'COUNT(A1:A10)', result: 15 },
+      style: { quotePrefix: true }
+    })).toBe('=COUNT(A1:A10)')
+  })
+})
+
 describe('previewCellCss', () => {
   it('无样式不输出', () => {
     expect(previewCellCss({ value: 'x' })).toBe('')
@@ -352,5 +376,29 @@ describe('renderExcelWorkbookPreviewHtml + ExcelJS', () => {
     if (body.includes('color:')) expect(body).toContain('color:#000000')
     expect(html).toContain('color:#FFFFFF')
     expect(html).toContain('>老刘<')
+  })
+
+  it('文字公式列显示原文，真正在算的列显示值', async () => {
+    const ExcelJS = await import('exceljs')
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('统计汇总')
+    ws.getCell('C1').value = '公式'
+    ws.getCell('D1').value = '结果'
+    ws.getCell('C2').value = '=SUM(销售明细!G2:G16)'
+    ws.getCell('C2').numFmt = '@'
+    ws.getCell('D2').value = { formula: 'SUM(销售明细!G2:G16)', result: 97100 }
+    const asFormulaButText = ws.getCell('C3')
+    asFormulaButText.value = { formula: 'COUNT(销售明细!G2:G16)', result: 15 }
+    asFormulaButText.numFmt = '@'
+
+    const buf = await wb.xlsx.writeBuffer()
+    const loaded = new ExcelJS.Workbook()
+    await loaded.xlsx.load(buf)
+    const html = renderExcelWorkbookPreviewHtml(loaded.worksheets)
+    expect(html).toContain('>=SUM(销售明细!G2:G16)<')
+    expect(html).toContain('>=COUNT(销售明细!G2:G16)<')
+    expect(html).toContain('>97100<')
+    const c3 = html.match(/data-r="3" data-c="3"[^>]*>([^<]*)</)?.[1]
+    expect(c3).not.toBe('15')
   })
 })
