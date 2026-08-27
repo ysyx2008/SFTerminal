@@ -1528,6 +1528,7 @@ export abstract class Agent {
 
     await knowledgeService.indexConversation({
       taskId: run.id,
+      sessionId: this._sessionId,
       hostId,
       userRequest: run.originalUserRequest,
       finalResult: result || '',

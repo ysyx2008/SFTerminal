@@ -46,6 +46,7 @@ import {
 
 import { createLogger } from '../../utils/logger'
 import { wrapKnowledgeRefs } from '../agent/message-envelope'
+import { conversationSessionTag, isConversationDocForSession } from './conversation-index'
 
 import type { AiService } from '../ai.service'
 import type { McpService } from '../mcp.service'
@@ -77,6 +78,8 @@ export interface SmartMemoryResult {
 /** 对话索引条目（用于跨会话语义检索） */
 export interface ConversationIndexEntry {
   taskId: string
+  /** 所属会话 id；删除对话时靠它找回对应条目 */
+  sessionId?: string
   hostId: string
   userRequest: string
   finalResult: string
@@ -2269,6 +2272,8 @@ export class KnowledgeService extends EventEmitter {
 
       const docId = uuidv4()
       const now = entry.timestamp || Date.now()
+      const tags = ['conversation', entry.hostId]
+      if (entry.sessionId) tags.push(conversationSessionTag(entry.sessionId))
 
       const document: KnowledgeDocument = {
         id: docId,
@@ -2278,7 +2283,7 @@ export class KnowledgeService extends EventEmitter {
         fileType: 'conversation',
         contentHash,
         hostId: entry.hostId,
-        tags: ['conversation', entry.hostId],
+        tags,
         createdAt: now,
         updatedAt: now,
         chunkCount: 1,
@@ -2316,6 +2321,44 @@ export class KnowledgeService extends EventEmitter {
     } catch (error) {
       log.error('对话索引失败:', error)
       return null
+    }
+  }
+
+  /**
+   * 删除指定会话对应的对话检索条目（向量 + 关键词索引 + 文档清单）。
+   * 只删对得上号的；对不上的旧条目不动。
+   */
+  async removeConversation(sessionId: string): Promise<number> {
+    if (!sessionId.trim()) return 0
+
+    try {
+      if (!this.isInitialized) {
+        if (!this.isEnabled()) return 0
+        await this.initialize()
+      }
+
+      const sessionContentHash = this.computeContentHash(`conv:${sessionId}`)
+      const docs = Array.from(this.documentsIndex.values()).filter(doc =>
+        isConversationDocForSession(doc, sessionId, sessionContentHash)
+      )
+      if (docs.length === 0) return 0
+
+      let deleted = 0
+      for (const doc of docs) {
+        try {
+          const ok = await this.removeDocument(doc.id, false, true)
+          if (ok) deleted++
+        } catch (error) {
+          log.warn(`删除对话索引条目失败: ${doc.id}`, error)
+        }
+      }
+      if (deleted > 0) {
+        this.saveDocumentsIndex()
+      }
+      return deleted
+    } catch (error) {
+      log.warn('删除对话索引失败:', error)
+      return 0
     }
   }
 
@@ -2406,6 +2449,7 @@ export class KnowledgeService extends EventEmitter {
       try {
         const docId = await this.indexConversation({
           taskId: record.id,
+          sessionId: record.id,
           hostId: record.hostId || 'personal',
           userRequest: record.userTask,
           finalResult: record.finalResult || '',
@@ -2446,6 +2490,7 @@ export function getKnowledgeService(
 
 // 导出类型和子模块
 export * from './types'
+export { conversationSessionTag, isConversationDocForSession } from './conversation-index'
 export { getModelManager } from './model-manager'
 export { getEmbeddingService } from './embedding'
 export { getVectorStorage } from './storage'

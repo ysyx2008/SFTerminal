@@ -5001,7 +5001,15 @@ ipcMain.handle('history:getCompanionMergedView', async () => {
 })
 
 ipcMain.handle('history:deleteAgentRecord', async (_event, id: string) => {
-  return (await conv()).delete(id)
+  const ok = (await conv()).delete(id)
+  if (ok && knowledgeService) {
+    try {
+      await knowledgeService.removeConversation(id)
+    } catch (err) {
+      log.warn('Failed to remove conversation knowledge index:', err)
+    }
+  }
+  return ok
 })
 
 // 获取数据目录路径
