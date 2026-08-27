@@ -8,6 +8,7 @@ import * as iconv from 'iconv-lite'
 import type { PtyOptions, PtyCreateResult } from '@shared/types'
 import { createLogger } from '../utils/logger'
 import { resolveDefaultShell, inferShellKind, quoteForShell } from '../utils/shell'
+import { appendCappedTerminalOutput } from '../utils/terminal-output-sanitize'
 
 export type { PtyOptions, PtyCreateResult }
 
@@ -441,8 +442,8 @@ export class PtyService {
       `${this.escapeRegExp(this.MARKER_PREFIX)}E:${pendingCmd.markerId}:(\\d+)${this.escapeRegExp(this.MARKER_SUFFIX)}`
     )
 
-    // 累积数据
-    pendingCmd.output += data
+    // 累积数据（空字节收缩 + 环缓上限，避免超时路径把整段缓冲写进对话）
+    pendingCmd.output = appendCappedTerminalOutput(pendingCmd.output, data)
 
     // 检查是否开始收集
     if (!pendingCmd.collecting) {
@@ -683,7 +684,7 @@ export class PtyService {
 
       // 输出处理器
       const outputHandler = (data: string) => {
-        output += data
+        output = appendCappedTerminalOutput(output, data)
         lastOutputTime = Date.now()
         
         if (commandStarted) {

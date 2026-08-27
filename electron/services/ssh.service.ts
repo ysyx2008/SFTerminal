@@ -9,6 +9,7 @@ import { getSshErrorMessage } from './ssh-error'
 import { SshConnectAttempt, SshConnectCancelledError, forceCloseClient } from './ssh-connect-attempt'
 import { requestLocalNetworkAccessIfDenied } from '../utils/local-network-permission'
 import { createLogger } from '../utils/logger'
+import { appendCappedTerminalOutput } from '../utils/terminal-output-sanitize'
 import type { ExecuteInTerminalResult } from './pty.service'
 
 export type { JumpHostConfig, SshConfig, SshEncoding }
@@ -835,7 +836,7 @@ export class SshService {
       }
 
       const outputHandler = (data: string) => {
-        output += data
+        output = appendCappedTerminalOutput(output, data)
         _lastOutputTime = Date.now()
 
         // 命令开始后，检测提示符表示命令完成

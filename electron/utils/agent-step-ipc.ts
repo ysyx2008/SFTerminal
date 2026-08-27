@@ -45,6 +45,7 @@ export function serializeAgentStepForIpc(step: AgentStep): AgentStep | null {
           toolName: step.toolName,
           toolCallId: step.toolCallId,
           toolResult: step.toolResult,
+          hugeOutput: step.hugeOutput,
           riskLevel: step.riskLevel,
           timestamp: step.timestamp,
           isStreaming: step.isStreaming,

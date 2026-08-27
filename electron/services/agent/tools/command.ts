@@ -14,6 +14,7 @@ import { getLastNLinesFromBuffer, getScreenAnalysisFromFrontend } from '../../sc
 import { categorizeError, getErrorRecoverySuggestion, withRetry, truncateFromEnd, getPtyMaxCommandLength } from './utils'
 import { externalizeToolOutput, externalizeFailedError } from '../tool-output-externalize'
 import { lazyReconnectAfterDisconnect } from './pane-reconnect'
+import { appendCappedTerminalOutput, collapseConsecutiveNuls } from '../../../utils/terminal-output-sanitize'
 import type { ToolExecutorConfig, AgentConfig, ToolResult } from './types'
 
 /** execute_command 输出上限（与 exec.OUTPUT_TRUNCATE 对齐），超上限全文落盘换指针 */
@@ -34,7 +35,7 @@ export async function applyCommandOutputBudget(raw: string, executor: ToolExecut
     ? Math.min(budget.maxChars, COMMAND_OUTPUT_TRUNCATE)
     : COMMAND_OUTPUT_TRUNCATE
 
-  const trimmed = raw.trim()
+  const trimmed = collapseConsecutiveNuls(raw).trim()
   try {
     const externalized = await externalizeToolOutput({ output: trimmed, maxChars, toolName: 'execute_command', excerpt: 'tail' })
     if (externalized) return externalized.text
@@ -42,6 +43,17 @@ export async function applyCommandOutputBudget(raw: string, executor: ToolExecut
     throw new Error(externalizeFailedError(trimmed.length, err instanceof Error ? err.message : String(err)))
   }
   return trimmed
+}
+
+async function budgetCapturedOutput(raw: string, executor: ToolExecutorConfig): Promise<string> {
+  try {
+    return await applyCommandOutputBudget(raw, executor)
+  } catch (budgetErr) {
+    return t('tool_output.externalize_failed_after_success', {
+      total: raw.length.toLocaleString(),
+      reason: budgetErr instanceof Error ? budgetErr.message : String(budgetErr),
+    })
+  }
 }
 
 /**
@@ -307,6 +319,8 @@ export async function executeCommand(
         }
       }
 
+      latestOutput = await budgetCapturedOutput(latestOutput, executor)
+
       if (isLongRunningCommand || runtimeStatus === 'active') {
         executor.addStep({
           type: 'tool_result',
@@ -442,7 +456,7 @@ async function executeSudoCommand(
   let lastOutputTime = Date.now()
   
   const outputHandler = (data: string) => {
-    output += data
+    output = appendCappedTerminalOutput(output, data)
     lastOutputTime = Date.now()
     terminalStateService.appendCommandOutput(ptyId, data)
     
@@ -540,17 +554,18 @@ async function executeSudoCommand(
         if (elapsed > sudoTimeout) {
           unsubscribe()
           terminalStateService.completeCommandExecution(ptyId, 124, 'timeout')
+          const sudoOut = await budgetCapturedOutput(stripAnsi(output), executor)
           
           executor.addStep({
             type: 'tool_result',
             content: `⏱️ ${t('password.sudo_timeout')} (${sudoTimeout / 1000}${t('misc.seconds')})`,
             toolName: 'execute_command',
-            toolResult: stripAnsi(output)
+            toolResult: sudoOut
           })
           
           return {
             success: false,
-            output: stripAnsi(output),
+            output: sudoOut,
             error: t('error.check_terminal_status')
           }
         }
@@ -634,7 +649,7 @@ async function executeFireAndForget(
   try {
     const bufferLines = await getLastNLinesFromBuffer(ptyId, 20, 2000)
     if (bufferLines && bufferLines.length > 0) {
-      initialOutput = stripAnsi(bufferLines.join('\n'))
+      initialOutput = await budgetCapturedOutput(stripAnsi(bufferLines.join('\n')), executor)
     }
   } catch {
     // 获取失败，继续
@@ -672,7 +687,7 @@ async function executeTimedCommand(
     let output = ''
     
     const dataHandler = (data: string) => {
-      output += data
+      output = appendCappedTerminalOutput(output, data)
     }
     const unsubscribe = executor.terminalService.onData(ptyId, dataHandler)
 
@@ -728,14 +743,13 @@ async function executeTimedCommand(
         return true
       })
 
-      const finalOutput = meaningfulLines.join('\n').trim()
-      const truncatedDisplay = truncateFromEnd(finalOutput, 500)
+      const finalOutput = await budgetCapturedOutput(meaningfulLines.join('\n').trim(), executor)
 
       executor.addStep({
         type: 'tool_result',
         content: `✓ ${t('timed.command_executed', { seconds: timeout/1000, chars: finalOutput.length })}`,
         toolName: 'execute_command',
-        toolResult: truncatedDisplay
+        toolResult: finalOutput
       })
 
       resolve({ 

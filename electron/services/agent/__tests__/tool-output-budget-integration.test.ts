@@ -145,6 +145,15 @@ describe('command.applyCommandOutputBudget — 落盘 + 指针', () => {
     expect(out).toBe('command output here')
   })
 
+  it('连续大段空字节先收缩，不整段落盘', async () => {
+    const raw = 'ok\n' + '\0'.repeat(80_000) + '\nTAIL'
+    const out = await applyCommandOutputBudget(raw, makeExecutor(undefined))
+    expect(out).toContain('ok')
+    expect(out).toContain('TAIL')
+    expect(out.length).toBeLessThan(200)
+    expect(out.includes('\0')).toBe(false)
+  })
+
   it('超预算时保留尾部摘录，不含头部', async () => {
     const lines = ['CMD_HEAD', ...Array.from({ length: 300 }, (_, i) => `MIDDLE_${i}`), 'CMD_TAIL']
     const raw = lines.join('\n')

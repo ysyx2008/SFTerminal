@@ -5,6 +5,17 @@ export default {
   ai: {
     assistant: 'AI 助手',
     onboardingConversationTitle: '认识一下',
+    hugeOutput: {
+      title: '这段输出太大，没有整段打开',
+      size: '大小 {size}',
+      emptyBytes: '几乎全是空字节，没有可逐行阅读的正文',
+      head: '开头',
+      tail: '结尾',
+      saveAs: '另存为文件',
+      exported: '已保存',
+      exportFailed: '保存失败',
+      cannotExport: '找不到原始内容，无法另存',
+    },
     noConfig: '尚未配置 AI 模型',
     goToSettings: '前往设置',
     switchModel: '切换 AI 模型',

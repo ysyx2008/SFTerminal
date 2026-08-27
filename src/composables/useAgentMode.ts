@@ -2163,7 +2163,7 @@ export function useAgentMode(
   // ==================== 历史对话功能 ====================
 
   // 近期历史记录（用于欢迎页展示）
-  const recentHistory = ref<AgentRecord[]>([])
+  const recentHistory = ref<AgentHistorySummary[]>([])
   const isLoadingHistory = ref(false)
 
   // 查看更多弹窗：一次拉取索引中的全部标题摘要，本地筛选 + 分页展示；点开行再 getAgentRecordById
@@ -2271,8 +2271,10 @@ export function useAgentMode(
     if (isLoadingHistory.value) return
     isLoadingHistory.value = true
     try {
-      const records = await window.electronAPI.history.getRecentAgentRecords(5, true) as AgentRecord[]
-      recentHistory.value = records.sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
+      const summaries = await window.electronAPI.history.listAgentSummaries(true)
+      recentHistory.value = summaries
+        .sort((a, b) => (b.timestamp + b.duration) - (a.timestamp + a.duration))
+        .slice(0, 5)
     } catch (e) {
       log.error('加载历史记录失败:', e)
     } finally {

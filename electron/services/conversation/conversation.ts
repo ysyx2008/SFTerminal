@@ -1045,7 +1045,8 @@ export class Conversation {
       success: s.success,
       askingStatus: s.askingStatus,
       subAgents: s.subAgents,
-      canvasData: s.canvasData
+      canvasData: s.canvasData,
+      hugeOutput: s.hugeOutput,
     }
   }
 

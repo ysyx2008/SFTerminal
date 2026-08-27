@@ -16,8 +16,13 @@
  */
 import * as fs from 'fs'
 import * as path from 'path'
-import * as readline from 'readline'
 import type { AgentRecord, AgentStepRecord } from '@shared/types'
+import {
+  forEachBoundedJsonlLineAsync,
+  forEachBoundedJsonlLineSync,
+  stubHugeJsonlLine,
+  type BoundedJsonlLine,
+} from './jsonl-bounded-read'
 import { writeFileAtomic } from '../../utils/atomic-write'
 import { normalizeAgentRecord } from '../../utils/normalize'
 import { createLogger } from '../../utils/logger'
@@ -36,8 +41,6 @@ const log = createLogger('SessionPersistence')
 export interface ReadSessionOptions {
   omitCanvasData?: boolean
 }
-
-const JSONL_READ_CHUNK = 64 * 1024
 
 export interface SessionMeta {
   id: string
@@ -136,8 +139,17 @@ function applyReadOptions<T>(value: T, options?: ReadSessionOptions): T {
   return value
 }
 
-function parseJsonlLine<T>(filePath: string, line: string, options?: ReadSessionOptions): T | undefined {
-  const trimmed = line.trim()
+function parseJsonlLine<T>(
+  filePath: string,
+  line: BoundedJsonlLine,
+  lineIndex: number,
+  options?: ReadSessionOptions,
+): T | undefined {
+  if (line.kind === 'huge') {
+    log.warn(`Skip huge jsonl line in ${filePath}: ${line.bytes} bytes`)
+    return applyReadOptions(stubHugeJsonlLine(line, filePath, lineIndex) as T, options)
+  }
+  const trimmed = line.text.trim()
   if (!trimmed) return undefined
   try {
     return applyReadOptions(JSON.parse(trimmed) as T, options)
@@ -149,94 +161,43 @@ function parseJsonlLine<T>(filePath: string, line: string, options?: ReadSession
 
 /**
  * 非空行数（用作 watermark；含可能损坏的行，防止 crash 后重复 append）。
- * 分块读，不把整文件装进字符串。
+ * 超大行只计数，不把整行装进字符串。
  */
 export function countJsonlLines(filePath: string): number {
-  let fd: number
   try {
-    fd = fs.openSync(filePath, 'r')
+    let n = 0
+    forEachBoundedJsonlLineSync(filePath, (line) => {
+      if (line.kind === 'huge') n++
+      else if (line.text.trim()) n++
+    })
+    return n
   } catch (e: unknown) {
     if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return 0
     throw e
-  }
-  try {
-    const buf = Buffer.alloc(JSONL_READ_CHUNK)
-    const decoder = new TextDecoder('utf-8')
-    let leftover = ''
-    let n = 0
-    for (;;) {
-      const bytes = fs.readSync(fd, buf, 0, buf.length, null)
-      leftover += bytes === 0 ? decoder.decode() : decoder.decode(buf.subarray(0, bytes), { stream: true })
-      let idx = leftover.indexOf('\n')
-      while (idx !== -1) {
-        if (leftover.slice(0, idx).trim()) n++
-        leftover = leftover.slice(idx + 1)
-        idx = leftover.indexOf('\n')
-      }
-      if (bytes === 0) break
-    }
-    if (leftover.trim()) n++
-    return n
-  } finally {
-    fs.closeSync(fd)
-  }
-}
-
-function forEachJsonlLineSync(filePath: string, onLine: (line: string) => void): void {
-  const fd = fs.openSync(filePath, 'r')
-  try {
-    const buf = Buffer.alloc(JSONL_READ_CHUNK)
-    const decoder = new TextDecoder('utf-8')
-    let leftover = ''
-    for (;;) {
-      const bytes = fs.readSync(fd, buf, 0, buf.length, null)
-      leftover += bytes === 0 ? decoder.decode() : decoder.decode(buf.subarray(0, bytes), { stream: true })
-      let idx = leftover.indexOf('\n')
-      while (idx !== -1) {
-        onLine(leftover.slice(0, idx))
-        leftover = leftover.slice(idx + 1)
-        idx = leftover.indexOf('\n')
-      }
-      if (bytes === 0) break
-    }
-    if (leftover) onLine(leftover)
-  } finally {
-    fs.closeSync(fd)
   }
 }
 
 function readJsonl<T>(filePath: string, options?: ReadSessionOptions): T[] {
   if (!fs.existsSync(filePath)) return []
   const out: T[] = []
-  forEachJsonlLineSync(filePath, line => {
-    const parsed = parseJsonlLine<T>(filePath, line, options)
+  forEachBoundedJsonlLineSync(filePath, (line, lineIndex) => {
+    const parsed = parseJsonlLine<T>(filePath, line, lineIndex, options)
     if (parsed !== undefined) out.push(parsed)
   })
   return out
 }
 
 async function readJsonlAsync<T>(filePath: string, options?: ReadSessionOptions): Promise<T[]> {
-  let stream: fs.ReadStream
-  try {
-    stream = fs.createReadStream(filePath, { encoding: 'utf-8' })
-  } catch (e: unknown) {
-    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return []
-    throw e
-  }
-  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity })
   const out: T[] = []
   try {
-    for await (const line of rl) {
-      const parsed = parseJsonlLine<T>(filePath, line, options)
+    await forEachBoundedJsonlLineAsync(filePath, (line, lineIndex) => {
+      const parsed = parseJsonlLine<T>(filePath, line, lineIndex, options)
       if (parsed !== undefined) out.push(parsed)
-    }
+    })
     return out
   } catch (e: unknown) {
     if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return []
     throw e
-  } finally {
-    rl.close()
-    stream.destroy()
   }
 }
 

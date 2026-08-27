@@ -445,6 +445,21 @@ export interface AgentStep {
    * 首条 message 或 tool_call 产出后由后端 removeStep，不应落盘或留在历史。
    */
   placeholder?: 'startup'
+  /**
+   * 读历史时遇到超大工具输出：正文未装入，只留大小和头尾。
+   * 聊天里不要整段渲染 toolResult。
+   */
+  hugeOutput?: HugeOutputStub
+}
+
+/** 超大工具输出的占位：给大小、开头、结尾，必要时另存为文件。 */
+export interface HugeOutputStub {
+  bytes: number
+  skipped: true
+  head?: string
+  tail?: string
+  sourceFile?: string
+  sourceLine?: number
 }
 
 /** Agent 启动阶段的临时占位步骤（等待首 token 前，不应落盘） */

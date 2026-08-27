@@ -927,7 +927,7 @@ const changeAiProfile = (profileId: string) => {
 const historyDisplayTitle = (record: { title?: string; userTask: string }): string =>
   resolveConversationDisplayTitle(record)
 
-// 加载历史记录（带确认）。欢迎区为完整 AgentRecord；弹窗无 steps 时按 id 拉全量
+// 加载历史记录（带确认）。欢迎区与弹窗都先按标题点开，无 steps 时按 id 拉正文
 const handleLoadHistory = async (row: AgentRecord | AgentHistorySummary) => {
   if (agentUserTask.value && hasExistingConversation.value) {
     const confirmed = await showConfirm({
@@ -948,6 +948,36 @@ const handleLoadHistory = async (row: AgentRecord | AgentHistorySummary) => {
     return
   }
   await loadHistoryRecord(record)
+}
+
+function formatHugeOutputSize(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${bytes} B`
+}
+
+async function exportHugeOutput(step: AgentStep) {
+  const src = step.hugeOutput
+  if (!src?.sourceFile || src.sourceLine == null) {
+    toast.error(t('ai.hugeOutput.cannotExport'))
+    return
+  }
+  try {
+    const result = await window.electronAPI.history.exportHugeJsonlLine({
+      sourceFile: src.sourceFile,
+      sourceLine: src.sourceLine,
+    })
+    if (result.canceled) return
+    if (!result.success) {
+      toast.error(result.error || t('ai.hugeOutput.exportFailed'))
+      return
+    }
+    toast.success(t('ai.hugeOutput.exported'))
+  } catch (e) {
+    log.error('export huge output failed:', e)
+    toast.error(t('ai.hugeOutput.exportFailed'))
+  }
 }
 
 // ==================== 确认框辅助函数 ====================
@@ -2637,7 +2667,29 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                     </div>
                     <!-- 拒绝步骤（rejected）的 content 与 toolResult 在语义上是同一句"用户拒绝…"，
                          不需要再下方重复一份 step-result。其他场景下 toolResult 与 content 不同则展示。 -->
-                    <div v-if="item.step!.toolResult && !item.step!.rejected && item.step!.toolResult !== item.step!.content && item.step!.type !== 'asking' && !item.step!.subAgents" class="step-result">
+                    <div v-if="item.step!.hugeOutput" class="huge-output-card">
+                      <p class="huge-output-title">{{ t('ai.hugeOutput.title') }}</p>
+                      <p class="huge-output-size">{{ t('ai.hugeOutput.size', { size: formatHugeOutputSize(item.step!.hugeOutput.bytes) }) }}</p>
+                      <p v-if="!item.step!.hugeOutput.head && !item.step!.hugeOutput.tail" class="huge-output-empty">
+                        {{ t('ai.hugeOutput.emptyBytes') }}
+                      </p>
+                      <template v-else>
+                        <p v-if="item.step!.hugeOutput.head" class="huge-output-label">{{ t('ai.hugeOutput.head') }}</p>
+                        <pre v-if="item.step!.hugeOutput.head" class="huge-output-peek">{{ item.step!.hugeOutput.head }}</pre>
+                        <p class="huge-output-ellipsis">…</p>
+                        <p v-if="item.step!.hugeOutput.tail" class="huge-output-label">{{ t('ai.hugeOutput.tail') }}</p>
+                        <pre v-if="item.step!.hugeOutput.tail" class="huge-output-peek">{{ item.step!.hugeOutput.tail }}</pre>
+                      </template>
+                      <button
+                        v-if="item.step!.hugeOutput.sourceFile != null && item.step!.hugeOutput.sourceLine != null"
+                        type="button"
+                        class="huge-output-save"
+                        @click="exportHugeOutput(item.step!)"
+                      >
+                        {{ t('ai.hugeOutput.saveAs') }}
+                      </button>
+                    </div>
+                    <div v-else-if="item.step!.toolResult && !item.step!.rejected && item.step!.toolResult !== item.step!.content && item.step!.type !== 'asking' && !item.step!.subAgents" class="step-result">
                       <pre>{{ item.step!.toolResult }}</pre>
                     </div>
                     <!-- 「活图」优先：chart skill 在 svg 模式下投递 echartsOption（同时也带 SVG 兜底到 step.images），
@@ -4614,6 +4666,53 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--text-muted);
+}
+
+.huge-output-card {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.huge-output-title {
+  margin: 0 0 4px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.huge-output-size,
+.huge-output-empty,
+.huge-output-label {
+  margin: 4px 0;
+}
+
+.huge-output-peek {
+  margin: 0;
+  max-height: 72px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.huge-output-ellipsis {
+  margin: 4px 0;
+  text-align: center;
+}
+
+.huge-output-save {
+  margin-top: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
 }
 
 .step-images {

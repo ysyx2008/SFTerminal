@@ -5,6 +5,17 @@ export default {
   ai: {
     assistant: 'AI Assistant',
     onboardingConversationTitle: 'Nice to meet you',
+    hugeOutput: {
+      title: 'This output is too large to open in chat',
+      size: 'Size {size}',
+      emptyBytes: 'Almost all null bytes — nothing useful to scroll through',
+      head: 'Start',
+      tail: 'End',
+      saveAs: 'Save as file',
+      exported: 'Saved',
+      exportFailed: 'Could not save',
+      cannotExport: 'Original content is not available to save',
+    },
     noConfig: 'No AI model configured',
     goToSettings: 'Go to Settings',
     switchModel: 'Switch AI Model',

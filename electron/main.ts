@@ -4826,6 +4826,36 @@ ipcMain.handle('history:listAgentSummaries', async (_event, excludeWakeup?: bool
   return (await conv()).listSummaries(excludeWakeup)
 })
 
+ipcMain.handle(
+  'history:exportHugeJsonlLine',
+  async (event, payload: { sourceFile: string; sourceLine: number }) => {
+    const sourceFile = typeof payload?.sourceFile === 'string' ? payload.sourceFile : ''
+    const sourceLine = payload?.sourceLine
+    if (!sourceFile || typeof sourceLine !== 'number' || sourceLine < 0 || !Number.isInteger(sourceLine)) {
+      return { success: false, error: 'invalid arguments' }
+    }
+    const historyRoot = path.resolve(app.getPath('userData'), 'history')
+    const resolved = path.resolve(sourceFile)
+    const rel = path.relative(historyRoot, resolved)
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+      return { success: false, error: 'invalid path' }
+    }
+    const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow
+    if (!win) {
+      return { success: false, error: t('error.windowNotReady') }
+    }
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: `tool-output-${Date.now()}.txt`,
+    })
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true }
+    }
+    const { exportJsonlLineToFile } = await import('./services/history/jsonl-bounded-read')
+    const exported = await exportJsonlLineToFile(resolved, sourceLine, result.filePath)
+    return { success: true, bytes: exported.bytes, path: result.filePath }
+  },
+)
+
 /** 任务侧栏：用户首条消息后异步生成短标题（不阻塞 Agent） */
 ipcMain.handle(
   'history:generateConversationTitle',

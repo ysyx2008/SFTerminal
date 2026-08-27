@@ -35,6 +35,8 @@ export interface AgentStepRecord {
   subAgents?: import('./agent').SubAgentResult[]
   /** Canvas 预览数据（仅 UI / Artifact 面板消费，不发给 AI；历史重开时重放） */
   canvasData?: import('./canvas').CanvasData
+  /** 读盘时超大行未装入正文，只留大小和头尾 */
+  hugeOutput?: import('./agent').HugeOutputStub
 }
 
 export interface AgentRecord {
@@ -62,7 +64,13 @@ export interface AgentRecord {
    */
   titleLocked?: boolean
   steps: AgentStepRecord[]
-  messages?: Array<{ role: string; content: string; tool_calls?: unknown[]; tool_call_id?: string }>
+  messages?: Array<{
+    role: string
+    content: string
+    tool_calls?: unknown[]
+    tool_call_id?: string
+    hugeOutput?: import('./agent').HugeOutputStub
+  }>
   finalResult?: string
   duration: number
   status: 'completed' | 'failed' | 'aborted'

@@ -904,6 +904,13 @@ interface Window {
         summary: import('@shared/types').AgentHistorySummary
       }) => void) => () => void
       abortSearchAgentRecords: () => Promise<void>
+      exportHugeJsonlLine: (payload: { sourceFile: string; sourceLine: number }) => Promise<{
+        success: boolean
+        canceled?: boolean
+        error?: string
+        bytes?: number
+        path?: string
+      }>,
       getAgentRecordById: (id: string) => Promise<{
         id: string
         timestamp: number
