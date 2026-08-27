@@ -166,12 +166,15 @@ function findMergeAt(merges: PreviewMerge[], row: number, col: number): PreviewM
   return merges.find(m => row >= m.top && row <= m.bottom && col >= m.left && col <= m.right)
 }
 
-/** Office 默认主题：dk1 / lt1 / dk2 / lt2 / accent1–6。没有工作簿主题时用这套对上常见表。 */
+/**
+ * Excel 格子上的 theme 编号是「背景1 / 文字1 / 背景2 / 文字2 / 强调色」，
+ * 不是 clrScheme 里 dk1、lt1 那个顺序。theme=1 是默认黑字。
+ */
 const OFFICE_THEME_RGB = [
-  '000000',
   'FFFFFF',
-  '44546A',
+  '000000',
   'E7E6E6',
+  '44546A',
   '4472C4',
   'ED7D31',
   'A5A5A5',

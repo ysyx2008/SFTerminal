@@ -203,14 +203,14 @@ describe('previewCellCss', () => {
     expect(css).toContain('vertical-align:middle')
   })
 
-  it('主题色按 Office 默认色板解析', () => {
+  it('主题色按格子编号解析：1 是默认黑字，不是白', () => {
     const css = previewCellCss({
       value: 'x',
-      font: { color: { theme: 4 } },
-      fill: { fgColor: { theme: 0 } }
+      font: { color: { theme: 1 } },
+      fill: { fgColor: { theme: 4 } }
     })
-    expect(css).toContain('color:#4472C4')
-    expect(css).toContain('background-color:#000000')
+    expect(css).toContain('color:#000000')
+    expect(css).toContain('background-color:#4472C4')
   })
 
   it('主题色带 tint 时变浅或变深', () => {
@@ -331,5 +331,26 @@ describe('renderExcelWorkbookPreviewHtml + ExcelJS', () => {
     expect(html).toContain('font-weight:700')
     expect(html).toContain('color:#FFFFFF')
     expect(html).toContain('background-color:#2B579A')
+  })
+
+  it('读回后默认文字色是黑，不是白', async () => {
+    const ExcelJS = await import('exceljs')
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Sheet1')
+    ws.getCell('A1').value = '工号'
+    ws.getCell('A1').font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } }
+    ws.getCell('B4').value = '老刘'
+    ws.getCell('B4').alignment = { vertical: 'middle' }
+
+    const buf = await wb.xlsx.writeBuffer()
+    const loaded = new ExcelJS.Workbook()
+    await loaded.xlsx.load(buf)
+    const html = renderExcelWorkbookPreviewHtml(loaded.worksheets)
+    const body = html.match(/data-r="4" data-c="2"[^>]*style="([^"]*)"/)?.[1] ?? ''
+    expect(body).not.toContain('color:#FFFFFF')
+    if (body.includes('color:')) expect(body).toContain('color:#000000')
+    expect(html).toContain('color:#FFFFFF')
+    expect(html).toContain('>老刘<')
   })
 })
