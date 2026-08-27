@@ -56,4 +56,27 @@ describe('selection-scope registry', () => {
     consumeSelectionScope('tab-clear')
     expect(cleared).toBe(true)
   })
+
+  it('retainAfterConsume 时发送后仍可再取出同一选区', () => {
+    let cleared = false
+    const unregister = registerSelectionScopeProvider('tab-keep', {
+      getScope: () => ({
+        label: 'sheet.xlsx',
+        sourcePath: null,
+        sourceLinesAccurate: false,
+        startLine: 2,
+        endLine: 4,
+        excerpt: 'A2:B4',
+        quoteOrigin: 'canvas'
+      }),
+      clearScope: () => {
+        cleared = true
+      },
+      retainAfterConsume: true
+    })
+    expect(consumeSelectionScope('tab-keep')?.excerpt).toBe('A2:B4')
+    expect(cleared).toBe(false)
+    expect(consumeSelectionScope('tab-keep')?.excerpt).toBe('A2:B4')
+    unregister()
+  })
 })

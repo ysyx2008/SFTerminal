@@ -9,8 +9,10 @@ import type { ArtifactComposerQuote } from './composer-quote'
 export interface SelectionScopeProvider {
   /** 当前 sticky/活选区；无选区返回 null */
   getScope: () => ArtifactComposerQuote | null
-  /** 发送后清除编辑器 sticky，避免下一条误带旧选区 */
+  /** 清除 sticky。发送时是否调用取决于 retainAfterConsume */
   clearScope: () => void
+  /** 发送后仍保留选区（Excel 要留着对照格子）。默认 false */
+  retainAfterConsume?: boolean
 }
 
 const providersByTabId = new Map<string, SelectionScopeProvider>()
@@ -39,12 +41,14 @@ export function peekSelectionScope(tabId: string): ArtifactComposerQuote | null 
 }
 
 /**
- * 发送前消费选区作用域：取出后立即 clear，保证一次性。
+ * 发送前消费选区作用域：默认取出后立即 clear。
+ * Excel 等标记 retainAfterConsume 的预览不清，方便对照，下一条仍针对同一块。
  * 无登记或无选区时返回 null。
  */
 export function consumeSelectionScope(tabId: string): ArtifactComposerQuote | null {
   const scope = readScope(tabId)
   if (!scope) return null
-  providersByTabId.get(tabId)?.clearScope()
+  const provider = providersByTabId.get(tabId)
+  if (!provider?.retainAfterConsume) provider?.clearScope()
   return scope
 }

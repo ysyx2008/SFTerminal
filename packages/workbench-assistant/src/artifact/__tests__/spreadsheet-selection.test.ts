@@ -11,6 +11,8 @@ import {
   normalizeRect,
   readSelectedCells,
   rectsIntersect,
+  selectionRectStillOnSheet,
+  shouldKeepSpreadsheetSelection,
   SPREADSHEET_EXCERPT_CELL_CAP,
   SPREADSHEET_SELECTED_CLASS
 } from '../domain/spreadsheet-selection'
@@ -40,6 +42,29 @@ describe('spreadsheet-selection 坐标', () => {
       { top: 1, left: 1, bottom: 2, right: 2 },
       { top: 2, left: 2, bottom: 3, right: 3 }
     )).toBe(true)
+  })
+
+  it('同文件同表才保留选区；格子没了就不再亮', () => {
+    expect(shouldKeepSpreadsheetSelection(
+      { filePath: '/a.xlsx', artifactId: '1', sheet: '收入' },
+      { filePath: '/a.xlsx', artifactId: '1', sheet: '收入' }
+    )).toBe(true)
+    expect(shouldKeepSpreadsheetSelection(
+      { filePath: '/a.xlsx', artifactId: '1', sheet: '收入' },
+      { filePath: '/a.xlsx', artifactId: '1', sheet: '支出' }
+    )).toBe(false)
+    expect(shouldKeepSpreadsheetSelection(
+      undefined,
+      { filePath: '/a.xlsx', artifactId: '1', sheet: '收入' }
+    )).toBe(false)
+    expect(selectionRectStillOnSheet(
+      { top: 2, left: 1, bottom: 4, right: 2 },
+      [{ row: 3, col: 2, rowspan: 1, colspan: 1 }]
+    )).toBe(true)
+    expect(selectionRectStillOnSheet(
+      { top: 20, left: 1, bottom: 22, right: 2 },
+      [{ row: 1, col: 1, rowspan: 1, colspan: 1 }]
+    )).toBe(false)
   })
 })
 

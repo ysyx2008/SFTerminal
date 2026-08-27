@@ -64,6 +64,24 @@ export function rectsIntersect(a: SpreadsheetRect, b: SpreadsheetRect): boolean 
   return a.top <= b.bottom && a.bottom >= b.top && a.left <= b.right && a.right >= b.left
 }
 
+export function shouldKeepSpreadsheetSelection(
+  prev: { filePath: string | null; artifactId: string; sheet: string } | undefined,
+  curr: { filePath: string | null; artifactId: string; sheet: string }
+): boolean {
+  return !!prev
+    && prev.filePath === curr.filePath
+    && prev.artifactId === curr.artifactId
+    && prev.sheet === curr.sheet
+}
+
+/** 刷新后这块格子还在表上才保留高亮，避免行列没了还亮着空位 */
+export function selectionRectStillOnSheet(
+  rect: SpreadsheetRect,
+  spans: readonly SpreadsheetCellSpan[]
+): boolean {
+  return spans.some(span => rectsIntersect(rect, spanToRect(span)))
+}
+
 /** 圈到合并格的一部分时，范围扩到整块合并区（跟 Excel 一样） */
 export function expandRectToSpans(rect: SpreadsheetRect, spans: readonly SpreadsheetCellSpan[]): SpreadsheetRect {
   let next = rect

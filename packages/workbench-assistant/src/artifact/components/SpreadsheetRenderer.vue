@@ -29,6 +29,8 @@ import {
   normalizeRect,
   readSelectedCells,
   rectsIntersect,
+  selectionRectStillOnSheet,
+  shouldKeepSpreadsheetSelection,
   spanToRect,
   spreadsheetSelectionBox,
   visibleSheetPane,
@@ -280,10 +282,16 @@ watch(
 )
 
 watch(
-  () => [content.value, filePath.value, props.artifactId] as const,
-  async () => {
+  () => ({
+    content: content.value,
+    filePath: filePath.value,
+    artifactId: props.artifactId,
+    sheet: activeName.value
+  }),
+  async (curr, prev) => {
+    const keep = shouldKeepSpreadsheetSelection(prev, curr) ? stickyRect : null
     invalidateCellCache()
-    clearSticky()
+    if (!keep) clearSticky()
     if (spreadsheetPreviewNeedsAllSheets(parsed.value) || (
       sheets.value.length > 1 && !content.value.includes('sheet-pane')
     )) {
@@ -291,16 +299,14 @@ watch(
     }
     await nextTick()
     syncVisibleSheet()
+    if (keep && selectionRectStillOnSheet(keep, ensureCellCache().map(c => c.span))) {
+      paintRect(keep)
+    } else if (keep) {
+      clearSticky()
+    }
   },
   { immediate: true }
 )
-
-watch(activeName, async () => {
-  invalidateCellCache()
-  clearSticky()
-  await nextTick()
-  syncVisibleSheet()
-})
 
 async function selectSheet(name: string) {
   userSheet.value = name
@@ -353,7 +359,8 @@ let unregisterSelectionScope: (() => void) | null = null
 onMounted(() => {
   unregisterSelectionScope = registerSelectionScopeProvider(props.tabId, {
     getScope: () => buildSelectionScope(),
-    clearScope: () => clearSticky()
+    clearScope: () => clearSticky(),
+    retainAfterConsume: true
   })
   rootRef.value?.addEventListener('contextmenu', openCtxMenu)
   window.addEventListener('keydown', onWindowKeydown, true)
