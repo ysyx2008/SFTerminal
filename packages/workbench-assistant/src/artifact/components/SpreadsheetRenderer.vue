@@ -455,6 +455,7 @@ onUnmounted(() => {
 }
 
 .spreadsheet-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -474,12 +475,15 @@ onUnmounted(() => {
 }
 
 .spreadsheet-body :deep(.sheet-empty) {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100%;
-  color: #8a8a8a;
-  font-size: 13px;
+  color: #333;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
 }
 
 .spreadsheet-body :deep(.sheet-truncated) {
