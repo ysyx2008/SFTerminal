@@ -4,7 +4,9 @@ import {
   applyFontsToHtml,
   collectParagraphFonts,
   cssFontFamily,
-  enrichHtmlFonts
+  enrichHtmlFonts,
+  parsePreviewPageBox,
+  wrapPreviewPage
 } from '../preview-fonts'
 import { markdownToDocx } from '../styles'
 import { officialPreset } from '../../chinese-document-official/presets'
@@ -53,6 +55,36 @@ const DOCUMENT = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </w:p>
   </w:body>
 </w:document>`
+
+describe('preview page box', () => {
+  it('reads A4 and official margins from document.xml', () => {
+    const xml = `<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>x</w:t></w:r></w:p>
+    <w:sectPr>
+      <w:pgSz w:w="11906" w:h="16838"/>
+      <w:pgMar w:top="2098" w:bottom="1985" w:left="1588" w:right="1474"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`
+    const box = parsePreviewPageBox(xml)
+    expect(box.widthMm).toBeCloseTo(210, 0)
+    expect(box.heightMm).toBeCloseTo(297, 0)
+    expect(box.marginTopMm).toBeCloseTo(37, 0)
+    expect(box.marginLeftMm).toBeCloseTo(28, 0)
+    const wrapped = wrapPreviewPage('<p>x</p>', box)
+    expect(wrapped).toContain('class="sf-word-page"')
+    expect(wrapped).toContain('--sf-page-w:210')
+  })
+
+  it('falls back to A4 when the document has no section properties', () => {
+    const box = parsePreviewPageBox('<w:document><w:body><w:p/></w:body></w:document>')
+    expect(box.widthMm).toBe(210)
+    expect(box.heightMm).toBe(297)
+    expect(box.marginTopMm).toBe(25.4)
+  })
+})
 
 describe('cssFontFamily', () => {
   it('expands official document faces to local aliases', () => {
@@ -175,6 +207,8 @@ describe('enrichHtmlFonts', () => {
     expect(out).toContain('方正小标宋简体')
     expect(out).toContain('黑体')
     expect(out).toContain('仿宋')
+    expect(out).toContain('class="sf-word-page"')
+    expect(out).toContain('--sf-page-w:210mm')
   })
 
   it('does not shift body fonts when the document has a list', async () => {
@@ -251,5 +285,9 @@ describe('enrichHtmlFonts', () => {
     expect(paragraphs[0]).toContain('text-indent:0')
     expect(paragraphs[1]).toContain('仿宋')
     expect(paragraphs[1]).toMatch(/text-indent:(?!0(?:;|"))/)
+    expect(out).toContain('class="sf-word-page"')
+    expect(out).toContain('--sf-page-w:210')
+    expect(out).toMatch(/--sf-m-t:3[67]/)
+    expect(out).toMatch(/--sf-m-l:28/)
   })
 })

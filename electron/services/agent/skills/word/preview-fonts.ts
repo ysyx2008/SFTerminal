@@ -260,14 +260,62 @@ export function applyFontsToHtml(html: string, fonts: PreviewFont[]): string {
   })
 }
 
+const DXA_PER_MM = 1440 / 25.4
+
+export interface PreviewPageBox {
+  widthMm: number
+  heightMm: number
+  marginTopMm: number
+  marginRightMm: number
+  marginBottomMm: number
+  marginLeftMm: number
+}
+
+function dxaToMm(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n)) return fallback
+  return Math.round((n / DXA_PER_MM) * 10) / 10
+}
+
+export function parsePreviewPageBox(documentXml: string): PreviewPageBox {
+  const sectPr = documentXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/g)?.pop() ?? ''
+  const pgMar = sectPr.match(/<w:pgMar[^>]*>/)?.[0] ?? ''
+  const pgSz = sectPr.match(/<w:pgSz[^>]*>/)?.[0] ?? ''
+  return {
+    widthMm: dxaToMm(attr(pgSz, 'w:w'), 210),
+    heightMm: dxaToMm(attr(pgSz, 'w:h'), 297),
+    marginTopMm: dxaToMm(attr(pgMar, 'w:top'), 25.4),
+    marginRightMm: dxaToMm(attr(pgMar, 'w:right'), 25.4),
+    marginBottomMm: dxaToMm(attr(pgMar, 'w:bottom'), 25.4),
+    marginLeftMm: dxaToMm(attr(pgMar, 'w:left'), 25.4)
+  }
+}
+
+export function wrapPreviewPage(html: string, box: PreviewPageBox): string {
+  if (/class="sf-word-page"/.test(html)) return html
+  const style = [
+    `--sf-page-w:${box.widthMm}mm`,
+    `--sf-page-h:${box.heightMm}mm`,
+    `--sf-m-t:${box.marginTopMm}mm`,
+    `--sf-m-r:${box.marginRightMm}mm`,
+    `--sf-m-b:${box.marginBottomMm}mm`,
+    `--sf-m-l:${box.marginLeftMm}mm`
+  ].join(';')
+  return `<div class="sf-word-page" style="${style}">${html}</div>`
+}
+
 export async function enrichHtmlFonts(html: string, source: string | Buffer): Promise<string> {
   try {
     const buf = typeof source === 'string' ? fs.readFileSync(source) : source
     const zip = await JSZip.loadAsync(buf)
     const xml = await zip.file('word/document.xml')?.async('string')
     const stylesXml = await zip.file('word/styles.xml')?.async('string')
-    if (!xml || !stylesXml) return html
-    return applyFontsToHtml(html, collectParagraphFonts(xml, stylesXml))
+    if (!xml) return html
+    const styled = stylesXml
+      ? applyFontsToHtml(html, collectParagraphFonts(xml, stylesXml))
+      : html
+    return wrapPreviewPage(styled, parsePreviewPageBox(xml))
   } catch (e) {
     log.warn('enrichHtmlFonts failed:', e)
     return html

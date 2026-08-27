@@ -41,8 +41,16 @@ const setComposerDraft = inject(SET_COMPOSER_DRAFT_KEY, undefined)
 const submitComposerMessage = inject(SUBMIT_COMPOSER_MESSAGE_KEY, undefined)
 const desktopHost = requireArtifactDesktopHost()
 
+const PAGE_VARS = ['--sf-page-w', '--sf-page-h', '--sf-m-t', '--sf-m-r', '--sf-m-b', '--sf-m-l'] as const
+
 const rootRef = ref<HTMLElement | null>(null)
+const stageRef = ref<HTMLElement | null>(null)
+const pageRef = ref<HTMLElement | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
+const pageScale = ref(1)
+const slotWidth = ref(0)
+const slotHeight = ref(0)
+let pageResize: ResizeObserver | null = null
 let stickyRange: Range | null = null
 /** Range 失效时仍可用，保证右键能拿到摘录 */
 let lastExcerpt = ''
@@ -278,13 +286,45 @@ function onWindowKeydown(e: KeyboardEvent) {
   closeCtxMenu()
 }
 
+function applyPageBoxFromHtml(root: HTMLElement) {
+  const page = pageRef.value
+  if (!page) return
+  for (const name of PAGE_VARS) page.style.removeProperty(name)
+  const inner = root.querySelector('.sf-word-page')
+  if (!(inner instanceof HTMLElement)) return
+  for (const name of PAGE_VARS) {
+    const value = inner.style.getPropertyValue(name)
+    if (value) page.style.setProperty(name, value)
+  }
+}
+
+function updatePageScale() {
+  const stage = stageRef.value
+  const page = pageRef.value
+  if (!stage || !page) return
+  const pageW = page.offsetWidth
+  const pageH = page.offsetHeight
+  const next = pageW > 0 ? Math.min(1, stage.clientWidth / pageW) : 1
+  pageScale.value = next
+  slotWidth.value = pageW * next
+  slotHeight.value = pageH * next
+}
+
 function paintDocumentHtml(html: string) {
   const el = contentRef.value
   if (!el) return
   if (paintedHtml === html) return
   paintedHtml = html
   el.innerHTML = html
+  applyPageBoxFromHtml(el)
   clearSticky()
+  void nextTick(() => {
+    if (pageResize) {
+      if (stageRef.value) pageResize.observe(stageRef.value)
+      if (pageRef.value) pageResize.observe(pageRef.value)
+    }
+    updatePageScale()
+  })
 }
 
 watch(
@@ -304,6 +344,11 @@ onMounted(() => {
     getScope: () => buildSelectionScope(),
     clearScope: () => clearSticky()
   })
+  if (typeof ResizeObserver !== 'undefined') {
+    pageResize = new ResizeObserver(() => updatePageScale())
+    if (stageRef.value) pageResize.observe(stageRef.value)
+    if (pageRef.value) pageResize.observe(pageRef.value)
+  }
   rootRef.value?.addEventListener('contextmenu', openCtxMenu)
   document.addEventListener('selectionchange', onSelectionChange)
   document.addEventListener('focusin', onFocusIn)
@@ -314,6 +359,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  pageResize?.disconnect()
+  pageResize = null
   unregisterSelectionScope?.()
   unregisterSelectionScope = null
   rootRef.value?.removeEventListener('contextmenu', openCtxMenu)
@@ -333,11 +380,22 @@ onUnmounted(() => {
       <div v-if="loadingFromDisk && !content.trim()" class="document-loading">
         {{ t('canvas.htmlPreviewLoading') }}
       </div>
-      <div v-else class="document-page">
+      <div v-else ref="stageRef" class="document-page-stage">
         <div
-          ref="contentRef"
-          class="document-content"
-        />
+          class="document-page-slot"
+          :style="{ width: slotWidth ? `${slotWidth}px` : '100%', height: slotHeight ? `${slotHeight}px` : 'auto' }"
+        >
+          <div
+            ref="pageRef"
+            class="document-page"
+            :style="{ transform: `scale(${pageScale})` }"
+          >
+            <div
+              ref="contentRef"
+              class="document-content"
+            />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -396,22 +454,37 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-/* 白纸容器 */
+.document-page-stage {
+  display: flex;
+  justify-content: center;
+}
+
+.document-page-slot {
+  position: relative;
+  flex: 0 0 auto;
+}
+
 .document-page {
-  max-width: 680px;
-  margin: 0 auto;
+  width: var(--sf-page-w, 210mm);
+  min-height: var(--sf-page-h, 297mm);
+  box-sizing: border-box;
+  margin: 0;
   background: #fff;
-  border-radius: 3px;
+  border-radius: 2px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  padding: 48px 56px;
-  min-height: 200px;
+  padding: var(--sf-m-t, 25.4mm) var(--sf-m-r, 25.4mm) var(--sf-m-b, 25.4mm) var(--sf-m-l, 25.4mm);
+  transform-origin: top left;
+}
+
+.document-content :deep(.sf-word-page) {
+  display: contents;
 }
 
 .document-content {
   --doc-sel-bg: color-mix(in srgb, var(--accent-primary, #4d9eff) 35%, transparent);
   color: #1a1a1a;
   font-family: '仿宋', '仿宋_GB2312', 'STFangsong', 'FangSong', '华文仿宋', 'Songti SC', 'SimSun', 'Times New Roman', serif;
-  font-size: 14px;
+  font-size: 16pt;
   line-height: 1.8;
   word-wrap: break-word;
   text-align: justify;
@@ -432,7 +505,7 @@ onUnmounted(() => {
 
 .document-content :deep(h1.document-title) {
   font-family: '方正小标宋简体', '方正小标宋', 'FZXiaoBiaoSong-B05S', 'STXiaoBiaoSong', '华文中宋', 'STZhongsong', 'Songti SC', serif;
-  font-size: 22px;
+  font-size: 22pt;
   font-weight: normal;
   margin: 0.5em 0 0.8em;
   color: #000;
@@ -441,7 +514,7 @@ onUnmounted(() => {
 
 .document-content :deep(h1) {
   font-family: '黑体', 'SimHei', 'STHeiti', 'Heiti SC', '华文黑体', sans-serif;
-  font-size: 18px;
+  font-size: 16pt;
   font-weight: normal;
   margin: 1em 0 0.5em;
   color: #000;
