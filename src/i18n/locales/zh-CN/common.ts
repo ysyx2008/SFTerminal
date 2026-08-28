@@ -329,6 +329,8 @@ export default {
     interfaceLanguage: '界面语言',
     foldAgentProcess: '简化显示执行步骤',
     foldAgentProcessHint: '它埋头干活的那几步收成一行，只留它说给你听的话和此刻正在做的事。想看全过程，点那一行就能展开。严格模式下始终摊开，不收。',
+    showConversationSkillChips: '显示技能胶囊',
+    showConversationSkillChipsDesc: '在输入框上方显示这场对话正在使用的技能。',
     launchAtLogin: '开机启动',
     launchAtLoginHint: '登录系统后自动启动旗鱼',
     autoCheckUpdate: '自动检查更新',

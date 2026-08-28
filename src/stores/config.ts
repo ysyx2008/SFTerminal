@@ -403,6 +403,9 @@ export const useConfigStore = defineStore('config', () => {
   // 快捷键设置
   const keyboardShortcuts = ref<KeyboardShortcuts>({ ...DEFAULT_KEYBOARD_SHORTCUTS })
 
+  // 输入区是否显示这场对话开着的技能胶囊（关掉只藏界面）
+  const showConversationSkillChips = ref<boolean>(true)
+
   // 自动使用视觉模型
   const autoVisionModel = ref<boolean>(true)
   // 自动切换可用模型（失败后从列表第一个开始换，只改这场对话）
@@ -455,7 +458,7 @@ export const useConfigStore = defineStore('config', () => {
         savedAgentName, savedAgentAvatar, savedLogLevel, savedTerminalSettings,
         accounts, savedShortcuts, savedAutoVision, savedAutoFailover, calAccounts, savedTtsSettings, savedCueSoundSettings, savedWebSearchSettings,
         themeMode, sysScheme, savedPinnedConversationIds, savedConversationDisplayTitles,
-        savedFoldAgentProcess, savedFoldProcessInviteCount,
+        savedFoldAgentProcess, savedFoldProcessInviteCount, savedShowConversationSkillChips,
       ] = await Promise.all([
         window.electronAPI.config.getAiProfiles(),
         window.electronAPI.config.getActiveAiProfile(),
@@ -492,6 +495,7 @@ export const useConfigStore = defineStore('config', () => {
         window.electronAPI.config.get('conversationDisplayTitles') as Promise<Record<string, string> | undefined>,
         window.electronAPI.config.get('foldAgentProcess') as Promise<boolean | undefined>,
         window.electronAPI.config.get('foldProcessInviteCount') as Promise<number | undefined>,
+        window.electronAPI.config.get('showConversationSkillChips') as Promise<boolean | undefined>,
       ])
 
       // 批量赋值
@@ -535,6 +539,7 @@ export const useConfigStore = defineStore('config', () => {
       // 刻意不 `?? true`：磁盘上没有这个键就是"还没表态"，兜默认会让这个状态消失
       foldAgentProcessChoice.value = typeof savedFoldAgentProcess === 'boolean' ? savedFoldAgentProcess : undefined
       foldProcessInviteCount.value = savedFoldProcessInviteCount ?? 0
+      showConversationSkillChips.value = savedShowConversationSkillChips ?? true
       calendarAccounts.value = calAccounts || []
       if (savedTtsSettings && typeof savedTtsSettings === 'object') {
         ttsSettings.value = { ...ttsSettings.value, ...savedTtsSettings }
@@ -825,6 +830,11 @@ export const useConfigStore = defineStore('config', () => {
   async function setFoldAgentProcess(enabled: boolean): Promise<void> {
     foldAgentProcessChoice.value = enabled
     await window.electronAPI.config.set('foldAgentProcess', enabled)
+  }
+
+  async function setShowConversationSkillChips(enabled: boolean): Promise<void> {
+    showConversationSkillChips.value = enabled
+    await window.electronAPI.config.set('showConversationSkillChips', enabled)
   }
 
   /** 邀请露过一次面，消耗一次配额 */
@@ -1226,6 +1236,8 @@ export const useConfigStore = defineStore('config', () => {
     foldProcessInviteCount,
     setFoldAgentProcess,
     markFoldProcessInvited,
+    showConversationSkillChips,
+    setShowConversationSkillChips,
     setupCompleted,
     agentOnboardingCompleted,
     agentOnboardingShown,

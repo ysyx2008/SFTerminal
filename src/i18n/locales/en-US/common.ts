@@ -329,6 +329,8 @@ export default {
     interfaceLanguage: 'Interface language',
     foldAgentProcess: 'Simplify step display',
     foldAgentProcessHint: 'Stretches where it just works away collapse into one line, leaving what it tells you and what it is doing right now. Click that line to see the full process. Strict mode always stays unfolded.',
+    showConversationSkillChips: 'Show skill chips',
+    showConversationSkillChipsDesc: 'Show skills in use for this conversation above the input.',
     launchAtLogin: 'Launch at Login',
     launchAtLoginHint: 'Automatically start SailFish when you log in',
     autoCheckUpdate: 'Auto Check for Updates',

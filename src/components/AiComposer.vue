@@ -7,6 +7,7 @@ import { useMentions } from '../composables/useMentions'
 import { toast } from '../composables/useToast'
 import { useComposerQuoteStore } from '../stores/composer-quote'
 import { useConversationSkillsStore } from '../stores/conversation-skills'
+import { useConfigStore } from '../stores/config'
 import type { ComposerQuoteSnippet } from '../stores/composer-quote'
 import type { ParsedDocument } from '../stores/terminal'
 import type { ParsingDocument } from '../composables/useDocumentUpload'
@@ -315,8 +316,12 @@ onBeforeUnmount(() => {
 const quoteStore = useComposerQuoteStore()
 const quoteSnippets = computed(() => quoteStore.getSnippets(props.currentTabId))
 const conversationSkills = useConversationSkillsStore()
+const configStore = useConfigStore()
 const skillChips = computed(() => conversationSkills.getSkills(props.currentTabId))
 const justAddedSkillIds = computed(() => conversationSkills.justAddedIds(props.currentTabId))
+const showSkillChipRow = computed(
+  () => configStore.showConversationSkillChips && skillChips.value.length > 0
+)
 
 function onSkillPicked(skill: { id: string; name: string; description?: string }) {
   void conversationSkills.pin(props.currentTabId, skill)
@@ -601,7 +606,7 @@ const hasComposerAttachments = computed(
     quoteSnippets.value.length > 0 ||
     props.pendingImages.length > 0 ||
     followUpItems.value.length > 0 ||
-    skillChips.value.length > 0
+    showSkillChipRow.value
 )
 
 let textareaResizeObserver: ResizeObserver | null = null
@@ -633,6 +638,17 @@ watch(
   (tabId) => {
     hideSkillChipTip()
     void conversationSkills.sync(tabId)
+  }
+)
+
+watch(
+  () => configStore.showConversationSkillChips,
+  (visible) => {
+    if (!visible) {
+      hideSkillChipTip()
+      skillChipsDrag = null
+      skillChipsDragging.value = false
+    }
   }
 )
 
@@ -1234,7 +1250,7 @@ const handleSendClick = (event: MouseEvent) => {
   </div>
 
   <div
-    v-if="skillChips.length > 0"
+    v-if="showSkillChipRow"
     class="composer-skill-chips"
     :class="{
       'can-scroll-left': skillChipsCanScrollLeft,

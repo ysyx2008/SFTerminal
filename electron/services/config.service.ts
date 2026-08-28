@@ -221,6 +221,8 @@ interface StoreSchema {
   logLevel: LogLevel  // 日志级别
   skillMarketRegistryUrl: string  // 技能市场 registry URL
   disabledBuiltinSkills: string[] // 被禁用的内置技能 ID 列表
+  /** 输入区是否显示这场对话开着的技能胶囊；关掉只藏界面，技能仍装着 */
+  showConversationSkillChips: boolean
   agentAwakened: boolean           // 觉醒模式：AI 主动感知环境、推送消息
   watchHeartbeatEnabled: boolean  // Watch 心跳传感器是否启用（觉醒模式内部使用）
   watchHeartbeatInterval: number  // Watch 心跳间隔（分钟）
@@ -340,6 +342,7 @@ const defaultConfig: StoreSchema = {
   logLevel: 'warn',
   skillMarketRegistryUrl: '',
   disabledBuiltinSkills: [],
+  showConversationSkillChips: true,
   agentAwakened: true,
   watchHeartbeatEnabled: true,
   watchHeartbeatInterval: 30,

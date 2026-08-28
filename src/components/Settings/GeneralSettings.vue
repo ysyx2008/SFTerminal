@@ -137,6 +137,17 @@ const onInstallOnQuitChange = async (v: boolean) => {
           @update:model-value="configStore.setFoldAgentProcess"
         />
       </SettingRow>
+
+      <SettingRow
+        clickable
+        :label="t('general.showConversationSkillChips')"
+        :desc="t('general.showConversationSkillChipsDesc')"
+      >
+        <SettingToggle
+          :model-value="configStore.showConversationSkillChips"
+          @update:model-value="configStore.setShowConversationSkillChips"
+        />
+      </SettingRow>
     </SettingsGroup>
   </SettingsPage>
 </template>
