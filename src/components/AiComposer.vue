@@ -742,6 +742,8 @@ const isComposing = ref(false)
 const mentionInputEl = ref<HTMLTextAreaElement | null>(null)
 const textareaWrapEl = ref<HTMLDivElement | null>(null)
 const mentionListEl = ref<HTMLDivElement | null>(null)
+const mentionMenuEl = ref<HTMLDivElement | null>(null)
+const skillMenuSearchEl = ref<HTMLInputElement | null>(null)
 const currentTabIdRef = computed(() => props.currentTabId)
 const uploadedDocsRef = computed(() => props.uploadedDocs as ParsedDocument[])
 
@@ -755,6 +757,10 @@ const {
   totalCount: mentionTotalCount,
   currentDir: mentionCurrentDir,
   detectTrigger,
+  openSkillMenu,
+  skillMenuStandalone,
+  searchQuery: mentionSearchQuery,
+  setSkillSearch,
   selectSuggestion: doSelectSuggestion,
   clearMentions,
   closeMenu: closeMentionMenu,
@@ -765,6 +771,19 @@ const {
 
 const focusInput = () => {
   mentionInputEl.value?.focus()
+}
+
+function openSkillPicker() {
+  openSkillMenu()
+  nextTick(() => skillMenuSearchEl.value?.focus())
+}
+
+function onStandaloneSkillSearch(event: Event) {
+  setSkillSearch((event.target as HTMLInputElement).value)
+}
+
+function handleSkillSearchKeyDown(event: KeyboardEvent) {
+  handleMentionKeyDown(event)
 }
 
 /** 两行 grid 布局下测量高度。
@@ -911,7 +930,11 @@ const handleInputChange = (event: Event) => {
 }
 
 const handleInputBlur = () => {
-  setTimeout(() => closeMentionMenu(), 150)
+  setTimeout(() => {
+    const active = document.activeElement
+    if (mentionMenuEl.value?.contains(active)) return
+    closeMentionMenu()
+  }, 150)
 }
 
 const selectSuggestion = (suggestion: typeof mentionSuggestions.value[0]) => {
@@ -1402,9 +1425,17 @@ const handleSendClick = (event: MouseEvent) => {
         :class="{ 'is-dragging': skillChipsDragging, 'is-empowering': justAddedSkillIds.length > 0 }"
         :aria-label="t('ai.conversationSkills')"
       >
-        <span class="composer-skill-chips-mark" aria-hidden="true">
+        <button
+          type="button"
+          class="composer-skill-chips-mark"
+          :class="{ 'is-open': skillMenuStandalone }"
+          :aria-label="t('ai.conversationSkillAdd')"
+          :title="t('ai.conversationSkillAdd')"
+          @mousedown.prevent
+          @click="openSkillPicker"
+        >
           <Sparkles :size="12" :stroke-width="1.75" />
-        </span>
+        </button>
         <div
           class="composer-skill-chips-track"
           :class="{
@@ -1435,10 +1466,10 @@ const handleSendClick = (event: MouseEvent) => {
               @mouseenter="onSkillChipHover($event, s)"
               @mouseleave="hideSkillChipTip"
             >
-              <span class="composer-skill-chip-label">{{ s.name }}</span>
               <button type="button" class="composer-skill-chip-remove" @click="removeSkillChip(s.id)" :title="t('ai.conversationSkillRemove')">
                 <X :size="11" />
               </button>
+              <span class="composer-skill-chip-label">{{ s.name }}</span>
             </div>
           </div>
         </div>
@@ -1468,14 +1499,24 @@ const handleSendClick = (event: MouseEvent) => {
         ></textarea>
       </div>
 
-      <div v-if="showMentionMenu" class="mention-menu">
+      <div v-if="showMentionMenu" ref="mentionMenuEl" class="mention-menu">
         <div v-if="mentionMenuType === null" class="mention-menu-header">
           {{ t('mentions.selectCommand') }}
         </div>
-        <div v-else class="mention-menu-header">
+        <div v-else class="mention-menu-header" :class="{ 'has-search': skillMenuStandalone }">
           <span v-if="mentionMenuType === 'file'">📄 {{ t('mentions.file') }}</span>
           <span v-else-if="mentionMenuType === 'docs'">📚 {{ t('mentions.docs') }}</span>
           <span v-else-if="mentionMenuType === 'skill'">✨ {{ t('mentions.skill') }}</span>
+          <input
+            v-if="skillMenuStandalone"
+            ref="skillMenuSearchEl"
+            class="mention-skill-search"
+            :value="mentionSearchQuery"
+            :placeholder="t('mentions.searchSkills')"
+            @input="onStandaloneSkillSearch"
+            @keydown="handleSkillSearchKeyDown"
+            @blur="handleInputBlur"
+          />
           <span v-if="mentionCurrentDir" class="mention-path" :title="mentionCurrentDir">{{ mentionCurrentDir }}</span>
         </div>
 
@@ -1507,7 +1548,7 @@ const handleSendClick = (event: MouseEvent) => {
         </div>
         <div class="mention-hint">
           <span
-            v-if="mentionMenuType !== null"
+            v-if="mentionMenuType !== null && !skillMenuStandalone"
             class="mention-back-btn"
             @mousedown.prevent="mentionGoBack(); focusInput()"
           >
@@ -2063,8 +2104,20 @@ const handleSendClick = (event: MouseEvent) => {
 .composer-skill-chips-mark {
   position: relative;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-muted);
+  cursor: pointer;
+}
+
+.composer-skill-chips-mark:hover,
+.composer-skill-chips-mark.is-open {
+  color: var(--text-secondary);
 }
 
 .composer-skill-chips.is-empowering .composer-skill-chips-mark {
@@ -2152,7 +2205,7 @@ const handleSendClick = (event: MouseEvent) => {
   flex-shrink: 0;
   gap: 4px;
   max-width: 10.5rem;
-  padding: 2px 5px 2px 7px;
+  padding: 2px 7px 2px 5px;
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
   font-size: var(--fs-meta);
@@ -2236,8 +2289,8 @@ const handleSendClick = (event: MouseEvent) => {
   }
   38% {
     max-width: 10.5rem;
-    padding-left: 7px;
-    padding-right: 5px;
+    padding-left: 5px;
+    padding-right: 7px;
     opacity: 1;
     transform: translateX(2px);
     color: var(--text-primary);
@@ -2247,15 +2300,15 @@ const handleSendClick = (event: MouseEvent) => {
   }
   52% {
     max-width: 10.5rem;
-    padding-left: 7px;
-    padding-right: 5px;
+    padding-left: 5px;
+    padding-right: 7px;
     transform: none;
     filter: drop-shadow(0 0 5px rgba(var(--accent-decorative-rgb), 0.22));
   }
   100% {
     max-width: 10.5rem;
-    padding-left: 7px;
-    padding-right: 5px;
+    padding-left: 5px;
+    padding-right: 7px;
     opacity: 1;
     transform: none;
     color: var(--text-secondary);
@@ -3035,6 +3088,31 @@ const handleSendClick = (event: MouseEvent) => {
   color: var(--text-secondary);
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
+}
+
+.mention-menu-header.has-search {
+  flex-wrap: wrap;
+}
+
+.mention-skill-search {
+  flex: 1 1 8rem;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--fs-meta);
+  font-weight: 400;
+}
+
+.mention-skill-search:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.mention-skill-search::placeholder {
+  color: var(--text-muted);
 }
 
 .mention-path {

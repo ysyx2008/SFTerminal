@@ -1507,17 +1507,24 @@ watch(
     if (latestProfileId) {
       activeProfileId.value = latestProfileId
     }
+    const { useConversationSkillsStore } = await import('../stores/conversation-skills')
+    const skillsStore = useConversationSkillsStore()
+    const finishWelcomeSkills = async () => {
+      if (handoff.skillIds?.length) {
+        await skillsStore.finishWelcomeHydration(currentTabId.value)
+      }
+    }
     if (!(await guardVisionBeforeSend())) {
       discardImages()
+      await finishWelcomeSkills()
       return
     }
     clearComposerDraft()
     if (handoff.skillIds?.length) {
-      const { useConversationSkillsStore } = await import('../stores/conversation-skills')
-      const skillsStore = useConversationSkillsStore()
       for (const skillId of handoff.skillIds) {
         await skillsStore.pin(currentTabId.value, { id: skillId, name: skillId })
       }
+      void finishWelcomeSkills()
     }
     void runAgent(handoff.message)
   },

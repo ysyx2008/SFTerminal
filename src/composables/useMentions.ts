@@ -578,11 +578,40 @@ export function useMentions(
     }
   }
 
+  /** 不经过输入框里的 @，直接弹出技能列表（输入区星标） */
+  const openSkillMenu = () => {
+    if (showMenu.value && menuType.value === 'skill') {
+      closeMenu()
+      return
+    }
+    menuType.value = 'skill'
+    triggerPosition.value = -1
+    searchQuery.value = ''
+    currentDir.value = ''
+    showMenu.value = true
+    selectedIndex.value = 0
+    void loadSkillSuggestions('')
+  }
+
+  const skillMenuStandalone = computed(
+    () => showMenu.value && menuType.value === 'skill' && triggerPosition.value < 0
+  )
+
   /**
    * 选择建议
    */
   const selectSuggestion = (suggestion: MentionSuggestion) => {
     if (!showMenu.value) return
+
+    if (triggerPosition.value < 0) {
+      if (suggestion.type === 'skill') {
+        showMenu.value = false
+        menuType.value = null
+        searchQuery.value = ''
+        onSkillPicked?.({ id: suggestion.id, name: suggestion.label, description: suggestion.description })
+      }
+      return
+    }
 
     const text = inputText.value
     const beforeTrigger = text.substring(0, triggerPosition.value)
@@ -659,17 +688,27 @@ export function useMentions(
   /**
    * 关闭菜单
    */
+  const setSkillSearch = (query: string) => {
+    searchQuery.value = query
+    if (menuType.value === 'skill') void loadSkillSuggestions(query)
+  }
+
   const closeMenu = () => {
     showMenu.value = false
     menuType.value = null
     suggestions.value = []
     selectedIndex.value = 0
+    searchQuery.value = ''
   }
 
   /**
    * 返回上一级（目录或命令选择）
    */
   const goBack = () => {
+    if (triggerPosition.value < 0) {
+      closeMenu()
+      return
+    }
     if (menuType.value === 'file' && searchQuery.value) {
       // 如果有搜索查询（包含路径），尝试返回上一级目录
       let query = searchQuery.value
@@ -887,6 +926,10 @@ export function useMentions(
     
     // 方法
     detectTrigger,
+    openSkillMenu,
+    skillMenuStandalone,
+    searchQuery,
+    setSkillSearch,
     selectSuggestion,
     removeMention,
     clearMentions,
