@@ -478,7 +478,7 @@ export function useMentions(
           icon: '✨',
           description: s.description
         }))
-      suggestions.value = [...builtinItems, ...userItems].slice(0, 30)
+      suggestions.value = [...userItems, ...builtinItems].slice(0, 30)
       selectedIndex.value = 0
     } catch (err) {
       console.error('加载技能建议失败:', err)
