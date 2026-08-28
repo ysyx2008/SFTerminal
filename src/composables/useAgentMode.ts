@@ -1256,7 +1256,20 @@ export function useAgentMode(
       if (followUpQueue.value.some(entry => entry.id === queued.id)) return
       followUpQueue.value = [queued, ...followUpQueue.value]
     }
-    if ((!message.trim() && !hasImageData && !options?.workbenchContext?.selectionScope?.excerpt?.trim()) || !currentTabId.value) {
+    // attachments 含已落盘图片元信息，不只是文档
+    const hasAttachments = queued
+      ? ((queued.parsedDocs?.length ?? 0) > 0 || (queued.attachments?.length ?? 0) > 0)
+      : (
+          (attachmentCallbacks?.getParsedDocs?.()?.length ?? 0) > 0 ||
+          (attachmentCallbacks?.getAttachments()?.length ?? 0) > 0
+        )
+    if (
+      (!message.trim() &&
+        !hasImageData &&
+        !hasAttachments &&
+        !options?.workbenchContext?.selectionScope?.excerpt?.trim()) ||
+      !currentTabId.value
+    ) {
       putBackQueued()
       return
     }

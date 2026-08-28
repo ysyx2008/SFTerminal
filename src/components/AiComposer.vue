@@ -682,9 +682,13 @@ onBeforeUnmount(() => {
   }
 })
 
-/** 输入框无文字时，有图片或引用摘录也可发送 */
+/** 输入框无文字时，有图片、已上传文件或引用摘录也可发送 */
 const canSubmitMessage = computed(
-  () => !!inputText.value.trim() || props.hasImages || quoteSnippets.value.length > 0
+  () =>
+    !!inputText.value.trim() ||
+    props.hasImages ||
+    props.uploadedDocs.length > 0 ||
+    quoteSnippets.value.length > 0
 )
 
 function removeQuoteSnippet(id: string) {
@@ -1121,14 +1125,18 @@ const handleSend = async (opts?: { enqueue?: boolean }) => {
     ? undefined
     : props.consumeWorkbenchContext?.()
   const hasSelectionScope = Boolean(workbenchContext?.selectionScope?.excerpt?.trim())
+  const hasDocs = props.uploadedDocs.length > 0
+  const hasComposerPayload =
+    !!inputText.value.trim() ||
+    props.hasImages ||
+    hasDocs ||
+    quotesSnapshot.length > 0 ||
+    hasSelectionScope
 
   if (
     !opts?.enqueue &&
     !isEditingFollowUp.value &&
-    !inputText.value.trim() &&
-    !props.hasImages &&
-    quotesSnapshot.length === 0 &&
-    !hasSelectionScope &&
+    !hasComposerPayload &&
     props.canSendEmpty &&
     props.isAgentRunning
   ) {
@@ -1137,13 +1145,7 @@ const handleSend = async (opts?: { enqueue?: boolean }) => {
     return
   }
 
-  if (
-    !isEditingFollowUp.value &&
-    !inputText.value.trim() &&
-    !props.hasImages &&
-    quotesSnapshot.length === 0 &&
-    !hasSelectionScope
-  ) {
+  if (!isEditingFollowUp.value && !hasComposerPayload) {
     return
   }
 
@@ -1152,6 +1154,7 @@ const handleSend = async (opts?: { enqueue?: boolean }) => {
     isEditingFollowUp.value &&
     !inputText.value.trim() &&
     !props.hasImages &&
+    !hasDocs &&
     quotesSnapshot.length === 0 &&
     !hasSelectionScope
   ) {
@@ -1179,6 +1182,8 @@ const handleSend = async (opts?: { enqueue?: boolean }) => {
     mergedUser = t('ai.selectionScopeOnlyPrompt')
   } else if (!mergedUser.trim() && quotesSnapshot.length > 0) {
     mergedUser = t('ai.quoteOnlyPrompt')
+  } else if (!mergedUser.trim() && hasDocs) {
+    mergedUser = t('ai.docsOnlyPrompt')
   }
 
   // 显式引用胶囊仍附正文（终端等）；选区作用域不再拼进可见字符串

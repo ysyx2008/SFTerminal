@@ -158,6 +158,7 @@ export default {
       'Note: Content from terminal selection; line numbers are sequential within this excerpt and may not match buffer row indices.',
     quoteSnippetTerminalTabFallback: 'Terminal',
     quoteOnlyPrompt: '(User attached quoted excerpts only — see below; answer using them.)',
+    docsOnlyPrompt: '(User attached files only — see the attachments.)',
     selectionScopeOnlyPrompt: 'Edit the selection',
     selectionScopeAppendixIntro:
       '[Selection scope] The user is instructing about the following excerpt. Edit only this range (anchor by content) unless they explicitly ask to expand the scope.',
