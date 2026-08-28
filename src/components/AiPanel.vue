@@ -3635,7 +3635,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .agent-step-virtual {
   padding: 0 14px 4px;
-  border-left: 2px solid rgba(255, 255, 255, 0.06);
+  border-left: 2px solid var(--border-color);
 }
 
 /* 折叠行内部的步骤：竖线与缩进已由折叠行自己画，这里不再重复。
