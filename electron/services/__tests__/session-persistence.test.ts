@@ -74,6 +74,37 @@ describe('session-persistence incremental checkpoint', () => {
     expect(loaded?.messages).toHaveLength(1)
   })
 
+  it('这场对话还开着的技能跟卸掉的清单会写进 meta，重开读得回来', () => {
+    const record = makeRecord({
+      steps: [makeStep('s1')],
+      messages: [{ role: 'user', content: 'hi' }],
+      loadedSkills: ['word', 'user:my-skill'],
+      userDismissedSkills: ['excel'],
+    })
+    saveSessionRecord(agentDir, record)
+
+    const dateStr = '2026-07-13'
+    const loaded = readSessionRecord(agentDir, dateStr, record.id)
+    expect(loaded?.loadedSkills).toEqual(['word', 'user:my-skill'])
+    expect(loaded?.userDismissedSkills).toEqual(['excel'])
+
+    const next = makeRecord({
+      steps: [makeStep('s1'), makeStep('s2')],
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'ok' },
+      ],
+      loadedSkills: ['word', 'pdf'],
+      userDismissedSkills: ['excel', 'calendar'],
+    })
+    saveSessionRecord(agentDir, next)
+
+    const again = readSessionRecord(agentDir, dateStr, record.id)
+    expect(again?.loadedSkills).toEqual(['word', 'pdf'])
+    expect(again?.userDismissedSkills).toEqual(['excel', 'calendar'])
+    expect(again?.steps).toHaveLength(2)
+  })
+
   it('checkpoint 只追加新 steps/messages，不重写已有 jsonl 行', () => {
     const r1 = makeRecord({
       steps: [makeStep('s1')],

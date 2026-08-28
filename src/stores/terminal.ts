@@ -2984,6 +2984,15 @@ export const useTerminalStore = defineStore('terminal', () => {
     })
   }
 
+  /** 已有 tab 再点开时也要从记录画胶囊；侧栏常走聚焦、不再走整场恢复。 */
+  function hydrateConversationSkillsFromSession(tabId: string, sessionId?: string): void {
+    if (!sessionId) return
+    void window.electronAPI.history.getAgentRecordById(sessionId).then((record) => {
+      if (!record) return
+      hydrateConversationSkills(tabId, record)
+    })
+  }
+
   /**
    * 获取 Agent 上下文（用于发送给后端）
    * 支持多屏感知：如果有分屏布局，返回所有窗格的信息
@@ -3804,6 +3813,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     getHistoryConversationStatus,
     openHistoryConversation,
     warmHistoryConversation,
+    hydrateConversationSkills,
+    hydrateConversationSkillsFromSession,
     saveArtifactsToHistory,
     getAgentContext,
     // 文档管理

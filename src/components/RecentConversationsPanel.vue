@@ -605,12 +605,16 @@ const activateExistingTab = (tab: TerminalTab) => {
   const isHubAssistant = tab.type === 'assistant' && !tab.isPromoted && !tab.isRemote
   if (isHubAssistant) {
     terminalStore.focusHubConversation(tab.id)
-    return
+  } else {
+    terminalStore.setActiveTab(tab.id)
+    if (tab.type === 'local' || tab.type === 'ssh') {
+      terminalStore.requestTerminalAiPanelReveal(tab.id)
+    }
   }
-  terminalStore.setActiveTab(tab.id)
-  if (tab.type === 'local' || tab.type === 'ssh') {
-    terminalStore.requestTerminalAiPanelReveal(tab.id)
-  }
+  terminalStore.hydrateConversationSkillsFromSession(
+    tab.id,
+    tab.agentState?.sessionId
+  )
 }
 
 const openConversation = async (summary: AgentHistorySummary) => {
@@ -643,6 +647,7 @@ const openConversation = async (summary: AgentHistorySummary) => {
     const originTab = findTerminalTabByOrigin(record)
     if (originTab) {
       activateExistingTab(originTab)
+      terminalStore.hydrateConversationSkills(originTab.id, record)
       return
     }
     terminalStore.openHistoryConversation(record)

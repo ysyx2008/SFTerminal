@@ -58,6 +58,8 @@ export interface SessionMeta {
   status: AgentRecord['status']
   tokenUsage?: AgentRecord['tokenUsage']
   artifacts?: AgentRecord['artifacts']
+  loadedSkills?: AgentRecord['loadedSkills']
+  userDismissedSkills?: AgentRecord['userDismissedSkills']
   /** 已持久化的 steps 条数（jsonl 行数） */
   stepCount: number
   /** 已持久化的 messages 条数 */
@@ -105,6 +107,8 @@ function recordToMeta(record: AgentRecord, stepCount: number, messageCount: numb
   if (record.titleLocked) meta.titleLocked = true
   if (record.tokenUsage) meta.tokenUsage = record.tokenUsage
   if (record.artifacts) meta.artifacts = record.artifacts
+  if (Array.isArray(record.loadedSkills)) meta.loadedSkills = [...record.loadedSkills]
+  if (Array.isArray(record.userDismissedSkills)) meta.userDismissedSkills = [...record.userDismissedSkills]
   return meta
 }
 
@@ -127,6 +131,8 @@ function metaToRecord(meta: SessionMeta, steps: AgentStepRecord[], messages: Age
     status: meta.status,
     tokenUsage: meta.tokenUsage,
     artifacts: meta.artifacts,
+    loadedSkills: meta.loadedSkills,
+    userDismissedSkills: meta.userDismissedSkills,
   })
 }
 

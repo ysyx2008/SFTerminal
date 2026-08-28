@@ -125,6 +125,8 @@ export const useConversationSkillsStore = defineStore('conversationSkills', () =
     const agentKey = resolveAgentKey(tabId)
     if (!agentKey) return
     const skills = await window.electronAPI.agent.hydrateSkills(agentKey, loadedSkills, userDismissedSkills)
+    // 记录里没清单时后端是空的，不等于这场对话没技能；别把已经画上的胶囊抹掉。
+    if (skills.length === 0 && !Array.isArray(loadedSkills)) return
     applySnapshot(tabId, skills, false)
   }
 
