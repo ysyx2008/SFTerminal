@@ -320,7 +320,7 @@ const configStore = useConfigStore()
 const skillChips = computed(() => conversationSkills.getSkills(props.currentTabId))
 const justAddedSkillIds = computed(() => conversationSkills.justAddedIds(props.currentTabId))
 const showSkillChipRow = computed(
-  () => configStore.showConversationSkillChips && skillChips.value.length > 0
+  () => configStore.showConversationSkillChips
 )
 
 function onSkillPicked(skill: { id: string; name: string; description?: string }) {
@@ -773,9 +773,82 @@ const focusInput = () => {
   mentionInputEl.value?.focus()
 }
 
+const inputContainerEl = ref<HTMLElement | null>(null)
+const mentionMenuStyle = ref<Record<string, string>>({ visibility: 'hidden' })
+const mentionMenuBelow = ref(false)
+const mentionListCanScrollUp = ref(false)
+const mentionListCanScrollDown = ref(false)
+let mentionMenuRepositionBound = false
+
+const MENTION_MENU_GAP = 8
+const MENTION_MENU_MAX_H = 320
+
+function updateMentionListOverflow() {
+  const el = mentionListEl.value
+  if (!el) {
+    mentionListCanScrollUp.value = false
+    mentionListCanScrollDown.value = false
+    return
+  }
+  mentionListCanScrollUp.value = el.scrollTop > 1
+  mentionListCanScrollDown.value = el.scrollHeight - el.scrollTop - el.clientHeight > 1
+}
+
+function updateMentionMenuPosition() {
+  const anchor = inputContainerEl.value
+  if (!anchor) return
+  const rect = anchor.getBoundingClientRect()
+  const spaceAbove = rect.top - MENTION_MENU_GAP
+  const spaceBelow = window.innerHeight - rect.bottom - MENTION_MENU_GAP
+  const placeBelow = spaceBelow > spaceAbove
+  mentionMenuBelow.value = placeBelow
+  const available = placeBelow ? spaceBelow : spaceAbove
+  const maxH = Math.max(80, Math.min(MENTION_MENU_MAX_H, available))
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - 16))
+  const width = Math.min(rect.width, window.innerWidth - left - 8)
+  mentionMenuStyle.value = placeBelow
+    ? {
+        position: 'fixed',
+        top: `${rect.bottom + MENTION_MENU_GAP}px`,
+        bottom: 'auto',
+        left: `${left}px`,
+        width: `${width}px`,
+        maxHeight: `${maxH}px`,
+        visibility: 'visible'
+      }
+    : {
+        position: 'fixed',
+        top: 'auto',
+        bottom: `${window.innerHeight - rect.top + MENTION_MENU_GAP}px`,
+        left: `${left}px`,
+        width: `${width}px`,
+        maxHeight: `${maxH}px`,
+        visibility: 'visible'
+      }
+  nextTick(updateMentionListOverflow)
+}
+
+function bindMentionMenuReposition() {
+  if (mentionMenuRepositionBound) return
+  mentionMenuRepositionBound = true
+  window.addEventListener('scroll', updateMentionMenuPosition, true)
+  window.addEventListener('resize', updateMentionMenuPosition)
+}
+
+function unbindMentionMenuReposition() {
+  if (!mentionMenuRepositionBound) return
+  mentionMenuRepositionBound = false
+  window.removeEventListener('scroll', updateMentionMenuPosition, true)
+  window.removeEventListener('resize', updateMentionMenuPosition)
+}
+
 function openSkillPicker() {
   openSkillMenu()
-  nextTick(() => skillMenuSearchEl.value?.focus())
+}
+
+function closeMentionMenuAndFocusInput() {
+  closeMentionMenu()
+  nextTick(() => focusInput())
 }
 
 function onStandaloneSkillSearch(event: Event) {
@@ -783,6 +856,11 @@ function onStandaloneSkillSearch(event: Event) {
 }
 
 function handleSkillSearchKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeMentionMenuAndFocusInput()
+    return
+  }
   handleMentionKeyDown(event)
 }
 
@@ -915,8 +993,39 @@ watch(mentionSelectedIndex, (newIndex) => {
     const items = mentionListEl.value.querySelectorAll('.mention-item')
     const selectedItem = items[newIndex] as HTMLElement | undefined
     selectedItem?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    updateMentionListOverflow()
   })
 })
+
+watch(showMentionMenu, async (open) => {
+  if (!open) {
+    unbindMentionMenuReposition()
+    mentionListCanScrollUp.value = false
+    mentionListCanScrollDown.value = false
+    mentionMenuStyle.value = { visibility: 'hidden' }
+    return
+  }
+  await nextTick()
+  updateMentionMenuPosition()
+  bindMentionMenuReposition()
+  if (skillMenuStandalone.value) {
+    await nextTick()
+    skillMenuSearchEl.value?.focus()
+  }
+})
+
+watch(
+  [mentionSuggestions, mentionMenuType, isMentionLoading],
+  () => {
+    if (!showMentionMenu.value) return
+    nextTick(() => {
+      updateMentionMenuPosition()
+      updateMentionListOverflow()
+    })
+  }
+)
+
+onBeforeUnmount(unbindMentionMenuReposition)
 
 const setMentionSelectedIndex = (index: number) => {
   mentionSelectedIndex.value = index
@@ -947,6 +1056,11 @@ const selectSuggestion = (suggestion: typeof mentionSuggestions.value[0]) => {
 
 const handleInputKeyDown = (event: KeyboardEvent) => {
   if (showMentionMenu.value) {
+    if (event.key === 'Escape' && skillMenuStandalone.value) {
+      event.preventDefault()
+      closeMentionMenuAndFocusInput()
+      return
+    }
     const handled = handleMentionKeyDown(event)
     if (handled) return
   }
@@ -1412,6 +1526,7 @@ const handleSendClick = (event: MouseEvent) => {
     </div>
 
     <div
+      ref="inputContainerEl"
       class="input-container"
       :class="{
         'flash-hint': isFlashHint,
@@ -1423,7 +1538,7 @@ const handleSendClick = (event: MouseEvent) => {
         v-if="showSkillChipRow"
         class="composer-skill-chips"
         :class="{ 'is-dragging': skillChipsDragging, 'is-empowering': justAddedSkillIds.length > 0 }"
-        :aria-label="t('ai.conversationSkills')"
+        :aria-label="skillChips.length > 0 ? t('ai.conversationSkills') : t('ai.conversationSkillAdd')"
       >
         <button
           type="button"
@@ -1437,6 +1552,7 @@ const handleSendClick = (event: MouseEvent) => {
           <Sparkles :size="12" :stroke-width="1.75" />
         </button>
         <div
+          v-if="skillChips.length > 0"
           class="composer-skill-chips-track"
           :class="{
             'can-scroll-left': skillChipsCanScrollLeft,
@@ -1499,7 +1615,14 @@ const handleSendClick = (event: MouseEvent) => {
         ></textarea>
       </div>
 
-      <div v-if="showMentionMenu" ref="mentionMenuEl" class="mention-menu">
+      <Teleport to="body">
+      <div
+        v-if="showMentionMenu"
+        ref="mentionMenuEl"
+        class="mention-menu"
+        :class="{ 'place-below': mentionMenuBelow }"
+        :style="mentionMenuStyle"
+      >
         <div v-if="mentionMenuType === null" class="mention-menu-header">
           {{ t('mentions.selectCommand') }}
         </div>
@@ -1527,23 +1650,32 @@ const handleSendClick = (event: MouseEvent) => {
         <div v-else-if="mentionSuggestions.length === 0" class="mention-empty">
           {{ t('mentions.noResults') }}
         </div>
-        <div v-else ref="mentionListEl" class="mention-list">
-          <div
-            v-for="(suggestion, index) in mentionSuggestions"
-            :key="suggestion.id"
-            class="mention-item"
-            :class="{ active: index === mentionSelectedIndex }"
-            @mousedown.prevent="selectSuggestion(suggestion)"
-            @mouseenter="setMentionSelectedIndex(index)"
-          >
-            <span class="mention-icon">{{ suggestion.icon }}</span>
-            <div class="mention-content">
-              <span class="mention-label">{{ suggestion.label }}</span>
-              <span v-if="suggestion.description" class="mention-desc">{{ suggestion.description }}</span>
+        <div
+          v-else
+          class="mention-list-wrap"
+          :class="{
+            'can-scroll-up': mentionListCanScrollUp,
+            'can-scroll-down': mentionListCanScrollDown
+          }"
+        >
+          <div ref="mentionListEl" class="mention-list" @scroll="updateMentionListOverflow">
+            <div
+              v-for="(suggestion, index) in mentionSuggestions"
+              :key="suggestion.id"
+              class="mention-item"
+              :class="{ active: index === mentionSelectedIndex }"
+              @mousedown.prevent="selectSuggestion(suggestion)"
+              @mouseenter="setMentionSelectedIndex(index)"
+            >
+              <span class="mention-icon">{{ suggestion.icon }}</span>
+              <div class="mention-content">
+                <span class="mention-label">{{ suggestion.label }}</span>
+                <span v-if="suggestion.description" class="mention-desc">{{ suggestion.description }}</span>
+              </div>
             </div>
-          </div>
-          <div v-if="mentionHasMore" class="mention-more">
-            {{ t('mentions.moreItems', { count: mentionTotalCount - 50 }) }}
+            <div v-if="mentionHasMore" class="mention-more">
+              {{ t('mentions.moreItems', { count: mentionTotalCount - 50 }) }}
+            </div>
           </div>
         </div>
         <div class="mention-hint">
@@ -1561,6 +1693,7 @@ const handleSendClick = (event: MouseEvent) => {
           </span>
         </div>
       </div>
+      </Teleport>
 
       <!-- 两行模式底栏 -->
       <div v-if="isTwoRow" class="input-bottom-bar">
@@ -3062,20 +3195,18 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .mention-menu {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  margin-bottom: 8px;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
-  max-height: 320px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  z-index: 100;
+  z-index: 400;
+}
+
+.mention-menu.place-below {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .mention-menu-header {
@@ -3146,8 +3277,45 @@ const handleSendClick = (event: MouseEvent) => {
   gap: 8px;
 }
 
+.mention-list-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mention-list-wrap::before,
+.mention-list-wrap::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 18px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.mention-list-wrap::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--bg-primary), transparent);
+}
+
+.mention-list-wrap::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--bg-primary), transparent);
+}
+
+.mention-list-wrap.can-scroll-up::before,
+.mention-list-wrap.can-scroll-down::after {
+  opacity: 1;
+}
+
 .mention-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 6px;
 }
