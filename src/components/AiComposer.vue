@@ -1252,40 +1252,45 @@ const handleSendClick = (event: MouseEvent) => {
   <div
     v-if="showSkillChipRow"
     class="composer-skill-chips"
-    :class="{
-      'can-scroll-left': skillChipsCanScrollLeft,
-      'can-scroll-right': skillChipsCanScrollRight,
-      'is-dragging': skillChipsDragging
-    }"
+    :class="{ 'is-dragging': skillChipsDragging }"
     :aria-label="t('ai.conversationSkills')"
   >
+    <p class="composer-skill-chips-hint">{{ t('ai.conversationSkillChipsHint') }}</p>
     <div
-      ref="skillChipsScrollerEl"
-      class="composer-skill-chips-scroller"
-      @scroll="onSkillChipsScroll"
-      @pointerdown="onSkillChipsPointerDown"
-      @pointermove="onSkillChipsPointerMove"
-      @pointerup="endSkillChipsDrag"
-      @pointercancel="endSkillChipsDrag"
-      @click.capture="onSkillChipsClickCapture"
+      class="composer-skill-chips-track"
+      :class="{
+        'can-scroll-left': skillChipsCanScrollLeft,
+        'can-scroll-right': skillChipsCanScrollRight
+      }"
     >
       <div
-        v-for="s in skillChips"
-        :key="s.id"
-        class="composer-skill-chip"
-        :class="{
-          'is-new': justAddedSkillIds.includes(s.id),
-          'is-unavailable': s.unavailable
-        }"
-        :data-skill-id="s.id"
-        @mouseenter="onSkillChipHover($event, s)"
-        @mouseleave="hideSkillChipTip"
+        ref="skillChipsScrollerEl"
+        class="composer-skill-chips-scroller"
+        @scroll="onSkillChipsScroll"
+        @pointerdown="onSkillChipsPointerDown"
+        @pointermove="onSkillChipsPointerMove"
+        @pointerup="endSkillChipsDrag"
+        @pointercancel="endSkillChipsDrag"
+        @click.capture="onSkillChipsClickCapture"
       >
-        <span class="composer-skill-chip-icon">✨</span>
-        <span class="composer-skill-chip-label">{{ s.name }}</span>
-        <button type="button" class="composer-skill-chip-remove" @click="removeSkillChip(s.id)" :title="t('ai.conversationSkillRemove')">
-          <X :size="12" />
-        </button>
+        <div
+          v-for="s in skillChips"
+          :key="s.id"
+          class="composer-skill-chip"
+          :class="{
+            'is-new': justAddedSkillIds.includes(s.id),
+            'is-unavailable': s.unavailable
+          }"
+          :data-skill-id="s.id"
+          @mouseenter="onSkillChipHover($event, s)"
+          @mouseleave="hideSkillChipTip"
+        >
+          <span class="composer-skill-chip-icon">✨</span>
+          <span class="composer-skill-chip-label">{{ s.name }}</span>
+          <button type="button" class="composer-skill-chip-remove" @click="removeSkillChip(s.id)" :title="t('ai.conversationSkillRemove')">
+            <X :size="12" />
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -2027,8 +2032,29 @@ const handleSendClick = (event: MouseEvent) => {
   border-top: 1px solid var(--border-color);
 }
 
-.composer-skill-chips::before,
-.composer-skill-chips::after {
+.composer-skill-chips-hint {
+  position: absolute;
+  inset: 0 12px;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin: 0;
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.composer-skill-chips-track {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+}
+
+.composer-skill-chips-track::before,
+.composer-skill-chips-track::after {
   content: '';
   position: absolute;
   top: 0;
@@ -2040,18 +2066,18 @@ const handleSendClick = (event: MouseEvent) => {
   transition: opacity 0.15s ease;
 }
 
-.composer-skill-chips::before {
+.composer-skill-chips-track::before {
   left: 0;
   background: linear-gradient(to right, var(--bg-tertiary), transparent);
 }
 
-.composer-skill-chips::after {
+.composer-skill-chips-track::after {
   right: 0;
   background: linear-gradient(to left, var(--bg-tertiary), transparent);
 }
 
-.composer-skill-chips.can-scroll-left::before,
-.composer-skill-chips.can-scroll-right::after {
+.composer-skill-chips-track.can-scroll-left::before,
+.composer-skill-chips-track.can-scroll-right::after {
   opacity: 1;
 }
 
@@ -2072,8 +2098,8 @@ const handleSendClick = (event: MouseEvent) => {
   display: none;
 }
 
-.composer-skill-chips.can-scroll-left .composer-skill-chips-scroller,
-.composer-skill-chips.can-scroll-right .composer-skill-chips-scroller {
+.composer-skill-chips-track.can-scroll-left .composer-skill-chips-scroller,
+.composer-skill-chips-track.can-scroll-right .composer-skill-chips-scroller {
   cursor: grab;
 }
 
@@ -2393,11 +2419,11 @@ const handleSendClick = (event: MouseEvent) => {
   padding: 11px 11px 0;
 }
 
-.composer-root-embedded-filled .composer-skill-chips::before {
+.composer-root-embedded-filled .composer-skill-chips-track::before {
   background: linear-gradient(to right, var(--bg-secondary), transparent);
 }
 
-.composer-root-embedded-filled .composer-skill-chips::after {
+.composer-root-embedded-filled .composer-skill-chips-track::after {
   background: linear-gradient(to left, var(--bg-secondary), transparent);
 }
 
