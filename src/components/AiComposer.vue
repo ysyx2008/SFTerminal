@@ -2265,11 +2265,33 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .composer-skill-chips {
+  --skill-fx-fill-start: color-mix(in srgb, var(--accent-decorative-primary) 22%, var(--bg-hover));
+  --skill-fx-fill-peak: color-mix(in srgb, var(--accent-decorative-primary) 28%, var(--bg-hover));
+  --skill-fx-edge: rgba(var(--accent-decorative-rgb), 0.85);
+  --skill-fx-glow: rgba(var(--accent-decorative-rgb), 0.42);
+  --skill-fx-sheen: rgba(var(--accent-decorative-rgb), 0.38);
+  --skill-fx-stroke: rgba(var(--accent-decorative-rgb), 0.95);
+  --skill-fx-shot: rgba(var(--accent-decorative-rgb), 0.95);
+  --skill-fx-mark: rgba(var(--accent-decorative-rgb), 0.9);
+  --skill-fx-mark-color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
   padding: 1px 2px 7px;
+}
+
+[data-ui-theme="light"] .composer-skill-chips,
+[data-ui-theme="sponsor-sakura"] .composer-skill-chips {
+  --skill-fx-fill-start: color-mix(in srgb, var(--accent-primary) 36%, var(--bg-surface));
+  --skill-fx-fill-peak: color-mix(in srgb, var(--accent-primary) 54%, var(--bg-surface));
+  --skill-fx-edge: var(--accent-primary);
+  --skill-fx-glow: rgba(var(--accent-rgb), 0.32);
+  --skill-fx-sheen: rgba(255, 255, 255, 0.82);
+  --skill-fx-stroke: var(--accent-primary);
+  --skill-fx-shot: var(--accent-primary);
+  --skill-fx-mark: rgba(var(--accent-rgb), 0.55);
+  --skill-fx-mark-color: var(--accent-primary);
 }
 
 .composer-skill-chips-mark {
@@ -2304,7 +2326,7 @@ const handleSendClick = (event: MouseEvent) => {
   height: 2px;
   margin-top: -1px;
   border-radius: 2px;
-  background: linear-gradient(90deg, rgba(var(--accent-decorative-rgb), 0.95), transparent);
+  background: linear-gradient(90deg, var(--skill-fx-shot), transparent);
   pointer-events: none;
   animation: skill-energy-shot 0.42s ease-out both;
 }
@@ -2403,8 +2425,8 @@ const handleSendClick = (event: MouseEvent) => {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(var(--accent-decorative-rgb), 0.38) 42%,
-    rgba(var(--accent-decorative-rgb), 0.08) 72%,
+    var(--skill-fx-sheen) 42%,
+    color-mix(in srgb, var(--skill-fx-sheen) 22%, transparent) 72%,
     transparent 100%
   );
   background-size: 55% 100%;
@@ -2424,7 +2446,7 @@ const handleSendClick = (event: MouseEvent) => {
   padding: 1px;
   background: conic-gradient(
     from 220deg,
-    rgba(var(--accent-decorative-rgb), 0.95) calc(var(--skill-stroke) * 1%),
+    var(--skill-fx-stroke) calc(var(--skill-stroke) * 1%),
     transparent 0
   );
   -webkit-mask:
@@ -2454,8 +2476,8 @@ const handleSendClick = (event: MouseEvent) => {
     opacity: 0.75;
     transform: translateX(-10px);
     color: var(--text-primary);
-    background: color-mix(in srgb, var(--accent-decorative-primary) 22%, var(--bg-hover));
-    box-shadow: inset 2px 0 0 rgba(var(--accent-decorative-rgb), 0.85);
+    background: var(--skill-fx-fill-start);
+    box-shadow: inset 2px 0 0 var(--skill-fx-edge);
     filter: none;
   }
   38% {
@@ -2465,16 +2487,16 @@ const handleSendClick = (event: MouseEvent) => {
     opacity: 1;
     transform: translateX(2px);
     color: var(--text-primary);
-    background: color-mix(in srgb, var(--accent-decorative-primary) 28%, var(--bg-hover));
-    box-shadow: inset 2px 0 0 rgba(var(--accent-decorative-rgb), 0.65);
-    filter: drop-shadow(0 0 8px rgba(var(--accent-decorative-rgb), 0.42));
+    background: var(--skill-fx-fill-peak);
+    box-shadow: inset 2px 0 0 var(--skill-fx-edge);
+    filter: drop-shadow(0 0 8px var(--skill-fx-glow));
   }
   52% {
     max-width: 10.5rem;
     padding-left: 5px;
     padding-right: 7px;
     transform: none;
-    filter: drop-shadow(0 0 5px rgba(var(--accent-decorative-rgb), 0.22));
+    filter: drop-shadow(0 0 5px var(--skill-fx-glow));
   }
   100% {
     max-width: 10.5rem;
@@ -2526,8 +2548,8 @@ const handleSendClick = (event: MouseEvent) => {
     transform: scale(1);
   }
   12% {
-    color: var(--text-primary);
-    filter: drop-shadow(0 0 8px rgba(var(--accent-decorative-rgb), 0.9));
+    color: var(--skill-fx-mark-color);
+    filter: drop-shadow(0 0 8px var(--skill-fx-mark));
     transform: scale(1.22);
   }
   28% {
