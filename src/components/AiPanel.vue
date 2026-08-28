@@ -1512,6 +1512,13 @@ watch(
       return
     }
     clearComposerDraft()
+    if (handoff.skillIds?.length) {
+      const { useConversationSkillsStore } = await import('../stores/conversation-skills')
+      const skillsStore = useConversationSkillsStore()
+      for (const skillId of handoff.skillIds) {
+        await skillsStore.pin(currentTabId.value, { id: skillId, name: skillId })
+      }
+    }
     void runAgent(handoff.message)
   },
   { immediate: true }

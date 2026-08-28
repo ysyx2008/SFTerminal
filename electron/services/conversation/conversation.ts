@@ -238,7 +238,7 @@ export class Conversation {
    * 序列化为持久化记录。忠实移植 Agent.saveSessionToHistory 的 record 构建。
    * 无 user_task（空会话）返回 null——与现状「找不到 firstUserTask 直接 return」对齐。
    */
-  toRecord(opts?: { terminalId?: string; loadedSkills?: string[] }): AgentRecord | null {
+  toRecord(opts?: { terminalId?: string; loadedSkills?: string[]; userDismissedSkills?: string[] }): AgentRecord | null {
     const firstUserTask = this._steps.find(s => s.type === 'user_task')
     if (!firstUserTask) return null
 
@@ -272,7 +272,8 @@ export class Conversation {
       duration: Date.now() - this.createdAt,
       status,
       tokenUsage: this._tokenUsage,
-      ...(opts?.loadedSkills ? { loadedSkills: [...opts.loadedSkills] } : {})
+      ...(opts?.loadedSkills ? { loadedSkills: [...opts.loadedSkills] } : {}),
+      ...(opts?.userDismissedSkills?.length ? { userDismissedSkills: [...opts.userDismissedSkills] } : {})
     }
   }
 
@@ -295,6 +296,7 @@ export class Conversation {
     tokenUsage?: TokenUsage
     contextPtyId?: string
     loadedSkills?: string[]
+    userDismissedSkills?: string[]
   }): AgentRecord | null {
     const firstUserTask =
       this._steps.find(s => s.type === 'user_task') ??
@@ -321,7 +323,8 @@ export class Conversation {
       duration: Date.now() - this.createdAt,
       status: 'completed',
       tokenUsage: checkpointTokenUsage,
-      ...(run.loadedSkills ? { loadedSkills: [...run.loadedSkills] } : {})
+      ...(run.loadedSkills ? { loadedSkills: [...run.loadedSkills] } : {}),
+      ...(run.userDismissedSkills?.length ? { userDismissedSkills: [...run.userDismissedSkills] } : {})
     }
   }
 
@@ -736,7 +739,8 @@ export class Conversation {
       finalResult: lastFinalResult?.content,
       duration: 0,
       status: 'completed',
-      ...(Array.isArray(source.loadedSkills) ? { loadedSkills: [...source.loadedSkills] } : {})
+      ...(Array.isArray(source.loadedSkills) ? { loadedSkills: [...source.loadedSkills] } : {}),
+      ...(Array.isArray(source.userDismissedSkills) ? { userDismissedSkills: [...source.userDismissedSkills] } : {})
     }
   }
 

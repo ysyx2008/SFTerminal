@@ -6,6 +6,7 @@ import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2, ListTre
 import { useMentions } from '../composables/useMentions'
 import { toast } from '../composables/useToast'
 import { useComposerQuoteStore } from '../stores/composer-quote'
+import { useConversationSkillsStore } from '../stores/conversation-skills'
 import type { ComposerQuoteSnippet } from '../stores/composer-quote'
 import type { ParsedDocument } from '../stores/terminal'
 import type { ParsingDocument } from '../composables/useDocumentUpload'
@@ -311,6 +312,17 @@ onBeforeUnmount(() => {
 
 const quoteStore = useComposerQuoteStore()
 const quoteSnippets = computed(() => quoteStore.getSnippets(props.currentTabId))
+const conversationSkills = useConversationSkillsStore()
+const skillChips = computed(() => conversationSkills.getSkills(props.currentTabId))
+const justAddedSkillIds = computed(() => conversationSkills.justAddedIds(props.currentTabId))
+
+function onSkillPicked(skill: { id: string; name: string }) {
+  void conversationSkills.pin(props.currentTabId, skill)
+}
+
+function removeSkillChip(skillId: string) {
+  void conversationSkills.unpin(props.currentTabId, skillId)
+}
 
 const { value: randomPlaceholder, pick: pickRandomPlaceholder } = useRandomPlaceholder(
   () => props.placeholderPoolsKey ?? 'ai.inputPlaceholderPools',
@@ -384,14 +396,67 @@ const handleCancelEditClick = () => {
   syncTextareaSize()
 }
 
+/** 小文件瞬间解析完时不闪进度；超过此时长才露出解析中的小条 */
+const PARSE_CHIP_REVEAL_MS = 200
+const parsingChipsVisible = ref(false)
+let parsingRevealTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(
+  () => props.parsingDocs.length,
+  (count) => {
+    if (count === 0) {
+      if (parsingRevealTimer) {
+        clearTimeout(parsingRevealTimer)
+        parsingRevealTimer = null
+      }
+      parsingChipsVisible.value = false
+      return
+    }
+    if (parsingChipsVisible.value || parsingRevealTimer) return
+    parsingRevealTimer = setTimeout(() => {
+      parsingRevealTimer = null
+      parsingChipsVisible.value = props.parsingDocs.length > 0
+    }, PARSE_CHIP_REVEAL_MS)
+  },
+  { immediate: true }
+)
+
+const getParsePhaseLabel = (doc: ParsingDocument) => {
+  if (doc.error) return doc.error
+  if (doc.current !== undefined && doc.total !== undefined && doc.total > 0) {
+    return `${t(`ai.documentParsePhase.${doc.phase}`)} ${doc.current}/${doc.total}`
+  }
+  return doc.message || t(`ai.documentParsePhase.${doc.phase}`)
+}
+
+const parseProgressLabel = (doc: ParsingDocument) => {
+  if (doc.status === 'failed') return t('ai.documentParsePhase.failed')
+  if (doc.current !== undefined && doc.total !== undefined && doc.total > 0) {
+    return `${doc.current}/${doc.total}`
+  }
+  return t('ai.parsingInProgress')
+}
+
+const isSameAttachment = (a: { filename: string; fileSize: number }, b: { filename: string; fileSize: number }) =>
+  a.filename === b.filename && a.fileSize === b.fileSize
+
+/** 已进附件排的解析中文件；解析完立刻让位给正式小条，避免叠两条 */
+const activeParsingDocs = computed(() => {
+  if (!parsingChipsVisible.value) return []
+  return props.parsingDocs.filter(doc =>
+    !props.uploadedDocs.some(uploaded => isSameAttachment(uploaded, doc))
+  )
+})
+
 /** embedded 模式：有附件时才显示外层统一容器，避免空态双层边框 */
 const hasComposerAttachments = computed(
   () =>
-    props.parsingDocs.length > 0 ||
+    activeParsingDocs.value.length > 0 ||
     props.uploadedDocs.length > 0 ||
     quoteSnippets.value.length > 0 ||
     props.pendingImages.length > 0 ||
-    followUpItems.value.length > 0
+    followUpItems.value.length > 0 ||
+    skillChips.value.length > 0
 )
 
 let textareaResizeObserver: ResizeObserver | null = null
@@ -412,13 +477,26 @@ const setupTextareaResizeObserver = () => {
 }
 
 onMounted(() => {
+  conversationSkills.startListening()
+  void conversationSkills.sync(props.currentTabId)
   syncTextareaSize()
   nextTick(setupTextareaResizeObserver)
 })
 
+watch(
+  () => props.currentTabId,
+  (tabId) => {
+    void conversationSkills.sync(tabId)
+  }
+)
+
 onBeforeUnmount(() => {
   textareaResizeObserver?.disconnect()
   textareaResizeObserver = null
+  if (parsingRevealTimer) {
+    clearTimeout(parsingRevealTimer)
+    parsingRevealTimer = null
+  }
 })
 
 /** 输入框无文字时，有图片或引用摘录也可发送 */
@@ -502,7 +580,7 @@ const {
   goBack: mentionGoBack,
   handleKeyDown: handleMentionKeyDown,
   expandMentions
-} = useMentions(inputText, currentTabIdRef, uploadedDocsRef)
+} = useMentions(inputText, currentTabIdRef, uploadedDocsRef, onSkillPicked)
 
 const focusInput = () => {
   mentionInputEl.value?.focus()
@@ -790,20 +868,6 @@ const handleSend = async (opts?: { enqueue?: boolean }) => {
   })
 }
 
-const parsingSummary = computed(() => {
-  const total = props.parsingDocs.length
-  const done = props.parsingDocs.filter(doc => doc.status === 'completed' || doc.status === 'failed').length
-  return t('ai.parsingDocsSummary', { done, total })
-})
-
-const getParsePhaseLabel = (doc: ParsingDocument) => {
-  if (doc.error) return doc.error
-  if (doc.current !== undefined && doc.total !== undefined && doc.total > 0) {
-    return `${t(`ai.documentParsePhase.${doc.phase}`)} ${doc.current}/${doc.total}`
-  }
-  return doc.message || t(`ai.documentParsePhase.${doc.phase}`)
-}
-
 const slots = useSlots()
 const isTwoRow = computed(() => !!slots['footer-left'])
 
@@ -909,44 +973,22 @@ const handleSendClick = (event: MouseEvent) => {
       'composer-root-embedded-filled': embedded && hasComposerAttachments
     }"
   >
-  <div v-if="parsingDocs.length > 0" class="parsing-docs">
+  <div v-if="uploadedDocs.length > 0 || activeParsingDocs.length > 0" class="uploaded-docs">
     <div class="uploaded-docs-header">
-      <span class="uploaded-docs-title">{{ t('ai.parsingDocs') }} · {{ parsingSummary }}</span>
-    </div>
-    <div class="parsing-docs-list">
-      <div
-        v-for="doc in parsingDocs"
-        :key="`${doc.requestId}-${doc.fileIndex}`"
-        class="parsing-doc-item"
-        :class="{ 'has-error': doc.status === 'failed', completed: doc.status === 'completed' }"
+      <span class="uploaded-docs-title">📎 {{ t('ai.uploadedDocs') }} ({{ uploadedDocs.length + activeParsingDocs.length }})</span>
+      <button
+        v-if="uploadedDocs.length > 0"
+        class="btn-clear-docs"
+        @click="clearUploadedDocs"
+        :title="t('ai.clearDocs')"
       >
-        <div class="parsing-doc-main">
-          <span class="doc-icon">{{ doc.status === 'completed' ? '✓' : doc.status === 'failed' ? '⚠' : '📄' }}</span>
-          <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
-          <span class="doc-size">{{ formatFileSize(doc.fileSize) }}</span>
-          <span class="parse-percent">{{ Math.round(doc.percent) }}%</span>
-        </div>
-        <div class="parse-progress-track">
-          <div class="parse-progress-bar" :style="{ width: Math.max(4, Math.min(100, doc.percent)) + '%' }"></div>
-        </div>
-        <div class="parse-phase" :title="getParsePhaseLabel(doc)">
-          {{ getParsePhaseLabel(doc) }}
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div v-if="uploadedDocs.length > 0" class="uploaded-docs">
-    <div class="uploaded-docs-header">
-      <span class="uploaded-docs-title">📎 {{ t('ai.uploadedDocs') }} ({{ uploadedDocs.length }})</span>
-      <button class="btn-clear-docs" @click="clearUploadedDocs" :title="t('ai.clearDocs')">
         <X :size="12" />
       </button>
     </div>
     <div class="uploaded-docs-list">
       <div
         v-for="(doc, index) in uploadedDocs"
-        :key="index"
+        :key="`uploaded-${index}-${doc.filename}`"
         class="uploaded-doc-item"
         :class="{ 'has-error': doc.error }"
       >
@@ -957,6 +999,23 @@ const handleSendClick = (event: MouseEvent) => {
         <button class="btn-remove-doc" @click="removeUploadedDoc(index)" :title="t('ai.removeDoc')">
           <X :size="10" />
         </button>
+      </div>
+      <div
+        v-for="doc in activeParsingDocs"
+        :key="`${doc.requestId}-${doc.fileIndex}`"
+        class="uploaded-doc-item is-parsing"
+        :class="{ 'has-error': doc.status === 'failed' }"
+        :title="getParsePhaseLabel(doc)"
+      >
+        <AttachmentFileIcon class="doc-icon" :filename="doc.filename" :size="14" />
+        <span class="doc-name">{{ doc.filename }}</span>
+        <span class="doc-size">{{ parseProgressLabel(doc) }}</span>
+        <span v-if="doc.status === 'failed'" class="doc-error" :data-tooltip="doc.error || getParsePhaseLabel(doc)">⚠️</span>
+        <div
+          v-if="doc.status !== 'failed'"
+          class="doc-parse-bar"
+          :style="{ width: Math.max(4, Math.min(100, doc.percent)) + '%' }"
+        />
       </div>
     </div>
   </div>
@@ -1022,6 +1081,27 @@ const handleSendClick = (event: MouseEvent) => {
           :title="t('ai.followUpQueueRemove')"
           @click="removeFollowUp?.(item.id)"
         >
+          <X :size="12" />
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="skillChips.length > 0" class="composer-skill-chips">
+    <div class="composer-skill-chips-header">
+      <span class="composer-skill-chips-title">{{ t('ai.conversationSkills') }}</span>
+    </div>
+    <div class="composer-skill-chips-list">
+      <div
+        v-for="s in skillChips"
+        :key="s.id"
+        class="composer-skill-chip"
+        :class="{ 'is-new': justAddedSkillIds.includes(s.id) }"
+        :title="s.name"
+      >
+        <span class="composer-skill-chip-icon">✨</span>
+        <span class="composer-skill-chip-label">{{ s.name }}</span>
+        <button type="button" class="composer-skill-chip-remove" @click="removeSkillChip(s.id)" :title="t('ai.conversationSkillRemove')">
           <X :size="12" />
         </button>
       </div>
@@ -1181,6 +1261,7 @@ const handleSendClick = (event: MouseEvent) => {
         <div v-else class="mention-menu-header">
           <span v-if="mentionMenuType === 'file'">📄 {{ t('mentions.file') }}</span>
           <span v-else-if="mentionMenuType === 'docs'">📚 {{ t('mentions.docs') }}</span>
+          <span v-else-if="mentionMenuType === 'skill'">✨ {{ t('mentions.skill') }}</span>
           <span v-if="mentionCurrentDir" class="mention-path" :title="mentionCurrentDir">{{ mentionCurrentDir }}</span>
         </div>
 
@@ -1580,12 +1661,6 @@ const handleSendClick = (event: MouseEvent) => {
   border-top: 1px solid var(--border-color);
 }
 
-.parsing-docs {
-  padding: 8px 12px;
-  background: var(--bg-tertiary);
-  border-top: 1px solid var(--border-color);
-}
-
 .uploaded-docs-header {
   display: flex;
   align-items: center;
@@ -1622,79 +1697,8 @@ const handleSendClick = (event: MouseEvent) => {
   gap: 6px;
 }
 
-.parsing-docs-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 6px;
-}
-
-.parsing-doc-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 7px 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  min-width: 0;
-}
-
-.parsing-doc-item.has-error {
-  border-color: rgba(var(--color-error-rgb), 0.5);
-  background: rgba(var(--color-error-rgb), 0.05);
-}
-
-.parsing-doc-item.completed {
-  border-color: rgba(var(--color-success-rgb), 0.45);
-}
-
-.parsing-doc-main {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  font-size: 11px;
-}
-
-.parse-percent {
-  margin-left: auto;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.parse-progress-track {
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.parse-progress-bar {
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent-primary);
-  transition: width 0.2s ease;
-}
-
-.parsing-doc-item.has-error .parse-progress-bar {
-  background: var(--color-error);
-}
-
-.parsing-doc-item.completed .parse-progress-bar {
-  background: var(--color-success);
-}
-
-.parse-phase {
-  color: var(--text-muted);
-  font-size: 10px;
-  line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .uploaded-doc-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1704,6 +1708,17 @@ const handleSendClick = (event: MouseEvent) => {
   border-radius: 6px;
   font-size: 11px;
   max-width: 200px;
+}
+
+.doc-parse-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent-primary);
+  border-radius: 0 0 6px 6px;
+  transition: width 0.2s ease;
+  pointer-events: none;
 }
 
 .uploaded-doc-item.has-error {
@@ -1728,6 +1743,7 @@ const handleSendClick = (event: MouseEvent) => {
   color: var(--text-muted);
   font-size: 10px;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .doc-error {
@@ -1819,6 +1835,91 @@ const handleSendClick = (event: MouseEvent) => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.composer-skill-chips {
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+}
+
+.composer-skill-chips-header {
+  margin-bottom: 6px;
+}
+
+.composer-skill-chips-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.composer-skill-chips-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.composer-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #f59e0b 12%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, #f59e0b 35%, var(--border-color));
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.composer-skill-chip.is-new {
+  animation: skill-chip-gain 0.7s ease-out;
+}
+
+@keyframes skill-chip-gain {
+  0% {
+    transform: scale(0.82);
+    box-shadow: 0 0 0 0 color-mix(in srgb, #f59e0b 0%, transparent);
+    filter: brightness(1.35);
+  }
+  45% {
+    transform: scale(1.08);
+    box-shadow: 0 0 16px 2px color-mix(in srgb, #f59e0b 45%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: none;
+    filter: brightness(1);
+  }
+}
+
+.composer-skill-chip-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.composer-skill-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-skill-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 999px;
+}
+
+.composer-skill-chip-remove:hover {
+  color: var(--text-primary);
 }
 
 .composer-quote-chip {
@@ -2052,9 +2153,9 @@ const handleSendClick = (event: MouseEvent) => {
   overflow: hidden;
 }
 
-.composer-root-embedded-filled .parsing-docs,
 .composer-root-embedded-filled .uploaded-docs,
 .composer-root-embedded-filled .composer-quote-snips,
+.composer-root-embedded-filled .composer-skill-chips,
 .composer-root-embedded-filled .follow-up-queue {
   border-top: none;
   background: transparent;
@@ -2062,25 +2163,22 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 /* 附件区与下方分割线之间留足间距（文档列表不要紧贴分隔线） */
-.composer-root-embedded-filled .parsing-docs:has(~ .ai-input-embedded),
 .composer-root-embedded-filled .uploaded-docs:has(~ .ai-input-embedded),
 .composer-root-embedded-filled .composer-quote-snips:has(~ .ai-input-embedded),
+.composer-root-embedded-filled .composer-skill-chips:has(~ .ai-input-embedded),
 .composer-root-embedded-filled .follow-up-queue:has(~ .ai-input-embedded) {
   padding-bottom: 11px;
 }
 
-.composer-root-embedded-filled .parsing-docs + .uploaded-docs,
-.composer-root-embedded-filled .parsing-docs + .composer-quote-snips,
 .composer-root-embedded-filled .uploaded-docs + .composer-quote-snips,
 .composer-root-embedded-filled .follow-up-queue + .composer-quote-snips,
-.composer-root-embedded-filled .uploaded-docs + .follow-up-queue,
-.composer-root-embedded-filled .parsing-docs + .follow-up-queue {
+.composer-root-embedded-filled .uploaded-docs + .follow-up-queue {
   padding-top: 8px;
 }
 
-.composer-root-embedded-filled .parsing-docs ~ .ai-input-embedded,
 .composer-root-embedded-filled .uploaded-docs ~ .ai-input-embedded,
 .composer-root-embedded-filled .composer-quote-snips ~ .ai-input-embedded,
+.composer-root-embedded-filled .composer-skill-chips ~ .ai-input-embedded,
 .composer-root-embedded-filled .follow-up-queue ~ .ai-input-embedded {
   border-top: 1px solid var(--border-color);
 }

@@ -967,6 +967,29 @@ const electronAPI = {
     // 清理 Agent 运行记录（使用 ptyId）
     cleanup: (ptyId: string) => ipcRenderer.invoke('agent:cleanup', ptyId),
 
+    pinSkill: (agentKey: string, skillId: string) =>
+      ipcRenderer.invoke('agent:pinSkill', agentKey, skillId) as Promise<{
+        ok: boolean
+        error?: string
+        skills: Array<{ id: string; name: string }>
+      }>,
+    unpinSkill: (agentKey: string, skillId: string) =>
+      ipcRenderer.invoke('agent:unpinSkill', agentKey, skillId) as Promise<{
+        ok: true
+        skills: Array<{ id: string; name: string }>
+      }>,
+    hydrateSkills: (agentKey: string, loadedSkills?: string[], userDismissedSkills?: string[]) =>
+      ipcRenderer.invoke('agent:hydrateSkills', agentKey, loadedSkills, userDismissedSkills) as Promise<Array<{ id: string; name: string }>>,
+    getVisibleSkills: (agentKey: string) =>
+      ipcRenderer.invoke('agent:getVisibleSkills', agentKey) as Promise<Array<{ id: string; name: string }>>,
+    onSkillsChanged: (callback: (data: { agentId: string; skills: Array<{ id: string; name: string }> }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; skills: Array<{ id: string; name: string }> }) => callback(data)
+      ipcRenderer.on('agent:skillsChanged', handler)
+      return () => {
+        ipcRenderer.removeListener('agent:skillsChanged', handler)
+      }
+    },
+
     // Fork Agent：从源 Agent 会话分叉出新的助手 Agent（"另开一聊"）
     // untilTaskCount：截断到第 N 个 task（包含），undefined = 全部
     // newRecord：截断后的完整 AgentRecord，前端用它恢复新 tab 的 UI 历史

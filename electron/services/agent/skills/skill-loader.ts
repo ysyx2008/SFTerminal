@@ -19,9 +19,18 @@ export class SkillSession implements SkillSessionManager {
   private loadedSkills: Map<string, SkillState> = new Map()
   /** 核心工具（始终可用） */
   private coreTools: ToolDefinition[] = []
+  private onChange?: () => void
 
   constructor(coreTools: ToolDefinition[]) {
     this.coreTools = coreTools
+  }
+
+  setOnChange(onChange: () => void): void {
+    this.onChange = onChange
+  }
+
+  private notifyChange(): void {
+    this.onChange?.()
   }
 
   /**
@@ -76,6 +85,7 @@ export class SkillSession implements SkillSessionManager {
         loadedAt: Date.now(),
         data: {}
       })
+      this.notifyChange()
 
       return {
         success: true,
@@ -105,6 +115,7 @@ export class SkillSession implements SkillSessionManager {
       }
     }
     this.loadedSkills.delete(skillId)
+    this.notifyChange()
   }
 
   /**

@@ -86,6 +86,8 @@ export class AgentService {
   /** 默认回调 */
   private defaultCallbacks: AgentCallbacks = {}
 
+  private skillsChangedListeners: Array<(agentKey: string, skills: Array<{ id: string; name: string }>) => void> = []
+
   constructor(
     aiService: AiService, 
     ptyService: PtyService,
@@ -194,6 +196,22 @@ export class AgentService {
    * 把 ConfigService 中的 commandRiskPolicy 注入 Agent。
    * 仅在 Agent 新建时调用一次（默认值）；后续用户改 policy 后通过 updateConfig 覆盖。
    */
+  private bindSkillsChangedHook(agentKey: string, agent: SailFish): void {
+    agent.setSkillsChangedHook(() => {
+      const skills = agent.listVisibleSkills()
+      for (const listener of this.skillsChangedListeners) {
+        listener(agentKey, skills)
+      }
+    })
+  }
+
+  onSkillsChanged(listener: (agentKey: string, skills: Array<{ id: string; name: string }>) => void): () => void {
+    this.skillsChangedListeners.push(listener)
+    return () => {
+      this.skillsChangedListeners = this.skillsChangedListeners.filter(l => l !== listener)
+    }
+  }
+
   private applyDefaultCommandRiskPolicy(agent: SailFish): void {
     const cs = this.services.configService
     if (!cs) return
@@ -220,6 +238,7 @@ export class AgentService {
       this.agents.set(ptyId, agent)
       log.info(`Created agent: agentKey=${ptyId}`)
     }
+    this.bindSkillsChangedHook(ptyId, agent)
     return agent
   }
 
@@ -289,6 +308,7 @@ export class AgentService {
       this.agents.set(agentId, agent)
       log.info(`Created assistant agent: ${agentId} (persistentNamed=${agent.isPersistentNamedAgent()})`)
     }
+    this.bindSkillsChangedHook(agentId, agent)
     return agent
   }
 
@@ -756,6 +776,28 @@ export class AgentService {
     if (!skillIds.length) return
     const agent = this.createAssistantAgent(agentId)
     await agent.preloadSkills(skillIds)
+  }
+
+  async pinSkill(agentKey: string, skillId: string): Promise<{ ok: boolean; error?: string; skills: Array<{ id: string; name: string }> }> {
+    const agent = this.getOrCreateAgent(agentKey)
+    const result = await agent.pinSkill(skillId)
+    return { ...result, skills: agent.listVisibleSkills() }
+  }
+
+  async unpinSkill(agentKey: string, skillId: string): Promise<{ ok: true; skills: Array<{ id: string; name: string }> }> {
+    const agent = this.getOrCreateAgent(agentKey)
+    await agent.unpinSkill(skillId)
+    return { ok: true, skills: agent.listVisibleSkills() }
+  }
+
+  hydrateSkills(agentKey: string, loadedSkills?: string[], userDismissedSkills?: string[]): Array<{ id: string; name: string }> {
+    const agent = this.getOrCreateAgent(agentKey)
+    agent.hydrateSkills(loadedSkills, userDismissedSkills)
+    return agent.listVisibleSkills()
+  }
+
+  getVisibleSkills(agentKey: string): Array<{ id: string; name: string }> {
+    return this.getAgent(agentKey)?.listVisibleSkills() ?? []
   }
   
   /**

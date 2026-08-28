@@ -10,6 +10,21 @@ import { listSkillEnvNames } from './credential.service'
 
 const log = createLogger('UserSkill')
 
+/** 会话清单里自己写的技能：`user:<id>`，避免和内置技能重名 */
+export const USER_SKILL_ID_PREFIX = 'user:'
+
+export function toUserSkillId(skillId: string): string {
+  return skillId.startsWith(USER_SKILL_ID_PREFIX) ? skillId : `${USER_SKILL_ID_PREFIX}${skillId}`
+}
+
+/** 若为 `user:…` 则返回原始技能 id，否则 null */
+export function parseUserSkillId(skillId: string): string | null {
+  const id = skillId.trim()
+  if (!id.startsWith(USER_SKILL_ID_PREFIX)) return null
+  const raw = id.slice(USER_SKILL_ID_PREFIX.length).trim()
+  return raw || null
+}
+
 /** ClawHub 兼容的运行环境声明 */
 export interface SkillRequires {
   /** 需要的可执行文件（如 ["uv"], ["node", "npx"]） */

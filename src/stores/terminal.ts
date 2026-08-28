@@ -36,6 +36,7 @@ const log = createLogger('Store')
 export interface PendingComposerHandoff {
   message: string
   images: PendingImage[]
+  skillIds?: string[]
 }
 
 export type ShellType = 'powershell' | 'cmd' | 'bash' | 'zsh' | 'sh' | 'unknown'
@@ -2890,6 +2891,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     duration: number
     status: 'completed' | 'failed' | 'aborted'
     artifacts?: import('@shared/types').CanvasArtifact[]
+    loadedSkills?: string[]
+    userDismissedSkills?: string[]
   }): void {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab) return
@@ -2963,6 +2966,12 @@ export const useTerminalStore = defineStore('terminal', () => {
         artifactStore.hydrateFromSteps(tabId, steps)
       }
     }
+
+    void import('./conversation-skills').then(({ useConversationSkillsStore }) => {
+      const skillsStore = useConversationSkillsStore()
+      skillsStore.hydrateFromRecord(tabId, record.loadedSkills)
+      void skillsStore.hydrateBackend(tabId, record.loadedSkills, record.userDismissedSkills)
+    })
   }
 
   /**

@@ -22,7 +22,7 @@ import { executePptTool } from '../skills/ppt/executor'
 import { executeFeishuTool } from '../skills/feishu/executor'
 import { executeWeComTool } from '../skills/wecom/executor'
 import { executeDingTalkTool } from '../skills/dingtalk/executor'
-import { getUserSkillService } from '../../user-skill.service'
+import { getUserSkillService, toUserSkillId } from '../../user-skill.service'
 import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../credential.service'
 import { getSkill } from '../skills/registry'
 import { addProactiveContext } from '../proactive-store'
@@ -858,6 +858,10 @@ export async function loadSkillTool(
     return { success: false, output: '', error: `Skill "${skillId}" is disabled` }
   }
 
+  if (executor.isSkillDismissed?.(skillId)) {
+    return { success: false, output: '', error: t('skill.dismissed_by_user', { id: skillId }) }
+  }
+
   executor.addStep({
     type: 'tool_call',
     content: t('skill.loading', { id: skillId }),
@@ -980,6 +984,10 @@ export async function loadUserSkillTool(
     return { success: false, output: '', error: t('user_skill.id_required') }
   }
 
+  if (executor.isSkillDismissed?.(skillId) || executor.isSkillDismissed?.(toUserSkillId(skillId))) {
+    return { success: false, output: '', error: t('skill.dismissed_by_user', { id: skillId }) }
+  }
+
   executor.addStep({
     type: 'tool_call',
     content: t('user_skill.loading', { id: skillId }),
@@ -1093,6 +1101,8 @@ export async function loadUserSkillTool(
     toolName: 'load_user_skill',
     toolResult: output
   })
+
+  executor.markUserSkillLoaded?.(toUserSkillId(skillId))
   
   return { success: true, output }
 }

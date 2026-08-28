@@ -18,6 +18,24 @@ vi.mock('../../im/im.service', () => ({
   getIMService: vi.fn().mockReturnValue(null)
 }))
 
+vi.mock('../../user-skill.service', () => {
+  const skills: Record<string, { id: string; name: string; enabled: boolean; content: string }> = {
+    'my-skill': { id: 'my-skill', name: '我的技能', enabled: true, content: '自定义技能正文' }
+  }
+  return {
+    USER_SKILL_ID_PREFIX: 'user:',
+    toUserSkillId: (id: string) => id.startsWith('user:') ? id : `user:${id}`,
+    parseUserSkillId: (id: string) => {
+      if (!id.startsWith('user:')) return null
+      return id.slice(5) || null
+    },
+    getUserSkillService: () => ({
+      getSkill: (id: string) => skills[id],
+      getSkillContent: (id: string) => skills[id]?.content ?? null
+    })
+  }
+})
+
 import { Agent } from '../agent'
 import { ConversationManager, ConversationStore } from '../../conversation'
 import { configSkill } from '../skills/config'
@@ -39,6 +57,9 @@ class TestAgent extends Agent {
   }
   exposeMcpServers() {
     return this.getMcpToolSession().getLoadedServerIds()
+  }
+  exposeVisibleSkills() {
+    return this.listVisibleSkills()
   }
 }
 
@@ -303,5 +324,118 @@ describe('重开对话恢复技能', () => {
 
     expect(agent.exposeLoadedSkills()).toEqual([])
     expect(saved.some(r => r.loadedSkills?.includes(configSkill.id))).toBe(false)
+  })
+
+  it('用户点上的技能立刻出现在可见清单里', async () => {
+    const agent = new TestAgent(createServices())
+    const result = await agent.pinSkill(configSkill.id)
+    expect(result.ok).toBe(true)
+    expect(agent.exposeVisibleSkills().some(s => s.id === configSkill.id)).toBe(true)
+    expect(agent.exposeLoadedSkills()).toContain(configSkill.id)
+  })
+
+  it('用户卸掉后，可见清单没有它，预加载也不会再装回来', async () => {
+    const agent = new TestAgent(createServices())
+    await agent.pinSkill(configSkill.id)
+    await agent.unpinSkill(configSkill.id)
+    expect(agent.exposeVisibleSkills()).toEqual([])
+    expect(agent.exposeLoadedSkills()).not.toContain(configSkill.id)
+    expect(agent.isSkillDismissed(configSkill.id)).toBe(true)
+
+    await agent.preloadSkills([configSkill.id])
+    expect(agent.exposeLoadedSkills()).not.toContain(configSkill.id)
+  })
+
+  it('重开后开口前点上的技能，不会被历史清单盖掉', async () => {
+    const sessionId = 'sess_pin_before_run'
+    const historyService = {
+      getAgentRecordById: vi.fn().mockReturnValue(priorRecord(sessionId, {
+        loadedSkills: []
+      })),
+      saveAgentRecord: vi.fn(),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const agent = new TestAgent(createServices({ historyService: historyService as never }))
+    agent.hydrateSkills([], [])
+    await agent.pinSkill(configSkill.id)
+    expect(agent.exposeLoadedSkills()).toContain(configSkill.id)
+
+    await agent.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
+    expect(agent.exposeLoadedSkills()).toContain(configSkill.id)
+  })
+
+  it('重开后开口前卸掉的技能，开口时不会再装回来', async () => {
+    const sessionId = 'sess_unpin_before_run'
+    const historyService = {
+      getAgentRecordById: vi.fn().mockReturnValue(priorRecord(sessionId, {
+        loadedSkills: [configSkill.id]
+      })),
+      saveAgentRecord: vi.fn(),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const agent = new TestAgent(createServices({ historyService: historyService as never }))
+    agent.hydrateSkills([configSkill.id], [])
+    await agent.unpinSkill(configSkill.id)
+
+    await agent.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
+    expect(agent.exposeLoadedSkills()).not.toContain(configSkill.id)
+    expect(agent.isSkillDismissed(configSkill.id)).toBe(true)
+  })
+
+  it('重开对话时自己写的技能会再装上', async () => {
+    const sessionId = 'sess_user_skill_restore'
+    const historyService = {
+      getAgentRecordById: vi.fn().mockReturnValue(priorRecord(sessionId, {
+        loadedSkills: ['user:my-skill']
+      })),
+      saveAgentRecord: vi.fn(),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const agent = new TestAgent(createServices({ historyService: historyService as never }))
+    await agent.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
+    expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill' && s.name === '我的技能')).toBe(true)
+  })
+
+  it('用户点上自己写的技能会出现在可见清单里', async () => {
+    const agent = new TestAgent(createServices())
+    const result = await agent.pinSkill('user:my-skill')
+    expect(result.ok).toBe(true)
+    expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill' && s.name === '我的技能')).toBe(true)
+  })
+
+  it('卸掉自己写的技能后，重开也不会再装回来', async () => {
+    const sessionId = 'sess_user_skill_dismiss'
+    const historyService = {
+      getAgentRecordById: vi.fn().mockReturnValue(priorRecord(sessionId, {
+        loadedSkills: ['user:my-skill']
+      })),
+      saveAgentRecord: vi.fn(),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const agent = new TestAgent(createServices({ historyService: historyService as never }))
+    agent.hydrateSkills(['user:my-skill'], [])
+    await agent.unpinSkill('user:my-skill')
+    expect(agent.exposeVisibleSkills()).toEqual([])
+
+    await agent.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
+    expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill')).toBe(false)
+  })
+
+  it('重开对话时，用户卸掉的技能不出现在胶囊清单里', async () => {
+    const sessionId = 'sess_dismissed_skill'
+    const historyService = {
+      getAgentRecordById: vi.fn().mockReturnValue(priorRecord(sessionId, {
+        loadedSkills: [configSkill.id],
+        userDismissedSkills: [configSkill.id]
+      })),
+      saveAgentRecord: vi.fn(),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const agent = new TestAgent(createServices({ historyService: historyService as never }))
+    agent.hydrateSkills([configSkill.id], [configSkill.id])
+    expect(agent.exposeVisibleSkills()).toEqual([])
+
+    await agent.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
+    expect(agent.exposeLoadedSkills()).not.toContain(configSkill.id)
   })
 })

@@ -8,7 +8,7 @@ import { useTerminalStore } from '../stores/terminal'
 import type { ParsedDocument } from '../stores/terminal'
 
 // @ 命令类型
-export type MentionType = 'file' | 'docs'
+export type MentionType = 'file' | 'docs' | 'skill'
 
 // @ 命令定义
 export interface MentionCommand {
@@ -51,7 +51,8 @@ export interface FileInfo {
 export function useMentions(
   inputText: Ref<string>,
   currentTabId: Ref<string> | ComputedRef<string>,
-  uploadedDocs: ComputedRef<ParsedDocument[]>
+  uploadedDocs: ComputedRef<ParsedDocument[]>,
+  onSkillPicked?: (skill: { id: string; name: string }) => void
 ) {
   const { t } = useI18n()
   const terminalStore = useTerminalStore()
@@ -85,6 +86,13 @@ export function useMentions(
   // ==================== 命令定义 ====================
 
   const commands = computed<MentionCommand[]>(() => [
+    {
+      type: 'skill',
+      name: `${t('mentions.skill')}（${t('mentions.skillShortcut')}）`,
+      aliases: ['@skill', '@技能', '@s'],
+      icon: '✨',
+      description: t('mentions.skillDesc')
+    },
     {
       type: 'file',
       name: `${t('mentions.file')}（${t('mentions.fileShortcut')}）`,
@@ -438,6 +446,49 @@ export function useMentions(
     }
   }
 
+  const loadSkillSuggestions = async (query: string) => {
+    isLoading.value = true
+    try {
+      const [builtins, userSkills] = await Promise.all([
+        window.electronAPI.builtinSkill.list(),
+        window.electronAPI.userSkill.list()
+      ])
+      const q = query.toLowerCase()
+      const matches = (name: string, id: string, description: string) =>
+        !q || name.toLowerCase().includes(q) || id.toLowerCase().includes(q) || description.toLowerCase().includes(q)
+      const builtinItems = builtins
+        .filter(s => s.enabled)
+        .filter(s => matches(s.name, s.id, s.description))
+        .map(s => ({
+          type: 'skill' as MentionType,
+          id: s.id,
+          label: s.name,
+          value: s.id,
+          icon: '✨',
+          description: s.description
+        }))
+      const userItems = userSkills
+        .filter(s => s.enabled)
+        .filter(s => matches(s.name, s.id, s.description))
+        .map(s => ({
+          type: 'skill' as MentionType,
+          id: `user:${s.id}`,
+          label: s.name,
+          value: `user:${s.id}`,
+          icon: '✨',
+          description: s.description
+        }))
+      suggestions.value = [...builtinItems, ...userItems].slice(0, 30)
+      selectedIndex.value = 0
+    } catch (err) {
+      console.error('加载技能建议失败:', err)
+      suggestions.value = []
+      selectedIndex.value = 0
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   // ==================== 菜单控制 ====================
 
   /**
@@ -489,6 +540,8 @@ export function useMentions(
         loadFileSuggestions(query)
       } else if (matchedCommand.type === 'docs') {
         loadDocsSuggestions(query)
+      } else if (matchedCommand.type === 'skill') {
+        loadSkillSuggestions(query)
       }
       
       showMenu.value = true
@@ -552,6 +605,8 @@ export function useMentions(
         loadFileSuggestions('')
       } else if (suggestion.type === 'docs') {
         loadDocsSuggestions('')
+      } else if (suggestion.type === 'skill') {
+        loadSkillSuggestions('')
       }
     } else {
       // 选择的是具体项
@@ -564,6 +619,14 @@ export function useMentions(
         loadFileSuggestions(query)
       } else {
         // 选择完成，替换文本
+        if (suggestion.type === 'skill') {
+          inputText.value = beforeTrigger + afterTrigger.trimStart()
+          showMenu.value = false
+          menuType.value = null
+          searchQuery.value = ''
+          onSkillPicked?.({ id: suggestion.id, name: suggestion.label })
+          return
+        }
         inputText.value = beforeTrigger + suggestion.value + ' ' + afterTrigger.trimStart()
         showMenu.value = false
         menuType.value = null

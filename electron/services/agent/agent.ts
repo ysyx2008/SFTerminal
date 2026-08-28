@@ -75,8 +75,9 @@ import { formatWatchListForPrompt } from './skills/watch/executor'
 import { consumeProactiveContext } from './proactive-store'
 import { applyParallelShare, computeToolOutputBudget } from './tool-output-budget'
 import { t, type TranslationKey } from './i18n'
-import { createSkillSession, SkillSession } from './skills'
+import { createSkillSession, SkillSession, getSkill } from './skills'
 import { McpToolSession, parseMcpSkillId, toMcpSkillId } from './mcp-tool-session'
+import { getUserSkillService, parseUserSkillId, toUserSkillId } from '../user-skill.service'
 import { getAiDebugService } from '../ai-debug.service'
 import { createLogger } from '../../utils/logger'
 import { isAbortError } from '../../utils/abort'
@@ -208,6 +209,18 @@ export abstract class Agent {
   
   /** 技能会话（Agent 实例级别，跨 Run 持久化） */
   private _skillSession?: SkillSession
+
+  /** 这场对话里用户亲手卸掉的技能，禁止它自己再装回来 */
+  private _userDismissedSkills = new Set<string>()
+
+  /** 这场对话装着的自己写的技能（`user:<id>`） */
+  private _loadedUserSkillIds = new Set<string>()
+
+  /** 开口前用户已经点过胶囊；历史恢复不得把这份决定盖掉 */
+  private _skillsMutatedByUser = false
+
+  /** 技能清单变化（装上 / 卸掉）时通知外壳，与单次 run 的 callbacks 解耦 */
+  private _skillsChangedHook?: () => void
 
   /** MCP 工具渐进披露会话（Agent 实例级 sticky LRU） */
   private _mcpToolSession?: McpToolSession
@@ -377,8 +390,144 @@ export abstract class Agent {
   protected getSkillSession(): SkillSession {
     if (!this._skillSession) {
       this._skillSession = createSkillSession(this.getAvailableTools())
+      this._skillSession.setOnChange(() => this._skillsChangedHook?.())
     }
     return this._skillSession
+  }
+
+  setSkillsChangedHook(hook: (() => void) | undefined): void {
+    this._skillsChangedHook = hook
+  }
+
+  isSkillDismissed(skillId: string): boolean {
+    return this._userDismissedSkills.has(skillId)
+  }
+
+  /**
+   * 用户点上技能：立刻装上，并允许这场对话再次使用它。
+   */
+  async pinSkill(skillId: string): Promise<{ ok: boolean; error?: string }> {
+    if (parseMcpSkillId(skillId)) {
+      return { ok: false, error: 'mcp_not_supported' }
+    }
+    this._skillsMutatedByUser = true
+    this._userDismissedSkills.delete(skillId)
+    if (this._pendingRestoreSkillIds && !this._pendingRestoreSkillIds.includes(skillId)) {
+      this._pendingRestoreSkillIds = [...this._pendingRestoreSkillIds, skillId]
+    }
+    const userSkillId = parseUserSkillId(skillId)
+    if (userSkillId) {
+      const pinned = this.pinUserSkill(skillId, userSkillId)
+      this.persistSkillStateIfPossible()
+      this._skillsChangedHook?.()
+      return pinned
+    }
+    const result = await this.getSkillSession().loadSkill(skillId)
+    this.persistSkillStateIfPossible()
+    this._skillsChangedHook?.()
+    if (!result.success && result.error && result.error !== 'Skill already loaded') {
+      return { ok: false, error: result.error }
+    }
+    return { ok: true }
+  }
+
+  /**
+   * 用户点掉胶囊：卸掉，这场对话里不许它自己再装回来。
+   */
+  async unpinSkill(skillId: string): Promise<void> {
+    this._skillsMutatedByUser = true
+    this._userDismissedSkills.add(skillId)
+    this._loadedUserSkillIds.delete(skillId)
+    if (this._pendingRestoreSkillIds) {
+      this._pendingRestoreSkillIds = this._pendingRestoreSkillIds.filter(id => id !== skillId)
+    }
+    if (this._skillSession && !parseUserSkillId(skillId)) {
+      await this._skillSession.unloadSkill(skillId)
+    }
+    this.persistSkillStateIfPossible()
+    this._skillsChangedHook?.()
+  }
+
+  /**
+   * 重开对话时先把清单记上，胶囊立刻能画出来，不必等下一轮开口。
+   */
+  hydrateSkills(loadedSkills?: string[], userDismissedSkills?: string[]): void {
+    if (Array.isArray(userDismissedSkills)) {
+      this._userDismissedSkills = new Set(userDismissedSkills.filter(id => typeof id === 'string'))
+    }
+    if (Array.isArray(loadedSkills)) {
+      this._pendingRestoreSkillIds = loadedSkills.filter(id => !this._userDismissedSkills.has(id))
+    }
+    this._skillsChangedHook?.()
+  }
+
+  listVisibleSkills(): Array<{ id: string; name: string }> {
+    const ids = new Set<string>()
+    if (this._skillSession) {
+      for (const id of this._skillSession.getLoadedSkills()) ids.add(id)
+    }
+    for (const id of this._loadedUserSkillIds) ids.add(id)
+    if (this._pendingRestoreSkillIds) {
+      for (const id of this._pendingRestoreSkillIds) ids.add(id)
+    }
+    const visible: Array<{ id: string; name: string }> = []
+    for (const id of ids) {
+      if (parseMcpSkillId(id)) continue
+      if (this._userDismissedSkills.has(id)) continue
+      visible.push({ id, name: this.resolveVisibleSkillName(id) })
+    }
+    return visible
+  }
+
+  markUserSkillLoaded(skillId: string): void {
+    const persistedId = toUserSkillId(skillId)
+    if (this._userDismissedSkills.has(persistedId) || this._userDismissedSkills.has(skillId)) return
+    this._loadedUserSkillIds.add(persistedId)
+    if (this._pendingRestoreSkillIds && !this._pendingRestoreSkillIds.includes(persistedId)) {
+      this._pendingRestoreSkillIds = [...this._pendingRestoreSkillIds, persistedId]
+    }
+    this.persistSkillStateIfPossible()
+    this._skillsChangedHook?.()
+  }
+
+  protected getLoadedUserSkillsContent(): string {
+    const parts: string[] = []
+    for (const persistedId of this._loadedUserSkillIds) {
+      const rawId = parseUserSkillId(persistedId) ?? persistedId
+      const content = getUserSkillService().getSkillContent(rawId)
+      if (!content?.trim()) continue
+      const name = getUserSkillService().getSkill(rawId)?.name ?? rawId
+      parts.push(`## ${name}\n\n${content.trim()}`)
+    }
+    return parts.join('\n\n')
+  }
+
+  private pinUserSkill(persistedId: string, rawId: string): { ok: boolean; error?: string } {
+    const skill = getUserSkillService().getSkill(rawId)
+    if (!skill) {
+      return { ok: false, error: `Skill "${rawId}" not found` }
+    }
+    if (!skill.enabled) {
+      return { ok: false, error: `Skill "${rawId}" is disabled` }
+    }
+    this._loadedUserSkillIds.add(persistedId)
+    return { ok: true }
+  }
+
+  private resolveVisibleSkillName(id: string): string {
+    const userId = parseUserSkillId(id)
+    if (userId) return getUserSkillService().getSkill(userId)?.name ?? userId
+    return getSkill(id)?.name ?? id
+  }
+
+  private collectDismissedSkillIds(): string[] | undefined {
+    if (this._userDismissedSkills.size === 0) return undefined
+    return [...this._userDismissedSkills]
+  }
+
+  private persistSkillStateIfPossible(): void {
+    if (!this._conversation) return
+    this.saveSessionToHistory()
   }
 
   /**
@@ -394,8 +543,24 @@ export abstract class Agent {
         await this.preloadMcpSkill(skillId)
         continue
       }
+      const userSkillId = parseUserSkillId(skillId)
+      if (userSkillId) {
+        if (this._userDismissedSkills.has(skillId)) {
+          log.info(`Skip restoring user-dismissed skill "${skillId}"`)
+          continue
+        }
+        const pinned = this.pinUserSkill(skillId, userSkillId)
+        if (!pinned.ok) {
+          log.warn(`Failed to preload user skill "${skillId}": ${pinned.error}`)
+        }
+        continue
+      }
       if (disabledSet.has(skillId)) {
         log.warn(`Skip restoring disabled skill "${skillId}"`)
+        continue
+      }
+      if (this._userDismissedSkills.has(skillId)) {
+        log.info(`Skip restoring user-dismissed skill "${skillId}"`)
         continue
       }
       const result = await this.getSkillSession().loadSkill(skillId)
@@ -449,6 +614,7 @@ export abstract class Agent {
         ids.push(toMcpSkillId(serverId))
       }
     }
+    ids.push(...this._loadedUserSkillIds)
     if (ids.length === 0 && this._pendingRestoreSkillIds?.length) {
       return [...this._pendingRestoreSkillIds]
     }
@@ -462,6 +628,7 @@ export abstract class Agent {
     if (this._pendingRestoreSkillIds === undefined) return
     const skillIds = this._pendingRestoreSkillIds
     this._pendingRestoreSkillIds = undefined
+    this._loadedUserSkillIds.clear()
     if (this._skillSession) {
       await this._skillSession.cleanup()
     }
@@ -832,6 +999,10 @@ export abstract class Agent {
     }
     this._mcpToolSession?.clear()
     this._mcpToolSession = undefined
+    this._pendingRestoreSkillIds = undefined
+    this._userDismissedSkills.clear()
+    this._loadedUserSkillIds.clear()
+    this._skillsMutatedByUser = false
   }
   
   // ==================== 受保护方法：生命周期 ====================
@@ -1075,8 +1246,13 @@ export abstract class Agent {
     // 关切 / 唤醒自己预装技能，不按历史清单恢复。
     const kind = record.kind ?? inferConversationKind(record.agentKey)
     if (kind === 'watch' || kind === 'wakeup') return
+    // 重开后、开口前用户已经点过胶囊：以当场决定为准，不要用盘上旧清单盖回去。
+    if (this._skillsMutatedByUser) return
+    if (Array.isArray(record.userDismissedSkills)) {
+      this._userDismissedSkills = new Set(record.userDismissedSkills.filter(id => typeof id === 'string'))
+    }
     if (Array.isArray(record.loadedSkills)) {
-      this._pendingRestoreSkillIds = [...record.loadedSkills]
+      this._pendingRestoreSkillIds = record.loadedSkills.filter(id => !this._userDismissedSkills.has(id))
     }
   }
 
@@ -1246,7 +1422,8 @@ export abstract class Agent {
 
     const record = this._conversation.toRecord({
       terminalId: this.currentRun?.context.ptyId || '',
-      loadedSkills: this.collectPersistedSkillIds()
+      loadedSkills: this.collectPersistedSkillIds(),
+      userDismissedSkills: this.collectDismissedSkillIds()
     })
     if (!record) return
 
@@ -1277,7 +1454,8 @@ export abstract class Agent {
       taskMessageLog: run.taskMessageLog,
       tokenUsage: run.tokenUsage,
       contextPtyId: run.context.ptyId,
-      loadedSkills: this.collectPersistedSkillIds()
+      loadedSkills: this.collectPersistedSkillIds(),
+      userDismissedSkills: this.collectDismissedSkillIds()
     })
     if (!record) return
 
@@ -1377,7 +1555,10 @@ export abstract class Agent {
    */
   toRecordForFork(): AgentRecord | null {
     if (!this._conversation) return null
-    return this._conversation.toRecord({ loadedSkills: this.collectPersistedSkillIds() })
+    return this._conversation.toRecord({
+      loadedSkills: this.collectPersistedSkillIds(),
+      userDismissedSkills: this.collectDismissedSkillIds()
+    })
   }
 
   /**
@@ -1479,6 +1660,10 @@ export abstract class Agent {
     }
     this._mcpToolSession?.clear()
     this._pendingRestoreSkillIds = undefined
+    this._userDismissedSkills.clear()
+    this._loadedUserSkillIds.clear()
+    this._skillsMutatedByUser = false
+    this._skillsChangedHook?.()
   }
 
   /**
@@ -1500,6 +1685,10 @@ export abstract class Agent {
     }
     this._mcpToolSession?.clear()
     this._pendingRestoreSkillIds = undefined
+    this._userDismissedSkills.clear()
+    this._loadedUserSkillIds.clear()
+    this._skillsMutatedByUser = false
+    this._skillsChangedHook?.()
   }
 
   
@@ -3986,6 +4175,9 @@ export abstract class Agent {
       mcpService: this.services.mcpService,
       mcpToolSession: this.getMcpToolSession(),
       skillSession: run.skillSession,
+      isSkillDismissed: (skillId) =>
+        this._userDismissedSkills.has(skillId) || this._userDismissedSkills.has(toUserSkillId(skillId)),
+      markUserSkillLoaded: (skillId) => this.markUserSkillLoaded(skillId),
       pluginRegistry: this.services.pluginRegistry,
       addStep: (step) => this.addStep(step),
       updateStep: (stepId, updates) => this.updateStep(stepId, updates),

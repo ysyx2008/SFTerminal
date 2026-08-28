@@ -1012,6 +1012,7 @@ const translations = {
     'skill.unloading': '正在卸载技能: {id}',
     'skill.unloaded': '已卸载技能: {id}',
     'skill.unload_failed': '卸载技能失败',
+    'skill.dismissed_by_user': '用户已关掉技能 {id}，这场对话里不要自己再装回来',
     'skill.creating': '创建技能',
     'skill.updating': '更新技能',
 
@@ -2584,6 +2585,7 @@ Calendar, Todo, Bitable, Drive and Wiki operations require the user's union_id:
     'skill.unloading': 'Unloading skill: {id}',
     'skill.unloaded': 'Skill unloaded: {id}',
     'skill.unload_failed': 'Failed to unload skill',
+    'skill.dismissed_by_user': 'The user turned off skill {id}; do not load it again in this conversation',
     'skill.creating': 'Creating skill',
     'skill.updating': 'Updating skill',
 

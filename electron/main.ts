@@ -642,6 +642,18 @@ function agentRuntimeDeps(): AgentRuntimeDeps {
 /** 懒加载 Agent + 终端运行时（node-pty / ssh2） */
 const rt = () => ensureAgentRuntime(agentRuntimeDeps())
 
+let skillsChangedWired = false
+async function ensureSkillsChangedBridge(): Promise<void> {
+  if (skillsChangedWired) return
+  skillsChangedWired = true
+  const { agentService } = await rt()
+  agentService.onSkillsChanged((agentKey, skills) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('agent:skillsChanged', { agentId: agentKey, skills })
+    }
+  })
+}
+
 const imSvc = async () => (await ensureRemoteSessionStack()).im
 const remoteWebChat = async () => (await ensureRemoteSessionStack()).webChat
 
@@ -3944,6 +3956,7 @@ ipcMain.handle('agent:run', async (event, { ptyId, message, context, config, pro
   config?: object
   profileId?: string
 }) => {
+  await ensureSkillsChangedBridge()
   // 从持久化配置读取 debugMode，合并到运行时配置
   const debugMode = configService.getAgentDebugMode()
   const fullConfig = { ...config, debugMode }
@@ -4178,6 +4191,30 @@ ipcMain.handle('agent:cleanup', async (_event, ptyId: string) => {
   agentService.cleanupAgent(ptyId)
 })
 
+ipcMain.handle('agent:pinSkill', async (_event, agentKey: string, skillId: string) => {
+  await ensureSkillsChangedBridge()
+  const { agentService } = await rt()
+  return agentService.pinSkill(agentKey, skillId)
+})
+
+ipcMain.handle('agent:unpinSkill', async (_event, agentKey: string, skillId: string) => {
+  await ensureSkillsChangedBridge()
+  const { agentService } = await rt()
+  return agentService.unpinSkill(agentKey, skillId)
+})
+
+ipcMain.handle('agent:hydrateSkills', async (_event, agentKey: string, loadedSkills?: string[], userDismissedSkills?: string[]) => {
+  await ensureSkillsChangedBridge()
+  const { agentService } = await rt()
+  return agentService.hydrateSkills(agentKey, loadedSkills, userDismissedSkills)
+})
+
+ipcMain.handle('agent:getVisibleSkills', async (_event, agentKey: string) => {
+  await ensureSkillsChangedBridge()
+  const { agentService } = await rt()
+  return agentService.getVisibleSkills(agentKey)
+})
+
 ipcMain.handle('agent:fork', async (_event, opts: {
   sourceAgentKey: string
   newAgentId: string
@@ -4238,6 +4275,7 @@ ipcMain.handle('agent:runStandalone', async (event, { agentId, message, context,
   config?: object
   profileId?: string
 }) => {
+  await ensureSkillsChangedBridge()
   const debugMode = configService.getAgentDebugMode()
   const fullConfig = { ...config, debugMode }
 

@@ -338,7 +338,13 @@ const handleComposerSubmit = async (message: string) => {
   terminalStore.clearWelcomeComposerDraft()
   const tabId = terminalStore.createAssistantTab({ activate: false })
   terminalStore.transferUploadedDocs(WELCOME_COMPOSER_TAB_ID, tabId)
-  terminalStore.setPendingComposerHandoff(tabId, { message, images: imagesSnapshot })
+  const { useConversationSkillsStore } = await import('../stores/conversation-skills')
+  const skillChips = useConversationSkillsStore().transferWelcomeSkills(tabId)
+  terminalStore.setPendingComposerHandoff(tabId, {
+    message,
+    images: imagesSnapshot,
+    skillIds: skillChips.map(s => s.id)
+  })
   terminalStore.markAssistantSkipOnboarding(tabId)
   terminalStore.focusHubConversation(tabId)
   // 任务已切入 Hub 后，关闭首页「初次见面」邀请

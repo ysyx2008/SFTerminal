@@ -86,6 +86,17 @@ export interface AgentRecord {
    * 重开对话时按这份清单再装；字段缺失（老记录）则不补、不强行猜测。
    */
   loadedSkills?: string[]
+  /**
+   * 这场对话里用户亲手卸掉的技能。
+   * 重开后仍不许它自己再装回来；用户再点上才开。
+   */
+  userDismissedSkills?: string[]
+}
+
+/** 输入区胶囊用的技能快照（不含外部工具包） */
+export interface VisibleConversationSkill {
+  id: string
+  name: string
 }
 
 /**
