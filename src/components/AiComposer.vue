@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRandomPlaceholder } from '../composables/useRandomPlaceholder'
-import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2, ListTree, Pencil, CornerDownLeft, GripVertical } from 'lucide-vue-next'
+import { X, Plus, Square, ArrowUp, Check, Mic, MicOff, Loader2, Volume2, ListTree, Pencil, CornerDownLeft, GripVertical, Sparkles } from 'lucide-vue-next'
 import { useMentions } from '../composables/useMentions'
 import { toast } from '../composables/useToast'
 import { useComposerQuoteStore } from '../stores/composer-quote'
@@ -605,8 +605,7 @@ const hasComposerAttachments = computed(
     props.uploadedDocs.length > 0 ||
     quoteSnippets.value.length > 0 ||
     props.pendingImages.length > 0 ||
-    followUpItems.value.length > 0 ||
-    showSkillChipRow.value
+    followUpItems.value.length > 0
 )
 
 let textareaResizeObserver: ResizeObserver | null = null
@@ -1249,52 +1248,6 @@ const handleSendClick = (event: MouseEvent) => {
     </div>
   </div>
 
-  <div
-    v-if="showSkillChipRow"
-    class="composer-skill-chips"
-    :class="{ 'is-dragging': skillChipsDragging }"
-    :aria-label="t('ai.conversationSkills')"
-  >
-    <p class="composer-skill-chips-hint">{{ t('ai.conversationSkillChipsHint') }}</p>
-    <div
-      class="composer-skill-chips-track"
-      :class="{
-        'can-scroll-left': skillChipsCanScrollLeft,
-        'can-scroll-right': skillChipsCanScrollRight
-      }"
-    >
-      <div
-        ref="skillChipsScrollerEl"
-        class="composer-skill-chips-scroller"
-        @scroll="onSkillChipsScroll"
-        @pointerdown="onSkillChipsPointerDown"
-        @pointermove="onSkillChipsPointerMove"
-        @pointerup="endSkillChipsDrag"
-        @pointercancel="endSkillChipsDrag"
-        @click.capture="onSkillChipsClickCapture"
-      >
-        <div
-          v-for="s in skillChips"
-          :key="s.id"
-          class="composer-skill-chip"
-          :class="{
-            'is-new': justAddedSkillIds.includes(s.id),
-            'is-unavailable': s.unavailable
-          }"
-          :data-skill-id="s.id"
-          @mouseenter="onSkillChipHover($event, s)"
-          @mouseleave="hideSkillChipTip"
-        >
-          <span class="composer-skill-chip-icon">✨</span>
-          <span class="composer-skill-chip-label">{{ s.name }}</span>
-          <button type="button" class="composer-skill-chip-remove" @click="removeSkillChip(s.id)" :title="t('ai.conversationSkillRemove')">
-            <X :size="12" />
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div v-if="quoteSnippets.length > 0" class="composer-quote-snips">
     <div class="composer-quote-snips-header">
       <span class="composer-quote-snips-title">{{ t('ai.quoteSnippetsSection') }}</span>
@@ -1415,7 +1368,58 @@ const handleSendClick = (event: MouseEvent) => {
       </div>
     </div>
 
-    <div class="input-container" :class="{ 'flash-hint': isFlashHint, 'input-container-two-row': isTwoRow }">
+    <div
+      class="input-container"
+      :class="{
+        'flash-hint': isFlashHint,
+        'input-container-two-row': isTwoRow,
+        'has-skill-chips': showSkillChipRow
+      }"
+    >
+      <div
+        v-if="showSkillChipRow"
+        class="composer-skill-chips"
+        :class="{ 'is-dragging': skillChipsDragging }"
+        :aria-label="t('ai.conversationSkills')"
+      >
+        <Sparkles class="composer-skill-chips-mark" :size="12" :stroke-width="1.75" aria-hidden="true" />
+        <div
+          class="composer-skill-chips-track"
+          :class="{
+            'can-scroll-left': skillChipsCanScrollLeft,
+            'can-scroll-right': skillChipsCanScrollRight
+          }"
+        >
+          <div
+            ref="skillChipsScrollerEl"
+            class="composer-skill-chips-scroller"
+            @scroll="onSkillChipsScroll"
+            @pointerdown="onSkillChipsPointerDown"
+            @pointermove="onSkillChipsPointerMove"
+            @pointerup="endSkillChipsDrag"
+            @pointercancel="endSkillChipsDrag"
+            @click.capture="onSkillChipsClickCapture"
+          >
+            <div
+              v-for="s in skillChips"
+              :key="s.id"
+              class="composer-skill-chip"
+              :class="{
+                'is-new': justAddedSkillIds.includes(s.id),
+                'is-unavailable': s.unavailable
+              }"
+              :data-skill-id="s.id"
+              @mouseenter="onSkillChipHover($event, s)"
+              @mouseleave="hideSkillChipTip"
+            >
+              <span class="composer-skill-chip-label">{{ s.name }}</span>
+              <button type="button" class="composer-skill-chip-remove" @click="removeSkillChip(s.id)" :title="t('ai.conversationSkillRemove')">
+                <X :size="11" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
       <button
         v-if="!isTwoRow"
         class="upload-btn"
@@ -2026,31 +2030,22 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .composer-skill-chips {
-  position: relative;
-  padding: 8px 12px;
-  background: var(--bg-tertiary);
-  border-top: 1px solid var(--border-color);
-}
-
-.composer-skill-chips-hint {
-  position: absolute;
-  inset: 0 12px;
-  z-index: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  margin: 0;
-  pointer-events: none;
-  font-size: 11px;
-  line-height: 1.35;
+  gap: 6px;
+  min-width: 0;
+  padding: 1px 2px 7px;
+}
+
+.composer-skill-chips-mark {
+  flex-shrink: 0;
   color: var(--text-muted);
-  text-align: right;
 }
 
 .composer-skill-chips-track {
   position: relative;
-  z-index: 1;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .composer-skill-chips-track::before,
@@ -2059,7 +2054,7 @@ const handleSendClick = (event: MouseEvent) => {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 28px;
+  width: 20px;
   pointer-events: none;
   z-index: 1;
   opacity: 0;
@@ -2068,12 +2063,12 @@ const handleSendClick = (event: MouseEvent) => {
 
 .composer-skill-chips-track::before {
   left: 0;
-  background: linear-gradient(to right, var(--bg-tertiary), transparent);
+  background: linear-gradient(to right, var(--bg-surface), transparent);
 }
 
 .composer-skill-chips-track::after {
   right: 0;
-  background: linear-gradient(to left, var(--bg-tertiary), transparent);
+  background: linear-gradient(to left, var(--bg-surface), transparent);
 }
 
 .composer-skill-chips-track.can-scroll-left::before,
@@ -2084,7 +2079,7 @@ const handleSendClick = (event: MouseEvent) => {
 .composer-skill-chips-scroller {
   display: flex;
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: 4px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -2111,14 +2106,13 @@ const handleSendClick = (event: MouseEvent) => {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 5px;
+  gap: 4px;
   max-width: 10.5rem;
-  padding: 5px 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, #f59e0b 12%, var(--bg-secondary));
-  border: 1px solid color-mix(in srgb, #f59e0b 35%, var(--border-color));
-  font-size: 11px;
-  color: var(--text-primary);
+  padding: 2px 5px 2px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
 }
 
 .composer-skill-chip.is-new {
@@ -2126,34 +2120,25 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .composer-skill-chip.is-unavailable {
-  opacity: 0.55;
-  filter: grayscale(1);
-  background: var(--bg-secondary);
-  border-color: var(--border-color);
-  color: var(--text-secondary);
+  opacity: 0.5;
+  color: var(--text-muted);
 }
 
 @keyframes skill-chip-gain {
   0% {
     transform: scale(0.82);
-    box-shadow: 0 0 0 0 color-mix(in srgb, #f59e0b 0%, transparent);
+    box-shadow: 0 0 0 0 rgba(var(--accent-decorative-rgb), 0);
     filter: brightness(1.35);
   }
   45% {
     transform: scale(1.08);
-    box-shadow: 0 0 16px 2px color-mix(in srgb, #f59e0b 45%, transparent);
+    box-shadow: 0 0 12px 1px rgba(var(--accent-decorative-rgb), 0.28);
   }
   100% {
     transform: scale(1);
     box-shadow: none;
     filter: brightness(1);
   }
-}
-
-.composer-skill-chip-icon {
-  flex-shrink: 0;
-  font-size: 12px;
-  line-height: 1;
 }
 
 .composer-skill-chip-label {
@@ -2170,13 +2155,25 @@ const handleSendClick = (event: MouseEvent) => {
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   cursor: pointer;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
 }
 
-.composer-skill-chip-remove:hover {
+.composer-skill-chip-remove:hover,
+.composer-skill-chip-remove:focus-visible {
   color: var(--text-primary);
+}
+
+@media (hover: hover) {
+  .composer-skill-chip-remove {
+    opacity: 0.45;
+  }
+
+  .composer-skill-chip:hover .composer-skill-chip-remove,
+  .composer-skill-chip-remove:focus-visible {
+    opacity: 1;
+  }
 }
 
 .composer-quote-chip {
@@ -2412,41 +2409,27 @@ const handleSendClick = (event: MouseEvent) => {
 
 .composer-root-embedded-filled .uploaded-docs,
 .composer-root-embedded-filled .composer-quote-snips,
-.composer-root-embedded-filled .composer-skill-chips,
 .composer-root-embedded-filled .follow-up-queue {
   border-top: none;
   background: transparent;
   padding: 11px 11px 0;
 }
 
-.composer-root-embedded-filled .composer-skill-chips-track::before {
-  background: linear-gradient(to right, var(--bg-secondary), transparent);
-}
-
-.composer-root-embedded-filled .composer-skill-chips-track::after {
-  background: linear-gradient(to left, var(--bg-secondary), transparent);
-}
-
 /* 附件区与下方分割线之间留足间距（文档列表不要紧贴分隔线） */
 .composer-root-embedded-filled .uploaded-docs:has(~ .ai-input-embedded),
 .composer-root-embedded-filled .composer-quote-snips:has(~ .ai-input-embedded),
-.composer-root-embedded-filled .composer-skill-chips:has(~ .ai-input-embedded),
 .composer-root-embedded-filled .follow-up-queue:has(~ .ai-input-embedded) {
   padding-bottom: 11px;
 }
 
 .composer-root-embedded-filled .uploaded-docs + .composer-quote-snips,
 .composer-root-embedded-filled .follow-up-queue + .composer-quote-snips,
-.composer-root-embedded-filled .uploaded-docs + .follow-up-queue,
-.composer-root-embedded-filled .uploaded-docs + .composer-skill-chips,
-.composer-root-embedded-filled .follow-up-queue + .composer-skill-chips,
-.composer-root-embedded-filled .composer-skill-chips + .composer-quote-snips {
+.composer-root-embedded-filled .uploaded-docs + .follow-up-queue {
   padding-top: 8px;
 }
 
 .composer-root-embedded-filled .uploaded-docs ~ .ai-input-embedded,
 .composer-root-embedded-filled .composer-quote-snips ~ .ai-input-embedded,
-.composer-root-embedded-filled .composer-skill-chips ~ .ai-input-embedded,
 .composer-root-embedded-filled .follow-up-queue ~ .ai-input-embedded {
   border-top: 1px solid var(--border-color);
 }
@@ -2488,6 +2471,18 @@ const handleSendClick = (event: MouseEvent) => {
   border-radius: 16px;
   transition: box-shadow 0.2s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.input-container.has-skill-chips:not(.input-container-two-row) {
+  flex-wrap: wrap;
+}
+
+.input-container.has-skill-chips:not(.input-container-two-row) .composer-skill-chips {
+  flex: 1 0 100%;
+}
+
+.input-container-two-row.has-skill-chips {
+  grid-template-rows: auto auto auto;
 }
 
 /* 两行模式：grid 替代 flex-column，避免 textarea scrollHeight 测量失真 */

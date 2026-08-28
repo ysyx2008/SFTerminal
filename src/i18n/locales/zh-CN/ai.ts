@@ -141,7 +141,6 @@ export default {
     removeDoc: '移除',
     quoteSnippetsSection: '引用摘录（发送时附带全文与行号）',
     conversationSkills: '这场对话开着的技能',
-    conversationSkillChipsHint: '当前加载的技能',
     conversationSkillRemove: '关掉这个技能',
     conversationSkillUnavailableTip: '这场对话里用过，但现在已经关掉或没有了',
     quoteSnippetChipRange: '{label} · 第 {start}-{end} 行 · {count} 字',
