@@ -142,6 +142,7 @@ export default {
     quoteSnippetsSection: 'Quotes (full text + line numbers sent on submit)',
     conversationSkills: 'Skills in this conversation',
     conversationSkillRemove: 'Turn off this skill',
+    conversationSkillUnavailableTip: 'Used in this conversation, but it is turned off or no longer available',
     quoteSnippetChipRange: '{label} · L{start}-{end} · {count} chars',
     quoteSnippetChipPreview: '{label} · Preview · {count} chars',
     quoteSnippetChipTerminal: '{label} · Terminal · {count} chars',

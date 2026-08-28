@@ -226,6 +226,29 @@ describe('重开对话恢复技能', () => {
     expect(agent.exposeLoadedSkills()).toEqual([])
   })
 
+  it('装不上的技能仍挂在清单里，标成现在没有了', () => {
+    const agent = new TestAgent(createServices({
+      configService: {
+        get: vi.fn((key: string) => key === 'disabledBuiltinSkills' ? [configSkill.id] : undefined),
+        getAgentMbti: vi.fn().mockReturnValue(null),
+        getAiRules: vi.fn().mockReturnValue(''),
+        getAgentPersonalityText: vi.fn().mockReturnValue(''),
+        getAgentName: vi.fn().mockReturnValue(''),
+        getLanguage: vi.fn().mockReturnValue('zh-CN'),
+        getAiProfiles: vi.fn().mockReturnValue([{ id: 'test', contextLength: 128000 }]),
+        getActiveAiProfile: vi.fn().mockReturnValue('test'),
+        getAgentOnboardingCompleted: vi.fn().mockReturnValue(true),
+        hasVisionCapability: vi.fn().mockReturnValue(true),
+        getMcpServers: vi.fn().mockReturnValue([])
+      } as never
+    }))
+    agent.hydrateSkills(['not-a-real-skill', configSkill.id, 'user:gone'])
+    const visible = agent.exposeVisibleSkills()
+    expect(visible.find(s => s.id === 'not-a-real-skill')).toMatchObject({ unavailable: true })
+    expect(visible.find(s => s.id === configSkill.id)).toMatchObject({ unavailable: true })
+    expect(visible.find(s => s.id === 'user:gone')).toMatchObject({ unavailable: true })
+  })
+
   it('清单里的技能已经不存在或被关掉，跳过，对话照常打开', async () => {
     const sessionId = 'sess_missing'
     const historyService = {
@@ -256,6 +279,9 @@ describe('重开对话恢复技能', () => {
 
     await expect(agent.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))).resolves.toBeTruthy()
     expect(agent.exposeLoadedSkills()).toEqual([])
+    expect(agent.exposeVisibleSkills().filter(s => s.unavailable).map(s => s.id).sort()).toEqual(
+      ['not-a-real-skill', configSkill.id].sort()
+    )
   })
 
   it('关切会话不按历史清单恢复技能', async () => {

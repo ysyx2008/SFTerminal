@@ -322,7 +322,8 @@ function onSkillPicked(skill: { id: string; name: string; description?: string }
   void conversationSkills.pin(props.currentTabId, skill)
 }
 
-function skillChipTitle(s: { id: string; name: string; description?: string }): string {
+function skillChipTitle(s: { id: string; name: string; description?: string; unavailable?: boolean }): string {
+  if (s.unavailable) return t('ai.conversationSkillUnavailableTip')
   if (!s.id.startsWith('user:')) {
     const key = `skillSettings.builtinSkillDescs.${s.id}`
     if (te(key)) return String(t(key))
@@ -1235,7 +1236,10 @@ const handleSendClick = (event: MouseEvent) => {
         v-for="s in skillChips"
         :key="s.id"
         class="composer-skill-chip"
-        :class="{ 'is-new': justAddedSkillIds.includes(s.id) }"
+        :class="{
+          'is-new': justAddedSkillIds.includes(s.id),
+          'is-unavailable': s.unavailable
+        }"
         :data-skill-id="s.id"
         :title="skillChipTitle(s)"
       >
@@ -2054,6 +2058,14 @@ const handleSendClick = (event: MouseEvent) => {
 
 .composer-skill-chip.is-new {
   animation: skill-chip-gain 0.7s ease-out;
+}
+
+.composer-skill-chip.is-unavailable {
+  opacity: 0.55;
+  filter: grayscale(1);
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
 }
 
 @keyframes skill-chip-gain {

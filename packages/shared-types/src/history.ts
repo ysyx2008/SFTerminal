@@ -98,6 +98,8 @@ export interface VisibleConversationSkill {
   id: string
   name: string
   description?: string
+  /** 这场里用过，但现在已经关掉或没有了 */
+  unavailable?: boolean
 }
 
 /**

@@ -11,6 +11,7 @@ export interface ConversationSkillChip {
   id: string
   name: string
   description?: string
+  unavailable?: boolean
 }
 
 function isMcpSkillId(id: string): boolean {
@@ -49,7 +50,7 @@ export const useConversationSkillsStore = defineStore('conversationSkills', () =
   function applySnapshot(tabId: string, skills: ConversationSkillChip[], animateNew: boolean): void {
     const visible = skills.filter(s => !isMcpSkillId(s.id))
     const prev = new Set((skillsByTabId.value[tabId] ?? []).map(s => s.id))
-    const added = visible.filter(s => !prev.has(s.id)).map(s => s.id)
+    const added = visible.filter(s => !prev.has(s.id) && !s.unavailable).map(s => s.id)
     skillsByTabId.value = { ...skillsByTabId.value, [tabId]: visible }
     if (animateNew && added.length > 0) {
       justAddedByTabId.value = { ...justAddedByTabId.value, [tabId]: added }
