@@ -13,7 +13,7 @@ import type { ParsingDocument } from '../composables/useDocumentUpload'
 import type { ContextCompositionId, ContextCompositionNode } from '@shared/types'
 import AttachmentFileIcon from './AttachmentFileIcon.vue'
 import HoverTipOverlay from './HoverTipOverlay.vue'
-import { useHoverTip } from '../composables/useHoverTip'
+import { useHoverTip, BUTTON_HOVER_TIP_DELAY_MS } from '../composables/useHoverTip'
 
 interface ContextStats {
   tokenEstimate: number
@@ -332,6 +332,17 @@ function skillChipTitle(s: { id: string; name: string; description?: string; una
   return description || s.name
 }
 
+const { hoverTip: skillChipHoverTip, showTip: showSkillChipTip, hideTip: hideSkillChipTip } = useHoverTip({
+  placement: 'top',
+  delayMs: BUTTON_HOVER_TIP_DELAY_MS,
+  wrap: true
+})
+
+function onSkillChipHover(e: MouseEvent, s: { id: string; name: string; description?: string; unavailable?: boolean }) {
+  if (skillChipsDragging.value) return
+  showSkillChipTip(e, skillChipTitle(s))
+}
+
 function removeSkillChip(skillId: string) {
   void conversationSkills.unpin(props.currentTabId, skillId)
 }
@@ -343,6 +354,11 @@ const skillChipsDragging = ref(false)
 const SKILL_CHIPS_DRAG_THRESHOLD = 4
 let skillChipsDrag: { pointerId: number; startX: number; startScroll: number; moved: boolean } | null = null
 let suppressSkillChipClick = false
+
+function onSkillChipsScroll() {
+  hideSkillChipTip()
+  updateSkillChipsOverflow()
+}
 
 function updateSkillChipsOverflow() {
   const el = skillChipsScrollerEl.value
@@ -405,6 +421,7 @@ function onSkillChipsPointerMove(e: PointerEvent) {
   if (!skillChipsDrag.moved && Math.abs(dx) < SKILL_CHIPS_DRAG_THRESHOLD) return
   skillChipsDrag.moved = true
   skillChipsDragging.value = true
+  hideSkillChipTip()
   el.scrollLeft = skillChipsDrag.startScroll - dx
 }
 
@@ -1225,7 +1242,7 @@ const handleSendClick = (event: MouseEvent) => {
     <div
       ref="skillChipsScrollerEl"
       class="composer-skill-chips-scroller"
-      @scroll="updateSkillChipsOverflow"
+      @scroll="onSkillChipsScroll"
       @pointerdown="onSkillChipsPointerDown"
       @pointermove="onSkillChipsPointerMove"
       @pointerup="endSkillChipsDrag"
@@ -1241,7 +1258,8 @@ const handleSendClick = (event: MouseEvent) => {
           'is-unavailable': s.unavailable
         }"
         :data-skill-id="s.id"
-        :title="skillChipTitle(s)"
+        @mouseenter="onSkillChipHover($event, s)"
+        @mouseleave="hideSkillChipTip"
       >
         <span class="composer-skill-chip-icon">✨</span>
         <span class="composer-skill-chip-label">{{ s.name }}</span>
@@ -1603,6 +1621,7 @@ const handleSendClick = (event: MouseEvent) => {
   </div>
   </div>
   <HoverTipOverlay :tip="consumedHoverTip" />
+  <HoverTipOverlay :tip="skillChipHoverTip" />
 </template>
 
 <style scoped>
