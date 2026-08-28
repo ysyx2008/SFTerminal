@@ -61,6 +61,9 @@ class TestAgent extends Agent {
   exposeVisibleSkills() {
     return this.listVisibleSkills()
   }
+  exposeLoadedSkillsRoster() {
+    return this.getLoadedSkillsRoster()
+  }
 }
 
 function createServices(overrides?: Partial<AgentServices>): AgentServices {
@@ -519,6 +522,23 @@ describe('重开对话恢复技能', () => {
     const agent = new TestAgent(createServices({ historyService: historyService as never }))
     await agent.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
     expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill' && s.name === '我的技能')).toBe(true)
+    expect(agent.exposeLoadedSkillsRoster()).toEqual(
+      expect.arrayContaining([{ id: 'user:my-skill', name: '我的技能' }])
+    )
+  })
+
+  it('用裸 id 点掉自己写的技能后，可见清单和秘书看到的都空了', async () => {
+    const agent = new TestAgent(createServices())
+    await agent.pinSkill('user:my-skill')
+    expect(agent.exposeLoadedSkillsRoster()).toEqual(
+      expect.arrayContaining([{ id: 'user:my-skill', name: '我的技能' }])
+    )
+
+    await agent.unpinSkill('my-skill')
+    expect(agent.exposeVisibleSkills()).toEqual([])
+    expect(agent.exposeLoadedSkillsRoster()).toEqual([])
+    expect(agent.isSkillDismissed('user:my-skill')).toBe(true)
+    expect(agent.isSkillDismissed('my-skill')).toBe(true)
   })
 
   it('用户点上自己写的技能会出现在可见清单里', async () => {
@@ -526,6 +546,9 @@ describe('重开对话恢复技能', () => {
     const result = await agent.pinSkill('user:my-skill')
     expect(result.ok).toBe(true)
     expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill' && s.name === '我的技能' && s.description === '自定义技能简介')).toBe(true)
+    expect(agent.exposeLoadedSkillsRoster()).toEqual(
+      expect.arrayContaining([{ id: 'user:my-skill', name: '我的技能' }])
+    )
   })
 
   it('卸掉自己写的技能后，重开也不会再装回来', async () => {
@@ -541,9 +564,11 @@ describe('重开对话恢复技能', () => {
     agent.hydrateSkills(['user:my-skill'], [])
     await agent.unpinSkill('user:my-skill')
     expect(agent.exposeVisibleSkills()).toEqual([])
+    expect(agent.exposeLoadedSkillsRoster()).toEqual([])
 
     await agent.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
     expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill')).toBe(false)
+    expect(agent.exposeLoadedSkillsRoster()).toEqual([])
   })
 
   it('重开对话时，用户卸掉的技能不出现在胶囊清单里', async () => {

@@ -36,6 +36,100 @@ export const LANGUAGE_RULE = '**CRITICAL RULE: You MUST respond in the SAME lang
  * - DeepSeek/OpenAI 自动前缀缓存天然匹配到此标记之前的公共前缀
  */
 export const CACHE_BREAK_MARKER = '<!-- CACHE_BREAK -->'
+
+/** 系统提示中「这场对话开着的技能」章节标题 */
+export const LOADED_SKILLS_ROSTER_HEADING = '# 这场对话开着的技能'
+/** 系统提示中已加载技能文档章节标题 */
+export const SKILLS_CONTENT_HEADING = '# 技能文档'
+
+export interface LoadedSkillRosterItem {
+  id: string
+  name: string
+}
+
+function findMarkdownSectionBounds(content: string, heading: string): { start: number; end: number } | null {
+  const start = content.indexOf(heading)
+  if (start === -1) return null
+  const rest = content.slice(start + heading.length)
+  const nextMatch = rest.match(/\n\n# /)
+  const end = nextMatch?.index !== undefined ? start + heading.length + nextMatch.index : content.length
+  return { start, end }
+}
+
+function formatLoadedSkillLabel(skill: LoadedSkillRosterItem): string {
+  return skill.name && skill.name !== skill.id ? `${skill.name}（${skill.id}）` : skill.id
+}
+
+export function buildLoadedSkillsRosterSection(skills: LoadedSkillRosterItem[]): string {
+  const lines = [LOADED_SKILLS_ROSTER_HEADING, '']
+  if (skills.length === 0) {
+    lines.push('当前没有开着的技能。只认这一节，不要凭对话里有没有 load 过来猜。')
+    return lines.join('\n')
+  }
+  lines.push('当前开着：')
+  for (const skill of skills) {
+    lines.push(`- ${formatLoadedSkillLabel(skill)}`)
+  }
+  lines.push('')
+  lines.push('这是这场对话现在开着的全部技能（含用户点上的和重开带回来的）。不要只凭自己有没有 load 过判断。')
+  return lines.join('\n')
+}
+
+/** 跟这一句一起发出的「现在开着」短注，避免模型拿上一轮回答当真相 */
+export function buildLoadedSkillsThisTurnHint(skills: LoadedSkillRosterItem[]): string {
+  const current = skills.length > 0
+    ? skills.map(formatLoadedSkillLabel).join('、')
+    : '无'
+  return `这场对话当前开着的技能：${current}。以这一行为准，不要用上一轮的回答。`
+}
+
+export function buildSkillsContentSectionText(content?: string): string {
+  const trimmed = content?.trim()
+  if (!trimmed) return ''
+  return `${SKILLS_CONTENT_HEADING}\n\n${trimmed}`
+}
+
+/**
+ * 在已有 system prompt 中替换/插入「开着的技能」清单和技能文档。
+ * 用于 prompt cache 复用时刷新，而不重建整段 system prompt。
+ */
+export function patchLoadedSkillsSectionsInSystemPrompt(
+  systemPrompt: string,
+  rosterSection: string,
+  skillsContentSection: string,
+): string {
+  let next = systemPrompt
+  const rosterBounds = findMarkdownSectionBounds(next, LOADED_SKILLS_ROSTER_HEADING)
+  if (rosterBounds) {
+    next = next.slice(0, rosterBounds.start) + rosterSection + next.slice(rosterBounds.end)
+  } else {
+    const skillsBounds = findMarkdownSectionBounds(next, SKILLS_CONTENT_HEADING)
+    if (skillsBounds) {
+      next = next.slice(0, skillsBounds.start) + rosterSection + '\n\n' + next.slice(skillsBounds.start)
+    } else {
+      next = `${next}\n\n${rosterSection}`
+    }
+  }
+
+  const contentBounds = findMarkdownSectionBounds(next, SKILLS_CONTENT_HEADING)
+  if (contentBounds) {
+    if (!skillsContentSection) {
+      let start = contentBounds.start
+      if (start >= 2 && next.slice(start - 2, start) === '\n\n') start -= 2
+      next = next.slice(0, start) + next.slice(contentBounds.end)
+    } else {
+      next = next.slice(0, contentBounds.start) + skillsContentSection + next.slice(contentBounds.end)
+    }
+  } else if (skillsContentSection) {
+    const rosterAfter = findMarkdownSectionBounds(next, LOADED_SKILLS_ROSTER_HEADING)
+    if (rosterAfter) {
+      next = next.slice(0, rosterAfter.end) + '\n\n' + skillsContentSection + next.slice(rosterAfter.end)
+    } else {
+      next = `${next}\n\n${skillsContentSection}`
+    }
+  }
+  return next
+}
 const HEARTBEAT_FILENAME = 'HEARTBEAT.md'
 
 /** 进程启动时刻（进程内稳定，适合放在 system prompt Tier 1 前缀） */
@@ -199,6 +293,8 @@ export interface BuildSystemPromptOptions {
   isOnboarding?: boolean
   /** 已加载技能的文档内容（Markdown，技能加载时自动注入） */
   skillsContent?: string
+  /** 这场对话当前开着的技能（用户点上的、重开带回来的、自己 load 的） */
+  loadedSkillsRoster?: LoadedSkillRosterItem[]
   /** MCP 连接器目录（仅渐进披露 defer 模式提供，注入「可用的 MCP 连接器」一节） */
   mcpServerCatalog?: string
 }
@@ -229,6 +325,7 @@ export class PromptBuilder {
   private readonly bondContext?: string
   private readonly isOnboarding: boolean
   private readonly skillsContent?: string
+  private readonly loadedSkillsRoster: LoadedSkillRosterItem[]
   private readonly mcpServerCatalog?: string
 
   private osType = ''
@@ -255,6 +352,7 @@ export class PromptBuilder {
     this.bondContext = options.bondContext
     this.isOnboarding = options.isOnboarding ?? false
     this.skillsContent = options.skillsContent
+    this.loadedSkillsRoster = options.loadedSkillsRoster ?? []
     this.mcpServerCatalog = options.mcpServerCatalog
   }
 
@@ -313,6 +411,7 @@ export class PromptBuilder {
       w('knowledge', this.buildKnowledgeDocSection()),
       w('knowledge', this.buildConversationHistorySection()),
       w('environment', this.buildWatchListSection()),
+      w('skills', this.buildLoadedSkillsRosterBlock()),
       w('skills', this.buildSkillsContentSection()),
       w('knowledge', this.buildKnowledgeContext()),
       w('knowledge', this.buildTaskMemorySection()),
@@ -719,10 +818,12 @@ export class PromptBuilder {
     }
   }
 
+  private buildLoadedSkillsRosterBlock(): string {
+    return buildLoadedSkillsRosterSection(this.loadedSkillsRoster)
+  }
+
   private buildSkillsContentSection(): string {
-    const content = this.skillsContent?.trim()
-    if (!content) return ''
-    return `# 技能文档\n\n${content}`
+    return buildSkillsContentSectionText(this.skillsContent)
   }
 
   private buildMcpServersSection(): string {

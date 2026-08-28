@@ -49,7 +49,13 @@ import {
   PromptBuilder, 
   getMbtiStylePrompt, 
   getAllMbtiTypes,
-  buildSystemPrompt
+  buildSystemPrompt,
+  buildLoadedSkillsRosterSection,
+  buildLoadedSkillsThisTurnHint,
+  buildSkillsContentSectionText,
+  patchLoadedSkillsSectionsInSystemPrompt,
+  LOADED_SKILLS_ROSTER_HEADING,
+  SKILLS_CONTENT_HEADING,
 } from '../prompt-builder'
 import type { AgentContext, HostProfileServiceInterface } from '../types'
 
@@ -317,6 +323,74 @@ describe('PromptBuilder', () => {
       const prompt = builder.build()
 
       expect(prompt).not.toContain('技能文档')
+    })
+  })
+
+  describe('loaded skills roster', () => {
+    it('says none are open when roster is empty', () => {
+      const prompt = new PromptBuilder({ context: createMockContext() }).build()
+      expect(prompt).toContain('这场对话开着的技能')
+      expect(prompt).toContain('当前没有开着的技能')
+    })
+
+    it('lists currently open skills including user-mounted ones', () => {
+      const prompt = new PromptBuilder({
+        context: createMockContext(),
+        loadedSkillsRoster: [
+          { id: 'user:polymarket', name: 'polymarket' },
+          { id: 'excel', name: 'Excel' },
+        ],
+      }).build()
+      expect(prompt).toContain('polymarket（user:polymarket）')
+      expect(prompt).toContain('Excel（excel）')
+      expect(prompt).toContain('不要只凭自己有没有 load 过判断')
+    })
+  })
+
+  describe('buildLoadedSkillsThisTurnHint', () => {
+    it('says none when roster is empty', () => {
+      expect(buildLoadedSkillsThisTurnHint([])).toBe(
+        '这场对话当前开着的技能：无。以这一行为准，不要用上一轮的回答。'
+      )
+    })
+
+    it('lists currently open skills', () => {
+      const hint = buildLoadedSkillsThisTurnHint([
+        { id: 'user:polymarket', name: 'polymarket' },
+        { id: 'excel', name: 'Excel' },
+      ])
+      expect(hint).toContain('polymarket（user:polymarket）')
+      expect(hint).toContain('Excel（excel）')
+      expect(hint).toContain('以这一行为准')
+    })
+  })
+
+  describe('patchLoadedSkillsSectionsInSystemPrompt', () => {
+    it('inserts roster and skill docs into an old cached prompt', () => {
+      const patched = patchLoadedSkillsSectionsInSystemPrompt(
+        '# 已有关切\n\n无',
+        buildLoadedSkillsRosterSection([{ id: 'user:polymarket', name: 'polymarket' }]),
+        buildSkillsContentSectionText('## polymarket\n\n查市场'),
+      )
+      expect(patched).toContain(LOADED_SKILLS_ROSTER_HEADING)
+      expect(patched).toContain('polymarket（user:polymarket）')
+      expect(patched).toContain(SKILLS_CONTENT_HEADING)
+      expect(patched).toContain('查市场')
+    })
+
+    it('replaces a stale roster when skills change', () => {
+      const first = patchLoadedSkillsSectionsInSystemPrompt(
+        '# 身份\n\n秘书',
+        buildLoadedSkillsRosterSection([{ id: 'excel', name: 'Excel' }]),
+        '',
+      )
+      const next = patchLoadedSkillsSectionsInSystemPrompt(
+        first,
+        buildLoadedSkillsRosterSection([]),
+        '',
+      )
+      expect(next).toContain('当前没有开着的技能')
+      expect(next).not.toContain('Excel')
     })
   })
 

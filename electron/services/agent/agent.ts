@@ -72,6 +72,12 @@ import {
 } from './tools/host-identity'
 import { getWatchService } from '../watch/watch.service'
 import { formatWatchListForPrompt } from './skills/watch/executor'
+import {
+  buildLoadedSkillsRosterSection,
+  buildLoadedSkillsThisTurnHint,
+  buildSkillsContentSectionText,
+  patchLoadedSkillsSectionsInSystemPrompt,
+} from './prompt-builder'
 import { consumeProactiveContext } from './proactive-store'
 import { applyParallelShare, computeToolOutputBudget } from './tool-output-budget'
 import { t, type TranslationKey } from './i18n'
@@ -403,7 +409,26 @@ export abstract class Agent {
   }
 
   isSkillDismissed(skillId: string): boolean {
-    return this._userDismissedSkills.has(skillId)
+    return this.skillIdAliases(skillId).some(id => this._userDismissedSkills.has(id))
+  }
+
+  /** `user:foo` 与 `foo`（自己写的技能）视为同一条 */
+  private skillIdAliases(skillId: string): string[] {
+    const ids = new Set<string>([skillId])
+    const userId = parseUserSkillId(skillId)
+    if (userId) {
+      ids.add(userId)
+      ids.add(toUserSkillId(userId))
+      return [...ids]
+    }
+    if (getUserSkillService().getSkill(skillId)) {
+      ids.add(toUserSkillId(skillId))
+    }
+    return [...ids]
+  }
+
+  private isUserSkillId(skillId: string): boolean {
+    return Boolean(parseUserSkillId(skillId) || getUserSkillService().getSkill(skillId))
   }
 
   /**
@@ -414,7 +439,9 @@ export abstract class Agent {
       return { ok: false, error: 'mcp_not_supported' }
     }
     this._skillsMutatedByUser = true
-    this._userDismissedSkills.delete(skillId)
+    for (const id of this.skillIdAliases(skillId)) {
+      this._userDismissedSkills.delete(id)
+    }
     if (this._pendingRestoreSkillIds) {
       this._pendingRestoreSkillIds = [
         ...this._pendingRestoreSkillIds.filter(id => id !== skillId),
@@ -447,13 +474,17 @@ export abstract class Agent {
    */
   async unpinSkill(skillId: string): Promise<void> {
     this._skillsMutatedByUser = true
-    this._userDismissedSkills.add(skillId)
-    this._loadedUserSkillIds.delete(skillId)
-    if (this._pendingRestoreSkillIds) {
-      this._pendingRestoreSkillIds = this._pendingRestoreSkillIds.filter(id => id !== skillId)
+    const aliases = this.skillIdAliases(skillId)
+    const dismissed = new Set(aliases)
+    for (const id of aliases) {
+      this._userDismissedSkills.add(id)
+      this._loadedUserSkillIds.delete(id)
+      this.forgetRememberedSkillId(id)
     }
-    this.forgetRememberedSkillId(skillId)
-    if (this._skillSession && !parseUserSkillId(skillId)) {
+    if (this._pendingRestoreSkillIds) {
+      this._pendingRestoreSkillIds = this._pendingRestoreSkillIds.filter(id => !dismissed.has(id))
+    }
+    if (this._skillSession && !this.isUserSkillId(skillId)) {
       await this._skillSession.unloadSkill(skillId)
     }
     this.persistSkillStateIfPossible()
@@ -468,7 +499,7 @@ export abstract class Agent {
       this._userDismissedSkills = new Set(userDismissedSkills.filter(id => typeof id === 'string'))
     }
     if (Array.isArray(loadedSkills)) {
-      this._pendingRestoreSkillIds = loadedSkills.filter(id => !this._userDismissedSkills.has(id))
+      this._pendingRestoreSkillIds = loadedSkills.filter(id => !this.isSkillDismissed(id))
       this._rememberedSkillIds = [...this._pendingRestoreSkillIds]
     }
     this._skillsChangedHook?.()
@@ -478,7 +509,7 @@ export abstract class Agent {
     const visible: VisibleConversationSkill[] = []
     for (const id of this.orderedLoadedSkillIds()) {
       if (parseMcpSkillId(id)) continue
-      if (this._userDismissedSkills.has(id)) continue
+      if (this.isSkillDismissed(id)) continue
       visible.push({
         id,
         ...this.resolveVisibleSkillMeta(id),
@@ -486,6 +517,23 @@ export abstract class Agent {
       })
     }
     return visible
+  }
+
+  /** 这场对话现在开着的技能（含已接上的外部工具包），给模型看的同一份清单 */
+  protected getLoadedSkillsRoster(): Array<{ id: string; name: string }> {
+    const ids = this.collectPersistedSkillIds() ?? []
+    const roster: Array<{ id: string; name: string }> = []
+    for (const id of ids) {
+      if (this.isSkillDismissed(id)) continue
+      if (parseMcpSkillId(id)) {
+        const resolved = this.services.mcpService?.resolveServerRef(id)
+        roster.push({ id, name: resolved?.name || id })
+        continue
+      }
+      if (!this.isConversationSkillAvailable(id)) continue
+      roster.push({ id, name: this.resolveVisibleSkillMeta(id).name })
+    }
+    return roster
   }
 
   markUserSkillLoaded(skillId: string): void {
@@ -619,7 +667,7 @@ export abstract class Agent {
       }
       const userSkillId = parseUserSkillId(skillId)
       if (userSkillId) {
-        if (this._userDismissedSkills.has(skillId)) {
+        if (this.isSkillDismissed(skillId)) {
           log.info(`Skip restoring user-dismissed skill "${skillId}"`)
           continue
         }
@@ -633,7 +681,7 @@ export abstract class Agent {
         log.warn(`Skip restoring disabled skill "${skillId}"`)
         continue
       }
-      if (this._userDismissedSkills.has(skillId)) {
+      if (this.isSkillDismissed(skillId)) {
         log.info(`Skip restoring user-dismissed skill "${skillId}"`)
         continue
       }
@@ -2120,6 +2168,7 @@ export abstract class Agent {
         })
 
         this.refreshBrowserBridgeSectionInMessages(run.messages)
+        this.refreshLoadedSkillsSectionsInMessages(run.messages)
 
         // 在前序消息末尾设置 Anthropic cache breakpoint（第 3 个断点）
         const lastPrevMsg = run.messages[run.messages.length - 1]
@@ -2280,6 +2329,23 @@ export abstract class Agent {
     run.taskMessageLog = [{ role: 'user', content: userBody }]
   }
 
+  /** prompt cache 复用时刷新「现在开着的技能」清单和技能文档 */
+  private refreshLoadedSkillsSectionsInMessages(messages: AiMessage[]): void {
+    const systemIdx = messages.findIndex(m => m.role === 'system' && typeof m.content === 'string')
+    if (systemIdx === -1) return
+    const current = messages[systemIdx].content as string
+    const roster = buildLoadedSkillsRosterSection(this.getLoadedSkillsRoster())
+    const skillsContent = buildSkillsContentSectionText(
+      [this.getSkillSession().getLoadedSkillsContent(), this.getLoadedUserSkillsContent()]
+        .filter(Boolean)
+        .join('\n\n'),
+    )
+    const patched = patchLoadedSkillsSectionsInSystemPrompt(current, roster, skillsContent)
+    if (patched !== current) {
+      messages[systemIdx] = { ...messages[systemIdx], content: patched }
+    }
+  }
+
   /** prompt cache 复用时刷新 system 消息中的浏览器助手章节（连接状态可能已变） */
   private refreshBrowserBridgeSectionInMessages(messages: AiMessage[]): void {
     const systemIdx = messages.findIndex(m => m.role === 'system' && typeof m.content === 'string')
@@ -2324,6 +2390,7 @@ export abstract class Agent {
     if (proactiveCtx?.trim()) {
       systemContextParts.push(proactiveCtx.trim())
     }
+    systemContextParts.push(buildLoadedSkillsThisTurnHint(this.getLoadedSkillsRoster()))
     const hasImages = !!(run.context.images && run.context.images.length > 0)
     const visionAvailable = this.currentProfileHasVision()
     let imageNote = ''

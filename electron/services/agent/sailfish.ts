@@ -170,6 +170,7 @@ export class SailFish extends Agent {
       skillsContent: [this.getSkillSession().getLoadedSkillsContent(), this.getLoadedUserSkillsContent()]
         .filter(Boolean)
         .join('\n\n'),
+      loadedSkillsRoster: this.getLoadedSkillsRoster(),
       mcpServerCatalog: this.services.mcpService?.shouldDeferTools()
         ? this.services.mcpService.getServerCatalogText()
         : undefined,
