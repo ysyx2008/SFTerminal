@@ -60,7 +60,7 @@ export const useConversationSkillsStore = defineStore('conversationSkills', () =
           ...justAddedByTabId.value,
           [tabId]: current.filter(id => !added.includes(id))
         }
-      }, 1400)
+      }, 1000)
     }
   }
 

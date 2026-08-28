@@ -352,6 +352,14 @@ describe('重开对话恢复技能', () => {
     expect(saved.some(r => r.loadedSkills?.includes(configSkill.id))).toBe(false)
   })
 
+  it('秘书 load_skill 新装上的内置技能排在末尾', async () => {
+    const agent = new TestAgent(createServices())
+    await agent.pinSkill('excel')
+    await agent.getSkillSession().loadSkill('calendar')
+    agent.markBuiltinSkillLoaded('calendar')
+    expect(agent.exposeVisibleSkills().map(s => s.id)).toEqual(['excel', 'calendar'])
+  })
+
   it('用户 @ 装上的技能排在可见清单末尾', async () => {
     const agent = new TestAgent(createServices())
     await agent.pinSkill('excel')
