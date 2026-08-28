@@ -308,6 +308,8 @@ onBeforeUnmount(() => {
   clearTipShowTimer()
   clearTipHideTimer()
   unbindTipRepositionListeners()
+  skillChipsDrag = null
+  skillChipsDragging.value = false
 })
 
 const quoteStore = useComposerQuoteStore()
@@ -332,6 +334,119 @@ function skillChipTitle(s: { id: string; name: string; description?: string }): 
 function removeSkillChip(skillId: string) {
   void conversationSkills.unpin(props.currentTabId, skillId)
 }
+
+const skillChipsScrollerEl = ref<HTMLElement | null>(null)
+const skillChipsCanScrollLeft = ref(false)
+const skillChipsCanScrollRight = ref(false)
+const skillChipsDragging = ref(false)
+const SKILL_CHIPS_DRAG_THRESHOLD = 4
+let skillChipsDrag: { pointerId: number; startX: number; startScroll: number; moved: boolean } | null = null
+let suppressSkillChipClick = false
+
+function updateSkillChipsOverflow() {
+  const el = skillChipsScrollerEl.value
+  if (!el) {
+    skillChipsCanScrollLeft.value = false
+    skillChipsCanScrollRight.value = false
+    return
+  }
+  const max = el.scrollWidth - el.clientWidth
+  skillChipsCanScrollLeft.value = el.scrollLeft > 1
+  skillChipsCanScrollRight.value = max - el.scrollLeft > 1
+}
+
+function scrollSkillChipIntoView(skillId: string) {
+  const scroller = skillChipsScrollerEl.value
+  const chip = scroller?.querySelector<HTMLElement>(`[data-skill-id="${CSS.escape(skillId)}"]`)
+  if (!scroller || !chip) return
+  const chipRect = chip.getBoundingClientRect()
+  const scrollerRect = scroller.getBoundingClientRect()
+  if (chipRect.left < scrollerRect.left + 8) {
+    scroller.scrollLeft += chipRect.left - scrollerRect.left - 12
+  } else if (chipRect.right > scrollerRect.right - 8) {
+    scroller.scrollLeft += chipRect.right - scrollerRect.right + 12
+  }
+}
+
+function onSkillChipsWheel(e: WheelEvent) {
+  const el = skillChipsScrollerEl.value
+  if (!el) return
+  const max = el.scrollWidth - el.clientWidth
+  if (max <= 0) return
+  const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
+  if (dx === 0) return
+  const next = Math.min(max, Math.max(0, el.scrollLeft + dx))
+  if (next === el.scrollLeft) return
+  e.preventDefault()
+  el.scrollLeft = next
+}
+
+function onSkillChipsPointerDown(e: PointerEvent) {
+  if (e.button !== 0) return
+  const target = e.target as HTMLElement | null
+  if (target?.closest('.composer-skill-chip-remove')) return
+  const el = skillChipsScrollerEl.value
+  if (!el || el.scrollWidth <= el.clientWidth) return
+  skillChipsDrag = {
+    pointerId: e.pointerId,
+    startX: e.clientX,
+    startScroll: el.scrollLeft,
+    moved: false
+  }
+  el.setPointerCapture(e.pointerId)
+}
+
+function onSkillChipsPointerMove(e: PointerEvent) {
+  if (!skillChipsDrag || skillChipsDrag.pointerId !== e.pointerId) return
+  const el = skillChipsScrollerEl.value
+  if (!el) return
+  const dx = e.clientX - skillChipsDrag.startX
+  if (!skillChipsDrag.moved && Math.abs(dx) < SKILL_CHIPS_DRAG_THRESHOLD) return
+  skillChipsDrag.moved = true
+  skillChipsDragging.value = true
+  el.scrollLeft = skillChipsDrag.startScroll - dx
+}
+
+function endSkillChipsDrag(e: PointerEvent) {
+  if (!skillChipsDrag || skillChipsDrag.pointerId !== e.pointerId) return
+  const el = skillChipsScrollerEl.value
+  if (el?.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
+  if (skillChipsDrag.moved) suppressSkillChipClick = true
+  skillChipsDrag = null
+  skillChipsDragging.value = false
+}
+
+function onSkillChipsClickCapture(e: MouseEvent) {
+  if (!suppressSkillChipClick) return
+  suppressSkillChipClick = false
+  e.preventDefault()
+  e.stopPropagation()
+}
+
+watch(skillChips, async () => {
+  await nextTick()
+  updateSkillChipsOverflow()
+})
+
+watch(justAddedSkillIds, async (ids) => {
+  const skillId = ids[ids.length - 1]
+  if (!skillId) return
+  await nextTick()
+  scrollSkillChipIntoView(skillId)
+  updateSkillChipsOverflow()
+})
+
+watch(skillChipsScrollerEl, (el, _prev, onCleanup) => {
+  if (!el) return
+  const ro = new ResizeObserver(() => updateSkillChipsOverflow())
+  ro.observe(el)
+  el.addEventListener('wheel', onSkillChipsWheel, { passive: false })
+  updateSkillChipsOverflow()
+  onCleanup(() => {
+    ro.disconnect()
+    el.removeEventListener('wheel', onSkillChipsWheel)
+  })
+})
 
 const { value: randomPlaceholder, pick: pickRandomPlaceholder } = useRandomPlaceholder(
   () => props.placeholderPoolsKey ?? 'ai.inputPlaceholderPools',
@@ -1099,20 +1214,37 @@ const handleSendClick = (event: MouseEvent) => {
   <div
     v-if="skillChips.length > 0"
     class="composer-skill-chips"
+    :class="{
+      'can-scroll-left': skillChipsCanScrollLeft,
+      'can-scroll-right': skillChipsCanScrollRight,
+      'is-dragging': skillChipsDragging
+    }"
     :aria-label="t('ai.conversationSkills')"
   >
     <div
-      v-for="s in skillChips"
-      :key="s.id"
-      class="composer-skill-chip"
-      :class="{ 'is-new': justAddedSkillIds.includes(s.id) }"
-        :title="skillChipTitle(s)"
+      ref="skillChipsScrollerEl"
+      class="composer-skill-chips-scroller"
+      @scroll="updateSkillChipsOverflow"
+      @pointerdown="onSkillChipsPointerDown"
+      @pointermove="onSkillChipsPointerMove"
+      @pointerup="endSkillChipsDrag"
+      @pointercancel="endSkillChipsDrag"
+      @click.capture="onSkillChipsClickCapture"
     >
-      <span class="composer-skill-chip-icon">✨</span>
-      <span class="composer-skill-chip-label">{{ s.name }}</span>
-      <button type="button" class="composer-skill-chip-remove" @click="removeSkillChip(s.id)" :title="t('ai.conversationSkillRemove')">
-        <X :size="12" />
-      </button>
+      <div
+        v-for="s in skillChips"
+        :key="s.id"
+        class="composer-skill-chip"
+        :class="{ 'is-new': justAddedSkillIds.includes(s.id) }"
+        :data-skill-id="s.id"
+        :title="skillChipTitle(s)"
+      >
+        <span class="composer-skill-chip-icon">✨</span>
+        <span class="composer-skill-chip-label">{{ s.name }}</span>
+        <button type="button" class="composer-skill-chip-remove" @click="removeSkillChip(s.id)" :title="t('ai.conversationSkillRemove')">
+          <X :size="12" />
+        </button>
+      </div>
     </div>
   </div>
 
@@ -1846,19 +1978,72 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .composer-skill-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  position: relative;
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border-top: 1px solid var(--border-color);
 }
 
+.composer-skill-chips::before,
+.composer-skill-chips::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.composer-skill-chips::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-tertiary), transparent);
+}
+
+.composer-skill-chips::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-tertiary), transparent);
+}
+
+.composer-skill-chips.can-scroll-left::before,
+.composer-skill-chips.can-scroll-right::after {
+  opacity: 1;
+}
+
+.composer-skill-chips-scroller {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  touch-action: pan-x;
+  user-select: none;
+  overscroll-behavior-x: contain;
+}
+
+.composer-skill-chips-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.composer-skill-chips.can-scroll-left .composer-skill-chips-scroller,
+.composer-skill-chips.can-scroll-right .composer-skill-chips-scroller {
+  cursor: grab;
+}
+
+.composer-skill-chips.is-dragging .composer-skill-chips-scroller {
+  cursor: grabbing;
+}
+
 .composer-skill-chip {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 5px;
-  max-width: 100%;
+  max-width: 10.5rem;
   padding: 5px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, #f59e0b 12%, var(--bg-secondary));
@@ -2155,6 +2340,14 @@ const handleSendClick = (event: MouseEvent) => {
   border-top: none;
   background: transparent;
   padding: 11px 11px 0;
+}
+
+.composer-root-embedded-filled .composer-skill-chips::before {
+  background: linear-gradient(to right, var(--bg-secondary), transparent);
+}
+
+.composer-root-embedded-filled .composer-skill-chips::after {
+  background: linear-gradient(to left, var(--bg-secondary), transparent);
 }
 
 /* 附件区与下方分割线之间留足间距（文档列表不要紧贴分隔线） */
