@@ -344,6 +344,7 @@ function onSkillChipHover(e: MouseEvent, s: { id: string; name: string; descript
 }
 
 function removeSkillChip(skillId: string) {
+  hideSkillChipTip()
   void conversationSkills.unpin(props.currentTabId, skillId)
 }
 
@@ -441,7 +442,9 @@ function onSkillChipsClickCapture(e: MouseEvent) {
   e.stopPropagation()
 }
 
-watch(skillChips, async () => {
+watch(skillChips, async (chips, prev) => {
+  const nextIds = new Set(chips.map(s => s.id))
+  if (prev?.some(s => !nextIds.has(s.id))) hideSkillChipTip()
   await nextTick()
   updateSkillChipsOverflow()
 })
@@ -628,6 +631,7 @@ onMounted(() => {
 watch(
   () => props.currentTabId,
   (tabId) => {
+    hideSkillChipTip()
     void conversationSkills.sync(tabId)
   }
 )
