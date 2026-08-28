@@ -133,13 +133,16 @@ const closePopover = () => {
   window.removeEventListener('resize', updatePosition)
 }
 
-const handleClickOutside = (e: MouseEvent) => {
+/** 捕获阶段听按下：控制面板等处的 stop 拦不住 */
+const handlePointerDownOutside = (e: PointerEvent) => {
   if (!showPopover.value) return
-  const target = e.target as Node
-  if (popoverRef.value && !popoverRef.value.contains(target)
-      && buttonRef.value && !buttonRef.value.contains(target)) {
+  const target = e.target
+  if (!(target instanceof Node)) {
     closePopover()
+    return
   }
+  if (popoverRef.value?.contains(target) || buttonRef.value?.contains(target)) return
+  closePopover()
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
@@ -180,13 +183,13 @@ const openSettings = () => {
 }
 
 onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
+  document.addEventListener('pointerdown', handlePointerDownOutside, true)
   document.addEventListener('keydown', handleKeydown)
   void loadAll()
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
+  document.removeEventListener('pointerdown', handlePointerDownOutside, true)
   document.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('resize', updatePosition)
 })
