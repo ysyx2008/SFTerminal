@@ -97,7 +97,7 @@ const props = defineProps<{
   placeholderFallbackKey?: string
 }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 const COMPOSITION_COLORS: Partial<Record<ContextCompositionId, string>> = {
   // 一级：与分段条共用，彼此区分度高
@@ -316,8 +316,17 @@ const conversationSkills = useConversationSkillsStore()
 const skillChips = computed(() => conversationSkills.getSkills(props.currentTabId))
 const justAddedSkillIds = computed(() => conversationSkills.justAddedIds(props.currentTabId))
 
-function onSkillPicked(skill: { id: string; name: string }) {
+function onSkillPicked(skill: { id: string; name: string; description?: string }) {
   void conversationSkills.pin(props.currentTabId, skill)
+}
+
+function skillChipTitle(s: { id: string; name: string; description?: string }): string {
+  if (!s.id.startsWith('user:')) {
+    const key = `skillSettings.builtinSkillDescs.${s.id}`
+    if (te(key)) return String(t(key))
+  }
+  const description = s.description?.trim()
+  return description || s.name
 }
 
 function removeSkillChip(skillId: string) {
@@ -1087,24 +1096,23 @@ const handleSendClick = (event: MouseEvent) => {
     </div>
   </div>
 
-  <div v-if="skillChips.length > 0" class="composer-skill-chips">
-    <div class="composer-skill-chips-header">
-      <span class="composer-skill-chips-title">{{ t('ai.conversationSkills') }}</span>
-    </div>
-    <div class="composer-skill-chips-list">
-      <div
-        v-for="s in skillChips"
-        :key="s.id"
-        class="composer-skill-chip"
-        :class="{ 'is-new': justAddedSkillIds.includes(s.id) }"
-        :title="s.name"
-      >
-        <span class="composer-skill-chip-icon">✨</span>
-        <span class="composer-skill-chip-label">{{ s.name }}</span>
-        <button type="button" class="composer-skill-chip-remove" @click="removeSkillChip(s.id)" :title="t('ai.conversationSkillRemove')">
-          <X :size="12" />
-        </button>
-      </div>
+  <div
+    v-if="skillChips.length > 0"
+    class="composer-skill-chips"
+    :aria-label="t('ai.conversationSkills')"
+  >
+    <div
+      v-for="s in skillChips"
+      :key="s.id"
+      class="composer-skill-chip"
+      :class="{ 'is-new': justAddedSkillIds.includes(s.id) }"
+        :title="skillChipTitle(s)"
+    >
+      <span class="composer-skill-chip-icon">✨</span>
+      <span class="composer-skill-chip-label">{{ s.name }}</span>
+      <button type="button" class="composer-skill-chip-remove" @click="removeSkillChip(s.id)" :title="t('ai.conversationSkillRemove')">
+        <X :size="12" />
+      </button>
     </div>
   </div>
 
@@ -1838,25 +1846,12 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .composer-skill-chips {
-  padding: 8px 12px;
-  background: var(--bg-tertiary);
-  border-top: 1px solid var(--border-color);
-}
-
-.composer-skill-chips-header {
-  margin-bottom: 6px;
-}
-
-.composer-skill-chips-title {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.composer-skill-chips-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
 }
 
 .composer-skill-chip {
@@ -2172,7 +2167,10 @@ const handleSendClick = (event: MouseEvent) => {
 
 .composer-root-embedded-filled .uploaded-docs + .composer-quote-snips,
 .composer-root-embedded-filled .follow-up-queue + .composer-quote-snips,
-.composer-root-embedded-filled .uploaded-docs + .follow-up-queue {
+.composer-root-embedded-filled .uploaded-docs + .follow-up-queue,
+.composer-root-embedded-filled .uploaded-docs + .composer-skill-chips,
+.composer-root-embedded-filled .follow-up-queue + .composer-skill-chips,
+.composer-root-embedded-filled .composer-skill-chips + .composer-quote-snips {
   padding-top: 8px;
 }
 

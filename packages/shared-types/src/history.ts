@@ -97,6 +97,7 @@ export interface AgentRecord {
 export interface VisibleConversationSkill {
   id: string
   name: string
+  description?: string
 }
 
 /**

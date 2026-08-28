@@ -25,6 +25,7 @@ import type {
   AgentExecutionPhase,
   CommandRiskPolicy,
 } from './types'
+import type { VisibleConversationSkill } from '@shared/types'
 import { SailFish } from './sailfish'
 import { ConversationStore, ConversationManager, Companion, Conversation } from '../conversation'
 import { assessCommandRisk, analyzeCommand } from './risk-assessor'
@@ -86,7 +87,7 @@ export class AgentService {
   /** 默认回调 */
   private defaultCallbacks: AgentCallbacks = {}
 
-  private skillsChangedListeners: Array<(agentKey: string, skills: Array<{ id: string; name: string }>) => void> = []
+  private skillsChangedListeners: Array<(agentKey: string, skills: VisibleConversationSkill[]) => void> = []
 
   constructor(
     aiService: AiService, 
@@ -205,7 +206,7 @@ export class AgentService {
     })
   }
 
-  onSkillsChanged(listener: (agentKey: string, skills: Array<{ id: string; name: string }>) => void): () => void {
+  onSkillsChanged(listener: (agentKey: string, skills: VisibleConversationSkill[]) => void): () => void {
     this.skillsChangedListeners.push(listener)
     return () => {
       this.skillsChangedListeners = this.skillsChangedListeners.filter(l => l !== listener)
@@ -778,25 +779,25 @@ export class AgentService {
     await agent.preloadSkills(skillIds)
   }
 
-  async pinSkill(agentKey: string, skillId: string): Promise<{ ok: boolean; error?: string; skills: Array<{ id: string; name: string }> }> {
+  async pinSkill(agentKey: string, skillId: string): Promise<{ ok: boolean; error?: string; skills: VisibleConversationSkill[] }> {
     const agent = this.getOrCreateAgent(agentKey)
     const result = await agent.pinSkill(skillId)
     return { ...result, skills: agent.listVisibleSkills() }
   }
 
-  async unpinSkill(agentKey: string, skillId: string): Promise<{ ok: true; skills: Array<{ id: string; name: string }> }> {
+  async unpinSkill(agentKey: string, skillId: string): Promise<{ ok: true; skills: VisibleConversationSkill[] }> {
     const agent = this.getOrCreateAgent(agentKey)
     await agent.unpinSkill(skillId)
     return { ok: true, skills: agent.listVisibleSkills() }
   }
 
-  hydrateSkills(agentKey: string, loadedSkills?: string[], userDismissedSkills?: string[]): Array<{ id: string; name: string }> {
+  hydrateSkills(agentKey: string, loadedSkills?: string[], userDismissedSkills?: string[]): VisibleConversationSkill[] {
     const agent = this.getOrCreateAgent(agentKey)
     agent.hydrateSkills(loadedSkills, userDismissedSkills)
     return agent.listVisibleSkills()
   }
 
-  getVisibleSkills(agentKey: string): Array<{ id: string; name: string }> {
+  getVisibleSkills(agentKey: string): VisibleConversationSkill[] {
     return this.getAgent(agentKey)?.listVisibleSkills() ?? []
   }
   

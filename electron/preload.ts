@@ -971,19 +971,19 @@ const electronAPI = {
       ipcRenderer.invoke('agent:pinSkill', agentKey, skillId) as Promise<{
         ok: boolean
         error?: string
-        skills: Array<{ id: string; name: string }>
+        skills: Array<{ id: string; name: string; description?: string }>
       }>,
     unpinSkill: (agentKey: string, skillId: string) =>
       ipcRenderer.invoke('agent:unpinSkill', agentKey, skillId) as Promise<{
         ok: true
-        skills: Array<{ id: string; name: string }>
+        skills: Array<{ id: string; name: string; description?: string }>
       }>,
     hydrateSkills: (agentKey: string, loadedSkills?: string[], userDismissedSkills?: string[]) =>
-      ipcRenderer.invoke('agent:hydrateSkills', agentKey, loadedSkills, userDismissedSkills) as Promise<Array<{ id: string; name: string }>>,
+      ipcRenderer.invoke('agent:hydrateSkills', agentKey, loadedSkills, userDismissedSkills) as Promise<Array<{ id: string; name: string; description?: string }>>,
     getVisibleSkills: (agentKey: string) =>
-      ipcRenderer.invoke('agent:getVisibleSkills', agentKey) as Promise<Array<{ id: string; name: string }>>,
-    onSkillsChanged: (callback: (data: { agentId: string; skills: Array<{ id: string; name: string }> }) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; skills: Array<{ id: string; name: string }> }) => callback(data)
+      ipcRenderer.invoke('agent:getVisibleSkills', agentKey) as Promise<Array<{ id: string; name: string; description?: string }>>,
+    onSkillsChanged: (callback: (data: { agentId: string; skills: Array<{ id: string; name: string; description?: string }> }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { agentId: string; skills: Array<{ id: string; name: string; description?: string }> }) => callback(data)
       ipcRenderer.on('agent:skillsChanged', handler)
       return () => {
         ipcRenderer.removeListener('agent:skillsChanged', handler)

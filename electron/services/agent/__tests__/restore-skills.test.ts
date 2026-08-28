@@ -20,7 +20,7 @@ vi.mock('../../im/im.service', () => ({
 
 vi.mock('../../user-skill.service', () => {
   const skills: Record<string, { id: string; name: string; enabled: boolean; content: string }> = {
-    'my-skill': { id: 'my-skill', name: '我的技能', enabled: true, content: '自定义技能正文' }
+    'my-skill': { id: 'my-skill', name: '我的技能', enabled: true, description: '自定义技能简介', content: '自定义技能正文' }
   }
   return {
     USER_SKILL_ID_PREFIX: 'user:',
@@ -400,7 +400,7 @@ describe('重开对话恢复技能', () => {
     const agent = new TestAgent(createServices())
     const result = await agent.pinSkill('user:my-skill')
     expect(result.ok).toBe(true)
-    expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill' && s.name === '我的技能')).toBe(true)
+    expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill' && s.name === '我的技能' && s.description === '自定义技能简介')).toBe(true)
   })
 
   it('卸掉自己写的技能后，重开也不会再装回来', async () => {

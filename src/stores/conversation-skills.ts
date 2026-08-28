@@ -10,6 +10,7 @@ import { useTerminalStore } from './terminal'
 export interface ConversationSkillChip {
   id: string
   name: string
+  description?: string
 }
 
 function isMcpSkillId(id: string): boolean {
@@ -114,6 +115,9 @@ export const useConversationSkillsStore = defineStore('conversationSkills', () =
     const agentKey = resolveAgentKey(tabId)
     if (!agentKey) return
     const skills = await window.electronAPI.agent.getVisibleSkills(agentKey)
+    // Agent 还没建起来时是空列表，不等于这场对话没技能。
+    // 打开历史时先从记录画上胶囊，再被这次空结果抹掉。
+    if (skills.length === 0) return
     applySnapshot(tabId, skills, false)
   }
 

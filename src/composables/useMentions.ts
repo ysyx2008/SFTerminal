@@ -52,7 +52,7 @@ export function useMentions(
   inputText: Ref<string>,
   currentTabId: Ref<string> | ComputedRef<string>,
   uploadedDocs: ComputedRef<ParsedDocument[]>,
-  onSkillPicked?: (skill: { id: string; name: string }) => void
+  onSkillPicked?: (skill: { id: string; name: string; description?: string }) => void
 ) {
   const { t } = useI18n()
   const terminalStore = useTerminalStore()
@@ -624,7 +624,7 @@ export function useMentions(
           showMenu.value = false
           menuType.value = null
           searchQuery.value = ''
-          onSkillPicked?.({ id: suggestion.id, name: suggestion.label })
+          onSkillPicked?.({ id: suggestion.id, name: suggestion.label, description: suggestion.description })
           return
         }
         inputText.value = beforeTrigger + suggestion.value + ' ' + afterTrigger.trimStart()

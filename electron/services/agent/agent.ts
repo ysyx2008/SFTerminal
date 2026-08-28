@@ -45,7 +45,7 @@ import {
   splitMessagesIntoTasks as splitMessagesIntoTasksShared,
   splitStepsIntoTasks as splitStepsIntoTasksShared
 } from '../conversation/messages'
-import { inferConversationKind } from '@shared/types'
+import { inferConversationKind, type VisibleConversationSkill } from '@shared/types'
 import { estimateTextTokens } from './token-estimate'
 import { runUntilIdle } from './run-until-idle'
 import { SubAgentRoster } from './sub-agent-roster'
@@ -461,7 +461,7 @@ export abstract class Agent {
     this._skillsChangedHook?.()
   }
 
-  listVisibleSkills(): Array<{ id: string; name: string }> {
+  listVisibleSkills(): VisibleConversationSkill[] {
     const ids = new Set<string>()
     if (this._skillSession) {
       for (const id of this._skillSession.getLoadedSkills()) ids.add(id)
@@ -470,11 +470,11 @@ export abstract class Agent {
     if (this._pendingRestoreSkillIds) {
       for (const id of this._pendingRestoreSkillIds) ids.add(id)
     }
-    const visible: Array<{ id: string; name: string }> = []
+    const visible: VisibleConversationSkill[] = []
     for (const id of ids) {
       if (parseMcpSkillId(id)) continue
       if (this._userDismissedSkills.has(id)) continue
-      visible.push({ id, name: this.resolveVisibleSkillName(id) })
+      visible.push({ id, ...this.resolveVisibleSkillMeta(id) })
     }
     return visible
   }
@@ -514,10 +514,16 @@ export abstract class Agent {
     return { ok: true }
   }
 
-  private resolveVisibleSkillName(id: string): string {
+  private resolveVisibleSkillMeta(id: string): { name: string; description?: string } {
     const userId = parseUserSkillId(id)
-    if (userId) return getUserSkillService().getSkill(userId)?.name ?? userId
-    return getSkill(id)?.name ?? id
+    if (userId) {
+      const skill = getUserSkillService().getSkill(userId)
+      const description = skill?.description?.trim()
+      return { name: skill?.name ?? userId, ...(description ? { description } : {}) }
+    }
+    const skill = getSkill(id)
+    const description = skill?.description?.trim()
+    return { name: skill?.name ?? id, ...(description ? { description } : {}) }
   }
 
   private collectDismissedSkillIds(): string[] | undefined {

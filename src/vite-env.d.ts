@@ -755,15 +755,15 @@ interface Window {
       pinSkill: (agentKey: string, skillId: string) => Promise<{
         ok: boolean
         error?: string
-        skills: Array<{ id: string; name: string }>
+        skills: Array<{ id: string; name: string; description?: string }>
       }>
       unpinSkill: (agentKey: string, skillId: string) => Promise<{
         ok: true
-        skills: Array<{ id: string; name: string }>
+        skills: Array<{ id: string; name: string; description?: string }>
       }>
-      hydrateSkills: (agentKey: string, loadedSkills?: string[], userDismissedSkills?: string[]) => Promise<Array<{ id: string; name: string }>>
-      getVisibleSkills: (agentKey: string) => Promise<Array<{ id: string; name: string }>>
-      onSkillsChanged: (callback: (data: { agentId: string; skills: Array<{ id: string; name: string }> }) => void) => () => void
+      hydrateSkills: (agentKey: string, loadedSkills?: string[], userDismissedSkills?: string[]) => Promise<Array<{ id: string; name: string; description?: string }>>
+      getVisibleSkills: (agentKey: string) => Promise<Array<{ id: string; name: string; description?: string }>>
+      onSkillsChanged: (callback: (data: { agentId: string; skills: Array<{ id: string; name: string; description?: string }> }) => void) => () => void
       onStep: (callback: (data: { agentId: string; ptyId?: string; step: AgentStep }) => void) => () => void
       onRunning: (callback: (data: { agentId: string; ptyId?: string; userTask: string }) => void) => () => void
       onStepRemoved: (callback: (data: { agentId: string; ptyId?: string; stepId: string }) => void) => () => void

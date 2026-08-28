@@ -2819,6 +2819,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       } else {
         setActiveTab(existing.id)
       }
+      hydrateConversationSkills(existing.id, record)
       return existing.id
     }
 
@@ -2967,9 +2968,18 @@ export const useTerminalStore = defineStore('terminal', () => {
       }
     }
 
+    hydrateConversationSkills(tabId, record)
+  }
+
+  function hydrateConversationSkills(
+    tabId: string,
+    record: { loadedSkills?: string[]; userDismissedSkills?: string[] }
+  ): void {
     void import('./conversation-skills').then(({ useConversationSkillsStore }) => {
       const skillsStore = useConversationSkillsStore()
-      skillsStore.hydrateFromRecord(tabId, record.loadedSkills)
+      if (Array.isArray(record.loadedSkills)) {
+        skillsStore.hydrateFromRecord(tabId, record.loadedSkills)
+      }
       void skillsStore.hydrateBackend(tabId, record.loadedSkills, record.userDismissedSkills)
     })
   }
