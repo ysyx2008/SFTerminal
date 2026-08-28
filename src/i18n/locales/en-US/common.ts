@@ -328,7 +328,7 @@ export default {
     interface: 'Interface',
     interfaceLanguage: 'Interface language',
     foldAgentProcess: 'Simplify step display',
-    foldAgentProcessHint: 'Stretches where it just works away collapse into one line, leaving what it tells you and what it is doing right now. Click that line to see the full process. Strict mode always stays unfolded.',
+    foldAgentProcessHint: 'Collapse file reads, commands, and other background work into one line. Replies and the current action stay visible.',
     showConversationSkillChips: 'Show skill chips',
     showConversationSkillChipsDesc: 'Show skills in use for this conversation above the input.',
     launchAtLogin: 'Launch at Login',
