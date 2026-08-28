@@ -322,6 +322,8 @@ const justAddedSkillIds = computed(() => conversationSkills.justAddedIds(props.c
 const showSkillChipRow = computed(
   () => configStore.showConversationSkillChips
 )
+const hasActiveSkillChips = computed(() => showSkillChipRow.value && skillChips.value.length > 0)
+const showInlineSkillPicker = computed(() => showSkillChipRow.value && skillChips.value.length === 0)
 
 function onSkillPicked(skill: { id: string; name: string; description?: string }) {
   void conversationSkills.pin(props.currentTabId, skill)
@@ -844,6 +846,13 @@ function unbindMentionMenuReposition() {
 
 function openSkillPicker() {
   openSkillMenu()
+}
+
+function onComposerSurfaceMouseDown(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  if (!target) return
+  if (target.closest('button, textarea, input, a, .composer-skill-chip')) return
+  focusInput()
 }
 
 function closeMentionMenuAndFocusInput() {
@@ -1531,14 +1540,15 @@ const handleSendClick = (event: MouseEvent) => {
       :class="{
         'flash-hint': isFlashHint,
         'input-container-two-row': isTwoRow,
-        'has-skill-chips': showSkillChipRow
+        'has-skill-chips': hasActiveSkillChips
       }"
+      @mousedown="onComposerSurfaceMouseDown"
     >
       <div
-        v-if="showSkillChipRow"
+        v-if="hasActiveSkillChips"
         class="composer-skill-chips"
         :class="{ 'is-dragging': skillChipsDragging, 'is-empowering': justAddedSkillIds.length > 0 }"
-        :aria-label="skillChips.length > 0 ? t('ai.conversationSkills') : t('ai.conversationSkillAdd')"
+        :aria-label="t('ai.conversationSkills')"
       >
         <button
           type="button"
@@ -1552,7 +1562,6 @@ const handleSendClick = (event: MouseEvent) => {
           <Sparkles :size="12" :stroke-width="1.75" />
         </button>
         <div
-          v-if="skillChips.length > 0"
           class="composer-skill-chips-track"
           :class="{
             'can-scroll-left': skillChipsCanScrollLeft,
@@ -1590,6 +1599,18 @@ const handleSendClick = (event: MouseEvent) => {
           </div>
         </div>
       </div>
+      <button
+        v-if="!isTwoRow && showInlineSkillPicker"
+        type="button"
+        class="upload-btn composer-skill-picker-btn"
+        :class="{ 'is-open': skillMenuStandalone }"
+        :aria-label="t('ai.conversationSkillAdd')"
+        :title="t('ai.conversationSkillAdd')"
+        @mousedown.prevent
+        @click="openSkillPicker"
+      >
+        <Sparkles :size="14" :stroke-width="1.75" />
+      </button>
       <button
         v-if="!isTwoRow"
         class="upload-btn"
@@ -1698,6 +1719,18 @@ const handleSendClick = (event: MouseEvent) => {
       <!-- 两行模式底栏 -->
       <div v-if="isTwoRow" class="input-bottom-bar">
         <div class="input-footer-left">
+          <button
+            v-if="showInlineSkillPicker"
+            type="button"
+            class="upload-btn composer-skill-picker-btn"
+            :class="{ 'is-open': skillMenuStandalone }"
+            :aria-label="t('ai.conversationSkillAdd')"
+            :title="t('ai.conversationSkillAdd')"
+            @mousedown.prevent
+            @click="openSkillPicker"
+          >
+            <Sparkles :size="14" :stroke-width="1.75" />
+          </button>
           <button
             class="upload-btn"
             :disabled="isAttaching"
@@ -3008,6 +3041,11 @@ const handleSendClick = (event: MouseEvent) => {
 .voice-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.upload-btn.composer-skill-picker-btn.is-open {
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent-primary);
 }
 
 .upload-spinner,
