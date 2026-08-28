@@ -360,7 +360,7 @@ describe('重开对话恢复技能', () => {
     expect(agent.exposeLoadedSkills()).toContain(configSkill.id)
   })
 
-  it('用户卸掉后，可见清单没有它，预加载也不会再装回来', async () => {
+  it('用户卸掉后，预加载不会再装回来', async () => {
     const agent = new TestAgent(createServices())
     await agent.pinSkill(configSkill.id)
     await agent.unpinSkill(configSkill.id)
@@ -370,6 +370,33 @@ describe('重开对话恢复技能', () => {
 
     await agent.preloadSkills([configSkill.id])
     expect(agent.exposeLoadedSkills()).not.toContain(configSkill.id)
+  })
+
+  it('秘书 load_skill 可以装回用户卸掉的内置技能', async () => {
+    const agent = new TestAgent(createServices())
+    await agent.pinSkill(configSkill.id)
+    await agent.unpinSkill(configSkill.id)
+    expect(agent.isSkillDismissed(configSkill.id)).toBe(true)
+
+    const result = await agent.getSkillSession().loadSkill(configSkill.id)
+    expect(result.success).toBe(true)
+    agent.markBuiltinSkillLoaded(configSkill.id)
+
+    expect(agent.isSkillDismissed(configSkill.id)).toBe(false)
+    expect(agent.exposeLoadedSkills()).toContain(configSkill.id)
+    expect(agent.exposeVisibleSkills().some(s => s.id === configSkill.id)).toBe(true)
+  })
+
+  it('秘书 load_user_skill 可以装回用户卸掉的用户技能', async () => {
+    const agent = new TestAgent(createServices())
+    await agent.pinSkill('user:my-skill')
+    await agent.unpinSkill('user:my-skill')
+    expect(agent.isSkillDismissed('user:my-skill')).toBe(true)
+
+    agent.markUserSkillLoaded('my-skill')
+
+    expect(agent.isSkillDismissed('user:my-skill')).toBe(false)
+    expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill')).toBe(true)
   })
 
   it('重开后开口前点上的技能，不会被历史清单盖掉', async () => {

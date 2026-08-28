@@ -858,10 +858,6 @@ export async function loadSkillTool(
     return { success: false, output: '', error: `Skill "${skillId}" is disabled` }
   }
 
-  if (executor.isSkillDismissed?.(skillId)) {
-    return { success: false, output: '', error: t('skill.dismissed_by_user', { id: skillId }) }
-  }
-
   executor.addStep({
     type: 'tool_call',
     content: t('skill.loading', { id: skillId }),
@@ -888,6 +884,8 @@ export async function loadSkillTool(
       toolName: 'load_skill',
       toolResult: skillContent || toolsList || undefined
     })
+
+    executor.markBuiltinSkillLoaded?.(skillId)
     
     return { success: true, output: detailOutput }
   } else {
@@ -982,10 +980,6 @@ export async function loadUserSkillTool(
   
   if (!skillId) {
     return { success: false, output: '', error: t('user_skill.id_required') }
-  }
-
-  if (executor.isSkillDismissed?.(skillId) || executor.isSkillDismissed?.(toUserSkillId(skillId))) {
-    return { success: false, output: '', error: t('skill.dismissed_by_user', { id: skillId }) }
   }
 
   executor.addStep({

@@ -439,7 +439,8 @@ export abstract class Agent {
   }
 
   /**
-   * 用户点掉胶囊：卸掉，这场对话里不许它自己再装回来。
+   * 用户点掉胶囊：卸掉；这场对话里禁止秘书悄悄再装（预加载/重开恢复），
+   * 但秘书自己调 load_skill / load_user_skill 装上的允许。
    */
   async unpinSkill(skillId: string): Promise<void> {
     this._skillsMutatedByUser = true
@@ -497,11 +498,21 @@ export abstract class Agent {
 
   markUserSkillLoaded(skillId: string): void {
     const persistedId = toUserSkillId(skillId)
-    if (this._userDismissedSkills.has(persistedId) || this._userDismissedSkills.has(skillId)) return
+    this._userDismissedSkills.delete(persistedId)
+    this._userDismissedSkills.delete(skillId)
     this._loadedUserSkillIds.add(persistedId)
     if (this._pendingRestoreSkillIds && !this._pendingRestoreSkillIds.includes(persistedId)) {
       this._pendingRestoreSkillIds = [...this._pendingRestoreSkillIds, persistedId]
     }
+    this.rememberSkillId(persistedId)
+    this.persistSkillStateIfPossible()
+    this._skillsChangedHook?.()
+  }
+
+  /** 秘书 load_skill 成功后：清掉用户卸掉标记，胶囊能再显示 */
+  markBuiltinSkillLoaded(skillId: string): void {
+    this._userDismissedSkills.delete(skillId)
+    this.rememberSkillId(skillId)
     this.persistSkillStateIfPossible()
     this._skillsChangedHook?.()
   }
@@ -4233,6 +4244,7 @@ export abstract class Agent {
       isSkillDismissed: (skillId) =>
         this._userDismissedSkills.has(skillId) || this._userDismissedSkills.has(toUserSkillId(skillId)),
       markUserSkillLoaded: (skillId) => this.markUserSkillLoaded(skillId),
+      markBuiltinSkillLoaded: (skillId) => this.markBuiltinSkillLoaded(skillId),
       pluginRegistry: this.services.pluginRegistry,
       addStep: (step) => this.addStep(step),
       updateStep: (stepId, updates) => this.updateStep(stepId, updates),
