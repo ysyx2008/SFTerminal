@@ -327,6 +327,12 @@ function onSkillPicked(skill: { id: string; name: string; description?: string }
   void conversationSkills.pin(props.currentTabId, skill)
 }
 
+function skillChipInsertStyle(id: string): Record<string, string> | undefined {
+  const i = justAddedSkillIds.value.indexOf(id)
+  if (i < 0) return undefined
+  return { '--skill-insert-delay': `${i * 72}ms` }
+}
+
 function skillChipTitle(s: { id: string; name: string; description?: string; unavailable?: boolean }): string {
   if (s.unavailable) return t('ai.conversationSkillUnavailableTip')
   if (!s.id.startsWith('user:')) {
@@ -472,8 +478,8 @@ watch(justAddedSkillIds, async (ids) => {
   if (!skillId) return
   await nextTick()
   requestAnimationFrame(() => revealNewestSkillChip(skillId))
-  // 赋能动画会改宽度，补滚一次确保队尾仍可见
-  window.setTimeout(() => revealNewestSkillChip(skillId), 120)
+  // 推进会改宽度，开口后再补滚一次确保队尾仍可见
+  window.setTimeout(() => revealNewestSkillChip(skillId), 220)
 })
 
 watch(skillChipsScrollerEl, (el, _prev, onCleanup) => {
@@ -1396,7 +1402,9 @@ const handleSendClick = (event: MouseEvent) => {
         :class="{ 'is-dragging': skillChipsDragging, 'is-empowering': justAddedSkillIds.length > 0 }"
         :aria-label="t('ai.conversationSkills')"
       >
-        <Sparkles class="composer-skill-chips-mark" :size="12" :stroke-width="1.75" aria-hidden="true" />
+        <span class="composer-skill-chips-mark" aria-hidden="true">
+          <Sparkles :size="12" :stroke-width="1.75" />
+        </span>
         <div
           class="composer-skill-chips-track"
           :class="{
@@ -1422,6 +1430,7 @@ const handleSendClick = (event: MouseEvent) => {
                 'is-new': justAddedSkillIds.includes(s.id),
                 'is-unavailable': s.unavailable
               }"
+              :style="skillChipInsertStyle(s.id)"
               :data-skill-id="s.id"
               @mouseenter="onSkillChipHover($event, s)"
               @mouseleave="hideSkillChipTip"
@@ -2052,12 +2061,28 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 .composer-skill-chips-mark {
+  position: relative;
+  display: inline-flex;
   flex-shrink: 0;
   color: var(--text-muted);
 }
 
 .composer-skill-chips.is-empowering .composer-skill-chips-mark {
-  animation: skill-mark-empower 0.95s ease-out;
+  animation: skill-mark-emit 0.9s ease-out;
+}
+
+.composer-skill-chips.is-empowering .composer-skill-chips-mark::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 22px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(var(--accent-decorative-rgb), 0.95), transparent);
+  pointer-events: none;
+  animation: skill-energy-shot 0.42s ease-out both;
 }
 
 .composer-skill-chips-track {
@@ -2134,8 +2159,16 @@ const handleSendClick = (event: MouseEvent) => {
   color: var(--text-secondary);
 }
 
+@property --skill-stroke {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
 .composer-skill-chip.is-new {
-  animation: skill-chip-empower 0.95s cubic-bezier(0.22, 1, 0.36, 1) both;
+  overflow: hidden;
+  animation: skill-chip-insert 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--skill-insert-delay, 0ms);
 }
 
 .composer-skill-chip.is-new::before {
@@ -2143,12 +2176,45 @@ const handleSendClick = (event: MouseEvent) => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: rgba(var(--accent-decorative-rgb), 0.2);
-  transform: scaleX(0);
-  transform-origin: left center;
-  animation: skill-chip-charge 0.95s ease-out both;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--accent-decorative-rgb), 0.38) 42%,
+    rgba(var(--accent-decorative-rgb), 0.08) 72%,
+    transparent 100%
+  );
+  background-size: 55% 100%;
+  background-repeat: no-repeat;
+  background-position: -60% 0;
+  animation: skill-chip-sheen 0.7s ease-out both;
+  animation-delay: calc(var(--skill-insert-delay, 0ms) + 120ms);
   pointer-events: none;
   z-index: 0;
+}
+
+.composer-skill-chip.is-new::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from 220deg,
+    rgba(var(--accent-decorative-rgb), 0.95) calc(var(--skill-stroke) * 1%),
+    transparent 0
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: skill-chip-stroke 0.56s ease-out both;
+  animation-delay: calc(var(--skill-insert-delay, 0ms) + 160ms);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .composer-skill-chip.is-unavailable {
@@ -2156,64 +2222,121 @@ const handleSendClick = (event: MouseEvent) => {
   color: var(--text-muted);
 }
 
-@keyframes skill-chip-empower {
+@keyframes skill-chip-insert {
   0% {
-    opacity: 0;
-    transform: translateY(-5px);
+    max-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0.75;
+    transform: translateX(-10px);
     color: var(--text-primary);
-    background: color-mix(in srgb, var(--accent-decorative-primary) 18%, var(--bg-hover));
-    box-shadow: 0 0 0 0 rgba(var(--accent-decorative-rgb), 0);
+    background: color-mix(in srgb, var(--accent-decorative-primary) 22%, var(--bg-hover));
+    box-shadow: inset 2px 0 0 rgba(var(--accent-decorative-rgb), 0.85);
+    filter: none;
   }
-  26% {
+  38% {
+    max-width: 10.5rem;
+    padding-left: 7px;
+    padding-right: 5px;
     opacity: 1;
-    transform: none;
+    transform: translateX(2px);
     color: var(--text-primary);
-    background: color-mix(in srgb, var(--accent-decorative-primary) 26%, var(--bg-hover));
-    box-shadow: 0 0 16px 2px rgba(var(--accent-decorative-rgb), 0.4);
+    background: color-mix(in srgb, var(--accent-decorative-primary) 28%, var(--bg-hover));
+    box-shadow: inset 2px 0 0 rgba(var(--accent-decorative-rgb), 0.65);
+    filter: drop-shadow(0 0 8px rgba(var(--accent-decorative-rgb), 0.42));
+  }
+  52% {
+    max-width: 10.5rem;
+    padding-left: 7px;
+    padding-right: 5px;
+    transform: none;
+    filter: drop-shadow(0 0 5px rgba(var(--accent-decorative-rgb), 0.22));
   }
   100% {
+    max-width: 10.5rem;
+    padding-left: 7px;
+    padding-right: 5px;
     opacity: 1;
     transform: none;
     color: var(--text-secondary);
     background: var(--bg-hover);
     box-shadow: none;
+    filter: none;
   }
 }
 
-@keyframes skill-chip-charge {
+@keyframes skill-chip-sheen {
   0% {
-    transform: scaleX(0);
-    opacity: 1;
+    background-position: -60% 0;
+    opacity: 0.95;
   }
-  32% {
-    transform: scaleX(1);
-    opacity: 1;
+  72% {
+    background-position: 140% 0;
+    opacity: 0.65;
   }
   100% {
-    transform: scaleX(1);
+    background-position: 140% 0;
     opacity: 0;
   }
 }
 
-@keyframes skill-mark-empower {
+@keyframes skill-chip-stroke {
+  0% {
+    --skill-stroke: 0;
+    opacity: 1;
+  }
+  68% {
+    --skill-stroke: 100;
+    opacity: 1;
+  }
+  100% {
+    --skill-stroke: 100;
+    opacity: 0;
+  }
+}
+
+@keyframes skill-mark-emit {
   0% {
     color: var(--text-muted);
     filter: none;
+    transform: scale(1);
   }
-  24% {
+  12% {
     color: var(--text-primary);
-    filter: drop-shadow(0 0 7px rgba(var(--accent-decorative-rgb), 0.75));
+    filter: drop-shadow(0 0 8px rgba(var(--accent-decorative-rgb), 0.9));
+    transform: scale(1.22);
+  }
+  28% {
+    transform: scale(1);
   }
   100% {
     color: var(--text-muted);
     filter: none;
+    transform: none;
+  }
+}
+
+@keyframes skill-energy-shot {
+  0% {
+    opacity: 0;
+    transform: translateX(0) scaleX(0.35);
+  }
+  22% {
+    opacity: 1;
+    transform: translateX(6px) scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(34px) scaleX(0.4);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .composer-skill-chip.is-new,
   .composer-skill-chip.is-new::before,
-  .composer-skill-chips.is-empowering .composer-skill-chips-mark {
+  .composer-skill-chip.is-new::after,
+  .composer-skill-chips.is-empowering .composer-skill-chips-mark,
+  .composer-skill-chips.is-empowering .composer-skill-chips-mark::after {
     animation: none;
   }
 }
