@@ -492,7 +492,7 @@ export class UserSkillService {
       return ''
     }
 
-    const lines: string[] = [`# 用户技能\n\n有 ${enabledSkills.length} 个用户技能可用，详见 \`load_user_skill\` 工具。收到任务后先判断是否有相关技能，有则先加载再执行。\n`]
+    const lines: string[] = [`# 用户技能\n\n有 ${enabledSkills.length} 个用户技能可用，用 skill 工具 load/unload。收到任务后先判断是否有相关技能，有则先加载再执行。\n`]
 
     for (const s of enabledSkills) {
       const hasScripts = s.files && s.files.length > 0

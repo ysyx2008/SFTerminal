@@ -253,10 +253,13 @@ function dispatchAgentsCharCount(args: Record<string, unknown>): number {
 function buildSkillTool(mcpService?: McpService): ToolDefinitionWithMeta {
   const disabledIds = new Set(getConfigService().get('disabledBuiltinSkills') || [])
   const skills = getSkillsSummary().filter(s => !disabledIds.has(s.id))
-  const skillsCompact = skills.length > 0
-    ? skills.map(s => `- ${s.id}: ${s.description}`).join('\n')
-    : '暂无'
-  const skillIds = skills.map(s => `"${s.id}"`).join(', ') || '暂无'
+  const userSkills = getUserSkillService().getEnabledSkills()
+  const catalogLines = [
+    ...skills.map(s => `- ${s.id}: ${s.description}`),
+    ...userSkills.map(s => `- ${s.id}: ${s.description || s.name}`)
+  ]
+  const skillsCompact = catalogLines.length > 0 ? catalogLines.join('\n') : '暂无'
+  const skillIds = [...skills.map(s => `"${s.id}"`), ...userSkills.map(s => `"${s.id}"`)].join(', ') || '暂无'
 
   const mcpLines: string[] = []
   const mcpIdHints: string[] = []
@@ -269,7 +272,7 @@ function buildSkillTool(mcpService?: McpService): ToolDefinitionWithMeta {
     }
   }
   const mcpBlock = mcpLines.length > 0
-    ? `\n\n已连接 MCP（用 skill load/unload，skill_id 形如 mcp:<serverId>）：\n${mcpLines.join('\n')}`
+    ? `\n\n已连接 MCP（同样用 load/unload，skill_id 形如 mcp:<serverId>）：\n${mcpLines.join('\n')}`
     : ''
   const idHint = mcpIdHints.length > 0
     ? `${skillIds}, ${mcpIdHints.join(', ')}`
@@ -279,7 +282,7 @@ function buildSkillTool(mcpService?: McpService): ToolDefinitionWithMeta {
     type: 'function',
     function: {
       name: 'skill',
-      description: `加载或卸载技能管理模块，或加载已连接 MCP 连接器的全部工具定义。加载后会话内持续有效。涉及相关领域时先加载再执行。
+      description: `加载或卸载这场对话里的技能。系统自带的、用户自己写的、已连接的外部工具包都走这一条。加载后整场对话有效；卸掉只影响这场对话，不删除技能库。涉及相关领域时先加载再执行。
 
 ⚠️ 创建/更新/删除/安装技能 → 必须先 load skill-manager，严禁用 write_text_file 直接写 SKILL.md
 ⚠️ MCP：对照系统提示「可用的 MCP 连接器」目录，用 skill load mcp:<id>（或连接器名称）整包加载后再调 mcp_*；不要只靠网页搜索。
@@ -292,7 +295,7 @@ ${skillsCompact}${mcpBlock}`,
           action: {
             type: 'string',
             enum: ['load', 'unload'],
-            description: '操作类型：load（加载）或 unload（卸载）'
+            description: '操作类型：load（加载）或 unload（卸载）。unload 只卸这场对话，不删库。'
           },
           skill_id: {
             type: 'string',
@@ -300,43 +303,6 @@ ${skillsCompact}${mcpBlock}`,
           }
         },
         required: ['action', 'skill_id']
-      }
-    },
-    _meta: { parallelizable: true }
-  }
-}
-
-/**
- * 动态构建 load_user_skill 工具定义
- * 用于加载用户自定义的技能（SKILL.md 文件）
- */
-function buildLoadUserSkillTool(): ToolDefinitionWithMeta {
-  const userSkillService = getUserSkillService()
-  const skills = userSkillService.getEnabledSkills()
-  const skillsList = skills.length > 0
-    ? skills.map(s => {
-        const desc = s.description ? ` - ${s.description}` : ''
-        return `- **${s.id}**: ${s.name}${desc}`
-      }).join('\n')
-    : '- 暂无用户技能'
-
-  return {
-    type: 'function',
-    function: {
-      name: 'load_user_skill',
-      description: `加载用户自定义技能（SKILL.md 操作指南）。与 skill 不同：skill 加载工具函数，本工具加载知识/流程指导。
-
-**可用用户技能**：
-${skillsList}`,
-      parameters: {
-        type: 'object',
-        properties: {
-          skill_id: {
-            type: 'string',
-            description: `用户技能 ID，可选值: ${skills.map(s => `"${s.id}"`).join(', ') || '暂无'}`
-          }
-        },
-        required: ['skill_id']
       }
     },
     _meta: { parallelizable: true }
@@ -1033,7 +999,6 @@ local_path 填相对路径时也归一到 workspace 内；填绝对路径才落�
       _meta: { allowedForSubAgent: false }
     } as ToolDefinitionWithMeta,
     buildSkillTool(mcpService),
-    buildLoadUserSkillTool(),
     // ==================== 任务记忆工具（合并 recall_task/deep_recall） ====================
     {
       type: 'function',

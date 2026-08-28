@@ -167,7 +167,7 @@ async function createSkill(
 - 文件: ${skillFilePath}
 
 **使用方式**
-调用 \`load_user_skill("${skillId}")\` 加载此技能。`
+调用 skill load "${skillId}" 加载此技能。`
     }
   } catch (error) {
     return {
@@ -847,7 +847,7 @@ function formatInstallOutput(
     ? `\n\n<installed_skill_content>\n${preview.content.length > 3000 ? preview.content.slice(0, 3000) + '\n...' : preview.content}\n</installed_skill_content>`
     : ''
 
-  return `${t('scan.installed_local', { id: skillId })}${overwriteNote}${warningNote}${filesNote}${contentSummary}\n\n使用 \`load_user_skill("${skillId}")\` 加载此技能。`
+  return `${t('scan.installed_local', { id: skillId })}${overwriteNote}${warningNote}${filesNote}${contentSummary}\n\n使用 skill load "${skillId}" 加载此技能。`
 }
 
 /**

@@ -17,7 +17,7 @@ export const skillCreatorTools: ToolDefinition[] = [
 - 创建领域特定的操作指南
 
 **技能格式**：技能使用 Markdown 格式，包含 YAML frontmatter 元数据。
-技能创建后可通过 load_user_skill("技能ID") 加载使用。`,
+技能创建后可用 skill load "技能ID" 在这场对话里装上。`,
       parameters: {
         type: 'object',
         properties: {

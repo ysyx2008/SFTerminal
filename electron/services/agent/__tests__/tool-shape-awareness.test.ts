@@ -105,3 +105,15 @@ describe('上下文余量自查常驻', () => {
     expect(pressed).toContain('check_context')
   })
 })
+
+describe('技能装上卸掉只走一扇门', () => {
+  it('秘书眼前只有 skill，没有单独的用户技能指令', () => {
+    const tools = getAgentTools(undefined, { mode: 'assistant' })
+    const names = tools.map(t => t.function.name)
+    expect(names).toContain('skill')
+    expect(names).not.toContain('load_user_skill')
+    const skill = tools.find(t => t.function.name === 'skill')
+    expect(skill?.function.description).toContain('卸掉只影响这场对话')
+    expect(skill?.function.description).not.toContain('load_user_skill')
+  })
+})

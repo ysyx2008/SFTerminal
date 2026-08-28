@@ -352,6 +352,25 @@ describe('重开对话恢复技能', () => {
     expect(saved.some(r => r.loadedSkills?.includes(configSkill.id))).toBe(false)
   })
 
+  it('用户 @ 装上的技能排在可见清单末尾', async () => {
+    const agent = new TestAgent(createServices())
+    await agent.pinSkill('excel')
+    await agent.pinSkill('calendar')
+    expect(agent.exposeVisibleSkills().map(s => s.id)).toEqual(['excel', 'calendar'])
+
+    await agent.getSkillSession().loadSkill('config')
+    await agent.pinSkill('config')
+    expect(agent.exposeVisibleSkills().map(s => s.id)).toEqual(['excel', 'calendar', 'config'])
+  })
+
+  it('用户 @ 再次选中的技能移到末尾', async () => {
+    const agent = new TestAgent(createServices())
+    await agent.pinSkill('excel')
+    await agent.pinSkill('calendar')
+    await agent.pinSkill('excel')
+    expect(agent.exposeVisibleSkills().map(s => s.id)).toEqual(['calendar', 'excel'])
+  })
+
   it('用户点上的技能立刻出现在可见清单里', async () => {
     const agent = new TestAgent(createServices())
     const result = await agent.pinSkill(configSkill.id)
@@ -387,7 +406,7 @@ describe('重开对话恢复技能', () => {
     expect(agent.exposeVisibleSkills().some(s => s.id === configSkill.id)).toBe(true)
   })
 
-  it('秘书 load_user_skill 可以装回用户卸掉的用户技能', async () => {
+  it('秘书再装上可以装回用户卸掉的用户技能', async () => {
     const agent = new TestAgent(createServices())
     await agent.pinSkill('user:my-skill')
     await agent.unpinSkill('user:my-skill')
@@ -397,6 +416,51 @@ describe('重开对话恢复技能', () => {
 
     expect(agent.isSkillDismissed('user:my-skill')).toBe(false)
     expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill')).toBe(true)
+  })
+
+  it('秘书卸掉用户技能后这场不再开着，也不算用户点掉', async () => {
+    const agent = new TestAgent(createServices())
+    await agent.pinSkill('user:my-skill')
+    agent.markSkillUnloaded('user:my-skill')
+    expect(agent.exposeVisibleSkills()).toEqual([])
+    expect(agent.isUserSkillLoaded('user:my-skill')).toBe(false)
+    expect(agent.isSkillDismissed('user:my-skill')).toBe(false)
+  })
+
+  it('秘书卸掉后自己再装上可以', async () => {
+    const agent = new TestAgent(createServices())
+    await agent.pinSkill('user:my-skill')
+    agent.markSkillUnloaded('user:my-skill')
+    agent.markUserSkillLoaded('my-skill')
+    expect(agent.exposeVisibleSkills().some(s => s.id === 'user:my-skill')).toBe(true)
+    expect(agent.isSkillDismissed('user:my-skill')).toBe(false)
+  })
+
+  it('秘书卸掉用户技能后，重开也不会再装回来', async () => {
+    const sessionId = 'sess_secretary_unload_user'
+    let latest: { loadedSkills?: string[] } | null = null
+    const historyService = {
+      getAgentRecordById: vi.fn().mockImplementation(() => latest),
+      saveAgentRecord: vi.fn((record: { loadedSkills?: string[] }) => { latest = record }),
+      getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+    }
+    const agent = new TestAgent(createServices({ historyService: historyService as never }))
+    await agent.run('先开一场', ctx({ sessionId }))
+    await agent.pinSkill('user:my-skill')
+    expect(latest?.loadedSkills).toEqual(expect.arrayContaining(['user:my-skill']))
+
+    agent.markSkillUnloaded('user:my-skill')
+    expect(latest?.loadedSkills ?? []).not.toContain('user:my-skill')
+
+    const agent2 = new TestAgent(createServices({
+      historyService: {
+        getAgentRecordById: vi.fn().mockReturnValue(latest),
+        saveAgentRecord: vi.fn(),
+        getAgentRecordStore: vi.fn(function (this: unknown) { return this })
+      } as never
+    }))
+    await agent2.run('继续', ctx({ sessionId, sessionStartTime: Date.now() - 5000 }))
+    expect(agent2.exposeVisibleSkills().some(s => s.id === 'user:my-skill')).toBe(false)
   })
 
   it('重开后开口前点上的技能，不会被历史清单盖掉', async () => {

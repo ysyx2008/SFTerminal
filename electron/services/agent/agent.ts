@@ -415,8 +415,11 @@ export abstract class Agent {
     }
     this._skillsMutatedByUser = true
     this._userDismissedSkills.delete(skillId)
-    if (this._pendingRestoreSkillIds && !this._pendingRestoreSkillIds.includes(skillId)) {
-      this._pendingRestoreSkillIds = [...this._pendingRestoreSkillIds, skillId]
+    if (this._pendingRestoreSkillIds) {
+      this._pendingRestoreSkillIds = [
+        ...this._pendingRestoreSkillIds.filter(id => id !== skillId),
+        skillId
+      ]
     }
     const userSkillId = parseUserSkillId(skillId)
     if (userSkillId) {
@@ -440,7 +443,7 @@ export abstract class Agent {
 
   /**
    * 用户点掉胶囊：卸掉；这场对话里禁止秘书悄悄再装（预加载/重开恢复），
-   * 但秘书自己调 load_skill / load_user_skill 装上的允许。
+   * 但秘书自己再装上的允许。
    */
   async unpinSkill(skillId: string): Promise<void> {
     this._skillsMutatedByUser = true
@@ -472,19 +475,8 @@ export abstract class Agent {
   }
 
   listVisibleSkills(): VisibleConversationSkill[] {
-    const ids = new Set<string>()
-    if (this._skillSession) {
-      for (const id of this._skillSession.getLoadedSkills()) ids.add(id)
-    }
-    for (const id of this._loadedUserSkillIds) ids.add(id)
-    if (this._pendingRestoreSkillIds) {
-      for (const id of this._pendingRestoreSkillIds) ids.add(id)
-    }
-    if (this._rememberedSkillIds) {
-      for (const id of this._rememberedSkillIds) ids.add(id)
-    }
     const visible: VisibleConversationSkill[] = []
-    for (const id of ids) {
+    for (const id of this.orderedLoadedSkillIds()) {
       if (parseMcpSkillId(id)) continue
       if (this._userDismissedSkills.has(id)) continue
       visible.push({
@@ -501,18 +493,41 @@ export abstract class Agent {
     this._userDismissedSkills.delete(persistedId)
     this._userDismissedSkills.delete(skillId)
     this._loadedUserSkillIds.add(persistedId)
-    if (this._pendingRestoreSkillIds && !this._pendingRestoreSkillIds.includes(persistedId)) {
-      this._pendingRestoreSkillIds = [...this._pendingRestoreSkillIds, persistedId]
+    if (this._pendingRestoreSkillIds) {
+      this._pendingRestoreSkillIds = [
+        ...this._pendingRestoreSkillIds.filter(id => id !== persistedId),
+        persistedId
+      ]
     }
     this.rememberSkillId(persistedId)
     this.persistSkillStateIfPossible()
     this._skillsChangedHook?.()
   }
 
-  /** 秘书 load_skill 成功后：清掉用户卸掉标记，胶囊能再显示 */
+  /** 秘书装上系统技能后：清掉用户卸掉标记，胶囊能再显示 */
   markBuiltinSkillLoaded(skillId: string): void {
     this._userDismissedSkills.delete(skillId)
     this.rememberSkillId(skillId)
+    this.persistSkillStateIfPossible()
+    this._skillsChangedHook?.()
+  }
+
+  isUserSkillLoaded(skillId: string): boolean {
+    return this._loadedUserSkillIds.has(skillId) || this._loadedUserSkillIds.has(toUserSkillId(skillId))
+  }
+
+  /** 秘书卸掉：这场不再开着，但不记成用户点掉 */
+  markSkillUnloaded(skillId: string): void {
+    const persistedUserId = toUserSkillId(parseUserSkillId(skillId) ?? skillId)
+    this._loadedUserSkillIds.delete(skillId)
+    this._loadedUserSkillIds.delete(persistedUserId)
+    if (this._pendingRestoreSkillIds) {
+      this._pendingRestoreSkillIds = this._pendingRestoreSkillIds.filter(
+        id => id !== skillId && id !== persistedUserId
+      )
+    }
+    this.forgetRememberedSkillId(skillId)
+    this.forgetRememberedSkillId(persistedUserId)
     this.persistSkillStateIfPossible()
     this._skillsChangedHook?.()
   }
@@ -568,9 +583,10 @@ export abstract class Agent {
   private rememberSkillId(skillId: string): void {
     if (parseMcpSkillId(skillId)) return
     if (!this._rememberedSkillIds) this._rememberedSkillIds = []
-    if (!this._rememberedSkillIds.includes(skillId)) {
-      this._rememberedSkillIds = [...this._rememberedSkillIds, skillId]
-    }
+    this._rememberedSkillIds = [
+      ...this._rememberedSkillIds.filter(id => id !== skillId),
+      skillId
+    ]
   }
 
   private forgetRememberedSkillId(skillId: string): void {
@@ -662,6 +678,45 @@ export abstract class Agent {
   }
 
   /** 这场对话当前还装着的技能（含 MCP 虚拟 skill id），供检查点落盘 */
+  private collectLoadedSkillIds(): Set<string> {
+    const ids = new Set<string>()
+    if (this._skillSession) {
+      for (const id of this._skillSession.getLoadedSkills()) ids.add(id)
+    }
+    for (const id of this._loadedUserSkillIds) ids.add(id)
+    if (this._pendingRestoreSkillIds) {
+      for (const id of this._pendingRestoreSkillIds) ids.add(id)
+    }
+    if (this._rememberedSkillIds) {
+      for (const id of this._rememberedSkillIds) ids.add(id)
+    }
+    return ids
+  }
+
+  /** 胶囊展示顺序：按用户/秘书加入先后，不以 skillSession 内部顺序为准 */
+  private orderedLoadedSkillIds(): string[] {
+    const loaded = this.collectLoadedSkillIds()
+    const ordered: string[] = []
+    const seen = new Set<string>()
+    const push = (id: string) => {
+      if (!loaded.has(id) || seen.has(id)) return
+      seen.add(id)
+      ordered.push(id)
+    }
+    if (this._rememberedSkillIds) {
+      for (const id of this._rememberedSkillIds) push(id)
+    }
+    if (this._pendingRestoreSkillIds) {
+      for (const id of this._pendingRestoreSkillIds) push(id)
+    }
+    if (this._skillSession) {
+      for (const id of this._skillSession.getLoadedSkills()) push(id)
+    }
+    for (const id of this._loadedUserSkillIds) push(id)
+    for (const id of loaded) push(id)
+    return ordered
+  }
+
   private collectPersistedSkillIds(): string[] | undefined {
     const ids = new Set<string>()
     if (this._skillSession) {
@@ -679,7 +734,12 @@ export abstract class Agent {
     if (this._rememberedSkillIds) {
       for (const id of this._rememberedSkillIds) ids.add(id)
     }
-    return ids.size > 0 ? [...ids] : undefined
+    if (ids.size === 0) return undefined
+    const ordered = this.orderedLoadedSkillIds().filter(id => ids.has(id))
+    for (const id of ids) {
+      if (!ordered.includes(id)) ordered.push(id)
+    }
+    return ordered.length > 0 ? ordered : undefined
   }
 
   /**
@@ -4243,8 +4303,10 @@ export abstract class Agent {
       skillSession: run.skillSession,
       isSkillDismissed: (skillId) =>
         this._userDismissedSkills.has(skillId) || this._userDismissedSkills.has(toUserSkillId(skillId)),
+      isUserSkillLoaded: (skillId) => this.isUserSkillLoaded(skillId),
       markUserSkillLoaded: (skillId) => this.markUserSkillLoaded(skillId),
       markBuiltinSkillLoaded: (skillId) => this.markBuiltinSkillLoaded(skillId),
+      markSkillUnloaded: (skillId) => this.markSkillUnloaded(skillId),
       pluginRegistry: this.services.pluginRegistry,
       addStep: (step) => this.addStep(step),
       updateStep: (stepId, updates) => this.updateStep(stepId, updates),

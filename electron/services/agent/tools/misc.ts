@@ -22,7 +22,7 @@ import { executePptTool } from '../skills/ppt/executor'
 import { executeFeishuTool } from '../skills/feishu/executor'
 import { executeWeComTool } from '../skills/wecom/executor'
 import { executeDingTalkTool } from '../skills/dingtalk/executor'
-import { getUserSkillService, toUserSkillId } from '../../user-skill.service'
+import { getUserSkillService, parseUserSkillId, toUserSkillId } from '../../user-skill.service'
 import { getSkillEnvMap, mapSkillEnvToDeclaredCase } from '../../credential.service'
 import { getSkill } from '../skills/registry'
 import { addProactiveContext } from '../proactive-store'
@@ -849,6 +849,11 @@ export async function loadSkillTool(
     )
   }
 
+  const explicitUserId = parseUserSkillId(skillId)
+  if (explicitUserId || (!getSkill(skillId) && resolveUserSkillRawId(skillId))) {
+    return loadUserSkillTool(args, executor)
+  }
+
   if (!executor.skillSession) {
     return { success: false, output: '', error: t('skill.session_not_initialized') }
   }
@@ -919,6 +924,12 @@ export async function unloadSkillTool(
     return unloadMcpServerSkill(skillId, executor)
   }
 
+  const explicitUserId = parseUserSkillId(skillId)
+  const builtinLoaded = executor.skillSession?.getLoadedSkills().includes(skillId) ?? false
+  if (explicitUserId || (!builtinLoaded && (executor.isUserSkillLoaded?.(skillId) || resolveUserSkillRawId(skillId)))) {
+    return unloadUserSkillTool(skillId, executor)
+  }
+
   if (!executor.skillSession) {
     return { success: false, output: '', error: t('skill.session_not_initialized') }
   }
@@ -946,6 +957,7 @@ export async function unloadSkillTool(
 
   try {
     await executor.skillSession.unloadSkill(skillId)
+    executor.markSkillUnloaded?.(skillId)
     
     const output = t('skill.unloaded', { id: skillId })
     executor.addStep({
@@ -969,6 +981,49 @@ export async function unloadSkillTool(
   }
 }
 
+function resolveUserSkillRawId(skillId: string): string | null {
+  const prefixed = parseUserSkillId(skillId)
+  if (prefixed) return prefixed
+  return getUserSkillService().getSkill(skillId) ? skillId : null
+}
+
+async function unloadUserSkillTool(
+  skillId: string,
+  executor: ToolExecutorConfig
+): Promise<ToolResult> {
+  const rawId = resolveUserSkillRawId(skillId) ?? skillId
+  const loaded = executor.isUserSkillLoaded?.(rawId) || executor.isUserSkillLoaded?.(toUserSkillId(rawId))
+
+  if (!loaded) {
+    const output = t('skill.not_loaded', { id: rawId })
+    executor.addStep({
+      type: 'tool_result',
+      content: output,
+      toolName: 'skill',
+      toolResult: output
+    })
+    return { success: true, output }
+  }
+
+  executor.addStep({
+    type: 'tool_call',
+    content: t('skill.unloading', { id: rawId }),
+    toolName: 'skill',
+    toolArgs: { action: 'unload', skill_id: rawId },
+    riskLevel: 'safe'
+  })
+
+  executor.markSkillUnloaded?.(toUserSkillId(rawId))
+  const output = t('skill.unloaded', { id: rawId })
+  executor.addStep({
+    type: 'tool_result',
+    content: output,
+    toolName: 'skill',
+    toolResult: output
+  })
+  return { success: true, output }
+}
+
 /**
  * 加载用户技能工具
  */
@@ -982,46 +1037,48 @@ export async function loadUserSkillTool(
     return { success: false, output: '', error: t('user_skill.id_required') }
   }
 
+  const rawId = parseUserSkillId(skillId) ?? skillId
+
   executor.addStep({
     type: 'tool_call',
-    content: t('user_skill.loading', { id: skillId }),
-    toolName: 'load_user_skill',
-    toolArgs: args,
+    content: t('skill.loading', { id: rawId }),
+    toolName: 'skill',
+    toolArgs: { action: 'load', skill_id: rawId },
     riskLevel: 'safe'
   })
 
   const userSkillService = getUserSkillService()
-  const skill = userSkillService.getSkill(skillId)
+  const skill = userSkillService.getSkill(rawId)
   
   if (!skill) {
-    const errorMsg = t('user_skill.not_found', { id: skillId })
+    const errorMsg = t('user_skill.not_found', { id: rawId })
     executor.addStep({
       type: 'tool_result',
       content: errorMsg,
-      toolName: 'load_user_skill',
+      toolName: 'skill',
       toolResult: errorMsg
     })
     return { success: false, output: '', error: errorMsg }
   }
   
   if (!skill.enabled) {
-    const errorMsg = t('user_skill.disabled', { id: skillId })
+    const errorMsg = t('user_skill.disabled', { id: rawId })
     executor.addStep({
       type: 'tool_result',
       content: errorMsg,
-      toolName: 'load_user_skill',
+      toolName: 'skill',
       toolResult: errorMsg
     })
     return { success: false, output: '', error: errorMsg }
   }
 
-  const content = userSkillService.getSkillContent(skillId)
+  const content = userSkillService.getSkillContent(rawId)
   if (!content) {
-    const errorMsg = t('user_skill.content_empty', { id: skillId })
+    const errorMsg = t('user_skill.content_empty', { id: rawId })
     executor.addStep({
       type: 'tool_result',
       content: errorMsg,
-      toolName: 'load_user_skill',
+      toolName: 'skill',
       toolResult: errorMsg
     })
     return { success: false, output: '', error: errorMsg }
@@ -1042,14 +1099,14 @@ export async function loadUserSkillTool(
     }
     if (hasEnvRequirements) {
       // 显示每个 env key 的配置状态
-      const envStatuses = await userSkillService.getSkillEnvStatus(skillId)
+      const envStatuses = await userSkillService.getSkillEnvStatus(rawId)
       const envLines = envStatuses.map(s =>
         `\`${s.name}\` ${s.configured ? '✅已配置' : '❌未配置'}`
       )
       sections.push(`- **env keys**: ${envLines.join(', ')}`)
       const missing = envStatuses.filter(s => !s.configured)
       if (missing.length > 0) {
-        sections.push(`\n> ⚠️ 缺少 ${missing.length} 个 key：${missing.map(s => `\`${s.name}\``).join(', ')}。请用 \`skill_set_env("${skillId}", "KEY_NAME")\` 配置，或告诉 Agent key 的值。`)
+        sections.push(`\n> ⚠️ 缺少 ${missing.length} 个 key：${missing.map(s => `\`${s.name}\``).join(', ')}。请用 \`skill_set_env("${rawId}", "KEY_NAME")\` 配置，或告诉 Agent key 的值。`)
       } else {
         // 有终端（local/ssh 模式）时，自动把已配置的 key export 进当前 shell session
         const ptyId = executor.getCurrentPtyId?.()
@@ -1057,7 +1114,7 @@ export async function loadUserSkillTool(
           // credential 层统一大写存储，按 SKILL.md 声明的原始大小写映射后再 export，
           // 保证技能脚本能用声明的变量名（可能是 api_key 而非 API_KEY）读到
           const declaredEnvs = skill.requires?.env ?? []
-          const envMap = await getSkillEnvMap(skillId)
+          const envMap = await getSkillEnvMap(rawId)
           const envEntries = Object.entries(
             mapSkillEnvToDeclaredCase(envMap, declaredEnvs)
           )
@@ -1070,14 +1127,14 @@ export async function loadUserSkillTool(
             executor.addStep({
               type: 'tool_result',
               content: `🔑 已注入 ${envEntries.length} 个环境变量`,
-              toolName: 'load_user_skill',
+              toolName: 'skill',
               toolResult: `已将 ${envEntries.map(([k]) => `\`${k}\``).join(', ')} export 到当前 shell session`
             })
             sections.push(`\n> 💡 已自动 export ${envEntries.length} 个 key 到当前 shell，直接用 \`execute_command\` 运行脚本即可。`)
           }
         } else {
           // assistant 模式：用 exec + skill_id 注入
-          sections.push(`\n> 💡 执行本技能脚本时请用 \`exec(command, skill_id="${skillId}")\` 自动注入 key，勿明文传递。`)
+          sections.push(`\n> 💡 执行本技能脚本时请用 \`exec(command, skill_id="${rawId}")\` 自动注入 key，勿明文传递。`)
         }
       }
     }
@@ -1091,12 +1148,12 @@ export async function loadUserSkillTool(
   
   executor.addStep({
     type: 'tool_result',
-    content: t('user_skill.loaded', { name: skill.name }),
-    toolName: 'load_user_skill',
+    content: t('skill.loaded_simple', { name: skill.name }),
+    toolName: 'skill',
     toolResult: output
   })
 
-  executor.markUserSkillLoaded?.(toUserSkillId(skillId))
+  executor.markUserSkillLoaded?.(toUserSkillId(rawId))
   
   return { success: true, output }
 }

@@ -86,12 +86,16 @@ export interface ToolExecutorConfig {
   getSshConfig?: (terminalId: string) => SshConfig | null
   // 技能系统
   skillSession?: SkillSession
-  /** 用户在这场对话里亲手卸掉的技能；禁止预加载/重开悄悄装回，不拦 load_skill */
+  /** 用户在这场对话里亲手卸掉的技能；禁止预加载/重开悄悄装回，不拦秘书再装 */
   isSkillDismissed?: (skillId: string) => boolean
-  /** 秘书 load_user_skill 成功后进胶囊 */
+  /** 这场对话是否装着这份用户技能 */
+  isUserSkillLoaded?: (skillId: string) => boolean
+  /** 秘书装上用户技能后进胶囊 */
   markUserSkillLoaded?: (skillId: string) => void
-  /** 秘书 load_skill 成功后进胶囊 */
+  /** 秘书装上系统技能后进胶囊 */
   markBuiltinSkillLoaded?: (skillId: string) => void
+  /** 秘书卸掉技能：这场不再开着，但不算用户点掉 */
+  markSkillUnloaded?: (skillId: string) => void
   // 插件系统
   pluginRegistry?: import('../../plugin/registry').PluginRegistry
   /** 当前上下文用量（check_context 工具使用）。剩余量含本轮新增，属估算 */
