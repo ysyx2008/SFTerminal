@@ -472,8 +472,8 @@ const tabGroups = computed(() => {
         { id: 'browserBridge' as const, label: t('settings.tabs.browserBridge'), icon: '🌍' },
         { id: 'email' as const, label: t('settings.tabs.email'), icon: '📧' },
         { id: 'calendar' as const, label: t('settings.tabs.calendar'), icon: '📅' },
-        { id: 'bastion' as const, label: t('settings.tabs.bastion'), icon: '🛡️' }
-        // 插件页先不进菜单：生态没起来之前给用户看空列表没意义。页面和后端都留着。
+        { id: 'bastion' as const, label: t('settings.tabs.bastion'), icon: '🛡️' },
+        { id: 'plugins' as const, label: t('settings.tabs.plugins'), icon: '🧩' }
       ]
     },
     {
