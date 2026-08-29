@@ -94,19 +94,6 @@ const clearing = ref(false)
 const repairing = ref(false)
 const repairProgress = ref<{ current: number; total: number; filename: string } | null>(null)
 
-// 备份 / 恢复
-interface BackupEntry {
-  name: string
-  path: string
-  createdAt: number
-  sizeBytes: number
-  automatic: boolean
-}
-const backups = ref<BackupEntry[]>([])
-const backingUp = ref(false)
-const restoring = ref(false)
-const showBackupsPanel = ref(false)
-
 const kbDocuments = computed(() => {
   return documents.value.filter(doc => doc.fileType !== 'host-memory' && doc.fileType !== 'conversation')
 })
@@ -134,13 +121,6 @@ const formatSize = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-const formatBytes = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
 const formatDate = (timestamp: number): string => {
@@ -431,50 +411,6 @@ const clearKnowledge = async () => {
   }
 }
 
-const saveBackupElsewhere = async () => {
-  try {
-    backingUp.value = true
-    const result = await api.knowledge.saveBackupTo()
-    if (result.canceled) return
-    if (result.success) {
-      await showAlert(t('common.success'), t('knowledgeManager.backupSuccess', { path: result.path || result.backupPath }))
-    } else {
-      await showAlert(t('common.error'), t('knowledgeManager.backupFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
-    }
-  } catch (error) {
-    console.error('Save backup elsewhere failed:', error)
-    await showAlert(t('common.error'), t('knowledgeManager.backupFailed'))
-  } finally {
-    backingUp.value = false
-  }
-}
-
-const restoreFromFolder = async () => {
-  const confirmed = await showConfirm({
-    type: 'warning',
-    title: t('common.confirm'),
-    message: t('knowledgeManager.confirmRestore'),
-  })
-  if (!confirmed) return
-  try {
-    restoring.value = true
-    const result = await api.knowledge.restoreFromFolder()
-    if (result.canceled) return
-    if (result.success) {
-      await showAlert(t('common.success'), t('knowledgeManager.restoreSuccess', { path: result.backupPath || '' }))
-      await loadKnowledgeDocs()
-      showBackupsPanel.value = false
-    } else {
-      await showAlert(t('common.error'), t('knowledgeManager.restoreFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
-    }
-  } catch (error) {
-    console.error('Restore from folder failed:', error)
-    await showAlert(t('common.error'), t('knowledgeManager.restoreFailed'))
-  } finally {
-    restoring.value = false
-  }
-}
-
 const repairKnowledge = async () => {
   try {
     repairing.value = true
@@ -505,92 +441,6 @@ const repairKnowledge = async () => {
   } finally {
     repairing.value = false
     repairProgress.value = null
-  }
-}
-
-// ==================== 备份 / 恢复 ====================
-
-const loadBackups = async () => {
-  try {
-    const result = await api.knowledge.listBackups()
-    if (result.success) {
-      backups.value = result.backups || []
-    }
-  } catch (error) {
-    console.error('Load backups failed:', error)
-  }
-}
-
-const createBackup = async () => {
-  try {
-    backingUp.value = true
-    const result = await api.knowledge.createBackup()
-    if (result.success) {
-      if (result.backupPath) {
-        await showAlert(t('common.success'), t('knowledgeManager.backupSuccess', { path: result.backupPath }))
-      }
-      await loadBackups()
-      await loadKnowledgeDocs()
-    } else {
-      await showAlert(t('common.error'), t('knowledgeManager.backupFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
-    }
-  } catch (error) {
-    console.error('Create backup failed:', error)
-    await showAlert(t('common.error'), t('knowledgeManager.backupFailed'))
-  } finally {
-    backingUp.value = false
-  }
-}
-
-const restoreFromBackup = async (backupPath: string) => {
-  const confirmed = await showConfirm({
-    type: 'warning',
-    title: t('common.confirm'),
-    message: t('knowledgeManager.confirmRestore'),
-  })
-  if (!confirmed) return
-  try {
-    restoring.value = true
-    const result = await api.knowledge.restoreBackup(backupPath)
-    if (result.success) {
-      await showAlert(t('common.success'), t('knowledgeManager.restoreSuccess', { path: result.backupPath || backupPath }))
-      await loadKnowledgeDocs()
-      showBackupsPanel.value = false
-    } else {
-      await showAlert(t('common.error'), t('knowledgeManager.restoreFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
-    }
-  } catch (error) {
-    console.error('Restore backup failed:', error)
-    await showAlert(t('common.error'), t('knowledgeManager.restoreFailed'))
-  } finally {
-    restoring.value = false
-  }
-}
-
-const deleteBackupEntry = async (backupPath: string) => {
-  const confirmed = await showConfirm({
-    type: 'danger',
-    title: t('common.delete'),
-    message: t('knowledgeManager.confirmDeleteBackup'),
-    confirmText: t('common.delete'),
-  })
-  if (!confirmed) return
-  try {
-    const result = await api.knowledge.deleteBackup(backupPath)
-    if (result.success) {
-      await loadBackups()
-    } else {
-      await showAlert(t('common.error'), result.error || t('knowledgeManager.unknownError'))
-    }
-  } catch (error) {
-    console.error('Delete backup failed:', error)
-  }
-}
-
-const toggleBackupsPanel = async () => {
-  showBackupsPanel.value = !showBackupsPanel.value
-  if (showBackupsPanel.value) {
-    await loadBackups()
   }
 }
 
@@ -818,56 +668,6 @@ onUnmounted(() => {
       </SettingsGroup>
 
       <SettingsGroup :title="t('knowledgeSettings.maintainGroup')">
-        <SettingRow
-          :label="t('knowledgeSettings.backupLabel')"
-          :desc="t('knowledgeSettings.backupDesc')"
-        >
-          <button class="btn btn-sm" @click="createBackup" :disabled="backingUp || restoring">
-            {{ backingUp ? t('knowledgeManager.backingUp') : t('knowledgeSettings.backupAction') }}
-          </button>
-          <button class="btn btn-sm" @click="saveBackupElsewhere" :disabled="backingUp || restoring">
-            {{ t('knowledgeSettings.backupSaveElsewhere') }}
-          </button>
-        </SettingRow>
-        <SettingRow
-          :label="t('knowledgeSettings.restoreLabel')"
-          :desc="t('knowledgeSettings.restoreDesc')"
-        >
-          <button class="btn btn-sm" @click="toggleBackupsPanel" :disabled="backingUp || restoring">
-            {{ restoring ? t('knowledgeManager.restoring') : t('knowledgeSettings.restoreAction') }}
-          </button>
-          <button class="btn btn-sm" @click="restoreFromFolder" :disabled="backingUp || restoring">
-            {{ t('knowledgeSettings.restoreFromFolder') }}
-          </button>
-        </SettingRow>
-        <div v-if="showBackupsPanel" class="backups-panel">
-          <div class="backups-panel-header">
-            <span class="backups-title">{{ t('knowledgeManager.backupsTitle') }}</span>
-            <span class="backups-info">{{ t('knowledgeManager.autoBackupInfo') }}</span>
-          </div>
-          <div v-if="backups.length === 0" class="backups-empty">
-            {{ t('knowledgeManager.noBackups') }}
-          </div>
-          <div v-else class="backups-list">
-            <div v-for="b in backups" :key="b.path" class="backup-item">
-              <div class="backup-info">
-                <span class="backup-badge" :class="{ 'auto': b.automatic, 'manual': !b.automatic }">
-                  {{ b.automatic ? t('knowledgeManager.backupAutomatic') : t('knowledgeManager.backupManual') }}
-                </span>
-                <span class="backup-date">{{ formatDate(b.createdAt) }}</span>
-                <span class="backup-size">{{ formatBytes(b.sizeBytes) }}</span>
-              </div>
-              <div class="backup-actions">
-                <button class="btn btn-sm" @click="restoreFromBackup(b.path)" :disabled="restoring">
-                  {{ t('knowledgeManager.restore') }}
-                </button>
-                <button class="btn btn-danger btn-sm" @click="deleteBackupEntry(b.path)">
-                  {{ t('knowledgeManager.deleteBackup') }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
         <SettingRow
           :label="t('knowledgeSettings.repairLabel')"
           :desc="t('knowledgeSettings.repairDesc')"
@@ -1105,53 +905,4 @@ onUnmounted(() => {
 .editor-textarea:focus { outline: none; border-color: var(--accent-primary); }
 .editor-actions { display: flex; align-items: center; gap: 10px; padding-top: 8px; }
 .editor-hint { font-size: 11px; color: var(--text-muted); }
-
-/* 备份 / 恢复面板 */
-.backups-panel {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-primary, #333);
-  border-radius: 6px;
-  background: var(--bg-secondary, #1e1e1e);
-}
-.backups-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.backups-title { font-weight: 600; font-size: 13px; color: var(--text-primary); }
-.backups-info { font-size: 11px; color: var(--text-muted); }
-.backups-empty {
-  padding: 16px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.backups-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
-.backup-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 10px;
-  border-radius: 4px;
-  background: var(--bg-tertiary, #181818);
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.backup-info { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
-.backup-badge {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-.backup-badge.auto { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
-.backup-badge.manual { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-.backup-date { color: var(--text-primary); }
-.backup-size { color: var(--text-muted); }
-.backup-actions { display: flex; gap: 6px; flex-shrink: 0; }
 </style>
