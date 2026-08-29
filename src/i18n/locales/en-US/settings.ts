@@ -900,7 +900,7 @@ export default {
     repairDesc: 'Rebuild missing index entries when search returns no results or inaccurate matches.',
     repairAction: 'Repair',
     clearLabel: 'Clear knowledge base',
-    clearDesc: 'Permanently delete all documents in the knowledge base. Confirmation requires typing a specified phrase.',
+    clearDesc: 'Permanently delete all documents in the knowledge base. This cannot be undone.',
     clearAction: 'Clear',
     clearConfirmPhrase: 'CLEAR',
     autoSaveUploads: 'Auto-save Uploaded Documents',

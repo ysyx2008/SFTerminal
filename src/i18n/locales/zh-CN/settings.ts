@@ -900,7 +900,7 @@ export default {
     repairDesc: '检索无结果或不准确时，补建缺失的索引。',
     repairAction: '修复',
     clearLabel: '清空知识库',
-    clearDesc: '删除知识库中的全部文档，此操作不可恢复。确认时需输入指定文字。',
+    clearDesc: '删除知识库中的全部文档，此操作不可恢复。',
     clearAction: '清空',
     clearConfirmPhrase: '清空知识库',
     autoSaveUploads: '自动保存上传文档',
