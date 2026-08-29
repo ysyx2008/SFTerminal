@@ -1538,6 +1538,19 @@ interface Window {
         imported?: number
         error?: string
       }>
+      saveBackupTo: () => Promise<{
+        canceled?: boolean
+        success?: boolean
+        path?: string
+        backupPath?: string
+        error?: string
+      }>
+      restoreFromFolder: () => Promise<{
+        canceled?: boolean
+        success?: boolean
+        backupPath?: string
+        error?: string
+      }>
       // 监听知识库服务就绪事件
       onReady: (callback: () => void) => () => void
       // 监听知识库索引重建事件（模型升级 / 数据损坏 / 索引缺失）

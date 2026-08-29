@@ -15,6 +15,8 @@ export interface ConfirmDialogOptions {
   /** 中性按钮的回调；点击 neutral 按钮时同步触发，promise 仍 resolve false。 */
   onNeutral?: () => void
   type?: 'default' | 'danger' | 'warning'
+  /** 必须打出这几个字才能确认。不设则只点按钮即可。 */
+  typedPhrase?: string
   showCancel?: boolean
   fileInfo?: {
     name?: string
@@ -49,6 +51,7 @@ export function useConfirm() {
         neutralText: opts.neutralText,
         onNeutral: opts.onNeutral,
         type: opts.type || 'default',
+        typedPhrase: opts.typedPhrase,
         showCancel: opts.showCancel,
         fileInfo: opts.fileInfo
       })

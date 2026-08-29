@@ -34,6 +34,9 @@ import { getBM25Index, BM25Index } from './bm25'
 import { encrypt, decrypt, isEncrypted } from './crypto'
 import {
   createBackup as doCreateBackup,
+  saveBackupTo as doSaveBackupTo,
+  isKnowledgeSnapshot,
+  resolveKnowledgeSnapshot as doResolveKnowledgeSnapshot,
   listBackups as doListBackups,
   restoreBackup as doRestoreBackup,
   deleteBackup as doDeleteBackup,
@@ -1779,10 +1782,36 @@ export class KnowledgeService extends EventEmitter {
   }
 
   /**
+   * 把当前知识库整包存到用户选的目录（与本机备份同一份格式，不进轮转）
+   */
+  async saveBackupTo(destParent: string): Promise<{ success: boolean; backupPath?: string; error?: string }> {
+    this.emit('backupStarted', { automatic: false })
+    try {
+      const result = doSaveBackupTo(destParent)
+      this.emit('backupCompleted', { success: result.success, backupPath: result.backupPath, error: result.error })
+      return result
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e)
+      this.emit('backupCompleted', { success: false, error })
+      throw e
+    }
+  }
+
+  /**
    * 列出所有备份
    */
   listBackups(): BackupEntry[] {
     return doListBackups()
+  }
+
+  /** 用户选的文件夹是不是一份完整快照 */
+  isKnowledgeSnapshot(dir: string): boolean {
+    return isKnowledgeSnapshot(dir)
+  }
+
+  /** 自己是快照，或里面恰好只有一份 */
+  resolveKnowledgeSnapshot(dir: string): string | null {
+    return doResolveKnowledgeSnapshot(dir)
   }
 
   /**

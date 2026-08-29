@@ -848,7 +848,7 @@ export default {
     backupManual: '手动',
     deleteBackup: '删除',
     confirmDeleteBackup: '确定删除这份备份吗？',
-    autoBackupInfo: '退出时自动备份（每 30 分钟最多一次，保留最近 3 份）',
+    autoBackupInfo: '启动时自动备份（每 30 分钟最多一次，保留最近 3 份）',
     memoryCharCount: '{current} / {max} 字符',
     memoryTab: '💡 记忆 ({count})',
     knowledgeTab: '📚 知识库 ({count})',

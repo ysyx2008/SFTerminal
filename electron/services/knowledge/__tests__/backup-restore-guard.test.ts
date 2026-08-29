@@ -11,6 +11,8 @@ vi.mock('electron', () => ({
 
 const {
   createBackup,
+  saveBackupTo,
+  resolveKnowledgeSnapshot,
   hasCorruptionMarker,
   listBackups,
   restoreBackup
@@ -80,5 +82,52 @@ describe('知识库损坏时不得把坏库存成最新备份', () => {
     const docs = JSON.parse(fs.readFileSync(path.join(knowledgeDir(), 'documents.json'), 'utf-8'))
     expect(docs.label).toBe('older-source')
     expect(newer.backupPath).toBeTruthy()
+  })
+})
+
+describe('存到别处与从文件夹恢复是同一份快照', () => {
+  beforeEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+    fs.mkdirSync(tmpDir, { recursive: true })
+    writeKnowledge('portable')
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('存到别处写出完整快照，且不进本机备份列表', () => {
+    const dest = path.join(tmpDir, 'elsewhere')
+    fs.mkdirSync(dest)
+
+    const result = saveBackupTo(dest)
+
+    expect(result.success).toBe(true)
+    expect(result.backupPath).toBeTruthy()
+    expect(fs.existsSync(path.join(result.backupPath!, 'documents.json'))).toBe(true)
+    expect(listBackups()).toHaveLength(0)
+  })
+
+  it('选中外层目录时能认出里面仅有的一份快照', () => {
+    const dest = path.join(tmpDir, 'elsewhere')
+    fs.mkdirSync(dest)
+    const saved = saveBackupTo(dest)
+
+    expect(resolveKnowledgeSnapshot(dest)).toBe(saved.backupPath)
+    expect(resolveKnowledgeSnapshot(saved.backupPath!)).toBe(saved.backupPath)
+    expect(resolveKnowledgeSnapshot(path.join(tmpDir, 'empty-or-missing'))).toBeNull()
+  })
+
+  it('可以从存到别处的那份盖回来', () => {
+    const dest = path.join(tmpDir, 'elsewhere')
+    fs.mkdirSync(dest)
+    const saved = saveBackupTo(dest)
+    writeKnowledge('changed')
+
+    const restored = restoreBackup(saved.backupPath)
+
+    expect(restored.success).toBe(true)
+    const docs = JSON.parse(fs.readFileSync(path.join(knowledgeDir(), 'documents.json'), 'utf-8'))
+    expect(docs.label).toBe('portable')
   })
 })

@@ -847,7 +847,7 @@ export default {
     backupManual: 'manual',
     deleteBackup: 'Delete',
     confirmDeleteBackup: 'Delete this backup?',
-    autoBackupInfo: 'Auto-backup on exit (max once per 30 min, keeps last 3)',
+    autoBackupInfo: 'Auto-backup on startup (max once per 30 min, keeps last 3)',
     memoryCharCount: '{current} / {max} characters',
     memoryTab: '💡 Memory ({count})',
     knowledgeTab: '📚 Knowledge base ({count})',

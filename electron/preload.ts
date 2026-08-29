@@ -2459,6 +2459,12 @@ const electronAPI = {
     importData: () =>
       ipcRenderer.invoke('knowledge:importData') as Promise<{ success?: boolean; canceled?: boolean; error?: string; imported?: number }>,
 
+    saveBackupTo: () =>
+      ipcRenderer.invoke('knowledge:saveBackupTo') as Promise<{ success?: boolean; canceled?: boolean; error?: string; path?: string; backupPath?: string }>,
+
+    restoreFromFolder: () =>
+      ipcRenderer.invoke('knowledge:restoreFromFolder') as Promise<{ success?: boolean; canceled?: boolean; error?: string; backupPath?: string }>,
+
     // 检查知识库初始化是否完成
     isInitialized: () =>
       ipcRenderer.invoke('knowledge:isInitialized') as Promise<boolean>,

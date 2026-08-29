@@ -232,6 +232,7 @@ export default {
     saving: '保存中...',
     cancel: '取消',
     confirm: '确定',
+    typeToConfirm: '请输入「{phrase}」以确认',
     delete: '删除',
     edit: '编辑',
     add: '添加',

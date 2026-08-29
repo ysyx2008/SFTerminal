@@ -6535,6 +6535,57 @@ ipcMain.handle('knowledge:clear', async () => {
   }
 })
 
+// 把知识库整包存到用户选的目录（与本机备份同一份格式）
+ipcMain.handle('knowledge:saveBackupTo', async () => {
+  try {
+    const { dialog } = require('electron')
+    const result = await dialog.showOpenDialog({
+      title: t('dialog.selectKnowledgeSaveDir'),
+      properties: ['openDirectory', 'createDirectory']
+    })
+
+    if (result.canceled || !result.filePaths[0]) {
+      return { canceled: true }
+    }
+
+    await waitForKnowledge()
+    const saved = await getKnowledge().saveBackupTo(result.filePaths[0])
+    return { ...saved, path: saved.backupPath }
+  } catch (error) {
+    return {
+      success: false,
+      error: errMsg(error, 'error.exportFailed')
+    }
+  }
+})
+
+// 从用户选的文件夹按备份恢复
+ipcMain.handle('knowledge:restoreFromFolder', async () => {
+  try {
+    const { dialog } = require('electron')
+    const result = await dialog.showOpenDialog({
+      title: t('dialog.selectKnowledgeSnapshotDir'),
+      properties: ['openDirectory']
+    })
+
+    if (result.canceled || !result.filePaths[0]) {
+      return { canceled: true }
+    }
+
+    await waitForKnowledge()
+    const snapshot = getKnowledge().resolveKnowledgeSnapshot(result.filePaths[0])
+    if (!snapshot) {
+      return { success: false, error: t('error.notKnowledgeSnapshot') }
+    }
+    return await getKnowledge().restoreBackup(snapshot)
+  } catch (error) {
+    return {
+      success: false,
+      error: errMsg(error, 'error.importFailed')
+    }
+  }
+})
+
 // 导出知识库数据
 ipcMain.handle('knowledge:exportData', async () => {
   try {

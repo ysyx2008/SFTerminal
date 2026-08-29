@@ -232,6 +232,7 @@ export default {
     saving: 'Saving...',
     cancel: 'Cancel',
     confirm: 'Confirm',
+    typeToConfirm: 'Type {phrase} to confirm',
     delete: 'Delete',
     edit: 'Edit',
     add: 'Add',

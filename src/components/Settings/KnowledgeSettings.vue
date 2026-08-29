@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Loader2, X, Trash2 } from 'lucide-vue-next'
+import { Loader2, X, Trash2, AlertTriangle } from 'lucide-vue-next'
 import { showConfirm, showAlert } from '../../composables/useConfirm'
 import {
   SettingsPage,
@@ -91,8 +91,6 @@ const selectedDoc = ref<KnowledgeDocument | null>(null)
 const selectedDocIds = ref<Set<string>>(new Set())
 const batchDeleting = ref(false)
 const clearing = ref(false)
-const exporting = ref(false)
-const importing = ref(false)
 const repairing = ref(false)
 const repairProgress = ref<{ current: number; total: number; filename: string } | null>(null)
 
@@ -412,9 +410,10 @@ const clearKnowledge = async () => {
   if (kbDocuments.value.length === 0) return
   const confirmed = await showConfirm({
     type: 'danger',
-    title: t('common.clear'),
+    title: t('knowledgeSettings.clearLabel'),
     message: t('knowledgeManager.confirmClear', { count: kbDocuments.value.length }),
-    confirmText: t('common.clear'),
+    confirmText: t('knowledgeSettings.clearAction'),
+    typedPhrase: t('knowledgeSettings.clearConfirmPhrase'),
   })
   if (!confirmed) return
   try {
@@ -432,43 +431,47 @@ const clearKnowledge = async () => {
   }
 }
 
-const exportKnowledge = async () => {
+const saveBackupElsewhere = async () => {
   try {
-    exporting.value = true
-    const result = await api.knowledge.exportData()
+    backingUp.value = true
+    const result = await api.knowledge.saveBackupTo()
     if (result.canceled) return
-    if (result.success) await showAlert(t('common.success'), t('knowledgeManager.exportSuccess', { path: result.path }))
-    else await showAlert(t('common.error'), t('knowledgeManager.exportFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+    if (result.success) {
+      await showAlert(t('common.success'), t('knowledgeManager.backupSuccess', { path: result.path || result.backupPath }))
+    } else {
+      await showAlert(t('common.error'), t('knowledgeManager.backupFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+    }
   } catch (error) {
-    console.error('Export failed:', error)
-    await showAlert(t('common.error'), t('knowledgeManager.exportFailed'))
+    console.error('Save backup elsewhere failed:', error)
+    await showAlert(t('common.error'), t('knowledgeManager.backupFailed'))
   } finally {
-    exporting.value = false
+    backingUp.value = false
   }
 }
 
-const importKnowledge = async () => {
+const restoreFromFolder = async () => {
   const confirmed = await showConfirm({
     type: 'warning',
     title: t('common.confirm'),
-    message: t('knowledgeManager.confirmImport'),
+    message: t('knowledgeManager.confirmRestore'),
   })
   if (!confirmed) return
   try {
-    importing.value = true
-    const result = await api.knowledge.importData()
+    restoring.value = true
+    const result = await api.knowledge.restoreFromFolder()
     if (result.canceled) return
     if (result.success) {
-      await showAlert(t('common.success'), t('knowledgeManager.importSuccess', { count: result.imported || 0 }))
+      await showAlert(t('common.success'), t('knowledgeManager.restoreSuccess', { path: result.backupPath || '' }))
       await loadKnowledgeDocs()
+      showBackupsPanel.value = false
     } else {
-      await showAlert(t('common.error'), t('knowledgeManager.importFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
+      await showAlert(t('common.error'), t('knowledgeManager.restoreFailed') + ': ' + (result.error || t('knowledgeManager.unknownError')))
     }
   } catch (error) {
-    console.error('Import failed:', error)
-    await showAlert(t('common.error'), t('knowledgeManager.importFailed'))
+    console.error('Restore from folder failed:', error)
+    await showAlert(t('common.error'), t('knowledgeManager.restoreFailed'))
   } finally {
-    importing.value = false
+    restoring.value = false
   }
 }
 
@@ -650,7 +653,7 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div class="list-actions">
-                  <button class="btn btn-sm" @click="loadContextDocs">🔄 {{ t('knowledgeManager.refresh') }}</button>
+                  <button class="btn btn-sm" @click="loadContextDocs">{{ t('knowledgeManager.refresh') }}</button>
                 </div>
               </template>
 
@@ -700,58 +703,7 @@ onUnmounted(() => {
                   <button v-if="hasSelection" class="btn btn-danger btn-sm" @click="batchDeleteDocuments" :disabled="batchDeleting">
                     {{ batchDeleting ? t('knowledgeManager.deleting') : `${t('knowledgeManager.deleteSelected')} (${selectedDocIds.size})` }}
                   </button>
-                  <button class="btn btn-danger btn-sm" @click="clearKnowledge" :disabled="kbDocuments.length === 0 || clearing">
-                    {{ clearing ? t('knowledgeManager.clearing') : t('knowledgeManager.clearAll') }}
-                  </button>
-                  <button class="btn btn-sm" @click="exportKnowledge" :disabled="exporting">
-                    {{ exporting ? t('knowledgeManager.exporting') : `📤 ${t('knowledgeManager.export')}` }}
-                  </button>
-                  <button class="btn btn-sm" @click="importKnowledge" :disabled="importing">
-                    {{ importing ? t('knowledgeManager.importing') : `📥 ${t('knowledgeManager.import')}` }}
-                  </button>
-                  <button class="btn btn-sm" @click="repairKnowledge" :disabled="repairing" :title="t('knowledgeManager.repairTip')">
-                    <template v-if="repairing">
-                      🔧 {{ repairProgress ? `${repairProgress.current}/${repairProgress.total}` : t('knowledgeManager.repairing') }}
-                    </template>
-                    <template v-else>🔧 {{ t('knowledgeManager.repair') }}</template>
-                  </button>
-                  <button class="btn btn-sm" @click="createBackup" :disabled="backingUp || restoring" :title="t('knowledgeManager.backupTip')">
-                    {{ backingUp ? t('knowledgeManager.backingUp') : `💾 ${t('knowledgeManager.backup')}` }}
-                  </button>
-                  <button class="btn btn-sm" @click="toggleBackupsPanel" :disabled="backingUp || restoring" :title="t('knowledgeManager.restoreTip')">
-                    {{ restoring ? t('knowledgeManager.restoring') : `♻️ ${t('knowledgeManager.restore')}` }}
-                  </button>
-                  <button class="btn btn-sm" @click="loadKnowledgeDocs">🔄 {{ t('knowledgeManager.refresh') }}</button>
-                </div>
-
-                <!-- 备份列表 / 恢复面板 -->
-                <div v-if="showBackupsPanel" class="backups-panel">
-                  <div class="backups-panel-header">
-                    <span class="backups-title">{{ t('knowledgeManager.backupsTitle') }}</span>
-                    <span class="backups-info">{{ t('knowledgeManager.autoBackupInfo') }}</span>
-                  </div>
-                  <div v-if="backups.length === 0" class="backups-empty">
-                    {{ t('knowledgeManager.noBackups') }}
-                  </div>
-                  <div v-else class="backups-list">
-                    <div v-for="b in backups" :key="b.path" class="backup-item">
-                      <div class="backup-info">
-                        <span class="backup-badge" :class="{ 'auto': b.automatic, 'manual': !b.automatic }">
-                          {{ b.automatic ? t('knowledgeManager.backupAutomatic') : t('knowledgeManager.backupManual') }}
-                        </span>
-                        <span class="backup-date">{{ formatDate(b.createdAt) }}</span>
-                        <span class="backup-size">{{ formatBytes(b.sizeBytes) }}</span>
-                      </div>
-                      <div class="backup-actions">
-                        <button class="btn btn-sm" @click="restoreFromBackup(b.path)" :disabled="restoring">
-                          {{ t('knowledgeManager.restore') }}
-                        </button>
-                        <button class="btn btn-danger btn-sm" @click="deleteBackupEntry(b.path)">
-                          {{ t('knowledgeManager.deleteBackup') }}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  <button class="btn btn-sm" @click="loadKnowledgeDocs">{{ t('knowledgeManager.refresh') }}</button>
                 </div>
               </template>
             </div>
@@ -864,6 +816,83 @@ onUnmounted(() => {
           />
         </SettingRow>
       </SettingsGroup>
+
+      <SettingsGroup :title="t('knowledgeSettings.maintainGroup')">
+        <SettingRow
+          :label="t('knowledgeSettings.backupLabel')"
+          :desc="t('knowledgeSettings.backupDesc')"
+        >
+          <button class="btn btn-sm" @click="createBackup" :disabled="backingUp || restoring">
+            {{ backingUp ? t('knowledgeManager.backingUp') : t('knowledgeSettings.backupAction') }}
+          </button>
+          <button class="btn btn-sm" @click="saveBackupElsewhere" :disabled="backingUp || restoring">
+            {{ t('knowledgeSettings.backupSaveElsewhere') }}
+          </button>
+        </SettingRow>
+        <SettingRow
+          :label="t('knowledgeSettings.restoreLabel')"
+          :desc="t('knowledgeSettings.restoreDesc')"
+        >
+          <button class="btn btn-sm" @click="toggleBackupsPanel" :disabled="backingUp || restoring">
+            {{ restoring ? t('knowledgeManager.restoring') : t('knowledgeSettings.restoreAction') }}
+          </button>
+          <button class="btn btn-sm" @click="restoreFromFolder" :disabled="backingUp || restoring">
+            {{ t('knowledgeSettings.restoreFromFolder') }}
+          </button>
+        </SettingRow>
+        <div v-if="showBackupsPanel" class="backups-panel">
+          <div class="backups-panel-header">
+            <span class="backups-title">{{ t('knowledgeManager.backupsTitle') }}</span>
+            <span class="backups-info">{{ t('knowledgeManager.autoBackupInfo') }}</span>
+          </div>
+          <div v-if="backups.length === 0" class="backups-empty">
+            {{ t('knowledgeManager.noBackups') }}
+          </div>
+          <div v-else class="backups-list">
+            <div v-for="b in backups" :key="b.path" class="backup-item">
+              <div class="backup-info">
+                <span class="backup-badge" :class="{ 'auto': b.automatic, 'manual': !b.automatic }">
+                  {{ b.automatic ? t('knowledgeManager.backupAutomatic') : t('knowledgeManager.backupManual') }}
+                </span>
+                <span class="backup-date">{{ formatDate(b.createdAt) }}</span>
+                <span class="backup-size">{{ formatBytes(b.sizeBytes) }}</span>
+              </div>
+              <div class="backup-actions">
+                <button class="btn btn-sm" @click="restoreFromBackup(b.path)" :disabled="restoring">
+                  {{ t('knowledgeManager.restore') }}
+                </button>
+                <button class="btn btn-danger btn-sm" @click="deleteBackupEntry(b.path)">
+                  {{ t('knowledgeManager.deleteBackup') }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <SettingRow
+          :label="t('knowledgeSettings.repairLabel')"
+          :desc="t('knowledgeSettings.repairDesc')"
+        >
+          <button class="btn btn-sm" @click="repairKnowledge" :disabled="repairing">
+            <template v-if="repairing">
+              {{ repairProgress ? `${repairProgress.current}/${repairProgress.total}` : t('knowledgeManager.repairing') }}
+            </template>
+            <template v-else>{{ t('knowledgeSettings.repairAction') }}</template>
+          </button>
+        </SettingRow>
+        <SettingRow
+          :label="t('knowledgeSettings.clearLabel')"
+          :desc="t('knowledgeSettings.clearDesc')"
+        >
+          <button
+            class="btn btn-danger-fill"
+            @click="clearKnowledge"
+            :disabled="kbDocuments.length === 0 || clearing"
+          >
+            <AlertTriangle :size="14" />
+            {{ clearing ? t('knowledgeManager.clearing') : t('knowledgeSettings.clearAction') }}
+          </button>
+        </SettingRow>
+      </SettingsGroup>
       </template>
     </SettingsPage>
 </template>
@@ -875,6 +904,30 @@ onUnmounted(() => {
 .memory-max-unit {
   font-size: var(--fs-desc);
   color: var(--text-secondary);
+}
+
+.btn-danger-fill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid rgba(var(--color-error-rgb), 0.45);
+  background: var(--color-error);
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, opacity 0.2s;
+}
+
+.btn-danger-fill:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn-danger-fill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* ==================== 内嵌管理面板 ==================== */

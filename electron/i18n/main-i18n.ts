@@ -36,6 +36,9 @@ const translations = {
     'dialog.selectDir': '选择目录',
     'dialog.saveFile': '保存文件',
     'dialog.selectKnowledgeBackupDir': '选择知识库备份目录',
+    'dialog.selectKnowledgeSaveDir': '选择保存位置',
+    'dialog.selectKnowledgeSnapshotDir': '选择备份文件夹',
+    'error.notKnowledgeSnapshot': '这不是一份完整备份。以前单独导出的文件夹不能从这里恢复。',
     'dialog.configRestoredTitle': '配置已从备份恢复',
     'dialog.configRestoredMessage':
       '检测到应用配置损坏，已用最近一份可用备份恢复。请到设置中核对 AI、SSH、即时通讯等各项是否齐全。',
@@ -157,6 +160,9 @@ const translations = {
     'dialog.selectDir': 'Select Directory',
     'dialog.saveFile': 'Save File',
     'dialog.selectKnowledgeBackupDir': 'Select Knowledge Base Backup Directory',
+    'dialog.selectKnowledgeSaveDir': 'Choose where to save',
+    'dialog.selectKnowledgeSnapshotDir': 'Select backup folder',
+    'error.notKnowledgeSnapshot': 'This is not a complete backup. Folders from the old export cannot be restored here.',
     'dialog.configRestoredTitle': 'Settings Restored from Backup',
     'dialog.configRestoredMessage':
       'App settings were damaged and have been restored from the latest usable backup. Please check Settings for AI, SSH, messaging, and other items.',

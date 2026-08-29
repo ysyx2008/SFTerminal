@@ -22,8 +22,14 @@ const emit = defineEmits<{
 
 const dialogRef = ref<HTMLDivElement | null>(null)
 const confirmBtnRef = ref<HTMLButtonElement | null>(null)
+const typedInputRef = ref<HTMLInputElement | null>(null)
+const typedValue = ref('')
+
+const typedPhrase = computed(() => props.options.typedPhrase?.trim() || '')
+const canConfirm = computed(() => !typedPhrase.value || typedValue.value.trim() === typedPhrase.value)
 
 const handleConfirm = () => {
+  if (!canConfirm.value) return
   emit('confirm')
   emit('close')
 }
@@ -50,6 +56,10 @@ const handleKeydown = (e: KeyboardEvent) => {
     if (focused instanceof HTMLButtonElement && dialogRef.value?.contains(focused)) {
       return
     }
+    if (!canConfirm.value) {
+      e.preventDefault()
+      return
+    }
     e.preventDefault()
     handleConfirm()
   }
@@ -57,8 +67,15 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 watch(() => props.show, async (show) => {
   if (show) {
+    typedValue.value = ''
     await nextTick()
-    confirmBtnRef.value?.focus()
+    if (typedPhrase.value) {
+      typedInputRef.value?.focus()
+    } else {
+      confirmBtnRef.value?.focus()
+    }
+  } else {
+    typedValue.value = ''
   }
 })
 
@@ -93,7 +110,7 @@ const confirmBtnClass = computed(() => {
             v-if="show"
             ref="dialogRef"
             class="confirm-dialog"
-            :class="{ 'has-neutral': !!options.neutralText }"
+            :class="{ 'has-neutral': !!options.neutralText, 'has-typed': !!typedPhrase }"
           >
             <div class="dialog-header">
               <div class="dialog-header-title">
@@ -128,6 +145,19 @@ const confirmBtnClass = computed(() => {
               </div>
 
               <p v-if="options.detail" class="dialog-detail">{{ options.detail }}</p>
+
+              <label v-if="typedPhrase" class="typed-confirm">
+                <span>{{ t('common.typeToConfirm', { phrase: typedPhrase }) }}</span>
+                <input
+                  ref="typedInputRef"
+                  v-model="typedValue"
+                  type="text"
+                  class="typed-confirm-input"
+                  :placeholder="typedPhrase"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </label>
             </div>
 
             <div class="dialog-footer">
@@ -152,6 +182,7 @@ const confirmBtnClass = computed(() => {
                 type="button"
                 class="btn"
                 :class="confirmBtnClass"
+                :disabled="!canConfirm"
                 @click="handleConfirm"
               >
                 {{ options.confirmText || t('common.confirm') }}
@@ -186,7 +217,8 @@ const confirmBtnClass = computed(() => {
   overflow: hidden;
 }
 
-.confirm-dialog.has-neutral {
+.confirm-dialog.has-neutral,
+.confirm-dialog.has-typed {
   width: 420px;
 }
 
@@ -275,6 +307,36 @@ const confirmBtnClass = computed(() => {
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.5;
+}
+
+.typed-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.typed-confirm-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.typed-confirm-input:focus {
+  outline: none;
+  border-color: var(--color-error);
+}
+
+.dialog-footer .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .dialog-footer {

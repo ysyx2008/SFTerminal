@@ -258,6 +258,58 @@ export function createBackup(automatic: boolean = true): CreateBackupResult {
   }
 }
 
+/** 用户选的文件夹是不是一份完整快照（本机备份或「存到别处」的那份） */
+export function isKnowledgeSnapshot(dir: string): boolean {
+  return fs.existsSync(path.join(dir, 'documents.json'))
+}
+
+/**
+ * 解析用户选的目录：自己是快照，或里面恰好只有一份快照（选到了外层文件夹）。
+ * 认不出来返回 null。
+ */
+export function resolveKnowledgeSnapshot(dir: string): string | null {
+  if (isKnowledgeSnapshot(dir)) return dir
+  try {
+    const kids = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => path.join(dir, entry.name))
+      .filter(isKnowledgeSnapshot)
+    if (kids.length === 1) return kids[0]
+  } catch { /* 读不到就当认不出来 */ }
+  return null
+}
+
+/**
+ * 把当前知识库整包拷到用户选的目录里，另起一份快照。
+ * 不进本机备份列表，也不参与自动轮转。
+ */
+export function saveBackupTo(destParent: string): CreateBackupResult {
+  const knowledgeDir = getKnowledgeDir()
+  if (!fs.existsSync(knowledgeDir)) {
+    return { success: false, error: '知识库目录不存在，无可备份内容' }
+  }
+  if (!destParent || !fs.existsSync(destParent)) {
+    return { success: false, error: '目标目录不存在' }
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const backupDir = path.join(destParent, `sailfish-knowledge-${timestamp}`)
+
+  try {
+    fs.mkdirSync(backupDir, { recursive: true })
+    copyDirSync(knowledgeDir, backupDir)
+    log.info(`已存到别处: ${backupDir}`)
+    return { success: true, backupPath: backupDir }
+  } catch (e) {
+    log.error('存到别处失败:', e)
+    rmrfSync(backupDir)
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : String(e),
+    }
+  }
+}
+
 /**
  * 轮转：保留最近 MAX_BACKUPS 份自动备份。
  * 手动备份不参与自动轮转（用户主动建的，不应被悄悄删）。
