@@ -29,6 +29,7 @@ import {
 } from './backup'
 import { createLogger } from '../../utils/logger'
 import { UtilityWorkerSession, type WorkerSessionOptions } from './worker-session'
+import { lanceEquals } from './lance-filter'
 
 const log = createLogger('KnowledgeStorage')
 
@@ -487,7 +488,7 @@ export class VectorStorage extends EventEmitter {
     }
 
     if (isPlaceholder) {
-      await this.table.delete('"id" = \'__init__\'')
+      await this.table.delete(lanceEquals('id', '__init__'))
     }
   }
 
@@ -611,7 +612,7 @@ export class VectorStorage extends EventEmitter {
     }
     if (!this.table) return false
     try {
-      await this.table.delete(`"id" = '${id}'`)
+      await this.table.delete(lanceEquals('id', id))
       this.emit('recordRemoved', id)
       return true
     } catch {
@@ -630,7 +631,7 @@ export class VectorStorage extends EventEmitter {
     if (!this.table) return 0
     try {
       const beforeCount = await this.table.countRows()
-      await this.table.delete(`"docId" = '${docId}'`)
+      await this.table.delete(lanceEquals('docId', docId))
       const afterCount = await this.table.countRows()
       const removed = beforeCount - afterCount
 

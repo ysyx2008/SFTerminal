@@ -89,6 +89,14 @@ function consumeCorruptionMarker() {
   return { corrupted: true, reason }
 }
 
+/** 与 lance-filter.ts 的 lanceEquals 同文，改那边要一起改。 */
+function lanceEquals(column, value) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(column)) {
+    throw new Error('invalid LanceDB column: ' + column)
+  }
+  return '`' + column + "` = '" + String(value).replace(/'/g, "''") + "'"
+}
+
 function isLanceCorruptionError(error) {
   const msg = error instanceof Error ? error.message : String(error || '')
   if (!msg) return false
@@ -136,7 +144,7 @@ async function ensureTable(sampleRecord) {
   }
 
   if (isPlaceholder) {
-    await table.delete('"id" = \'__init__\'')
+    await table.delete(lanceEquals('id', '__init__'))
   }
 }
 
@@ -265,7 +273,7 @@ async function handleAddRecords(data) {
 async function handleRemoveRecord(data) {
   if (!table) return { removed: false }
   try {
-    await table.delete(`"id" = '${data.id}'`)
+    await table.delete(lanceEquals('id', data.id))
     return { removed: true }
   } catch {
     return { removed: false }
@@ -277,7 +285,7 @@ async function handleRemoveDocumentChunks(data) {
   const { docId, forceCompact } = data || {}
   try {
     const beforeCount = await table.countRows()
-    await table.delete(`"docId" = '${docId}'`)
+    await table.delete(lanceEquals('docId', docId))
     const afterCount = await table.countRows()
     const removed = beforeCount - afterCount
 
