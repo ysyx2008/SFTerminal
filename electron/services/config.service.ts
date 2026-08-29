@@ -5,6 +5,7 @@ import { app, safeStorage } from 'electron'
 import type { AiModelType, AiProfile, ApiFormat, CommandRiskPolicy, ExecutionMode, IMProcessMode, JumpHostConfig, LocaleType, McpServerConfig, RiskLevel, SessionSortBy } from '@shared/types'
 import type { KnowledgeSettings } from './knowledge/types'
 import { DEFAULT_KNOWLEDGE_SETTINGS } from './knowledge/types'
+import { DEFAULT_CONTEXT_KNOWLEDGE_MAX_CHARS } from './knowledge/context-knowledge-budget'
 import type { CueSoundSettings, TtsSettings, UiThemeMode, UiThemeName, WebSearchSettings } from '@shared/types'
 import { COMMAND_RISK_POLICY_ALLOWED_LEVELS, DEFAULT_COMMAND_RISK_POLICY, DEFAULT_CUE_SOUND_SETTINGS, DEFAULT_TTS_SETTINGS, DEFAULT_UI_THEME, DEFAULT_UI_THEME_MODE, DEFAULT_WEB_SEARCH_SETTINGS } from '@shared/types'
 import { createLogger, type LogLevel } from '../utils/logger'
@@ -223,6 +224,8 @@ interface StoreSchema {
   disabledBuiltinSkills: string[] // 被禁用的内置技能 ID 列表
   /** 输入区是否显示这场对话开着的技能胶囊；关掉只藏界面，技能仍装着 */
   showConversationSkillChips: boolean
+  /** 单份记忆（L2 知识文档）最大字符数 */
+  contextKnowledgeMaxChars: number
   agentAwakened: boolean           // 觉醒模式：AI 主动感知环境、推送消息
   watchHeartbeatEnabled: boolean  // Watch 心跳传感器是否启用（觉醒模式内部使用）
   watchHeartbeatInterval: number  // Watch 心跳间隔（分钟）
@@ -343,6 +346,7 @@ const defaultConfig: StoreSchema = {
   skillMarketRegistryUrl: '',
   disabledBuiltinSkills: [],
   showConversationSkillChips: true,
+  contextKnowledgeMaxChars: DEFAULT_CONTEXT_KNOWLEDGE_MAX_CHARS,
   agentAwakened: true,
   watchHeartbeatEnabled: true,
   watchHeartbeatInterval: 30,

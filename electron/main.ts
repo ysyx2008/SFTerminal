@@ -442,6 +442,11 @@ import { deletePastedImage, savePastedImage } from './services/agent/pasted-imag
 import { initUserDataGuard } from './services/agent/command-audit/userdata-guard'
 import { getContextKnowledgeService } from './services/knowledge/context-knowledge'
 import {
+  DEFAULT_CONTEXT_KNOWLEDGE_MAX_CHARS,
+  MAX_CONTEXT_KNOWLEDGE_MAX_CHARS,
+  MIN_CONTEXT_KNOWLEDGE_MAX_CHARS,
+} from './services/knowledge/context-knowledge-budget'
+import {
   ensureAgentRuntime,
   getAgentRuntimeOrNull,
   disposeAgentRuntimeIfLoaded,
@@ -6721,9 +6726,22 @@ ipcMain.handle('contextKnowledge:list', async () => {
       contextId: id,
       content: service.getDocument(id)
     }))
-    return { success: true, items, maxDocChars: service.getMaxDocChars() }
+    return {
+      success: true,
+      items,
+      maxDocChars: service.getMaxDocChars(),
+      minDocChars: MIN_CONTEXT_KNOWLEDGE_MAX_CHARS,
+      maxDocCharsLimit: MAX_CONTEXT_KNOWLEDGE_MAX_CHARS,
+    }
   } catch (error) {
-    return { success: false, error: errMsg(error, 'error.getListFailed'), items: [], maxDocChars: 5000 }
+    return {
+      success: false,
+      error: errMsg(error, 'error.getListFailed'),
+      items: [],
+      maxDocChars: DEFAULT_CONTEXT_KNOWLEDGE_MAX_CHARS,
+      minDocChars: MIN_CONTEXT_KNOWLEDGE_MAX_CHARS,
+      maxDocCharsLimit: MAX_CONTEXT_KNOWLEDGE_MAX_CHARS,
+    }
   }
 })
 
@@ -6750,6 +6768,16 @@ ipcMain.handle('contextKnowledge:delete', async (_event, contextId: string) => {
     return { success: true }
   } catch (error) {
     return { success: false, error: errMsg(error, 'error.deleteDocFailed') }
+  }
+})
+
+ipcMain.handle('contextKnowledge:setMaxDocChars', async (_event, chars: unknown) => {
+  try {
+    const maxDocChars = getContextKnowledgeService().setMaxDocChars(chars)
+    configService.set('contextKnowledgeMaxChars', maxDocChars)
+    return { success: true, maxDocChars }
+  } catch (error) {
+    return { success: false, error: errMsg(error, 'error.saveDocFailed'), maxDocChars: DEFAULT_CONTEXT_KNOWLEDGE_MAX_CHARS }
   }
 })
 

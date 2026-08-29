@@ -2679,6 +2679,8 @@ const electronAPI = {
         success: boolean
         items: Array<{ contextId: string; content: string }>
         maxDocChars: number
+        minDocChars: number
+        maxDocCharsLimit: number
         error?: string
       }>,
     get: (contextId: string) =>
@@ -2695,6 +2697,12 @@ const electronAPI = {
     delete: (contextId: string) =>
       ipcRenderer.invoke('contextKnowledge:delete', contextId) as Promise<{
         success: boolean
+        error?: string
+      }>,
+    setMaxDocChars: (chars: number) =>
+      ipcRenderer.invoke('contextKnowledge:setMaxDocChars', chars) as Promise<{
+        success: boolean
+        maxDocChars: number
         error?: string
       }>
   },

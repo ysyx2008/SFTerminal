@@ -2,7 +2,7 @@
  * L2 知识文档服务（Context Knowledge）
  *
  * 每个 contextId 对应一份结构化 Markdown 知识文档，
- * 自动注入 system prompt，固定 token 预算。
+ * 自动注入 system prompt，单份长度可设。
  *
  * contextId 规则：
  *   - 本地终端: "local"
@@ -13,7 +13,12 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
 import type { AiService } from '../ai.service'
+import { getConfigService } from '../config.service'
 import { createLogger } from '../../utils/logger'
+import {
+  DEFAULT_CONTEXT_KNOWLEDGE_MAX_CHARS,
+  clampContextKnowledgeMaxChars,
+} from './context-knowledge-budget'
 
 const log = createLogger('ContextKnowledge')
 
@@ -22,7 +27,13 @@ export interface ContextKnowledgeOptions {
   maxDocChars?: number
 }
 
-const DEFAULT_MAX_DOC_CHARS = 5000
+export {
+  DEFAULT_CONTEXT_KNOWLEDGE_MAX_CHARS,
+  MIN_CONTEXT_KNOWLEDGE_MAX_CHARS,
+  MAX_CONTEXT_KNOWLEDGE_MAX_CHARS,
+  clampContextKnowledgeMaxChars,
+} from './context-knowledge-budget'
+
 const MIN_VALID_DOC_LENGTH = 10
 const MAX_CONTEXT_ID_LENGTH = 128
 
@@ -38,7 +49,9 @@ export class ContextKnowledgeService {
 
   constructor(options?: ContextKnowledgeOptions) {
     this.storageDir = path.join(app.getPath('userData'), 'knowledge', 'context-docs')
-    this.maxDocChars = options?.maxDocChars ?? DEFAULT_MAX_DOC_CHARS
+    this.maxDocChars = clampContextKnowledgeMaxChars(
+      options?.maxDocChars ?? DEFAULT_CONTEXT_KNOWLEDGE_MAX_CHARS
+    )
     this.ensureDir()
     this.loadAll()
   }
@@ -115,6 +128,12 @@ export class ContextKnowledgeService {
 
   /** 单份 L2 知识文档最大字符数（与 setDocument / LLM 提示一致，供设置页展示） */
   getMaxDocChars(): number {
+    return this.maxDocChars
+  }
+
+  /** 改上限只影响之后的更新和保存，不立刻裁已有文档 */
+  setMaxDocChars(value: unknown): number {
+    this.maxDocChars = clampContextKnowledgeMaxChars(value)
     return this.maxDocChars
   }
 
@@ -307,7 +326,9 @@ let instance: ContextKnowledgeService | null = null
 
 export function getContextKnowledgeService(): ContextKnowledgeService {
   if (!instance) {
-    instance = new ContextKnowledgeService()
+    instance = new ContextKnowledgeService({
+      maxDocChars: getConfigService().get('contextKnowledgeMaxChars')
+    })
   }
   return instance
 }

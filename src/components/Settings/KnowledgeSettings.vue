@@ -3,6 +3,15 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Loader2, X, Trash2 } from 'lucide-vue-next'
 import { showConfirm, showAlert } from '../../composables/useConfirm'
+import {
+  SettingsPage,
+  SettingsGroup,
+  SettingRow,
+  SettingInput,
+  SettingToggle,
+  SettingSelect,
+  SettingNotice,
+} from './kit'
 
 const { t } = useI18n()
 const api = window.electronAPI as any
@@ -70,6 +79,10 @@ const contextDocContent = ref('')
 const contextDocSaving = ref(false)
 const contextDocDirty = ref(false)
 const contextKnowledgeMaxChars = ref(5000)
+const contextKnowledgeMaxCharsDraft = ref<number | ''>(5000)
+const contextKnowledgeMaxCharsMin = ref(1000)
+const contextKnowledgeMaxCharsMax = ref(20000)
+const contextKnowledgeMaxCharsSaving = ref(false)
 
 // 知识库文档
 const documents = ref<KnowledgeDocument[]>([])
@@ -189,6 +202,21 @@ const saveSettings = async () => {
   }
 }
 
+const onAutoSaveUploads = async (enabled: boolean) => {
+  settings.value.autoSaveUploads = enabled
+  await saveSettings()
+}
+
+const onEmbeddingDevice = async (device: string) => {
+  settings.value.embeddingDevice = device as KnowledgeSettings['embeddingDevice']
+  await saveSettings()
+}
+
+const embeddingDeviceOptions = computed(() => [
+  { value: 'auto', label: t('knowledgeSettings.embeddingDeviceAuto') },
+  { value: 'cpu', label: t('knowledgeSettings.embeddingDeviceCpu') },
+])
+
 // ==================== 数据加载 ====================
 
 const loadAllData = async () => {
@@ -202,6 +230,13 @@ const loadContextDocs = async () => {
       contextDocs.value = result.items
       if (typeof result.maxDocChars === 'number' && result.maxDocChars > 0) {
         contextKnowledgeMaxChars.value = result.maxDocChars
+        contextKnowledgeMaxCharsDraft.value = result.maxDocChars
+      }
+      if (typeof result.minDocChars === 'number' && result.minDocChars > 0) {
+        contextKnowledgeMaxCharsMin.value = result.minDocChars
+      }
+      if (typeof result.maxDocCharsLimit === 'number' && result.maxDocCharsLimit > 0) {
+        contextKnowledgeMaxCharsMax.value = result.maxDocCharsLimit
       }
     }
   } catch (error) {
@@ -234,6 +269,35 @@ const selectContextDoc = async (item: ContextKnowledgeItem) => {
 }
 
 const onContextDocInput = () => { contextDocDirty.value = true }
+
+const commitMemoryMaxChars = async () => {
+  if (contextKnowledgeMaxCharsSaving.value) return
+  if (contextKnowledgeMaxCharsDraft.value === '') {
+    contextKnowledgeMaxCharsDraft.value = contextKnowledgeMaxChars.value
+    return
+  }
+  let v = Math.round(Number(contextKnowledgeMaxCharsDraft.value))
+  if (!Number.isFinite(v)) v = contextKnowledgeMaxChars.value
+  if (v < contextKnowledgeMaxCharsMin.value) v = contextKnowledgeMaxCharsMin.value
+  if (v > contextKnowledgeMaxCharsMax.value) v = contextKnowledgeMaxCharsMax.value
+  contextKnowledgeMaxCharsDraft.value = v
+  if (v === contextKnowledgeMaxChars.value) return
+  contextKnowledgeMaxCharsSaving.value = true
+  try {
+    const result = await window.electronAPI.contextKnowledge.setMaxDocChars(v)
+    if (result.success) {
+      contextKnowledgeMaxChars.value = result.maxDocChars
+      contextKnowledgeMaxCharsDraft.value = result.maxDocChars
+    } else {
+      contextKnowledgeMaxCharsDraft.value = contextKnowledgeMaxChars.value
+    }
+  } catch (error) {
+    console.error('保存记忆长度失败:', error)
+    contextKnowledgeMaxCharsDraft.value = contextKnowledgeMaxChars.value
+  } finally {
+    contextKnowledgeMaxCharsSaving.value = false
+  }
+}
 
 const saveContextDoc = async () => {
   if (!selectedContextId.value) return
@@ -545,44 +609,28 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="knowledge-settings">
-    <!-- 页面标题 -->
-    <div class="settings-section page-intro">
-      <div class="section-header">
-        <h4>{{ t('knowledgeSettings.title') }}</h4>
-      </div>
-      <p class="section-desc">{{ t('knowledgeSettings.description') }}</p>
-    </div>
-
-    <div v-if="loading" class="loading">{{ t('common.loading') }}</div>
+  <SettingsPage :title="t('settings.tabs.knowledge')" :desc="t('knowledgeSettings.description')">
+    <SettingNotice v-if="loading">{{ t('common.loading') }}</SettingNotice>
+    <SettingNotice v-else-if="!isKnowledgeInitialized">
+      <Loader2 class="spinner" :size="16" />
+      <span>{{ t('knowledgeSettings.initializing') }}</span>
+    </SettingNotice>
 
     <template v-else>
-      <!-- 初始化中 -->
-      <div v-if="!isKnowledgeInitialized" class="init-status">
-        <Loader2 class="spinner" :size="16" />
-        <span>{{ t('knowledgeSettings.initializing') }}</span>
-      </div>
+      <div class="manager-panel">
+        <div class="tab-bar">
+          <button class="tab-btn" :class="{ active: activeTab === 'memory' }" @click="activeTab = 'memory'">
+            {{ t('knowledgeManager.memoryTab', { count: contextDocs.length }) }}
+          </button>
+          <button class="tab-btn" :class="{ active: activeTab === 'knowledge' }" @click="activeTab = 'knowledge'">
+            {{ t('knowledgeManager.knowledgeTab', { count: kbDocuments.length }) }}
+          </button>
+        </div>
 
-      <template v-else>
-        <!-- ==================== 内嵌管理面板 ==================== -->
-        <div class="manager-panel">
-          <!-- Tab 栏 -->
-          <div class="tab-bar">
-            <button class="tab-btn" :class="{ active: activeTab === 'memory' }" @click="activeTab = 'memory'">
-              {{ t('knowledgeManager.memoryTab', { count: contextDocs.length }) }}
-            </button>
-            <button class="tab-btn" :class="{ active: activeTab === 'knowledge' }" @click="activeTab = 'knowledge'">
-              {{ t('knowledgeManager.knowledgeTab', { count: kbDocuments.length }) }}
-            </button>
-          </div>
-
-          <div class="manager-body">
-            <!-- 左侧列表 -->
-            <div class="list-panel">
-
-              <!-- ===== 记忆 tab ===== -->
-              <template v-if="activeTab === 'memory'">
-                <div class="item-list">
+        <div class="manager-body">
+          <div class="list-panel">
+            <template v-if="activeTab === 'memory'">
+              <div class="item-list">
                   <div
                     v-for="item in contextDocs"
                     :key="item.contextId"
@@ -775,133 +823,65 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- ==================== 底部设置栏 ==================== -->
-        <div class="bottom-settings">
-          <div class="bottom-item">
-            <label class="setting-label">{{ t('knowledgeSettings.autoSaveUploads') }}</label>
-            <label class="toggle-switch">
-              <input type="checkbox" v-model="settings.autoSaveUploads" @change="saveSettings" />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <div class="bottom-item">
-            <label
-              class="setting-label"
-              :title="t('knowledgeSettings.embeddingDeviceDesc')"
-            >{{ t('knowledgeSettings.embeddingDevice') }}</label>
-            <select
-              v-model="settings.embeddingDevice"
-              class="select select-sm"
-              @change="saveSettings"
-            >
-              <option value="auto">{{ t('knowledgeSettings.embeddingDeviceAuto') }}</option>
-              <option value="cpu">{{ t('knowledgeSettings.embeddingDeviceCpu') }}</option>
-            </select>
-          </div>
-        </div>
+      <SettingsGroup :title="t('knowledgeSettings.memoryLengthGroup')">
+        <SettingRow
+          :label="t('knowledgeSettings.memoryMaxChars')"
+          :desc="t('knowledgeSettings.memoryMaxCharsHint')"
+        >
+          <SettingInput
+            v-model="contextKnowledgeMaxCharsDraft"
+            type="number"
+            compact
+            :min="contextKnowledgeMaxCharsMin"
+            :max="contextKnowledgeMaxCharsMax"
+            :disabled="contextKnowledgeMaxCharsSaving"
+            @change="commitMemoryMaxChars"
+            @blur="commitMemoryMaxChars"
+          />
+          <span class="memory-max-unit">{{ t('knowledgeSettings.memoryMaxCharsUnit') }}</span>
+        </SettingRow>
+      </SettingsGroup>
+
+      <SettingsGroup :title="t('knowledgeSettings.docProcessing')">
+        <SettingRow
+          clickable
+          :label="t('knowledgeSettings.autoSaveUploads')"
+          :desc="t('knowledgeSettings.autoSaveUploadsDesc')"
+        >
+          <SettingToggle
+            :model-value="settings.autoSaveUploads"
+            @update:model-value="onAutoSaveUploads"
+          />
+        </SettingRow>
+        <SettingRow
+          :label="t('knowledgeSettings.embeddingDevice')"
+          :desc="t('knowledgeSettings.embeddingDeviceDesc')"
+        >
+          <SettingSelect
+            :model-value="settings.embeddingDevice || 'auto'"
+            :options="embeddingDeviceOptions"
+            @update:model-value="onEmbeddingDevice"
+          />
+        </SettingRow>
+      </SettingsGroup>
       </template>
-    </template>
-  </div>
+    </SettingsPage>
 </template>
 
 <style scoped>
-.knowledge-settings {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  margin-bottom: 8px;
-}
-
-.section-header h4 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.section-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-
-.page-intro .section-desc {
-  margin-bottom: 0;
-}
-
-.loading {
-  text-align: center;
-  padding: 40px;
-  color: var(--text-muted);
-}
-
-.init-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.init-status .spinner { animation: spin 1s linear infinite; }
+.spinner { animation: spin 1s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-.setting-group { margin-bottom: 24px; }
-
-.setting-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 20px;
-  align-items: start;
-  padding: 12px 0;
+.memory-max-unit {
+  font-size: var(--fs-desc);
+  color: var(--text-secondary);
 }
-
-.setting-info { min-width: 200px; }
-.setting-label { font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: 4px; }
-.setting-desc { font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.5; }
-
-/* 开关走 main.css 的 .settings-scope 规范，本页不再重复定义 */
-
-.select {
-  padding: 8px 12px; font-size: 13px;
-  border: 1px solid var(--border-color); border-radius: 6px;
-  background: var(--bg-tertiary); color: var(--text-primary); min-width: 140px;
-}
-.select-sm { padding: 5px 8px; font-size: 12px; min-width: 100px; }
-
-/* 底部设置栏 */
-.bottom-settings {
-  display: flex;
-  gap: 24px;
-  padding: 12px 0 4px;
-}
-
-.bottom-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.bottom-item .setting-label { font-size: 12px; margin: 0; white-space: nowrap; }
 
 /* ==================== 内嵌管理面板 ==================== */
 .manager-panel {
   border: 1px solid var(--border-color);
   border-radius: 10px;
   overflow: hidden;
-  margin-bottom: 24px;
 }
 
 .tab-bar {
