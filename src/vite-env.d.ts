@@ -931,6 +931,8 @@ interface Window {
         finalResult?: string
         status: 'completed' | 'failed' | 'aborted'
         duration: number
+        loadedSkills?: string[]
+        userDismissedSkills?: string[]
       } | undefined>
       getRecentByAgentKey: (agentKey: string, limit?: number) => Promise<Array<import('@shared/types').AgentRecord>>
       getCompanionMergedView: () => Promise<import('@shared/types').AgentRecord | undefined>

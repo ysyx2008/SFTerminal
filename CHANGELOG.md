@@ -2,7 +2,33 @@
 
 All notable changes to SailFish will be documented in this file.
 
-## v11.8.0 (2026-08-24) (Latest)
+## v11.9.0 (2026-08-31) (Latest)
+
+> Skills are visible now — no longer hidden. You can select a range in a spreadsheet and hand it to the assistant. Official-document previews follow the original fonts and page.
+
+### New Features
+- 🎯 **Skills in plain sight**: What's on in this chat sits above the input; `@` or the star to add or drop them. They come back when you reopen; you can turn the row off in Settings
+- 🎯 **Select cells, then edit**: Circle a range in the preview; the chat only changes that block, and the preview refreshes right away
+- 🎯 **Remembers the machine it worked on**: When the assistant works on a host in a visible terminal, that host's notes are updated
+
+### Improvements
+- ⚡ **Word preview follows the original**: Fonts come from the document; the page scales down when the pane is narrow
+- ⚡ **Questions come with a suggestion**: The secretary marks the option it prefers; tap to answer
+- ⚡ **Pasted images stay with the chat**: Clipboard pictures are kept in history and still there when you reopen
+- ⚡ **Memory length is adjustable**: Each note stays at 5,000 characters by default, up to 20,000; clearing requires typing to confirm
+- ⚡ **Artifact panel follows the window**: Scales with resize; double-click the title-bar gap to maximize
+- ⚡ **Plugins are back in Settings**
+
+### Bug Fixes
+- 🐛 **You can interrupt Reach on the desktop**: While the secretary is speaking, Enter joins this conversation
+- 🐛 **A failed WeChat reply is no longer treated as a crash**
+- 🐛 **Deleted chats no longer linger in search**
+- 🐛 **Huge command output no longer freezes the window**
+- 🐛 **Sending files alone works** — no need to add empty text
+- 🐛 **Interrupted work stops at once**
+- 🐛 **A few light-theme details were hard to see**
+
+## v11.8.0 (2026-08-24)
 
 > The assistant can dispatch sub-agents and open a terminal in the same chat. An SSH session can also work on this machine. The welcome page is rebuilt; work and artifacts are easier to follow. If a model stalls, it switches; when a task has a result, you hear a sound.
 

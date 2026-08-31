@@ -218,6 +218,7 @@ export async function askUser(
   const pollIntervalMs = 2000
   let userResponse: string | undefined
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     if (executor.isAborted()) {
       executor.updateStep(step.id, {

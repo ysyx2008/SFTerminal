@@ -2885,6 +2885,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       timestamp: number
       webSearchResults?: import('@shared/types').WebSearchResultItem[]
       success?: boolean
+      askingStatus?: AgentStep['askingStatus']
       subAgents?: import('@shared/types').SubAgentResult[]
       canvasData?: import('@shared/types').CanvasData
     }>

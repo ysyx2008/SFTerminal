@@ -709,7 +709,6 @@ const {
   loadHistoryRecord,
   hasExistingConversation,
   formatHistoryTime,
-  getAgentKey,
   ttsIsSpeaking,
   ttsStop,
 } = useAgentMode(
