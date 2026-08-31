@@ -162,9 +162,6 @@ export function useAgentMode(
   // 输入文本
   const inputText = ref('')
 
-  // 队列化的 proactive 回复：agent 忙且有延迟 proactive 消息时暂存，任务完成后作为新任务启动
-  const queuedProactiveReply = ref<string | null>(null)
-
   /** 运行中 ⌘/Ctrl+Enter：等当前任务结束后作为下一件新任务，不插入当前执行 */
   const followUpQueue = ref<FollowUpQueueItem[]>([])
   const followUpQueueView = computed<FollowUpQueueViewItem[]>(() =>
@@ -1281,7 +1278,16 @@ export function useAgentMode(
     // 如果 Agent 正在运行，发送补充消息而不是启动新任务
     // 用 getAgentKey() 拿 Agent 启动时绑定的稳定 key（不随激活窗格变化）
     const agentKey = getAgentKey()
-    if (isAgentRunning.value) {
+    // 联络常驻线：界面旗标可能落后于后端（IM 已开工、桌面 isRunning 还没置上）。
+    // 这时再走「新开一轮」会撞上 already running，回车后字就没了。
+    const injectIntoCurrentRun = isAgentRunning.value
+      || (
+        currentTab.value?.agentId === COMPANION_TAB_AGENT_ID
+        && !!agentKey
+        && agentTaskGroups.value.some(group => group.isCurrentTask)
+        && await isBackendAgentBusy(agentKey)
+      )
+    if (injectIntoCurrentRun) {
       if (options?.enqueue) {
         const attachments = attachmentCallbacks?.getAttachments() || []
         const parsedDocs = attachmentCallbacks?.getParsedDocs?.() || []
@@ -1311,33 +1317,45 @@ export function useAgentMode(
 
       if (!agentKey) return
 
-      // 安全兜底：如果 tab 有延迟的 proactive 通知，用户此时的回复可能是对通知的回应
-      // 队列化等待当前任务完成后再作为新任务启动（由 consumeProactiveContext 自动注入上下文）
-      if (terminalStore.hasDeferredProactive(tabId)) {
-        inputText.value = ''
-        queuedProactiveReply.value = message
-        await scrollToBottom()
-        return
-      }
-
       inputText.value = ''
-      
+
       // 收集附件元信息、文档内容、图片（与新任务路径对齐）
       const supplementAttachments = attachmentCallbacks?.getAttachments() || []
-      const documentContext = await getDocumentContext()
       const images = imageCallbacks?.getImages() || []
-      
-      const success = await appendToCurrentConversation({
-        message,
+      const previewImages = imageCallbacks?.getPreviewImages?.() || images
+      const optimisticId = `__optimistic_user_supplement_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+
+      // 输入框这边已经清掉了，先上墙，避免等 IPC / 步骤回调期间对话里什么都没有
+      terminalStore.addAgentStep(tabId, {
+        id: optimisticId,
+        type: 'user_supplement',
+        content: message,
+        images: previewImages.length > 0 ? previewImages : undefined,
         attachments: supplementAttachments.length > 0 ? supplementAttachments : undefined,
-        documentContext: documentContext || undefined,
-        images: images.length > 0 ? images : undefined,
-        workbenchContext: options?.workbenchContext
+        timestamp: Date.now(),
       })
-      
+      void scrollToBottom()
+
+      const documentContext = await getDocumentContext()
+
+      let success = false
+      try {
+        success = await appendToCurrentConversation({
+          message,
+          attachments: supplementAttachments.length > 0 ? supplementAttachments : undefined,
+          documentContext: documentContext || undefined,
+          images: images.length > 0 ? images : undefined,
+          workbenchContext: options?.workbenchContext
+        })
+      } catch (err) {
+        log.warn('插入补充消息失败:', err)
+      }
+
       if (success) {
         if (supplementAttachments.length > 0) attachmentCallbacks?.clearAttachments()
         if (images.length > 0) imageCallbacks?.clearImages()
+      } else {
+        terminalStore.removeAgentStep(tabId, optimisticId)
       }
       return
     }
@@ -1601,6 +1619,16 @@ export function useAgentMode(
     const next = [...followUpQueue.value]
     next.splice(Math.min(Math.max(index, 0), next.length), 0, item)
     followUpQueue.value = next
+  }
+
+  const isBackendAgentBusy = async (key: string): Promise<boolean> => {
+    try {
+      const phase = await window.electronAPI.agent.getExecutionPhase(key)
+      const name = typeof phase === 'string' ? phase : phase?.phase
+      return !!name && name !== 'idle'
+    } catch {
+      return false
+    }
   }
 
   /** 追加进当前这场还在跑的对话；不中止任务、不另起一轮。 */
@@ -1972,6 +2000,13 @@ export function useAgentMode(
       if (data.step.type === 'user_task' && !data.step.id.startsWith('__optimistic_')) {
         terminalStore.removeOptimisticAgentSteps(tabId)
       }
+      if (data.step.type === 'user_supplement' && !data.step.id.startsWith('__optimistic_')) {
+        const optimistic = (agentState.value?.steps ?? []).find(step =>
+          step.id.startsWith('__optimistic_user_supplement_')
+          && step.content === data.step.content
+        )
+        if (optimistic) terminalStore.removeAgentStep(tabId, optimistic.id)
+      }
 
       // 「准备中 → 思考中」切换：乐观移除 startup 占位，避免「占位 + 新 message」中间态闪现。
       // 后端 removeStep IPC 到达时 removeAgentStep 幂等跳过。
@@ -2078,19 +2113,6 @@ export function useAgentMode(
       if (foundTabId !== currentTabId.value) return
 
       finalizeAgentRunWithScrollSettle(currentTabId.value)
-      // 队列化的 proactive 回复优先：作为新任务启动（consumeProactiveContext 自动注入 Watch 上下文）
-      if (queuedProactiveReply.value) {
-        terminalStore.requestAgentCompleteTabAttentionSkip(foundTabId)
-        const reply = queuedProactiveReply.value
-        queuedProactiveReply.value = null
-        log.info('任务完成，启动队列中的 proactive 回复:', reply)
-        setTimeout(() => {
-          inputText.value = reply
-          runAgent()
-        }, 100)
-        return
-      }
-
       // 如果有未处理的用户消息（用户在 Agent 总结时发送的），自动作为新任务启动
       if (data.pendingUserMessages && data.pendingUserMessages.length > 0) {
         terminalStore.requestAgentCompleteTabAttentionSkip(foundTabId)
@@ -2120,7 +2142,6 @@ export function useAgentMode(
       if (foundTabId !== currentTabId.value) return
 
       finalizeAgentRunWithScrollSettle(currentTabId.value)
-      queuedProactiveReply.value = null
       // handleError 已通过 onStep 推送 error + final_result，此处不再重复 add error step。
 
       if (foundTabId && scheduleNextFollowUp(foundTabId)) return
