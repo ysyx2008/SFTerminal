@@ -68,7 +68,7 @@ export interface ImAgentMediaContext {
   images: string[]
   /** 用户气泡预览图（纯图 + PDF 页预览；不含 Word 内嵌图） */
   previewImages: string[]
-  /** 附件元信息，供 UI chip 展示 */
+  /** 附件元信息（含已内联图片的落盘路径），供 UI chip 与模型附注 */
   attachments: AttachmentInfo[]
   /** 已内联为图片或已解析为 documentContext 的本地路径，应从文案列表剔除 */
   consumedPaths: Set<string>
@@ -78,7 +78,8 @@ export interface ImAgentMediaContext {
 
 /**
  * 将 IM 附件拆成「视觉内联图片 / 解析文档 / 普通附件」。
- * 图片 → data URL；PDF/Word/文本等 → DocumentParser + formatAsContext。
+ * 图片 → data URL，同时保留落盘路径（与桌面任务同一份约定）；
+ * PDF/Word/文本等 → DocumentParser + formatAsContext。
  */
 export async function prepareImAgentMedia(
   attachments: IMAttachment[] | undefined,
@@ -121,6 +122,13 @@ export async function prepareImAgentMedia(
         images.push(dataUrl)
         previewImages.push(dataUrl)
         consumedPaths.add(a.localPath)
+        // 与桌面任务同一份约定：图内联给视觉，路径仍进附件元数据
+        attachmentInfos.push({
+          filename: a.fileName,
+          filePath: a.localPath,
+          fileSize,
+          fileType: ext.replace(/^\./, ''),
+        })
         continue
       } catch (err) {
         log.warn(`Failed to inline IM image ${a.localPath}:`, err)

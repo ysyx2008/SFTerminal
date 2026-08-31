@@ -113,7 +113,7 @@ describe('prepareImAgentMedia', () => {
     return filePath
   }
 
-  it('inlines vision images as data URLs and skips attachment chips', async () => {
+  it('inlines vision images as data URLs and keeps file path metadata', async () => {
     const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9, 0x00, 0x01, 0x02])
     const localPath = writeTempFile('wechat_image.jpg', jpeg)
 
@@ -126,7 +126,12 @@ describe('prepareImAgentMedia', () => {
     expect(result.images).toHaveLength(1)
     expect(result.images[0]).toMatch(/^data:image\/jpeg;base64,/)
     expect(result.previewImages).toEqual(result.images)
-    expect(result.attachments).toHaveLength(0)
+    expect(result.attachments).toEqual([{
+      filename: 'wechat_image.jpg',
+      filePath: localPath,
+      fileSize: jpeg.length,
+      fileType: 'jpg',
+    }])
     expect(result.consumedPaths.has(localPath)).toBe(true)
     expect(result.documentContext).toBeUndefined()
   })
