@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 附件类型图标：Lucide 线框 + 按类型着色（跨平台一致）
+ * 聊天附件图标：优先系统图标，否则 Lucide 类型图标。
  */
 import { computed, type Component } from 'vue'
 import {
@@ -14,11 +14,13 @@ import {
   FileCode,
   Presentation,
 } from 'lucide-vue-next'
-import { getAttachmentIconMeta, type AttachmentIconKind } from '../utils/attachment-icon'
+import SystemFileIcon from '@sailfish/workbench-assistant/artifact/components/SystemFileIcon.vue'
+import { getAttachmentIconMeta, resolveAttachmentExt, type AttachmentIconKind } from '../utils/attachment-icon'
 
 const props = withDefaults(defineProps<{
   fileType?: string
   filename?: string
+  filePath?: string | null
   size?: number
 }>(), {
   size: 14,
@@ -40,17 +42,20 @@ const ICON_BY_KIND: Record<AttachmentIconKind, Component> = {
 
 const meta = computed(() => getAttachmentIconMeta(props.fileType, props.filename))
 const icon = computed(() => ICON_BY_KIND[meta.value.kind])
+const cacheKey = computed(() => resolveAttachmentExt(props.fileType, props.filePath || props.filename))
 </script>
 
 <template>
-  <component
-    :is="icon"
-    class="attachment-file-icon"
-    :size="size"
-    :stroke-width="2"
-    :style="{ color: meta.color }"
-    aria-hidden="true"
-  />
+  <SystemFileIcon :file-path="filePath" :cache-key="cacheKey" :size="size">
+    <component
+      :is="icon"
+      class="attachment-file-icon"
+      :size="size"
+      :stroke-width="2"
+      :style="{ color: meta.color }"
+      aria-hidden="true"
+    />
+  </SystemFileIcon>
 </template>
 
 <style scoped>

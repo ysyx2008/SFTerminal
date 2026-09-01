@@ -38,6 +38,7 @@ interface UploadedDoc {
   filename: string
   fileType: string
   fileSize: number
+  filePath?: string
   error?: string
 }
 
@@ -1324,7 +1325,7 @@ const handleSendClick = (event: MouseEvent) => {
         class="uploaded-doc-item"
         :class="{ 'has-error': doc.error }"
       >
-        <AttachmentFileIcon class="doc-icon" :file-type="doc.fileType" :filename="doc.filename" :size="14" />
+        <AttachmentFileIcon class="doc-icon" :file-type="doc.fileType" :filename="doc.filename" :file-path="doc.filePath" :size="14" />
         <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
         <span class="doc-size">{{ formatFileSize(doc.fileSize) }}</span>
         <span v-if="doc.error" class="doc-error" :data-tooltip="doc.error">⚠️</span>

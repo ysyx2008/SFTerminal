@@ -2694,7 +2694,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         @keydown.space.prevent="openAttachmentFile(file)"
                         @contextmenu="openAttachmentContextMenu($event, file)"
                       >
-                        <AttachmentFileIcon :file-type="file.fileType" :filename="file.filename" :size="15" />
+                        <AttachmentFileIcon :file-type="file.fileType" :filename="file.filename" :file-path="file.filePath" :size="15" />
                         <span class="attachment-name">{{ file.filename }}</span>
                         <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
                       </span>
@@ -2824,7 +2824,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                         @keydown.space.prevent="openAttachmentFile(file)"
                         @contextmenu="openAttachmentContextMenu($event, file)"
                       >
-                        <AttachmentFileIcon :file-type="file.fileType" :filename="file.filename" :size="15" />
+                        <AttachmentFileIcon :file-type="file.fileType" :filename="file.filename" :file-path="file.filePath" :size="15" />
                         <span class="attachment-name">{{ file.filename }}</span>
                         <span class="attachment-size">{{ formatFileSize(file.fileSize) }}</span>
                       </span>
