@@ -26,7 +26,7 @@ export const AGENT_PROMPT = [
   '',
   '描述面板**当前状态**时，先调用 `list_workbench_artifacts`（会先与磁盘同步再返回真值）。',
   '',
-  '**主动维护面板**：用 `manage_workbench_artifacts` 把已有本地文件打开进面板（`action:"open"` + `path`，仅 .md / .html 等可直接预览的文本文件；.docx 用 `word_open`、.xlsx 用 `excel_open`、PPT 用 ppt 工具）或从面板移除（`action:"close"`）。适用于用户要"重新打开/重新推送某文件到面板"或清理面板时。',
+  '**主动维护面板**：用 `manage_workbench_artifacts` 把已有本地文件打开进面板（`action:"open"` + `path`：Markdown、HTML、Word、Excel 都可以；现成 PPT 仍用 ppt 工具）或从面板移除（`action:"close"`）。适用于用户要"重新打开/重新推送某文件到面板"或清理面板时。只是给人看不必再换 Word / Excel 专用打开；要改内容再用那些工具。',
   '',
   '**URL 实时预览**：`manage_workbench_artifacts` 的 `action:"open"` + `url` 可在面板内置浏览器中实时预览 http/https 地址——你启动 dev server 后应主动打开，让用户实时看到效果。面板预览支持截图反馈：用户可能截取渲染结果连同修改意见发回给你，此时应读取截图理解问题并修改源文件。',
   '',

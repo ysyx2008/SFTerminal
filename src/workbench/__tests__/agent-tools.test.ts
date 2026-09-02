@@ -23,5 +23,8 @@ describe('ASSISTANT_WORKBENCH_AGENT_TOOLS', () => {
     expect(params.properties.path).toBeDefined()
     expect(params.properties.url).toBeDefined()
     expect(params.required).toEqual(['action'])
+    expect(tool.function.description).toMatch(/Word/)
+    expect(tool.function.description).toMatch(/Excel/)
+    expect(tool.function.description).not.toMatch(/仅支持可直接预览的文本文件/)
   })
 })

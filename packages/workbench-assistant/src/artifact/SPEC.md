@@ -1,6 +1,6 @@
 # 助手产出物（Artifact）子系统 SPEC
 
-> Last verified: 2026-08-27
+> Last verified: 2026-09-02
 
 ## 职责
 
@@ -70,6 +70,8 @@
 明确不做：在预览里直接改格子；Excel 双写；选中后浮「让旗鱼改这段」提示；表上的改写/润色/校对等右键快捷菜单；PPT 圈选（仍另案）。
 
 **和终端同一张桌（2026-08-19 确认，2026-08-21 补）**：终端也上这张桌，按角色入座——终端坐左、文件/网页坐右，一次一个座位。终端不进文件页签。正在看文件时打开终端，终端入座，文件页签先让开（草稿还在）。正在看终端时新产出的文件只进清单、不抢座。人点清单里的文件才换回来。人主动收起这份文件后回到对话独占，不自动请回终端；清单里可以请回来。文件都从桌上拿走、桌上只剩终端时，自动请终端入座，不要留下一块空栏。不要三栏，也不要把终端塞到右边。
+
+**打开到面板不必换工具（2026-09-02 确认）**：用户要看已经写好的 Word / Excel（含 WPS 文字和表格），助手用「打开到面板」就该直接打开。不必先换成 Word / Excel 专用打开。预览和专用工具打开的是同一块面板。要改内容再走 Word / Excel 那套。明确不做：现成 PPT 先不走这条；打开到面板不等于开始改这份文件。
 
 ## 目录
 
@@ -194,6 +196,6 @@ packages/workbench-assistant/src/artifact/
 
 - 工作台 UI 描述见 `../prompt.ts`；实时状态用 `list_workbench_artifacts`（见 `src/workbench/SPEC.md`）。
 - 主动维护面板用 `manage_workbench_artifacts`（assistant 模式专属，执行器在 `electron/services/agent/tools/workbench.ts`）：
-  - `action:'open'` — 把已有本地文件打开进面板，仅支持可直接预览的文本类（`.md`/`.markdown`/`.html`/`.htm`）；`.docx`/`.xlsx`/PPT 各走专用工具。读盘后发 `canvasData{action:'open', contentFromFile:true}`，与文件写入工具同链路，随历史持久化、重开会话可恢复。
+  - `action:'open'` — 把已有本地文件打开进面板。面板已经能预览的都可以开：Markdown / HTML / Word / Excel（含 WPS 文字、WPS 表格）。现成 PPT 仍走专用工具。读盘或生成预览后发 `canvasData{action:'open', contentFromFile:true}`，与文件写入工具同链路，随历史持久化、重开会话可恢复。打开不等于开始改这份文件。
   - `action:'close'` — 按 `filePath` 发 `canvasData{action:'close'}` 移除面板项。
   - 路径解析：`expandTilde` + 相对路径按 `getTerminalStateService().getCwd(ptyId)` 解析。

@@ -9,6 +9,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { workbenchBridge } from '../../workbench-bridge.service'
 import { getTerminalStateService } from '../../terminal-state.service'
+import { previewArtifactFromFile } from '../../artifact-file-preview'
 import type { CanvasData, CanvasRendererType } from '@shared/types'
 import type { ToolExecutorConfig, ToolResult } from './types'
 
@@ -39,10 +40,12 @@ function resolveLocalPath(rawPath: string, ptyId: string): string {
   return p
 }
 
-/** 可在面板内直接预览的文本类文件 → 渲染器（content 即文件内容，contentFromFile） */
+/** 面板已经能预览的文件 → 渲染器（打开后 contentFromFile，恢复时按 filePath 重建） */
 function rendererForExtension(filePath: string): CanvasRendererType | undefined {
   if (/\.(md|markdown)$/i.test(filePath)) return 'markdown'
   if (/\.html?$/i.test(filePath)) return 'html'
+  if (/\.(docx|wps|wpt)$/i.test(filePath)) return 'document'
+  if (/\.(xlsx|et)$/i.test(filePath)) return 'spreadsheet'
   return undefined
 }
 
@@ -131,8 +134,7 @@ export async function manageWorkbenchArtifactsTool(
   if (!renderer) {
     return fail(
       `暂不支持直接打开该类型文件到面板：${path.basename(filePath)}。` +
-      `Word(.docx) 用 word_open，Excel(.xlsx) 用 excel_open，PPT 用 ppt 工具；` +
-      `本工具仅支持 .md / .html 等可直接预览的文本文件。`
+      `现成 PPT 请用 ppt 工具；本工具支持 Markdown、HTML、Word、Excel。`
     )
   }
   if (!fs.existsSync(filePath)) {
@@ -141,9 +143,9 @@ export async function manageWorkbenchArtifactsTool(
 
   let content: string
   try {
-    content = fs.readFileSync(filePath, 'utf-8')
+    content = await previewArtifactFromFile(filePath, renderer)
   } catch (err) {
-    return fail(`读取文件失败：${err instanceof Error ? err.message : String(err)}`)
+    return fail(`生成预览失败：${err instanceof Error ? err.message : String(err)}`)
   }
 
   const title = typeof args.title === 'string' && args.title.trim()
