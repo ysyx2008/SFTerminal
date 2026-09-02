@@ -38,7 +38,7 @@ export const ASSISTANT_WORKBENCH_AGENT_TOOLS = [
 用途：用户想重新打开某文件、把之前的结果再摊开、实时预览你启动的本地开发服务（dev server），或清理画布上的文件时。
 
 action='open'（二选一）：
-- path：打开本地文件到面板。支持 Markdown / HTML / Word（.docx、WPS 文字）/ Excel（.xlsx、WPS 表格）。只是给人看时用本工具即可，不必先换成 word_open / excel_open；要改内容再用那些工具。现成 PPT 请用 ppt 工具。
+- path：打开本地文件到面板。支持 Markdown / HTML / Word（.docx、WPS 文字）/ Excel（.xlsx、WPS 表格）。现成 PPT 请用 ppt 工具。
 - url：在面板的内置浏览器中实时预览该地址（仅 http/https）。典型场景：你启动 dev server 后让用户实时看到效果；用户可在地址栏继续导航。
 action='close'：按 path 或 url 从面板移除对应产出物。
 
