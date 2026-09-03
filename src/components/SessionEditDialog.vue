@@ -10,6 +10,8 @@ const configStore = useConfigStore()
 
 const props = defineProps<{
   session: SshSession | null
+  /** 新建时预选的分组；编辑已有主机时忽略 */
+  defaultGroupId?: string
 }>()
 
 const emit = defineEmits<{
@@ -79,7 +81,7 @@ watch(() => props.session, (session) => {
       password: '',
       privateKeyPath: '',
       passphrase: '',
-      groupId: '',
+      groupId: props.defaultGroupId || '',
       encoding: 'utf-8'
     }
     jumpHostMode.value = 'inherit'

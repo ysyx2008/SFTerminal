@@ -28,6 +28,7 @@ const showNewMenu = ref(false)
 const showImportMenu = ref(false)
 const showSortMenu = ref(false)
 const editingSession = ref<SshSession | null>(null)
+const defaultGroupId = ref('')
 const editingGroup = ref<SessionGroup | null>(null)
 const credentialSession = ref<SshSession | null>(null)
 const searchText = ref('')
@@ -105,9 +106,26 @@ const toggleGroupCollapse = (groupName: string) => {
 }
 
 // ==================== 会话操作 ====================
-const openNewSession = () => { editingSession.value = null; showNewSession.value = true }
-const openEditSession = (session: SshSession) => { editingSession.value = session; showNewSession.value = true }
-const closeSessionDialog = () => { showNewSession.value = false; editingSession.value = null }
+const openNewSession = (groupId?: string) => {
+  editingSession.value = null
+  defaultGroupId.value = groupId ?? ''
+  showNewSession.value = true
+}
+const openNewSessionInGroup = (groupName: string) => {
+  const groupData = groupedSessions.value[groupName]
+  collapsedGroups.value.delete(groupName)
+  openNewSession(groupData?.group?.id)
+}
+const openEditSession = (session: SshSession) => {
+  editingSession.value = session
+  defaultGroupId.value = ''
+  showNewSession.value = true
+}
+const closeSessionDialog = () => {
+  showNewSession.value = false
+  editingSession.value = null
+  defaultGroupId.value = ''
+}
 
 const handleSaveSession = async (formData: Partial<SshSession>) => {
   try {
@@ -116,8 +134,7 @@ const handleSaveSession = async (formData: Partial<SshSession>) => {
     } else {
       await configStore.addSshSession({ id: uuidv4(), ...formData } as SshSession)
     }
-    showNewSession.value = false
-    editingSession.value = null
+    closeSessionDialog()
   } catch (error) {
     console.error('保存会话失败:', error)
     await showAlert(t('common.error'), t('session.validation.saveFailed'))
@@ -390,6 +407,9 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
               </span>
             </div>
             <div class="group-header-right">
+              <button class="group-action-btn" @click.stop="openNewSessionInGroup(groupName as string)" :title="t('session.newHost')">
+                <Plus :size="13" />
+              </button>
               <button class="group-action-btn" @click.stop="openGroupEditor(groupName as string)" :title="t('session.editGroup')">
                 <Settings :size="13" />
               </button>
@@ -451,6 +471,7 @@ const closeGroupDialog = () => { showGroupEditor.value = false; editingGroup.val
     <SessionEditDialog
       v-if="showNewSession"
       :session="editingSession"
+      :default-group-id="defaultGroupId"
       @save="handleSaveSession"
       @close="closeSessionDialog"
     />
