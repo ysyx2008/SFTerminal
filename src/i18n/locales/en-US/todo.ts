@@ -9,6 +9,12 @@ export default {
     titleRequired: 'Title is required',
     dueDate: 'Due date',
     dueToday: 'Today',
+    datePicker: {
+      prevMonth: 'Previous month',
+      nextMonth: 'Next month',
+      clear: 'Clear',
+      placeholder: 'YYYY / MM / DD',
+    },
     overdueCount: '{n} overdue',
     filterActive: 'Active',
     filterCompleted: 'Done',

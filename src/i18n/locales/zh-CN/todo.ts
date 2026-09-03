@@ -9,6 +9,12 @@ export default {
     titleRequired: '标题不能为空',
     dueDate: '截止日期',
     dueToday: '今天',
+    datePicker: {
+      prevMonth: '上个月',
+      nextMonth: '下个月',
+      clear: '清除',
+      placeholder: '年 / 月 / 日',
+    },
     overdueCount: '{n} 项逾期',
     filterActive: '进行中',
     filterCompleted: '已完成',

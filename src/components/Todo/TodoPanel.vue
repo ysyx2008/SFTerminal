@@ -11,7 +11,6 @@ import {
   Trash2,
   ListTodo,
   Loader2,
-  Calendar,
   MessagesSquare,
   X,
 } from 'lucide-vue-next'
@@ -21,6 +20,7 @@ import { toast } from '../../composables/useToast'
 import type { UrgencyTier } from './urgency'
 import TodoRowHoverTip from './TodoRowHoverTip.vue'
 import TodoMenu from './TodoMenu.vue'
+import TodoDatePicker from './TodoDatePicker.vue'
 
 const { t, locale } = useI18n()
 const terminalStore = useTerminalStore()
@@ -714,7 +714,7 @@ function onRowKeydown(item: TodoItem, ev: KeyboardEvent) {
 function onPanelKeydown(ev: KeyboardEvent) {
   if (ev.key !== 'Escape') return
   // 设置 / 觉醒 / 关切 / 确认框等盖在上面时，ESC 先给它们
-  if (document.querySelector('.modal-overlay, .credential-overlay, .setup-wizard, .confirm-overlay')) return
+  if (document.querySelector('.modal-overlay, .credential-overlay, .setup-wizard, .confirm-overlay, .todo-date-popover')) return
   ev.preventDefault()
   ev.stopImmediatePropagation()
   if (contextMenu.value) {
@@ -770,15 +770,7 @@ onUnmounted(() => {
               :placeholder="t('todoPanel.newPlaceholder')"
               :disabled="creating"
             />
-            <label
-              class="due-wrap"
-              :class="{ filled: !!newDueDate }"
-              :title="newDueDate || t('todoPanel.dueDate')"
-            >
-              <Calendar :size="14" class="due-icon" />
-              <span v-if="newDueDate" class="due-text">{{ newDueDate }}</span>
-              <input v-model="newDueDate" class="todo-due-input" type="date" :disabled="creating" />
-            </label>
+            <TodoDatePicker v-model="newDueDate" variant="compact" :disabled="creating" />
             <button
               type="submit"
               class="todo-add-btn"
@@ -1158,10 +1150,10 @@ onUnmounted(() => {
           </label>
         </div>
 
-        <label class="field">
+        <div class="field">
           <span class="field-label">{{ t('todoPanel.dueDate') }}</span>
-          <input v-model="draft.dueDate" class="field-input" type="date" />
-        </label>
+          <TodoDatePicker v-model="draft.dueDate" />
+        </div>
 
         <label class="field">
           <span class="field-label">{{ t('todoPanel.fieldTags') }}</span>
@@ -1334,33 +1326,6 @@ onUnmounted(() => {
   color: var(--text-primary);
   font-size: 13px;
   outline: none;
-}
-.due-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 100%;
-  min-width: 34px;
-  padding: 0 8px;
-  border-left: 1px solid var(--border-color);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.due-wrap.filled {
-  color: var(--accent-primary);
-  min-width: 100px;
-}
-.due-text {
-  pointer-events: none;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.todo-due-input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
 }
 .todo-add-btn {
   width: 36px;
