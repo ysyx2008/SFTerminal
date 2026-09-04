@@ -1,10 +1,6 @@
 # History Service SPEC
 
-<<<<<<< HEAD
 > Last verified: 2026-08-27（超大工具输出点开不硬渲染）
-=======
-> Last verified: 2026-08-26（全文搜索含用户消息附件标题）
->>>>>>> 6c76aab6 (fix(history): 全文搜索要能搜到附件标题)
 
 ## 设计目标
 
