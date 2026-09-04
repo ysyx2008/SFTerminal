@@ -9,9 +9,9 @@ import { useI18n } from 'vue-i18n'
 import {
   FolderOpen,
   ChevronDown,
-  Columns2,
   Download,
   Maximize2,
+  Minimize2,
   Smartphone,
   X
 } from 'lucide-vue-next'
@@ -1059,7 +1059,7 @@ defineExpose({ minimizePanel })
           :title="focusActive ? t('canvas.splitDocument') : t('canvas.focusDocument')"
           @click="emit('toggleFocus')"
         >
-          <Columns2 v-if="focusActive" :size="14" />
+          <Minimize2 v-if="focusActive" :size="14" />
           <Maximize2 v-else :size="14" />
         </button>
       </div>
@@ -1362,7 +1362,7 @@ defineExpose({ minimizePanel })
 }
 
 .canvas-panel.is-focus .canvas-header {
-  padding-right: 64px;
+  padding-right: 36px;
 }
 
 .canvas-header {

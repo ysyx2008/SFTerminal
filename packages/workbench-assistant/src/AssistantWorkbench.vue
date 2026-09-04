@@ -474,7 +474,7 @@ defineExpose({
       <div ref="artifactFocusEl" class="assistant-focus-doc" />
       <div ref="chatFocusEl" class="assistant-focus-chat" />
     </div>
-    <div v-if="(showArtifactFold && docExpanded) || focusActive" class="artifact-chrome artifact-chrome--fold">
+    <div v-if="(showArtifactFold && docExpanded && !focusActive) || (focusActive && showDeskList)" class="artifact-chrome artifact-chrome--fold">
       <div
         v-if="focusActive && showDeskList"
         class="artifact-list-slot"
@@ -508,7 +508,7 @@ defineExpose({
         </Transition>
       </div>
       <button
-        v-if="showArtifactFold"
+        v-if="showArtifactFold && !focusActive"
         type="button"
         class="artifact-chrome-btn"
         :title="panelToggleTitle"
@@ -622,7 +622,7 @@ defineExpose({
   bottom: 0;
   z-index: 4;
   min-width: 0;
-  padding: 0 24px 10px;
+  padding: 0 24px 48px;
   overflow: visible;
   pointer-events: none;
 }
