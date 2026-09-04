@@ -33,7 +33,7 @@ export interface ContextBudget {
  */
 export interface TaskWithLevel {
   taskId: string
-  level: CompressionLevel    // 同一场装配固定为 0；唤醒 summaryOnly 记在 level4Count
+  level: CompressionLevel    // 任务原文为 0；联络五档为 0–4；唤醒 summaryOnly 记在 level4Count
   tokens: number             // 实际占用的 tokens
   content: AiMessage[] | string
   userRequest: string        // 用户原始请求（用于显示）
@@ -44,7 +44,7 @@ export interface TaskWithLevel {
  * 上下文构建结果
  */
 export interface ContextBuildResult {
-  // 同一场原文（或单条过长后单独收过的原文）
+  // 任务原文，或联络五档消息
   recentTaskMessages: AiMessage[]
   // 仅唤醒 summaryOnly：一句话概要
   taskSummarySection: string
@@ -215,6 +215,30 @@ function compressToolOutput(output: string, maxLength: number = 1500): string {
   
   // 否则简单截断
   return output.substring(0, maxLength) + `\n... [已截断，原长度: ${output.length}]`
+}
+
+function parseToolCallArgs(raw: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    /* 参数不是 JSON 时只保留工具名 */
+  }
+  return undefined
+}
+
+function formatToolCallSummary(name: string | undefined, args?: Record<string, unknown>): string {
+  let summary = `[${name || 'unknown'}]`
+  const command = args?.command
+  const filePath = args?.path
+  if (typeof command === 'string') {
+    summary += ` ${command.length > 80 ? command.substring(0, 80) + '...' : command}`
+  } else if (typeof filePath === 'string') {
+    summary += ` ${filePath}`
+  }
+  return summary
 }
 
 /** 从对话消息里取最后一条有正文的助手回复（系统注入不计入） */
@@ -404,6 +428,144 @@ function actualClosing(task: TaskMemory): string {
   return '[本轮没有留下交代]'
 }
 
+interface ToolEntry {
+  name: string
+  args?: Record<string, unknown>
+}
+
+function collectToolEntries(task: TaskMemory): ToolEntry[] {
+  const entries: ToolEntry[] = []
+  if (task.messages && task.messages.length > 0) {
+    const conversation = sanitizeToolCallSequence(task.messages.map(m => ({ ...m })))
+    for (const msg of conversation) {
+      if (msg.role !== 'assistant' || !msg.tool_calls?.length) continue
+      for (const tc of msg.tool_calls) {
+        const fn = tc.function
+        entries.push({
+          name: fn?.name || 'unknown',
+          args: fn?.arguments ? parseToolCallArgs(fn.arguments) : undefined
+        })
+      }
+    }
+    return entries
+  }
+  for (const step of task.fullSteps) {
+    if (step.type === 'tool_call' && step.toolName) {
+      entries.push({ name: step.toolName, args: step.toolArgs })
+    }
+  }
+  return entries
+}
+
+/** Level 1: 过程收短（工具结果头尾截断） */
+function getCompressedMessages(task: TaskMemory): AiMessage[] {
+  const toolSummaries: string[] = []
+  let assistantContent = ''
+
+  if (task.messages && task.messages.length > 0) {
+    const conversation = sanitizeToolCallSequence(task.messages.map(m => ({ ...m })))
+    const pendingById = new Map<string, number>()
+    for (const msg of conversation) {
+      if (msg.role === 'assistant') {
+        if (msg.tool_calls?.length) {
+          for (const tc of msg.tool_calls) {
+            const fn = tc.function
+            if (tc.id) pendingById.set(tc.id, toolSummaries.length)
+            toolSummaries.push(formatToolCallSummary(fn?.name, fn?.arguments ? parseToolCallArgs(fn.arguments) : undefined))
+          }
+        }
+        if (msg.content && !msg._systemInjected) {
+          assistantContent = msg.content
+        }
+      } else if (msg.role === 'tool') {
+        const idx = msg.tool_call_id != null ? pendingById.get(msg.tool_call_id) : undefined
+        if (idx !== undefined) {
+          toolSummaries[idx] += `\n→ ${compressToolOutput(msg.content || '')}`
+        }
+      }
+    }
+  } else {
+    for (const step of task.fullSteps) {
+      if (step.type === 'tool_call' && step.toolName) {
+        toolSummaries.push(formatToolCallSummary(step.toolName, step.toolArgs))
+      } else if (step.type === 'tool_result' && step.toolResult) {
+        const compressed = compressToolOutput(step.toolResult)
+        if (toolSummaries.length > 0) {
+          toolSummaries[toolSummaries.length - 1] += `\n→ ${compressed}`
+        }
+      } else if (step.type === 'message' && step.content) {
+        assistantContent = step.content
+      }
+    }
+  }
+
+  let fullAssistantContent = ''
+  if (toolSummaries.length > 0) {
+    fullAssistantContent = `**执行摘要:**\n${toolSummaries.join('\n')}\n\n`
+  }
+  fullAssistantContent += assistantContent || actualClosing(task)
+
+  return [
+    qaUserMessage(task),
+    { role: 'assistant', content: fullAssistantContent }
+  ]
+}
+
+/** Level 2: 过程要点（每工具一行：名字 + 路径/命令，不要正文） */
+function getProcessHighlights(task: TaskMemory): AiMessage[] {
+  const lines = collectToolEntries(task).map(e => formatToolCallSummary(e.name, e.args))
+  const closing = actualClosing(task)
+  const content = lines.length ? `**过程要点:**\n${lines.join('\n')}\n\n${closing}` : closing
+  return [qaUserMessage(task), { role: 'assistant', content }]
+}
+
+/** Level 3: 过程清单（只留用过的工具名） */
+function getProcessRoster(task: TaskMemory): AiMessage[] {
+  const names: string[] = []
+  const seen = new Set<string>()
+  for (const e of collectToolEntries(task)) {
+    if (seen.has(e.name)) continue
+    seen.add(e.name)
+    names.push(e.name)
+  }
+  const closing = actualClosing(task)
+  const content = names.length ? `**过程清单:** ${names.join(', ')}\n\n${closing}` : closing
+  return [qaUserMessage(task), { role: 'assistant', content }]
+}
+
+/** Level 4: 只留问答（地板） */
+function getQaMessages(task: TaskMemory): AiMessage[] {
+  return [
+    qaUserMessage(task),
+    { role: 'assistant', content: actualClosing(task) }
+  ]
+}
+
+function getMinCompressionLevel(_task: TaskMemory, taskIndex: number): CompressionLevel {
+  if (taskIndex === 0) return 0
+  if (taskIndex <= 2) return 1
+  if (taskIndex <= 5) return 2
+  if (taskIndex <= 8) return 3
+  return 4
+}
+
+/** 联络五档：每一档都带着完整问答，只收中间过程。 */
+function compressTask(task: TaskMemory, level: CompressionLevel): AiMessage[] {
+  switch (level) {
+    case 0:
+      return ensureQaFloor(getFullMessages(task), task)
+    case 1:
+      return ensureQaFloor(getCompressedMessages(task), task)
+    case 2:
+      return ensureQaFloor(getProcessHighlights(task), task)
+    case 3:
+      return ensureQaFloor(getProcessRoster(task), task)
+    case 4:
+    default:
+      return getQaMessages(task)
+  }
+}
+
 function truncateTextToTokens(text: string, maxTokens: number): string {
   if (maxTokens <= 4) return `${text.slice(0, 8)}…`
   if (estimateTokens(text) <= maxTokens) return text
@@ -435,6 +597,25 @@ function fitOriginalMessages(messages: AiMessage[], maxTokens: number): AiMessag
   if (estimateMessagesTokens(copy) <= maxTokens) return copy
 
   const asst = [...copy].reverse().find(m => m.role === 'assistant' && m.content && !m._systemInjected)
+  if (asst) {
+    const other = estimateMessagesTokens(copy.filter(m => m !== asst))
+    asst.content = truncateTextToTokens(asst.content || '', Math.max(20, maxTokens - other))
+  }
+  return copy
+}
+
+function truncateQaMessages(messages: AiMessage[], maxTokens: number): AiMessage[] {
+  const copy = omitHistoryImages(messages).map(m => ({ ...m }))
+  if (estimateMessagesTokens(copy) <= maxTokens) return copy
+
+  const user = copy.find(m => m.role === 'user')
+  if (user && estimateTokens(user.content || '') > 80) {
+    const other = estimateMessagesTokens(copy.filter(m => m !== user))
+    user.content = truncateTextToTokens(user.content || '', Math.max(40, maxTokens - other))
+  }
+  if (estimateMessagesTokens(copy) <= maxTokens) return copy
+
+  const asst = copy.find(m => m.role === 'assistant')
   if (asst) {
     const other = estimateMessagesTokens(copy.filter(m => m !== asst))
     asst.content = truncateTextToTokens(asst.content || '', Math.max(20, maxTokens - other))
@@ -484,6 +665,10 @@ export interface TaskHistoryOptions {
    */
   summaryOnly?: boolean
   /**
+   * 联络冷启动：五档只收过程，问答留下。任务不传此项，仍走原文。
+   */
+  processLevels?: boolean
+  /**
    * 本次请求的固定开销（system prompt + 工具 schema）实测值。
    * 传入后历史预算在「窗口减去它」的剩余空间里分配，避免超发。
    */
@@ -502,9 +687,37 @@ function countLevel(stats: ContextBuildResult['stats'], level: CompressionLevel)
   }
 }
 
+type PlacedTask = { task: TaskMemory; level: CompressionLevel; tokens: number; content: AiMessage[] }
+
+const RECALL_ROSTER_CAP = 50
+
+function attachRecallRoster(
+  result: ContextBuildResult,
+  tasks: TaskMemory[],
+  taskLimit: number,
+  placed: PlacedTask[],
+  usedTokens: number,
+  budget: number
+): number {
+  const placedIds = new Set(placed.map(p => p.task.id))
+  const unplaced = tasks.slice(0, taskLimit).filter(t => !placedIds.has(t.id)).reverse()
+  const rosterTasks = [...unplaced, ...placed.map(p => p.task)].slice(0, RECALL_ROSTER_CAP)
+  result.availableTaskIds = rosterTasks.map(t => ({
+    id: t.id,
+    summary: t.summary || t.userRequest
+  }))
+  let rosterTokens = estimateTokens(result.availableTaskIds.map(s => s.summary).join('\n'))
+  while (result.availableTaskIds.length > 0 && usedTokens + rosterTokens > budget) {
+    result.availableTaskIds.pop()
+    rosterTokens = estimateTokens(result.availableTaskIds.map(s => s.summary).join('\n'))
+  }
+  return usedTokens + rosterTokens
+}
+
 /**
  * 按预算构建最近任务上下文。
- * 同一场：从近到远装原文，装不下的更早整轮进可取回归档。
+ * 任务：从近到远装原文，装不下的更早整轮进可取回归档。
+ * 联络：processLevels，先铺问答再按远近补过程，不许低于问答地板。
  * 唤醒：summaryOnly，只要一句话概要。
  */
 export function buildRecentTasksContext(
@@ -544,44 +757,60 @@ export function buildRecentTasksContext(
     return result
   }
 
-  const RECALL_ROSTER_CAP = 50
   const rosterReserve = Math.min(RECALL_ROSTER_CAP, taskLimit) * 40
   const placeBudget = Math.max(0, budget - rosterReserve)
-
-  type Placed = { task: TaskMemory; level: CompressionLevel; tokens: number; content: AiMessage[] }
-  const placed: Placed[] = []
+  const placed: PlacedTask[] = []
   let usedTokens = 0
 
-  for (let i = 0; i < taskLimit; i++) {
-    const task = tasks[i]
-    let content = originalTaskMessages(task)
-    let tokens = estimateMessagesTokens(content)
-    if (usedTokens + tokens > placeBudget) {
-      if (placed.length > 0) break
-      const remaining = placeBudget - usedTokens
-      if (remaining < 24) break
-      content = fitOriginalMessages(content, remaining)
-      tokens = estimateMessagesTokens(content)
-      if (usedTokens + tokens > placeBudget) break
+  if (options?.processLevels) {
+    for (let i = 0; i < taskLimit; i++) {
+      const task = tasks[i]
+      let content = compressTask(task, 4)
+      let tokens = estimateMessagesTokens(content)
+      if (usedTokens + tokens > placeBudget) {
+        const remaining = placeBudget - usedTokens
+        if (remaining < 24) break
+        content = truncateQaMessages(content, remaining)
+        tokens = estimateMessagesTokens(content)
+        if (usedTokens + tokens > placeBudget) break
+      }
+      placed.push({ task, level: 4, tokens, content })
+      usedTokens += tokens
     }
-    placed.push({ task, level: 0, tokens, content })
-    usedTokens += tokens
+
+    for (let i = 0; i < placed.length; i++) {
+      const target = placed[i].task.aiSuggestedLevel ?? getMinCompressionLevel(placed[i].task, i)
+      if (target >= 4) continue
+      for (let level = target; level < 4; level++) {
+        const content = compressTask(placed[i].task, level)
+        const tokens = estimateMessagesTokens(content)
+        const extra = tokens - placed[i].tokens
+        if (usedTokens + extra <= placeBudget) {
+          usedTokens += extra
+          placed[i] = { ...placed[i], level, tokens, content }
+          break
+        }
+      }
+    }
+  } else {
+    for (let i = 0; i < taskLimit; i++) {
+      const task = tasks[i]
+      let content = originalTaskMessages(task)
+      let tokens = estimateMessagesTokens(content)
+      if (usedTokens + tokens > placeBudget) {
+        if (placed.length > 0) break
+        const remaining = placeBudget - usedTokens
+        if (remaining < 24) break
+        content = fitOriginalMessages(content, remaining)
+        tokens = estimateMessagesTokens(content)
+        if (usedTokens + tokens > placeBudget) break
+      }
+      placed.push({ task, level: 0, tokens, content })
+      usedTokens += tokens
+    }
   }
 
-  const placedIds = new Set(placed.map(p => p.task.id))
-  const unplaced = tasks.slice(0, taskLimit).filter(t => !placedIds.has(t.id)).reverse()
-  const rosterTasks = [...unplaced, ...placed.map(p => p.task)].slice(0, RECALL_ROSTER_CAP)
-  result.availableTaskIds = rosterTasks.map(t => ({
-    id: t.id,
-    summary: t.summary || t.userRequest
-  }))
-  let rosterTokens = estimateTokens(result.availableTaskIds.map(s => s.summary).join('\n'))
-  while (result.availableTaskIds.length > 0 && usedTokens + rosterTokens > budget) {
-    result.availableTaskIds.pop()
-    rosterTokens = estimateTokens(result.availableTaskIds.map(s => s.summary).join('\n'))
-  }
-
-  result.stats.usedTokens = usedTokens + rosterTokens
+  result.stats.usedTokens = attachRecallRoster(result, tasks, taskLimit, placed, usedTokens, budget)
   for (const item of placed) countLevel(result.stats, item.level)
   for (const item of [...placed].reverse()) {
     result.recentTaskMessages.push(...item.content)

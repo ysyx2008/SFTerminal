@@ -1466,8 +1466,8 @@ export abstract class Agent {
     // companion 维持紧凑（联络是单线对话，6 条 record 已够）；task 不会走到这里。
     // watch 因 seedFromHistoryOnColdStart=false，本方法不会被调用——保留 'watch' 分支是防御性的。
     const broadScope = kind === 'watch' || kind === 'wakeup'
-    const MAX_RECENT_RECORDS = broadScope ? 20 : 30
-    const MAX_RESTORE_TASKS = broadScope ? 30 : 500
+    const MAX_RECENT_RECORDS = broadScope ? 20 : 6
+    const MAX_RESTORE_TASKS = broadScope ? 30 : 40
 
     // 排除两类记录：
     //  - watch/wakeup「内心独白」：自我循环的触发记录（[当前时间：...触发事件...]），
@@ -1628,7 +1628,7 @@ export abstract class Agent {
     const historyService = this.services.historyService
     if (!historyService || !this._conversation) return
 
-    if (this._conversation.hasHandoff()) {
+    if (this._conversation.hasHandoff() && run.messages.length > 0) {
       this._conversation.setWorkingContext(run.messages)
     }
     const record = this._conversation.toCheckpointRecord({
@@ -2235,7 +2235,9 @@ export abstract class Agent {
       const fixedPrefixTokens = this._contextWindow.getFixedPrefixTokens(this.systemPromptScope(run.context))
       const historyOptions: TaskHistoryOptions = run.context.wakeup
         ? { maxTasks: 30, summaryOnly: true, fixedPrefixTokens }
-        : { fixedPrefixTokens }
+        : inferConversationKind(this._agentId) === 'companion'
+          ? { processLevels: true, fixedPrefixTokens }
+          : { fixedPrefixTokens }
       const contextResult = buildTaskHistoryContext(this.taskMemory, contextLength, message, historyOptions)
       
       recentTaskMessages = contextResult.recentTaskMessages

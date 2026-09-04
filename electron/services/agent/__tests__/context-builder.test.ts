@@ -373,6 +373,98 @@ describe('buildTaskHistoryContext', () => {
   })
 })
 
+describe('联络五档 processLevels', () => {
+  let store: TaskMemoryStore
+
+  beforeEach(() => {
+    store = new TaskMemoryStore()
+  })
+
+  function saveToolTurn(id: string, request: string, toolName: string, path: string, output: string, reply: string) {
+    store.saveTask(id, request, [], 'success', reply, [
+      { role: 'user', content: request },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{
+          id: `${id}-c1`,
+          type: 'function',
+          function: { name: toolName, arguments: JSON.stringify({ path }) }
+        }]
+      },
+      { role: 'tool', content: output, tool_call_id: `${id}-c1` },
+      { role: 'assistant', content: reply }
+    ])
+  }
+
+  it('远轮留下完整原话和实际收场，不砍成标题', () => {
+    for (let i = 0; i < 12; i++) {
+      saveToolTurn(
+        `turn_${i}`,
+        `请打开你前面写的那个 Word ${i}`,
+        'read_file',
+        `/tmp/doc_${i}.docx`,
+        `正文很长 ${'x'.repeat(200)}`,
+        `已经打开 doc_${i}.docx`
+      )
+    }
+
+    const result = buildRecentTasksContext(store, 8000, '继续', { processLevels: true })
+    const userTexts = result.recentTaskMessages.filter(m => m.role === 'user').map(m => m.content)
+    const allText = result.recentTaskMessages.map(m => m.content).join('\n')
+
+    expect(userTexts.some(t => t.includes('请打开你前面写的那个 Word 0'))).toBe(true)
+    expect(allText).toContain('已经打开 doc_0.docx')
+    expect(allText).not.toMatch(/请打开你前面写的那个 Word 0…/)
+    expect(result.taskSummarySection).toBe('')
+    expect(result.stats.level4Count).toBeGreaterThan(0)
+  })
+
+  it('预算够时最近一轮带着完整过程，更早轮次只收过程不丢问答', () => {
+    saveToolTurn('old', '写招标文件修改意见', 'write_text_file', '/tmp/意见.docx', '已写入 9 条', '已写好九条意见')
+    saveToolTurn('mid', '核对落实情况', 'read_file', '/tmp/意见.docx', '核对中', '三条未落实')
+    saveToolTurn('new', '打开你前面写的那个 Word', 'read_file', '/tmp/意见.docx', '文件内容：九条意见全文', '打开了桌面上的意见文档')
+
+    const result = buildRecentTasksContext(store, 100000, '继续', { processLevels: true })
+    const joined = result.recentTaskMessages.map(m => {
+      const args = m.tool_calls?.map(tc => tc.function.arguments).join('\n') ?? ''
+      return `${m.content}\n${args}`
+    }).join('\n')
+
+    expect(result.stats.level0Count).toBe(1)
+    expect(joined).toContain('打开你前面写的那个 Word')
+    expect(joined).toContain('/tmp/意见.docx')
+    expect(joined).toContain('文件内容：九条意见全文')
+    expect(joined).toContain('写招标文件修改意见')
+    expect(joined).toContain('已写好九条意见')
+  })
+
+  it('失败和中止的远轮也照实留收场，不编造成功', () => {
+    store.saveTask('fail', '部署生产', [], 'failed', '发布失败：缺权限', [
+      { role: 'user', content: '部署生产' },
+      { role: 'assistant', content: '发布失败：缺权限' }
+    ])
+    store.saveTask('stop', '重启机器', [], 'aborted', '', [
+      { role: 'user', content: '重启机器' },
+      { role: 'assistant', content: '正要重启' }
+    ])
+    for (let i = 0; i < 10; i++) {
+      store.saveTask(`ok_${i}`, `闲聊 ${i}`, [], 'success', `好 ${i}`, [
+        { role: 'user', content: `闲聊 ${i}` },
+        { role: 'assistant', content: `好 ${i}` }
+      ])
+    }
+
+    const result = buildRecentTasksContext(store, 4000, '继续', { processLevels: true })
+    const text = result.recentTaskMessages.map(m => m.content).join('\n')
+    expect(text).toContain('部署生产')
+    expect(text).toContain('[任务执行失败]')
+    expect(text).toContain('重启机器')
+    expect(text).toContain('[任务已被用户中止]')
+    expect(text).not.toContain('✓')
+  })
+})
+
 // ==================== Integration scenarios ====================
 
 describe('Context builder integration', () => {

@@ -74,6 +74,24 @@ describe('session-persistence incremental checkpoint', () => {
     expect(loaded?.messages).toHaveLength(1)
   })
 
+  it('交接检查点跟对话一起记住，重开读得回来', () => {
+    const record = makeRecord({
+      steps: [makeStep('s1')],
+      messages: [{ role: 'user', content: 'hi' }],
+      workingContext: [
+        { role: 'user', content: '[交接] 周报写在 /tmp/handoff.docx' },
+        { role: 'assistant', content: '结论已补上' },
+      ],
+    })
+    saveSessionRecord(agentDir, record)
+
+    const loaded = readSessionRecord(agentDir, '2026-07-13', record.id)
+    expect(loaded?.workingContext).toEqual([
+      { role: 'user', content: '[交接] 周报写在 /tmp/handoff.docx' },
+      { role: 'assistant', content: '结论已补上' },
+    ])
+  })
+
   it('这场对话还开着的技能跟卸掉的清单会写进 meta，重开读得回来', () => {
     const record = makeRecord({
       steps: [makeStep('s1')],
