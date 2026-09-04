@@ -70,6 +70,114 @@ let dprChangeHandler: (() => void) | null = null
 // 用户输入缓冲区（用于 CWD 追踪）
 let inputBuffer = ''
 
+// 海量输出时排队写屏：分块写并让出事件循环；队列有上限，避免藏窗时堆爆
+const XTERM_WRITE_CHUNK_CHARS = 32 * 1024
+const OUTPUT_CAPTURE_MAX_CHARS = 2048
+const WRITE_QUEUE_HARD_CAP = 2 * 1024 * 1024
+const WRITE_QUEUE_KEEP = 512 * 1024
+const WRITE_QUEUE_HIDDEN_CAP = 64 * 1024
+let incomingWriteQueue = ''
+let incomingWriteBusy = false
+let incomingWriteRaf: number | null = null
+let incomingWriteTimer: ReturnType<typeof setTimeout> | null = null
+let pendingCapture = ''
+let captureTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 按 UTF-16 切，避免把代理对从中间劈开 */
+function splitAtCodeUnit(s: string, max: number): { head: string; tail: string } {
+  if (s.length <= max) return { head: s, tail: '' }
+  let cut = max
+  const prev = s.charCodeAt(cut - 1)
+  if (prev >= 0xD800 && prev <= 0xDBFF) cut -= 1
+  if (cut <= 0) cut = max
+  return { head: s.slice(0, cut), tail: s.slice(cut) }
+}
+
+function keepTail(s: string, max: number): string {
+  if (s.length <= max) return s
+  let start = s.length - max
+  const c = s.charCodeAt(start)
+  if (c >= 0xDC00 && c <= 0xDFFF) start += 1
+  return s.slice(start)
+}
+
+function trimIncomingWriteQueue(): void {
+  const hidden = typeof document !== 'undefined' && document.hidden
+  const cap = hidden ? WRITE_QUEUE_HIDDEN_CAP : WRITE_QUEUE_HARD_CAP
+  if (incomingWriteQueue.length <= cap) return
+  incomingWriteQueue = keepTail(incomingWriteQueue, hidden ? WRITE_QUEUE_HIDDEN_CAP : WRITE_QUEUE_KEEP)
+}
+
+function scheduleCapture(): void {
+  if (captureTimer) return
+  captureTimer = setTimeout(() => {
+    captureTimer = null
+    if (!pendingCapture || isDisposed) return
+    const slice = pendingCapture.length > OUTPUT_CAPTURE_MAX_CHARS
+      ? pendingCapture.slice(-OUTPUT_CAPTURE_MAX_CHARS)
+      : pendingCapture
+    pendingCapture = ''
+    terminalStore.appendOutput(props.tabId, slice)
+  }, 50)
+}
+
+function handleIncomingData(data: string): void {
+  if (isDisposed || !terminal) return
+  incomingWriteQueue += data
+  trimIncomingWriteQueue()
+  pendingCapture = data
+  scheduleCapture()
+  pumpIncomingWrite()
+}
+
+function scheduleNextWrite(): void {
+  const hidden = typeof document !== 'undefined' && document.hidden
+  if (hidden) {
+    incomingWriteTimer = setTimeout(() => {
+      incomingWriteTimer = null
+      pumpIncomingWrite()
+    }, 16)
+  } else {
+    incomingWriteRaf = requestAnimationFrame(() => {
+      incomingWriteRaf = null
+      pumpIncomingWrite()
+    })
+  }
+}
+
+function pumpIncomingWrite(): void {
+  if (incomingWriteBusy || !incomingWriteQueue || !terminal || isDisposed) return
+  const { head: chunk, tail } = splitAtCodeUnit(incomingWriteQueue, XTERM_WRITE_CHUNK_CHARS)
+  incomingWriteQueue = tail
+  incomingWriteBusy = true
+  try {
+    terminal.write(chunk)
+  } catch {
+    incomingWriteBusy = false
+    return
+  }
+  incomingWriteBusy = false
+  if (incomingWriteQueue) scheduleNextWrite()
+}
+
+function resetIncomingWriteQueue(): void {
+  incomingWriteQueue = ''
+  incomingWriteBusy = false
+  pendingCapture = ''
+  if (incomingWriteRaf !== null) {
+    cancelAnimationFrame(incomingWriteRaf)
+    incomingWriteRaf = null
+  }
+  if (incomingWriteTimer !== null) {
+    clearTimeout(incomingWriteTimer)
+    incomingWriteTimer = null
+  }
+  if (captureTimer !== null) {
+    clearTimeout(captureTimer)
+    captureTimer = null
+  }
+}
+
 // 拖放视觉指示
 const isDragOver = ref(false)
 
@@ -521,27 +629,11 @@ onMounted(async () => {
   // 订阅后端数据
   if (props.type === 'local') {
     unsubscribe = window.electronAPI.pty.onData(props.ptyId, (data: string) => {
-      if (!isDisposed && terminal) {
-        try {
-          terminal.write(data)
-          // 捕获输出用于 AI 分析
-          terminalStore.appendOutput(props.tabId, data)
-        } catch (e) {
-          // 忽略写入错误
-        }
-      }
+      handleIncomingData(data)
     })
   } else {
     unsubscribe = window.electronAPI.ssh.onData(props.ptyId, (data: string) => {
-      if (!isDisposed && terminal) {
-        try {
-          terminal.write(data)
-          // 捕获输出用于 AI 分析
-          terminalStore.appendOutput(props.tabId, data)
-        } catch (e) {
-          // 忽略写入错误
-        }
-      }
+      handleIncomingData(data)
     })
 
     // 监听 SSH 断开连接事件
@@ -696,6 +788,7 @@ onMounted(async () => {
 onUnmounted(() => {
   // 先标记为已销毁，防止后续回调执行
   isDisposed = true
+  resetIncomingWriteQueue()
   
   // 清理选择状态检查的 timeout
   if (selectionCheckTimeout) {
@@ -1146,14 +1239,7 @@ const resubscribeSshIo = async () => {
     unsubscribe = null
   }
   unsubscribe = window.electronAPI.ssh.onData(panePtyId, (data: string) => {
-    if (!isDisposed && terminal) {
-      try {
-        terminal.write(data)
-        terminalStore.appendOutput(props.tabId, data)
-      } catch (e) {
-        // 忽略写入错误
-      }
-    }
+    handleIncomingData(data)
   })
 
   if (unsubscribeDisconnect) {

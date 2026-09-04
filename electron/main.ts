@@ -10,6 +10,7 @@ import * as os from 'os'
 import { getDefaultShell } from './utils/platform'
 import { requestLocalNetworkAccess } from './utils/local-network-permission'
 import { isAbortError } from './utils/abort'
+import { createTerminalDataCoalescer } from './utils/terminal-data-coalescer'
 import type { AttachmentInfo, DocumentParseProgress, UiThemeMode, UiThemeName, WebSearchSettings, IMProcessMode } from '@shared/types'
 import { getAppTitle as buildAppTitle, getBrandName } from '@shared/brand'
 import { isOemFeatureEnabled } from '@shared/oem-features'
@@ -2244,7 +2245,7 @@ ipcMain.on('pty:subscribe', (event, id: string) => {
       ptyDataUnsubscribes.delete(id)
     }
 
-    const unsubscribe = ptyService.onData(id, (data: string) => {
+    const coalescer = createTerminalDataCoalescer((data: string) => {
       try {
         if (!event.sender.isDestroyed()) {
           event.sender.send(`pty:data:${id}`, data)
@@ -2255,7 +2256,18 @@ ipcMain.on('pty:subscribe', (event, id: string) => {
         // 忽略发送错误（窗口可能已关闭）
       }
     })
-    ptyDataUnsubscribes.set(id, unsubscribe)
+
+    const unsubscribe = ptyService.onData(id, (data: string) => {
+      try {
+        coalescer.push(data)
+      } catch {
+        // 忽略发送错误（窗口可能已关闭）
+      }
+    })
+    ptyDataUnsubscribes.set(id, () => {
+      unsubscribe()
+      coalescer.dispose()
+    })
   })()
 })
 
@@ -2319,7 +2331,7 @@ ipcMain.on('ssh:subscribe', (event, id: string) => {
       sshDisconnectUnsubscribes.delete(id)
     }
 
-    const dataUnsubscribe = sshService.onData(id, (data: string) => {
+    const coalescer = createTerminalDataCoalescer((data: string) => {
       try {
         if (!event.sender.isDestroyed()) {
           event.sender.send(`ssh:data:${id}`, data)
@@ -2330,9 +2342,21 @@ ipcMain.on('ssh:subscribe', (event, id: string) => {
         // 忽略发送错误
       }
     })
-    sshDataUnsubscribes.set(id, dataUnsubscribe)
+
+    const dataUnsubscribe = sshService.onData(id, (data: string) => {
+      try {
+        coalescer.push(data)
+      } catch {
+        // 忽略发送错误
+      }
+    })
+    sshDataUnsubscribes.set(id, () => {
+      dataUnsubscribe()
+      coalescer.dispose()
+    })
 
     const disconnectUnsubscribe = sshService.onDisconnect(id, (disconnectEvent) => {
+      coalescer.flush()
       try {
         if (!event.sender.isDestroyed()) {
           event.sender.send(`ssh:disconnected:${id}`, {
