@@ -1,15 +1,20 @@
 import { describe, it, expect } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import JSZip from 'jszip'
 import {
   applyFontsToHtml,
   collectParagraphFonts,
   cssFontFamily,
   enrichHtmlFonts,
+  normalizeWordprocessingXml,
   parsePreviewPageBox,
   wrapPreviewPage
 } from '../preview-fonts'
-import { markdownToDocx } from '../styles'
+import { markdownToDocx, PRESET_STYLES } from '../styles'
 import { officialPreset } from '../../chinese-document-official/presets'
+import { previewArtifactFromFile } from '../../../../artifact-file-preview'
 
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -56,6 +61,22 @@ const DOCUMENT = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   </w:body>
 </w:document>`
 
+describe('normalizeWordprocessingXml', () => {
+  it('rewrites a non-w prefix bound to WordprocessingML, and leaves text alone', () => {
+    const xml = [
+      '<ns0:document xmlns:ns0="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
+      '<ns0:p><ns0:pPr><ns0:ind ns0:firstLine="640" /></ns0:pPr>',
+      '<ns0:r><ns0:t>ns0:firstLine 只是正文</ns0:t></ns0:r></ns0:p>',
+      '</ns0:document>'
+    ].join('')
+    const out = normalizeWordprocessingXml(xml)
+    expect(out).toContain('<w:ind w:firstLine="640"')
+    expect(out).toContain('</w:p>')
+    expect(out).toContain('ns0:firstLine 只是正文')
+    expect(normalizeWordprocessingXml(out)).toBe(out)
+  })
+})
+
 describe('preview page box', () => {
   it('reads A4 and official margins from document.xml', () => {
     const xml = `<?xml version="1.0"?>
@@ -76,6 +97,22 @@ describe('preview page box', () => {
     const wrapped = wrapPreviewPage('<p>x</p>', box)
     expect(wrapped).toContain('class="sf-word-page"')
     expect(wrapped).toContain('--sf-page-w:210')
+  })
+
+  it('reads page box when section properties use ns0: prefix', () => {
+    const xml = `<?xml version='1.0' encoding='utf-8'?>
+<ns0:document xmlns:ns0="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <ns0:body>
+    <ns0:p><ns0:r><ns0:t>x</ns0:t></ns0:r></ns0:p>
+    <ns0:sectPr>
+      <ns0:pgSz ns0:w="11906" ns0:h="16838"/>
+      <ns0:pgMar ns0:top="2098" ns0:bottom="1985" ns0:left="1588" ns0:right="1474"/>
+    </ns0:sectPr>
+  </ns0:body>
+</ns0:document>`
+    const box = parsePreviewPageBox(xml)
+    expect(box.marginTopMm).toBeCloseTo(37, 0)
+    expect(box.marginLeftMm).toBeCloseTo(28, 0)
   })
 
   it('falls back to A4 when the document has no section properties', () => {
@@ -144,6 +181,47 @@ describe('collectParagraphFonts + applyFontsToHtml', () => {
     )
     const p = out.match(/<p[^>]*>/)?.[0] ?? ''
     expect(p).toContain('text-indent:32pt')
+  })
+
+  it('reads first-line indent when document.xml uses ns0: instead of w:', () => {
+    const document = `<?xml version='1.0' encoding='utf-8'?>
+<ns0:document xmlns:ns0="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <ns0:body>
+    <ns0:p>
+      <ns0:pPr><ns0:pStyle ns0:val="Title"/></ns0:pPr>
+      <ns0:r><ns0:t>通知标题</ns0:t></ns0:r>
+    </ns0:p>
+    <ns0:p>
+      <ns0:r><ns0:t>各部门、各分支机构：</ns0:t></ns0:r>
+    </ns0:p>
+    <ns0:p>
+      <ns0:pPr><ns0:ind ns0:firstLine="640"/></ns0:pPr>
+      <ns0:r><ns0:t>为深入贯彻落实公司科技赋能。</ns0:t></ns0:r>
+    </ns0:p>
+  </ns0:body>
+</ns0:document>`
+    const fonts = collectParagraphFonts(document, STYLES)
+    expect(fonts).toHaveLength(3)
+    expect(fonts[1].indent).toBe('0')
+    expect(fonts[2].indent).toBe('32pt')
+
+    const out = applyFontsToHtml(
+      '<h1 class="document-title">通知标题</h1><p>各部门、各分支机构：</p><p>为深入贯彻落实公司科技赋能。</p>',
+      fonts
+    )
+    const paragraphs = [...out.matchAll(/<p[^>]*>/g)].map(m => m[0])
+    expect(paragraphs[0]).toContain('text-indent:0')
+    expect(paragraphs[1]).toContain('text-indent:32pt')
+  })
+
+  it('does not invent a two-character indent when the document has none', () => {
+    const fonts = collectParagraphFonts(DOCUMENT, STYLES)
+    expect(fonts.every(f => f.indent === '0')).toBe(true)
+    const out = applyFontsToHtml(
+      '<h1 class="document-title">标题</h1><h1>一、章节</h1><p>正文一段。</p>',
+      fonts
+    )
+    expect(out).not.toMatch(/text-indent:(?!0(?:;|"))/)
   })
 
   it('keeps 主送 flush and body first-line indented', () => {
@@ -289,5 +367,35 @@ describe('enrichHtmlFonts', () => {
     expect(out).toContain('--sf-page-w:210')
     expect(out).toMatch(/--sf-m-t:3[67]/)
     expect(out).toMatch(/--sf-m-l:28/)
+  })
+
+  it('rebuilds disk preview from the document indent, and does not invent one', async () => {
+    const withIndent = [
+      '---',
+      'title: 通知标题',
+      '---',
+      '',
+      '<p>各部门、各分支机构：</p>',
+      '',
+      '为深入贯彻落实公司科技赋能、创新驱动发展战略。'
+    ].join('\n')
+    const withoutIndent = '这是一段没有首行缩进的正文。'
+    const indented = await markdownToDocx(withIndent, officialPreset)
+    const flush = await markdownToDocx(withoutIndent, PRESET_STYLES.simple)
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-word-preview-'))
+    const indentedPath = path.join(dir, 'indented.docx')
+    const flushPath = path.join(dir, 'flush.docx')
+    fs.writeFileSync(indentedPath, indented)
+    fs.writeFileSync(flushPath, flush)
+    try {
+      const indentedHtml = await previewArtifactFromFile(indentedPath, 'document')
+      const flushHtml = await previewArtifactFromFile(flushPath, 'document')
+      const indentedPs = [...indentedHtml.matchAll(/<p[^>]*>/g)].map(m => m[0])
+      expect(indentedPs[0]).toContain('text-indent:0')
+      expect(indentedPs[1]).toMatch(/text-indent:(?!0(?:;|"))/)
+      expect(flushHtml).not.toMatch(/text-indent:(?!0(?:;|"))/)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

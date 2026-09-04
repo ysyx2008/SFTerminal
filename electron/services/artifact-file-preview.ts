@@ -6,6 +6,7 @@ import * as fs from 'fs'
 import type { CanvasRendererType } from '@shared/types'
 import { createLogger } from '../utils/logger'
 import { renderExcelWorkbookPreviewHtml } from './agent/skills/excel/preview-html'
+import { enrichHtmlFonts } from './agent/skills/word/preview-fonts'
 
 const log = createLogger('ArtifactFilePreview')
 
@@ -21,7 +22,7 @@ async function previewDocxHtml(filePath: string): Promise<string> {
     { path: filePath },
     { styleMap: MAMMOTH_STYLE_MAP }
   )
-  return result.value
+  return enrichHtmlFonts(result.value, filePath)
 }
 
 async function previewXlsxHtml(filePath: string): Promise<string> {

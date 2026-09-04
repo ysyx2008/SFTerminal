@@ -8,6 +8,26 @@ import { createLogger } from '../../../../utils/logger'
 
 const log = createLogger('WordPreviewFonts')
 
+const WORDPROCESSING_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+
+/**
+ * 有的工具重写 document.xml 时不用 `w:`，改成 `ns0:` 这类前缀。
+ * 只改「绑定到 WordprocessingML 命名空间的那个前缀」为 `w:`，不动正文、也不动别的命名空间。
+ * 默认命名空间（`xmlns="…"`、标签无前缀）不在这里处理——那种文件目前没遇到。
+ */
+export function normalizeWordprocessingXml(xml: string): string {
+  const prefixed = [...xml.matchAll(/\sxmlns:([A-Za-z_][\w.-]*)=(["'])([^"']*)\2/g)]
+    .find((m) => m[3] === WORDPROCESSING_NS)
+  if (!prefixed || prefixed[1] === 'w') return xml
+  const esc = prefixed[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return xml.replace(/<[^>]+>/g, (tag) =>
+    tag
+      .replace(new RegExp(`xmlns:${esc}=`, 'g'), 'xmlns:w=')
+      .replace(new RegExp(`(?<=[\\s/])${esc}:`, 'g'), 'w:')
+      .replace(new RegExp(`^<${esc}:`, 'g'), '<w:')
+  )
+}
+
 export type PreviewBlockKind = 'title' | 'heading' | 'body'
 
 export interface PreviewFont {
@@ -169,6 +189,7 @@ export function parseStyleFontMap(stylesXml: string): {
   byId: Map<string, PreviewFont>
   defaultStyleId: string
 } {
+  stylesXml = normalizeWordprocessingXml(stylesXml)
   const raw = parseStyleBlocks(stylesXml)
   const defaults = parseDocDefaults(stylesXml)
   const cache = new Map<string, PreviewFont>()
@@ -204,6 +225,7 @@ export function collectParagraphFonts(
   documentXml: string,
   stylesXml: string
 ): PreviewFont[] {
+  documentXml = normalizeWordprocessingXml(documentXml)
   const { byId, defaultStyleId } = parseStyleFontMap(stylesXml)
   const defaults = byId.get(defaultStyleId) || byId.get('Normal') || {}
   const fonts: PreviewFont[] = []
@@ -279,6 +301,7 @@ function dxaToMm(raw: string | undefined, fallback: number): number {
 }
 
 export function parsePreviewPageBox(documentXml: string): PreviewPageBox {
+  documentXml = normalizeWordprocessingXml(documentXml)
   const sectPr = documentXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/g)?.pop() ?? ''
   const pgMar = sectPr.match(/<w:pgMar[^>]*>/)?.[0] ?? ''
   const pgSz = sectPr.match(/<w:pgSz[^>]*>/)?.[0] ?? ''

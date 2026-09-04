@@ -74,7 +74,7 @@ import {
   modifyParagraphStyle
 } from './docx-xml'
 import { mergeDocxFile } from './template-merge'
-import { enrichHtmlFonts } from './preview-fonts'
+import { enrichHtmlFonts, normalizeWordprocessingXml } from './preview-fonts'
 import JSZip from 'jszip'
 import { app } from 'electron'
 import { getKnowledgeService } from '../../../knowledge'
@@ -106,12 +106,14 @@ async function enrichHtmlAlignment(html: string, source: string | Buffer): Promi
   try {
     const buf = typeof source === 'string' ? fs.readFileSync(source) : source
     const zip = await JSZip.loadAsync(buf)
-    const xml = await zip.file('word/document.xml')?.async('string')
-    if (!xml) return html
+    const rawXml = await zip.file('word/document.xml')?.async('string')
+    if (!rawXml) return html
+    const xml = normalizeWordprocessingXml(rawXml)
 
     // 从 styles.xml 构建 styleId → alignment 映射
     const styleAlignMap = new Map<string, string>()
-    const stylesXml = await zip.file('word/styles.xml')?.async('string')
+    const rawStyles = await zip.file('word/styles.xml')?.async('string')
+    const stylesXml = rawStyles ? normalizeWordprocessingXml(rawStyles) : undefined
     if (stylesXml) {
       // \s 避免匹配 <w:styles>（根元素），只匹配 <w:style ...>（子元素）
       const styleBlocks = stylesXml.match(/<w:style\s[\s\S]*?<\/w:style>/g) || []
@@ -183,9 +185,11 @@ async function enrichHtmlNumbering(html: string, source: string | Buffer): Promi
     const buf = typeof source === 'string' ? fs.readFileSync(source) : source
     const zip = await JSZip.loadAsync(buf)
 
-    const numXml = await zip.file('word/numbering.xml')?.async('string')
-    const stylesXml = await zip.file('word/styles.xml')?.async('string')
-    if (!numXml || !stylesXml) return html
+    const rawNum = await zip.file('word/numbering.xml')?.async('string')
+    const rawStyles = await zip.file('word/styles.xml')?.async('string')
+    if (!rawNum || !rawStyles) return html
+    const numXml = normalizeWordprocessingXml(rawNum)
+    const stylesXml = normalizeWordprocessingXml(rawStyles)
 
     // Heading 样式 → 编号层级映射 + 样式属性（用于 inline style 覆盖通用 CSS）
     interface HeadingInfo {
