@@ -3276,9 +3276,9 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   transform: translateX(-50%);
   z-index: 6;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  width: min(520px, calc(100% - 32px));
+  width: min(560px, calc(100% - 32px));
   padding: 10px 12px;
   border: none;
   border-radius: 10px;
@@ -3292,20 +3292,15 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   cursor: pointer;
 }
 
-.ai-peek-card.is-busy {
-  align-items: center;
-}
-
 .ai-peek-text {
   min-width: 0;
   flex: 1 1 auto;
 }
 
 .ai-peek-text.is-clamped {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ai-peek-card.is-expanded .ai-peek-text {
