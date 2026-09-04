@@ -106,6 +106,32 @@ const focusActive = computed(() => focusMode.value && artifactSeated.value)
 
 const chatFocusEl = ref<HTMLElement | null>(null)
 const artifactFocusEl = ref<HTMLElement | null>(null)
+/** 浮层实际高度：文档预览让出这一截，避免盖住输入，也避免网页预览吃掉点击 */
+const overlaySpacePx = ref(160)
+let overlaySpaceObserver: ResizeObserver | null = null
+
+function syncOverlaySpace() {
+  const el = chatFocusEl.value
+  const height = el?.getBoundingClientRect().height
+  overlaySpacePx.value = !height || height <= 0 ? 160 : Math.max(120, Math.ceil(height))
+}
+
+function stopOverlaySpaceObserver() {
+  overlaySpaceObserver?.disconnect()
+  overlaySpaceObserver = null
+}
+
+watch(focusActive, async (active) => {
+  stopOverlaySpaceObserver()
+  if (!active) return
+  await nextTick()
+  const el = chatFocusEl.value
+  if (el && typeof ResizeObserver !== 'undefined') {
+    overlaySpaceObserver = new ResizeObserver(() => syncOverlaySpace())
+    overlaySpaceObserver.observe(el)
+  }
+  syncOverlaySpace()
+}, { flush: 'post', immediate: true })
 
 watch(artifactSeated, (seated) => {
   if (!seated) focusMode.value = false
@@ -250,6 +276,7 @@ function stopStageResize() {
 
 onUnmounted(() => {
   stopStageResize()
+  stopOverlaySpaceObserver()
   if (listHideTimer) {
     clearTimeout(listHideTimer)
     listHideTimer = null
@@ -470,7 +497,11 @@ defineExpose({
         </template>
       </WorkbenchShell>
     </div>
-    <div v-show="focusActive" class="assistant-focus-stage">
+    <div
+      v-show="focusActive"
+      class="assistant-focus-stage"
+      :style="{ '--assistant-focus-overlay': overlaySpacePx + 'px' }"
+    >
       <div ref="artifactFocusEl" class="assistant-focus-doc" />
       <div ref="chatFocusEl" class="assistant-focus-chat" />
     </div>
@@ -647,7 +678,7 @@ defineExpose({
   height: auto;
   flex: none;
   min-height: 0;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .stage-resizer {

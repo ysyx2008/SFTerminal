@@ -1339,6 +1339,7 @@ defineExpose({ minimizePanel })
           {{ t('canvas.unsupportedRenderer') }}
         </div>
       </div>
+      <div v-if="focusActive" class="canvas-focus-spacer" aria-hidden="true" />
     </div>
 
     <HoverTipOverlay :tip="hoverTip" />
@@ -1363,6 +1364,11 @@ defineExpose({ minimizePanel })
 
 .canvas-panel.is-focus .canvas-header {
   padding-right: 36px;
+}
+
+.canvas-focus-spacer {
+  flex: 0 0 var(--assistant-focus-overlay, 160px);
+  pointer-events: none;
 }
 
 .canvas-header {

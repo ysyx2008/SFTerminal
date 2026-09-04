@@ -21,8 +21,8 @@ import ThinkingBlock from './ThinkingBlock.vue'
 import ProcessTurnFold from './ProcessTurnFold.vue'
 import { createReusableTemplate } from '../utils/reusable-template'
 import { hasSpokenBody } from '../utils/process-fold'
-import { lastSpokenBody, resolveFocusPeek } from '../utils/focus-peek'
-import { describeLiveProcess } from '../utils/process-fold'
+import { buildPeekProcessView, countPeekNeedsYou, lastSpokenBody, resolveFocusPeek, resolvePeekOverlay } from '../utils/focus-peek'
+import { describeLiveProcess, type ProcessFoldView } from '../utils/process-fold'
 import { formatProcessFoldCaption, type ProcessFoldSay } from '../utils/process-fold-label'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
@@ -113,6 +113,8 @@ const isCompanionTab = computed(() => {
 
 // 步骤行模板：列表里平铺一份，折叠行内部再用一份，作用域不变
 const [DefineStepRow, ReuseStepRow] = createReusableTemplate<{ item: VirtualItem }>()
+const [DefineConfirmRow, ReuseConfirmRow] = createReusableTemplate()
+const [DefineSecureRow, ReuseSecureRow] = createReusableTemplate()
 
 // Refs
 const messagesRef = ref<HTMLDivElement | null>(null)
@@ -2110,11 +2112,13 @@ async function scrollToAgentStep(stepId: string) {
   }, 2500)
 }
 
-function isPeekNeedsYouItem(item: { type: string; step?: { type?: string; toolResult?: string } }): boolean {
+function isPeekNeedsYouItem(item: VirtualItem): boolean {
   if (item.type === 'confirm' || item.type === 'waiting_input') return true
-  const stepType = item.step?.type
-  if (stepType === 'waiting_password') return true
-  return stepType === 'asking' && (item.step?.toolResult?.includes('⏳') ?? false)
+  if (item.step?.type === 'waiting_password') return true
+  if (item.step?.type !== 'asking') return false
+  const groupId = peekRunGroupId.value
+  if (groupId && item.group?.id !== groupId) return false
+  return isAskingInteractive(item.step, item.group)
 }
 
 const peekNeedsYou = computed(() => {
@@ -2132,27 +2136,54 @@ const peekFoldSay = computed<ProcessFoldSay>(() => ({
   sep: t('ai.processFold.sep'),
 }))
 
-const peekLiveText = computed(() => {
-  for (let i = flattenedItems.value.length - 1; i >= 0; i--) {
-    const fold = flattenedItems.value[i].fold
-    if (flattenedItems.value[i].type === 'folded_turn' && fold?.live) {
-      return formatProcessFoldCaption(fold, peekFoldSay.value)
-    }
+const peekRunGroupId = computed(() => {
+  const groups = agentTaskGroups.value
+  for (let i = groups.length - 1; i >= 0; i--) {
+    if (groups[i].isCurrentTask && !groups[i].finalResult) return groups[i].id
   }
-  for (let g = agentTaskGroups.value.length - 1; g >= 0; g--) {
-    const steps = agentTaskGroups.value[g].steps || []
-    if (steps.length === 0) continue
-    return formatProcessFoldCaption(describeLiveProcess(steps), peekFoldSay.value)
-  }
-  return ''
+  return isAgentRunning.value ? groups[groups.length - 1]?.id : undefined
 })
 
 const peekSpoken = computed(() => {
-  for (let g = agentTaskGroups.value.length - 1; g >= 0; g--) {
-    const spoken = lastSpokenBody(agentTaskGroups.value[g].steps || [])
-    if (spoken) return spoken
-  }
-  return ''
+  const groups = agentTaskGroups.value
+  if (groups.length === 0) return ''
+  return lastSpokenBody(groups[groups.length - 1].steps || [])
+})
+
+const peekExpanded = ref(false)
+function isPeekProcessItem(item: VirtualItem, groupId: string): boolean {
+  if (item.group?.id !== groupId) return false
+  if (item.type === 'folded_turn') return !!item.fold
+  if (item.type !== 'step' || !item.step) return false
+  if (isPeekNeedsYouItem(item)) return false
+  if (item.part === 'body') return false
+  const stepType = item.step.type
+  return stepType === 'thinking' || stepType === 'tool_call' || stepType === 'tool_result' || item.part === 'thinking'
+}
+
+const peekProcessView = computed(() => {
+  const groupId = peekRunGroupId.value
+  const group = groupId
+    ? agentTaskGroups.value.find(g => g.id === groupId)
+    : undefined
+  const items = groupId
+    ? flattenedItems.value.filter(item => isPeekProcessItem(item, groupId))
+    : []
+  return buildPeekProcessView({
+    isRunning: isAgentRunning.value,
+    steps: group?.steps || [],
+    items,
+  })
+})
+
+const peekProcessFold = computed(() => peekProcessView.value.liveFold)
+
+const peekLiveText = computed(() => {
+  const liveFold = peekProcessFold.value?.fold
+  if (liveFold) return formatProcessFoldCaption(liveFold, peekFoldSay.value)
+  const steps = peekProcessView.value.liveSteps
+  if (steps.length === 0) return ''
+  return formatProcessFoldCaption(describeLiveProcess(steps), peekFoldSay.value)
 })
 
 const focusPeek = computed(() => resolveFocusPeek({
@@ -2162,14 +2193,75 @@ const focusPeek = computed(() => resolveFocusPeek({
   spoken: peekSpoken.value,
 }))
 
-const peekExpanded = ref(false)
-watch(focusPeek, () => { peekExpanded.value = false })
-
 const displayItems = computed(() => {
   if (!props.peek) return flattenedItems.value
-  if (!peekNeedsYou.value) return []
-  return flattenedItems.value.filter(isPeekNeedsYouItem)
+  if (peekNeedsYou.value) return flattenedItems.value.filter(isPeekNeedsYouItem)
+  return []
 })
+
+const peekAskItems = computed(() =>
+  displayItems.value.filter(item => item.type === 'step')
+)
+
+const peekSurface = computed(() => resolvePeekOverlay({
+  needsYou: peekNeedsYou.value,
+  needsYouCount: props.peek
+    ? countPeekNeedsYou({
+        interactiveAskCount: peekAskItems.value.length,
+        hasConfirm: !!pendingConfirm.value,
+        hasSecure: !!pendingSecureInput.value,
+      })
+    : 0,
+  processCount: peekProcessView.value.items.length,
+  isRunning: isAgentRunning.value,
+  liveText: peekLiveText.value,
+  spoken: peekSpoken.value,
+}))
+watch(
+  () => props.peek && peekSurface.value === 'spoken',
+  (shown) => { if (!shown) peekExpanded.value = false },
+)
+
+const peekFallbackFold = computed((): ProcessFoldView => {
+  const groupId = peekRunGroupId.value
+  const steps = peekProcessView.value.liveSteps
+  const view = describeLiveProcess(steps)
+  return {
+    id: `peek-live-${groupId || 'run'}-${steps[0]?.id || 'start'}`,
+    counts: view.counts,
+    live: true,
+    liveText: view.liveText,
+    liveAction: view.liveAction,
+    liveColleagueCount: view.liveColleagueCount,
+    thinkingOnly: view.thinkingOnly,
+    waitingHint: false,
+    startedAt: steps[0]?.timestamp,
+    stepIds: [],
+  }
+})
+
+const peekFallbackChildren = computed(() => {
+  const groupId = peekRunGroupId.value
+  const group = groupId
+    ? agentTaskGroups.value.find(g => g.id === groupId)
+    : undefined
+  if (!group) return []
+  return peekProcessView.value.expandSteps.map((step, i) => ({
+    id: `peek-step-${step.id}`,
+    type: 'step' as const,
+    step,
+    group,
+    size: 40,
+    isFirstStep: i === 0,
+  }))
+})
+
+const peekFallbackOpen = ref(false)
+watch(() => peekFallbackFold.value.id, (id, prev) => {
+  if (id !== prev) peekFallbackOpen.value = false
+})
+
+const peekProcessChildren = computed(() => peekFallbackChildren.value)
 
 defineExpose({ analyzeText, addQuotedTerminalSelection, addComposerQuote, addComposerImage, setComposerDraft, submitComposerMessage, scrollToAgentStep })
 
@@ -2485,7 +2577,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </div>
 
       <!-- 消息列表（虚拟滚动） -->
-      <div v-show="!peek || peekNeedsYou" class="ai-messages-wrapper">
+      <div v-show="!peek" class="ai-messages-wrapper">
         <div
           ref="messagesRef"
           class="ai-messages"
@@ -2823,6 +2915,88 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                 </div>
               </div>
           </DefineStepRow>
+          <DefineConfirmRow>
+            <div v-if="pendingConfirm" class="agent-step-virtual">
+              <div class="agent-confirm-inline" :class="getRiskClass(pendingConfirm.riskLevel)">
+                <div class="confirm-header-inline">
+                  <span class="confirm-icon">{{ pendingConfirm.riskLevel === 'dangerous' ? '🔴' : (pendingConfirm.riskLevel === 'moderate' ? '🟡' : '🟢') }}</span>
+                  <span class="confirm-title">{{ t('ai.needConfirm') }}</span>
+                  <span class="confirm-risk-badge" :class="getRiskClass(pendingConfirm.riskLevel)">
+                    {{ pendingConfirm.riskLevel === 'dangerous' ? t('ai.highRisk') : (pendingConfirm.riskLevel === 'moderate' ? t('ai.mediumRisk') : t('ai.lowRisk')) }}
+                  </span>
+                </div>
+                <div class="confirm-detail">
+                  <div class="confirm-tool-name">{{ pendingConfirm.displayName || getToolDisplayName(pendingConfirm.toolName) }}</div>
+                  <pre class="confirm-args-inline">{{ formatConfirmArgs(pendingConfirm) }}</pre>
+                  <div v-if="pendingConfirm.reasons && pendingConfirm.reasons.length > 0" class="confirm-reasons">
+                    <div class="confirm-reasons-title">{{ t('ai.riskReasons') }}</div>
+                    <ul class="confirm-reasons-list">
+                      <li v-for="(reason, idx) in pendingConfirm.reasons" :key="idx">{{ reason }}</li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="confirm-actions-inline">
+                  <button class="btn btn-sm btn-outline-secondary" @click="confirmToolCall(false)">
+                    {{ t('ai.reject') }}
+                  </button>
+                  <button
+                    v-if="pendingConfirm.trustCommandOffer"
+                    class="btn btn-sm"
+                    :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-outline-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-outline-warning' : 'btn-outline-success')"
+                    :title="t('ai.trustCommandHint', { cmd: pendingConfirm.trustCommandOffer.cmd })"
+                    @click="confirmTrustCommandAndAllow"
+                  >
+                    {{ t('ai.trustCommand') }}
+                    <span class="trust-cmd-tag">{{ pendingConfirm.trustCommandOffer.cmd }}</span>
+                  </button>
+                  <button
+                    class="btn btn-sm"
+                    :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-warning' : 'btn-success')"
+                    @click="confirmToolCall(true)"
+                  >
+                    {{ t('ai.allowExecute') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </DefineConfirmRow>
+          <DefineSecureRow>
+            <div v-if="pendingSecureInput" class="agent-step-virtual">
+              <div class="agent-secure-input-inline">
+                <div class="secure-input-header">
+                  <span class="secure-input-icon">🔑</span>
+                  <span class="secure-input-title">{{ t('ai.secureInputTitle') }}</span>
+                </div>
+                <div class="secure-input-prompt">{{ pendingSecureInput.prompt }}</div>
+                <div class="secure-input-body">
+                  <input
+                    type="password"
+                    class="secure-input-field"
+                    v-model="secureInputValue"
+                    :ref="(el) => { if (el) (el as HTMLInputElement).focus() }"
+                    :placeholder="t('ai.secureInputPlaceholder')"
+                    @keyup.enter="submitSecureInput(secureInputValue); secureInputValue = ''"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                  />
+                </div>
+                <div class="secure-input-actions">
+                  <button class="btn btn-sm btn-outline-secondary" @click="cancelSecureInput(); secureInputValue = ''">
+                    {{ t('ai.cancel') }}
+                  </button>
+                  <button
+                    class="btn btn-sm btn-primary"
+                    :disabled="!secureInputValue.trim()"
+                    @click="submitSecureInput(secureInputValue); secureInputValue = ''"
+                  >
+                    {{ t('ai.confirm') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </DefineSecureRow>
 
           <Virtualizer
             ref="virtuaRef"
@@ -2950,87 +3124,8 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
                 </div>
               </div>
 
-              <!-- 确认对话框 -->
-              <div v-else-if="item.type === 'confirm' && pendingConfirm" class="agent-step-virtual">
-                <div class="agent-confirm-inline" :class="getRiskClass(pendingConfirm.riskLevel)">
-                  <div class="confirm-header-inline">
-                    <span class="confirm-icon">{{ pendingConfirm.riskLevel === 'dangerous' ? '🔴' : (pendingConfirm.riskLevel === 'moderate' ? '🟡' : '🟢') }}</span>
-                    <span class="confirm-title">{{ t('ai.needConfirm') }}</span>
-                    <span class="confirm-risk-badge" :class="getRiskClass(pendingConfirm.riskLevel)">
-                      {{ pendingConfirm.riskLevel === 'dangerous' ? t('ai.highRisk') : (pendingConfirm.riskLevel === 'moderate' ? t('ai.mediumRisk') : t('ai.lowRisk')) }}
-                    </span>
-                  </div>
-                  <div class="confirm-detail">
-                    <div class="confirm-tool-name">{{ pendingConfirm.displayName || getToolDisplayName(pendingConfirm.toolName) }}</div>
-                    <pre class="confirm-args-inline">{{ formatConfirmArgs(pendingConfirm) }}</pre>
-                    <div v-if="pendingConfirm.reasons && pendingConfirm.reasons.length > 0" class="confirm-reasons">
-                      <div class="confirm-reasons-title">{{ t('ai.riskReasons') }}</div>
-                      <ul class="confirm-reasons-list">
-                        <li v-for="(reason, idx) in pendingConfirm.reasons" :key="idx">{{ reason }}</li>
-                      </ul>
-                    </div>
-                  </div>
-                  <div class="confirm-actions-inline">
-                    <button class="btn btn-sm btn-outline-secondary" @click="confirmToolCall(false)">
-                      {{ t('ai.reject') }}
-                    </button>
-                    <button
-                      v-if="pendingConfirm.trustCommandOffer"
-                      class="btn btn-sm"
-                      :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-outline-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-outline-warning' : 'btn-outline-success')"
-                      :title="t('ai.trustCommandHint', { cmd: pendingConfirm.trustCommandOffer.cmd })"
-                      @click="confirmTrustCommandAndAllow"
-                    >
-                      {{ t('ai.trustCommand') }}
-                      <span class="trust-cmd-tag">{{ pendingConfirm.trustCommandOffer.cmd }}</span>
-                    </button>
-                    <button 
-                      class="btn btn-sm" 
-                      :class="pendingConfirm.riskLevel === 'dangerous' ? 'btn-danger' : (pendingConfirm.riskLevel === 'moderate' ? 'btn-warning' : 'btn-success')"
-                      @click="confirmToolCall(true)"
-                    >
-                      {{ t('ai.allowExecute') }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 安全输入框（API Key 等，内容不经过 LLM） -->
-              <div v-else-if="item.type === 'waiting_input' && pendingSecureInput" class="agent-step-virtual">
-                <div class="agent-secure-input-inline">
-                  <div class="secure-input-header">
-                    <span class="secure-input-icon">🔑</span>
-                    <span class="secure-input-title">{{ t('ai.secureInputTitle') }}</span>
-                  </div>
-                  <div class="secure-input-prompt">{{ pendingSecureInput.prompt }}</div>
-                  <div class="secure-input-body">
-                    <input
-                      type="password"
-                      class="secure-input-field"
-                      v-model="secureInputValue"
-                      :ref="(el) => { if (el) (el as HTMLInputElement).focus() }"
-                      :placeholder="t('ai.secureInputPlaceholder')"
-                      @keyup.enter="submitSecureInput(secureInputValue); secureInputValue = ''"
-                      autocomplete="off"
-                      autocorrect="off"
-                      autocapitalize="off"
-                      spellcheck="false"
-                    />
-                  </div>
-                  <div class="secure-input-actions">
-                    <button class="btn btn-sm btn-outline-secondary" @click="cancelSecureInput(); secureInputValue = ''">
-                      {{ t('ai.cancel') }}
-                    </button>
-                    <button
-                      class="btn btn-sm btn-primary"
-                      :disabled="!secureInputValue.trim()"
-                      @click="submitSecureInput(secureInputValue); secureInputValue = ''"
-                    >
-                      {{ t('ai.confirm') }}
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <ReuseConfirmRow v-else-if="item.type === 'confirm' && pendingConfirm" />
+              <ReuseSecureRow v-else-if="item.type === 'waiting_input' && pendingSecureInput" />
 
             
               </div>
@@ -3047,27 +3142,52 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
       </div>
 
 
+      <div v-if="peek && peekSurface === 'needs-you'" class="ai-peek-needs-you">
+        <ReuseConfirmRow v-if="pendingConfirm" />
+        <ReuseSecureRow v-if="pendingSecureInput" />
+        <ReuseStepRow
+          v-for="item in peekAskItems"
+          :key="item.id"
+          :item="item"
+        />
+      </div>
+      <div v-else-if="peek && peekSurface === 'process'" class="ai-peek-process">
+        <ProcessTurnFold
+          v-if="peekProcessFold?.fold"
+          :fold="peekProcessFold.fold"
+          :expanded="peekProcessFold.expanded"
+          @toggle="peekProcessFold.fold?.id && toggleProcessFold(peekProcessFold.fold.id)"
+        >
+          <ReuseStepRow
+            v-for="child in peekProcessChildren"
+            :key="child.id"
+            :item="child"
+          />
+        </ProcessTurnFold>
+        <ProcessTurnFold
+          v-else
+          :fold="peekFallbackFold"
+          :expanded="peekFallbackOpen"
+          @toggle="peekFallbackOpen = !peekFallbackOpen"
+        >
+          <ReuseStepRow
+            v-for="child in peekFallbackChildren"
+            :key="child.id"
+            :item="child"
+          />
+        </ProcessTurnFold>
+      </div>
       <button
-        v-if="peek && focusPeek.kind !== 'none'"
+        v-else-if="peek && peekSurface === 'spoken'"
         type="button"
         class="ai-peek-card"
-        :class="{
-          'is-busy': focusPeek.kind === 'busy',
-          'is-expanded': peekExpanded
-        }"
+        :class="{ 'is-expanded': peekExpanded }"
         @click="peekExpanded = !peekExpanded"
       >
-        <span v-if="focusPeek.kind === 'busy'" class="ai-peek-spinner" aria-hidden="true" />
         <span
-          v-if="peekExpanded && focusPeek.kind === 'spoken'"
-          class="ai-peek-text markdown-content"
-          v-html="renderMarkdown(focusPeek.text)"
-        />
-        <span
-          v-else
           class="ai-peek-text"
           :class="{ 'is-clamped': !peekExpanded }"
-        >{{ focusPeek.text || (focusPeek.kind === 'busy' ? t('ai.processFold.working') : '') }}</span>
+        >{{ focusPeek.text }}</span>
       </button>
 
       <AiComposer
@@ -3241,26 +3361,19 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 .ai-panel.is-peek {
   height: auto;
   background: transparent;
-  pointer-events: none;
-}
-
-.ai-panel.is-peek > * {
   pointer-events: auto;
 }
 
-.ai-panel.is-peek .ai-messages-wrapper {
+.ai-peek-needs-you {
   width: min(800px, 100%);
-  max-height: 40vh;
+  max-height: min(50vh, 420px);
   margin: 0 auto 8px;
+  padding: 10px 12px;
   overflow: auto;
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--bg-secondary, rgba(30, 30, 30, 0.94));
   box-shadow: 0 10px 36px rgba(0, 0, 0, 0.28);
-}
-
-.ai-panel.is-peek-needs-you .ai-messages-wrapper {
-  max-height: min(50vh, 420px);
 }
 
 .ai-panel.is-peek .error-alert,
@@ -3269,16 +3382,40 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   margin: 0 auto 8px;
 }
 
+.ai-peek-process {
+  position: relative;
+  z-index: 6;
+  width: min(560px, 100%);
+  max-height: 40vh;
+  margin: 0 auto 8px;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--bg-secondary, rgba(30, 30, 30, 0.92));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+
+.ai-peek-process :deep(.process-fold__label) {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.ai-peek-process :deep(.process-fold__label.is-waiting-hint) {
+  background: none;
+  animation: none;
+  -webkit-background-clip: unset;
+  background-clip: unset;
+  -webkit-text-fill-color: var(--text-primary);
+}
+
 .ai-peek-card {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 12px);
-  transform: translateX(-50%);
+  position: relative;
   z-index: 6;
   display: flex;
   align-items: center;
   gap: 8px;
-  width: min(560px, calc(100% - 32px));
+  width: min(560px, 100%);
+  margin: 0 auto 8px;
   padding: 10px 12px;
   border: none;
   border-radius: 10px;
@@ -3290,6 +3427,10 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   line-height: 1.5;
   text-align: left;
   cursor: pointer;
+}
+
+.ai-peek-card.is-expanded {
+  align-items: flex-start;
 }
 
 .ai-peek-text {
@@ -3304,6 +3445,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 }
 
 .ai-peek-card.is-expanded .ai-peek-text {
+  white-space: pre-wrap;
   max-height: 40vh;
   overflow: auto;
 }
@@ -3312,7 +3454,6 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
   flex: 0 0 auto;
   width: 12px;
   height: 12px;
-  margin-top: 3px;
   border: 1.5px solid var(--text-secondary, #aaa);
   border-top-color: transparent;
   border-radius: 50%;
