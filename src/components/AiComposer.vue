@@ -91,6 +91,8 @@ const props = defineProps<{
   consumeWorkbenchContext?: () => import('@shared/types').WorkbenchContext | undefined
   /** 嵌入欢迎页等非面板场景：去掉顶部分割线，使用独立圆角容器 */
   embedded?: boolean
+  /** 文档铺满：同一套输入，换成浮在文档上的薄胶囊 */
+  overlay?: boolean
   /** 覆盖默认 placeholder（如欢迎页传入随机值） */
   placeholder?: string
   /** 覆盖默认随机池 i18n 键（默认 ai.inputPlaceholderPools） */
@@ -1202,7 +1204,7 @@ const handleSend = async (opts?: { enqueue?: boolean }) => {
 }
 
 const slots = useSlots()
-const isTwoRow = computed(() => !!slots['footer-left'])
+const isTwoRow = computed(() => !props.overlay && !!slots['footer-left'])
 
 function formatLiveTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}M`
@@ -1303,7 +1305,9 @@ const handleSendClick = (event: MouseEvent) => {
     class="composer-root"
     :class="{
       'composer-root-embedded': embedded,
-      'composer-root-embedded-filled': embedded && hasComposerAttachments
+      'composer-root-embedded-filled': embedded && hasComposerAttachments,
+      'composer-root-overlay': overlay,
+      'composer-root-overlay-filled': overlay && hasComposerAttachments
     }"
   >
   <div v-if="uploadedDocs.length > 0 || activeParsingDocs.length > 0" class="uploaded-docs">
@@ -1448,9 +1452,9 @@ const handleSendClick = (event: MouseEvent) => {
     </button>
   </div>
 
-  <div class="ai-input" :class="{ 'ai-input-embedded': embedded, 'ai-input-editing-follow-up': isEditingFollowUp }">
+  <div class="ai-input" :class="{ 'ai-input-embedded': embedded, 'ai-input-overlay': overlay, 'ai-input-editing-follow-up': isEditingFollowUp }">
     <div
-      v-if="contextStats.tokenEstimate > 0"
+      v-if="!overlay && contextStats.tokenEstimate > 0"
       ref="contextMiniEl"
       class="context-mini"
       @mouseenter="onContextMiniEnter"
@@ -1551,7 +1555,7 @@ const handleSendClick = (event: MouseEvent) => {
       @mousedown="onComposerSurfaceMouseDown"
     >
       <div
-        v-if="hasActiveSkillChips"
+        v-if="!overlay && hasActiveSkillChips"
         class="composer-skill-chips"
         :class="{ 'is-dragging': skillChipsDragging, 'is-empowering': justAddedSkillIds.length > 0 }"
         :aria-label="t('ai.conversationSkills')"
@@ -1606,7 +1610,7 @@ const handleSendClick = (event: MouseEvent) => {
         </div>
       </div>
       <button
-        v-if="!isTwoRow && showInlineSkillPicker"
+        v-if="!overlay && !isTwoRow && showInlineSkillPicker"
         type="button"
         class="upload-btn composer-skill-picker-btn"
         :class="{ 'is-open': skillMenuStandalone }"
@@ -1618,7 +1622,7 @@ const handleSendClick = (event: MouseEvent) => {
         <Sparkles :size="14" :stroke-width="1.75" />
       </button>
       <button
-        v-if="!isTwoRow"
+        v-if="!overlay && !isTwoRow"
         class="upload-btn"
         :disabled="isAttaching"
         :title="t('ai.attach')"
@@ -1808,7 +1812,7 @@ const handleSendClick = (event: MouseEvent) => {
         <slot name="inner-right" />
 
         <button
-          v-if="voiceInputEnabled && (!isLoading || isAgentRunning)"
+          v-if="!overlay && voiceInputEnabled && (!isLoading || isAgentRunning)"
           class="voice-btn"
           :class="{ recording: isRecording, transcribing: isTranscribing, ptt: isPushToTalk, unavailable: !audioAvailable }"
           :disabled="!audioAvailable || isTranscribing || isSpeechInitializing"
@@ -2847,8 +2851,60 @@ const handleSendClick = (event: MouseEvent) => {
 }
 
 /* embedded：空态仅保留内层 input-container；有附件时由 composer-root 统一外框 */
-.composer-root:not(.composer-root-embedded) {
+.composer-root:not(.composer-root-embedded):not(.composer-root-overlay) {
   display: contents;
+}
+
+.composer-root.composer-root-overlay {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  margin: 0 auto;
+}
+
+.composer-root-overlay-filled {
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: var(--bg-secondary);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.composer-root-overlay-filled .uploaded-docs,
+.composer-root-overlay-filled .composer-quote-snips,
+.composer-root-overlay-filled .follow-up-queue,
+.composer-root-overlay-filled .follow-up-edit-banner {
+  border-top: none;
+  background: transparent;
+}
+
+.ai-input.ai-input-overlay {
+  padding: 0;
+  gap: 6px;
+  border-top: none;
+  background: transparent;
+}
+
+.composer-root-overlay:not(.composer-root-overlay-filled) .input-container {
+  padding: 6px 8px 6px 12px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.composer-root-overlay .input-container-two-row {
+  padding: 6px 8px 7px;
+}
+
+.composer-root-overlay .input-bottom-bar {
+  margin-top: 2px;
+}
+
+.composer-root-overlay-filled .ai-input-overlay {
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.composer-root-overlay-filled .input-container {
+  box-shadow: none;
 }
 
 .composer-root-embedded-filled {

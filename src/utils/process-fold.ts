@@ -295,6 +295,30 @@ export function extractProgressLine(steps: ReadonlyArray<ProcessStepLike>): stri
   return extractLiveCaption(steps)?.text
 }
 
+/** 铺满浮层和折叠行共用：这一刻它在忙什么，不另写摘要。 */
+export interface LiveProcessView {
+  liveText?: string
+  liveAction?: ActionKind
+  liveColleagueCount?: number
+  thinkingOnly: boolean
+  counts: Partial<Record<ActionKind, number>>
+}
+
+export function describeLiveProcess(steps: ReadonlyArray<ProcessStepLike>): LiveProcessView {
+  const caption = extractLiveCaption(steps)
+  const counts = countActions(steps)
+  const colleagueCount = steps.reduce((n, step) => n + liveColleagueCountOf(step), 0)
+  return {
+    liveText: caption?.text,
+    liveAction: pendingAction(steps),
+    liveColleagueCount: colleagueCount > 0 ? colleagueCount : undefined,
+    thinkingOnly:
+      Object.keys(counts).length === 0 &&
+      steps.every(step => step.type === 'message' || step.type === 'thinking'),
+    counts,
+  }
+}
+
 /** 跑着的时候手上这件事属于哪一类动作 */
 function pendingAction(steps: ReadonlyArray<ProcessStepLike>): ActionKind | undefined {
   for (let i = steps.length - 1; i >= 0; i--) {

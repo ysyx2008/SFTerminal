@@ -22,6 +22,8 @@ import ProcessTurnFold from './ProcessTurnFold.vue'
 import { createReusableTemplate } from '../utils/reusable-template'
 import { hasSpokenBody } from '../utils/process-fold'
 import { lastSpokenBody, resolveFocusPeek } from '../utils/focus-peek'
+import { describeLiveProcess } from '../utils/process-fold'
+import { formatProcessFoldCaption, type ProcessFoldSay } from '../utils/process-fold-label'
 import ToolCallContent from './ToolCallContent.vue'
 import ImageContextMenu from './ImageContextMenu.vue'
 import AttachmentContextMenu from './AttachmentContextMenu.vue'
@@ -2120,12 +2122,27 @@ const peekNeedsYou = computed(() => {
   return flattenedItems.value.some(isPeekNeedsYouItem)
 })
 
+const peekFoldSay = computed<ProcessFoldSay>(() => ({
+  working: t('ai.processFold.working'),
+  thinking: t('ai.processFold.thinking'),
+  thought: t('ai.processFold.thought'),
+  colleagues: n => t('ai.processFold.colleagues', { n }),
+  doing: kind => t(`ai.processFold.doing.${kind}`),
+  counted: (kind, n) => t(`ai.processFold.${kind}`, { n }),
+  sep: t('ai.processFold.sep'),
+}))
+
 const peekLiveText = computed(() => {
   for (let i = flattenedItems.value.length - 1; i >= 0; i--) {
-    const item = flattenedItems.value[i]
-    if (item.type === 'folded_turn' && item.fold?.live && item.fold.liveText) {
-      return item.fold.liveText
+    const fold = flattenedItems.value[i].fold
+    if (flattenedItems.value[i].type === 'folded_turn' && fold?.live) {
+      return formatProcessFoldCaption(fold, peekFoldSay.value)
     }
+  }
+  for (let g = agentTaskGroups.value.length - 1; g >= 0; g--) {
+    const steps = agentTaskGroups.value[g].steps || []
+    if (steps.length === 0) continue
+    return formatProcessFoldCaption(describeLiveProcess(steps), peekFoldSay.value)
   }
   return ''
 })
@@ -3096,6 +3113,7 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
         :reorder-follow-up="reorderFollowUp"
         :clear-tab-error="clearTabError"
         :consume-workbench-context="props.consumeWorkbenchContext"
+        :overlay="peek"
       >
         <template #footer-left>
           <AiProfileSelect
@@ -3222,14 +3240,33 @@ watch(() => props.tabId, async (newTabId, oldTabId) => {
 
 .ai-panel.is-peek {
   height: auto;
+  background: transparent;
+  pointer-events: none;
+}
+
+.ai-panel.is-peek > * {
+  pointer-events: auto;
 }
 
 .ai-panel.is-peek .ai-messages-wrapper {
+  width: min(800px, 100%);
   max-height: 40vh;
+  margin: 0 auto 8px;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-secondary, rgba(30, 30, 30, 0.94));
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.28);
 }
 
 .ai-panel.is-peek-needs-you .ai-messages-wrapper {
-  max-height: none;
+  max-height: min(50vh, 420px);
+}
+
+.ai-panel.is-peek .error-alert,
+.ai-panel.is-peek .selection-alert {
+  width: min(800px, 100%);
+  margin: 0 auto 8px;
 }
 
 .ai-peek-card {

@@ -598,6 +598,7 @@ defineExpose({
 }
 
 .assistant-focus-stage {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -615,12 +616,15 @@ defineExpose({
 }
 
 .assistant-focus-chat {
-  flex: 0 0 auto;
-  min-width: 0;
-  position: relative;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 4;
+  min-width: 0;
+  padding: 0 24px 10px;
   overflow: visible;
-  border-top: 1px solid var(--border-color);
+  pointer-events: none;
 }
 
 .assistant-workbench.is-artifact-focus {
@@ -641,6 +645,9 @@ defineExpose({
 
 .assistant-focus-chat > .assistant-chat {
   height: auto;
+  flex: none;
+  min-height: 0;
+  pointer-events: none;
 }
 
 .stage-resizer {

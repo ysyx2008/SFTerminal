@@ -2,7 +2,8 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronRight } from 'lucide-vue-next'
-import { ACTION_KIND_ORDER, type ActionKind, type ProcessFoldView } from '../utils/process-fold'
+import { type ProcessFoldView } from '../utils/process-fold'
+import { processFoldActionLine, processFoldLiveCaption, type ProcessFoldSay } from '../utils/process-fold-label'
 
 const props = defineProps<{
   fold: ProcessFoldView
@@ -88,27 +89,29 @@ onUnmounted(() => {
   stopSwapping()
 })
 
-const actionLine = computed(() => {
-  const parts: string[] = []
-  for (const kind of ACTION_KIND_ORDER) {
-    const n = props.fold.counts[kind as ActionKind] || 0
-    if (n > 0) parts.push(t(`ai.processFold.${kind}`, { n }))
-  }
-  return parts.join(t('ai.processFold.sep'))
-})
+const foldSay = computed<ProcessFoldSay>(() => ({
+  working: t('ai.processFold.working'),
+  thinking: t('ai.processFold.thinking'),
+  thought: t('ai.processFold.thought'),
+  colleagues: n => t('ai.processFold.colleagues', { n }),
+  doing: kind => t(`ai.processFold.doing.${kind}`),
+  counted: (kind, n) => t(`ai.processFold.${kind}`, { n }),
+  sep: t('ai.processFold.sep'),
+}))
+
+const actionLine = computed(() => processFoldActionLine(props.fold.counts, foldSay.value))
 
 /** 跑着时说它在忙什么，做完说做了什么；没动手只想了想就照实说 */
-const label = computed(() => {
-  const idle = props.fold.thinkingOnly ? t('ai.processFold.thought') : t('ai.processFold.working')
-  if (!props.fold.live) return actionLine.value || idle
-  if (shownLiveText.value) return shownLiveText.value
-  if (props.fold.liveColleagueCount) return t('ai.processFold.colleagues', { n: props.fold.liveColleagueCount })
-  if (props.fold.liveAction) return t(`ai.processFold.doing.${props.fold.liveAction}`)
-  return props.fold.thinkingOnly ? t('ai.processFold.thinking') : t('ai.processFold.working')
+const caption = computed(() => {
+  if (!props.fold.live) {
+    const idle = props.fold.thinkingOnly ? foldSay.value.thought : foldSay.value.working
+    return { label: actionLine.value || idle, trailing: '' }
+  }
+  return processFoldLiveCaption(props.fold, foldSay.value, shownLiveText.value)
 })
 
-/** 做完之后才把「共做了什么」补在忙碌描述后面，跑着时那行已经够长 */
-const trailing = computed(() => (props.fold.live && actionLine.value ? actionLine.value : ''))
+const label = computed(() => caption.value.label)
+const trailing = computed(() => caption.value.trailing)
 
 const elapsedMs = computed(() => {
   if (!props.fold.live) return props.fold.durationMs || 0

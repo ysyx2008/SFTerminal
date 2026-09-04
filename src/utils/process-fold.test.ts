@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   countActions,
+  describeLiveProcess,
   extractProgressLine,
   foldProcessSteps,
   isPinnedProcessStep,
@@ -354,5 +355,24 @@ describe('foldProcessSteps', () => {
     expect(foldProcessSteps(steps, { enabled: false })).toEqual([
       { kind: 'open', steps: steps.map(step => ({ step, part: 'full' })) },
     ])
+  })
+})
+
+describe('describeLiveProcess', () => {
+  it('uses the last settled thinking line', () => {
+    const view = describeLiveProcess([
+      thinkingMessage('m1', '先列提纲。\n再改第三章。'),
+    ])
+    expect(view.liveText).toBe('再改第三章')
+    expect(view.thinkingOnly).toBe(true)
+  })
+
+  it('falls back to the current tool kind when there is no thinking yet', () => {
+    const view = describeLiveProcess([
+      step({ id: 't1', type: 'tool_call', toolName: 'read_file', success: undefined }),
+    ])
+    expect(view.liveText).toBeUndefined()
+    expect(view.liveAction).toBe('read')
+    expect(view.counts.read).toBe(1)
   })
 })
