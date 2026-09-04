@@ -55,6 +55,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <Teleport to="body">
   <div class="credential-overlay">
     <div class="credential-dialog">
       <h3>{{ t('session.credentialDialog.title') }}</h3>
@@ -93,6 +94,7 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

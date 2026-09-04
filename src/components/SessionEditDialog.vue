@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
 import { useConfigStore, type SshSession, type SshEncoding, type JumpHostConfig } from '../stores/config'
@@ -99,10 +99,20 @@ const onJumpHostModeChange = (mode: JumpHostMode) => {
 
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
+    e.preventDefault()
+    e.stopPropagation()
     e.stopImmediatePropagation()
     emit('close')
   }
 }
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown, true)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown, true)
+})
 
 const saveSession = async () => {
   if (!formData.value.name?.trim()) {
@@ -137,7 +147,8 @@ const saveSession = async () => {
 </script>
 
 <template>
-  <div class="modal-overlay" @keydown="handleKeydown">
+  <Teleport to="body">
+  <div class="modal-overlay">
     <div class="modal session-modal">
       <div class="modal-header">
         <h3>{{ session ? t('session.editHost') : t('session.newHost') }}</h3>
@@ -270,6 +281,7 @@ const saveSession = async () => {
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

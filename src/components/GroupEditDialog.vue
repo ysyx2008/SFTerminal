@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
 import type { SessionGroup, JumpHostConfig } from '../stores/config'
@@ -44,10 +44,20 @@ watch(() => props.group, (group) => {
 
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
+    e.preventDefault()
+    e.stopPropagation()
     e.stopImmediatePropagation()
     emit('close')
   }
 }
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown, true)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown, true)
+})
 
 const toggleJumpHost = (enabled: boolean) => {
   if (enabled) {
@@ -90,7 +100,8 @@ const deleteGroup = () => {
 </script>
 
 <template>
-  <div class="modal-overlay" @keydown="handleKeydown">
+  <Teleport to="body">
+  <div class="modal-overlay">
     <div class="modal session-modal">
       <div class="modal-header">
         <h3>{{ group ? t('session.editGroup') : (formData.name ? t('session.configGroup') : t('session.newGroup')) }}</h3>
@@ -165,6 +176,7 @@ const deleteGroup = () => {
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

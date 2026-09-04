@@ -318,7 +318,7 @@ const handleGlobalKeydown = (event: KeyboardEvent) => {
 
   // 侧栏 ESC 关闭需让路给上层模态（如主机凭证弹窗），否则会与全局 listener 顺序叠加导致侧栏被误关
   if (event.key === 'Escape' && showSidebar.value) {
-    if (document.querySelector('.credential-overlay')) return
+    if (document.querySelector('.credential-overlay, .session-modal')) return
     // 待办面自己分层处理 ESC（菜单 → 详情 → 离开），不要抢先关主机侧栏
     if (terminalStore.todosActive) return
     showSidebar.value = false
