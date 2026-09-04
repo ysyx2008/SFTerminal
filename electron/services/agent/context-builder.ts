@@ -9,14 +9,6 @@ import type { TaskMemoryStore } from './task-memory'
 // token 估算共享纯函数(与 ContextWindowManager 共用同一实现,消除逐字节重复)
 import { estimateTextTokens as estimateTokens } from './token-estimate'
 
-/**
- * 格式化任务时间戳（对齐 AI 消息包体中的时间格式，如文件列表/待办截止时间）。
- * 使用 new Date(ts).toLocaleString() 默认输出，含年月日时分秒。
- */
-function formatTaskTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleString()
-}
-
 // ==================== 类型定义 ====================
 
 /** 真相源在 types.ts；此处 re-export 保持既有引用路径可用 */
@@ -41,9 +33,9 @@ export interface ContextBudget {
  */
 export interface TaskWithLevel {
   taskId: string
-  level: CompressionLevel    // 实际使用的压缩级别
+  level: CompressionLevel    // 同一场装配固定为 0；唤醒 summaryOnly 记在 level4Count
   tokens: number             // 实际占用的 tokens
-  content: AiMessage[] | string  // Level 0-2 返回消息数组，Level 3-4 返回字符串
+  content: AiMessage[] | string
   userRequest: string        // 用户原始请求（用于显示）
   status: 'success' | 'failed' | 'aborted' | 'pending_confirmation'
 }
@@ -52,9 +44,9 @@ export interface TaskWithLevel {
  * 上下文构建结果
  */
 export interface ContextBuildResult {
-  // Level 0-2 的任务，作为消息注入
+  // 同一场原文（或单条过长后单独收过的原文）
   recentTaskMessages: AiMessage[]
-  // Level 3-4 的任务，作为摘要/总结写入系统提示
+  // 仅唤醒 summaryOnly：一句话概要
   taskSummarySection: string
   // 所有可用任务的ID列表（用于 recall 工具）
   availableTaskIds: Array<{ id: string; summary: string }>
@@ -85,18 +77,20 @@ export interface ContextBuildResult {
  * 的调用方（如单测）使用。
  */
 export function calculateBudget(contextLength: number, fixedPrefixTokens = 0): ContextBudget {
-  // 固定开销之外的可支配空间；再留 20% 给当前对话的工具调用等
+  // 扣掉固定开销后，再留本轮说话 + 写交接的空位；其余全部给这场历史。
+  // 大窗口用绝对上限，避免为了凑比例把历史克扣掉。
   const available = Math.max(0, contextLength - fixedPrefixTokens)
-  const total = Math.floor(available * 0.8)
+  const reserve = Math.min(Math.floor(available * 0.2), 32_000)
+  const history = Math.max(0, available - reserve)
 
   return {
-    total,
-    systemPrompt: 3000,                           // 固定约 3000 tokens
-    knowledge: Math.floor(total * 0.15),          // 15% 给知识库
-    recentTasks: Math.floor(total * 0.40),        // 40% 给最近任务（按预算填充）
-    nearTasks: Math.floor(total * 0.10),          // 10% 给较近任务摘要
-    historySummary: Math.floor(total * 0.05),     // 5% 给历史总结
-    currentConversation: Math.floor(total * 0.10) // 10% 预留给当前对话
+    total: history,
+    systemPrompt: 3000,
+    knowledge: 0,
+    recentTasks: history,
+    nearTasks: 0,
+    historySummary: 0,
+    currentConversation: reserve,
   }
 }
 
@@ -223,30 +217,6 @@ function compressToolOutput(output: string, maxLength: number = 1500): string {
   return output.substring(0, maxLength) + `\n... [已截断，原长度: ${output.length}]`
 }
 
-function parseToolCallArgs(raw: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>
-    }
-  } catch {
-    /* 参数不是 JSON 时只保留工具名 */
-  }
-  return undefined
-}
-
-function formatToolCallSummary(name: string | undefined, args?: Record<string, unknown>): string {
-  let summary = `[${name || 'unknown'}]`
-  const command = args?.command
-  const filePath = args?.path
-  if (typeof command === 'string') {
-    summary += ` ${command.length > 80 ? command.substring(0, 80) + '...' : command}`
-  } else if (typeof filePath === 'string') {
-    summary += ` ${filePath}`
-  }
-  return summary
-}
-
 /** 从对话消息里取最后一条有正文的助手回复（系统注入不计入） */
 function extractFinalReplyFromMessages(messages: AiMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -255,34 +225,6 @@ function extractFinalReplyFromMessages(messages: AiMessage[]): string {
     return msg.content
   }
   return ''
-}
-
-/**
- * 获取任务的最低压缩级别（特殊任务保护）
- * @param task 任务记忆
- * @param taskIndex 任务在时间顺序中的索引（0 = 最近一个任务）
- */
-function getMinCompressionLevel(task: TaskMemory, taskIndex: number): CompressionLevel {
-  // 最近 1 个任务：Level 0（完整对话），确保 AI 能理解上下文连续性
-  if (taskIndex === 0) return 0
-  
-  // 之后 2 个任务：Level 1（压缩对话），保留工具调用摘要
-  if (taskIndex <= 2) return 1
-  
-  // 之后 3 个任务：Level 2（精简对话），仅保留请求和回复
-  if (taskIndex <= 5) return 2
-  
-  // 等待确认的任务：至少保留 Level 2（用户请求 + AI 确认问题）
-  if (task.status === 'pending_confirmation') return 2
-  
-  // 被中止的任务：至少保留 Level 2（用户请求 + 中止原因）
-  if (task.status === 'aborted') return 2
-  
-  // 失败的任务：至少保留 Level 2（用户请求 + 错误信息）
-  if (task.status === 'failed') return 2
-  
-  // 更早的成功任务：降级为摘要，节省 token
-  return 4
 }
 
 /**
@@ -299,37 +241,29 @@ function extractFinalReply(steps: AgentStep[]): string {
   return ''
 }
 
-/**
- * 将任务转换为指定压缩级别的内容
- */
-function compressTask(
-  task: TaskMemory, 
-  level: CompressionLevel
-): AiMessage[] | string {
-  switch (level) {
-    case 0:
-      // Level 0: 完整对话
-      return getFullMessages(task)
-    
-    case 1:
-      // Level 1: 压缩工具输出
-      return getCompressedMessages(task)
-    
-    case 2:
-      // Level 2: 只保留用户请求和最终回复
-      return getSimplifiedMessages(task)
-    
-    case 3:
-      // Level 3: L2 摘要
-      return formatDigest(task)
-    
-    case 4:
-      // Level 4: L1 总结
-      return task.summary
-    
-    default:
-      return task.summary
+/** 同一场装配：原文 + 实际收场注记。历史图不整场重塞。 */
+function originalTaskMessages(task: TaskMemory): AiMessage[] {
+  return ensureQaFloor(getFullMessages(task), task)
+}
+
+function ensureQaFloor(messages: AiMessage[], task: TaskMemory): AiMessage[] {
+  const out = messages.length ? messages.map(m => ({ ...m })) : [qaUserMessage(task)]
+  const lastAsst = [...out].reverse().find(m => m.role === 'assistant' && !m._systemInjected)
+  const notes: string[] = []
+  if (task.status === 'aborted') notes.push('[任务已被用户中止]')
+  else if (task.status === 'failed') notes.push('[任务执行失败]')
+  else if (task.status === 'pending_confirmation') notes.push('[还在等待确认]')
+
+  if (!lastAsst?.content) {
+    out.push({ role: 'assistant', content: actualClosing(task) })
+    return out
   }
+  for (const note of notes) {
+    if (!lastAsst.content.includes(note)) {
+      lastAsst.content = `${lastAsst.content}\n\n${note}`
+    }
+  }
+  return out
 }
 
 /**
@@ -345,7 +279,7 @@ function compressTask(
 function getFullMessages(task: TaskMemory): AiMessage[] {
   // 优先使用直接记录的完整 API 对话（无需从 steps 重建）
   if (task.messages && task.messages.length > 0) {
-    return sanitizeToolCallSequence(task.messages.map(m => ({ ...m })))
+    return omitHistoryImages(sanitizeToolCallSequence(task.messages.map(m => ({ ...m }))))
   }
   
   // Fallback: 从 fullSteps 重建（messages 不可用时的兼容路径）
@@ -440,143 +374,72 @@ function getFullMessages(task: TaskMemory): AiMessage[] {
   return messages
 }
 
-/**
- * 从任务原始消息中找回「用户请求携带的图片」。
- * L1/L2 压缩按文本重建会丢掉 AiMessage.images；近期任务（L1）里的图在冷启动
- * 重建后仍应对视觉模型可见（agent/SPEC: L1 保图）。
- *
- * 注意不能按 content === task.userRequest 匹配：messages 里的 content 是
- * buildUserMessage 增强后的组合文本（知识注入/系统上下文/图片注记），
- * ≠ run.originalUserRequest 原文。任务首条真实用户消息即请求本身，直接取
- * 第一条带图的非系统注入 user 消息。
- */
-function taskRequestImages(task: TaskMemory): string[] | undefined {
-  const msgs = task.messages
-  if (!msgs || msgs.length === 0) return undefined
-  return msgs.find(m => m.role === 'user' && !m._systemInjected && m.images?.length)?.images
+function omitHistoryImages(messages: AiMessage[]): AiMessage[] {
+  return messages.map(m => {
+    if (!m.images?.length) return m
+    const { images: _images, ...rest } = m
+    return rest
+  })
 }
 
-/**
- * Level 1: 压缩对话（用户请求 + 压缩后的工具输出 + 最终回复）
- * 优先从这场对话的消息压；没有消息时才退回界面步骤（老记录）。
- */
-function getCompressedMessages(task: TaskMemory): AiMessage[] {
-  const images = taskRequestImages(task)
-  const userMsg: AiMessage = images?.length
-    ? { role: 'user', content: task.userRequest, images }
-    : { role: 'user', content: task.userRequest }
-
-  const toolSummaries: string[] = []
-  let assistantContent = ''
-
-  if (task.messages && task.messages.length > 0) {
-    const conversation = sanitizeToolCallSequence(task.messages.map(m => ({ ...m })))
-    const pendingById = new Map<string, number>()
-    for (const msg of conversation) {
-      if (msg.role === 'assistant') {
-        if (msg.tool_calls?.length) {
-          for (const tc of msg.tool_calls) {
-            const fn = tc.function
-            if (tc.id) pendingById.set(tc.id, toolSummaries.length)
-            toolSummaries.push(formatToolCallSummary(fn?.name, fn?.arguments ? parseToolCallArgs(fn.arguments) : undefined))
-          }
-        }
-        if (msg.content && !msg._systemInjected) {
-          assistantContent = msg.content
-        }
-      } else if (msg.role === 'tool') {
-        const idx = msg.tool_call_id != null ? pendingById.get(msg.tool_call_id) : undefined
-        if (idx !== undefined) {
-          toolSummaries[idx] += `\n→ ${compressToolOutput(msg.content || '')}`
-        }
-      }
-    }
-  } else {
-    for (const step of task.fullSteps) {
-      if (step.type === 'tool_call' && step.toolName) {
-        toolSummaries.push(formatToolCallSummary(step.toolName, step.toolArgs))
-      } else if (step.type === 'tool_result' && step.toolResult) {
-        const compressed = compressToolOutput(step.toolResult)
-        if (toolSummaries.length > 0) {
-          toolSummaries[toolSummaries.length - 1] += `\n→ ${compressed}`
-        }
-      } else if (step.type === 'message' && step.content) {
-        assistantContent = step.content
-      }
-    }
-  }
-
-  let fullAssistantContent = ''
-  if (toolSummaries.length > 0) {
-    fullAssistantContent = `**执行摘要:**\n${toolSummaries.join('\n')}\n\n`
-  }
-  fullAssistantContent += assistantContent
-
-  return [
-    userMsg,
-    { role: 'assistant', content: fullAssistantContent || task.summary || '[no response]' }
-  ]
+function qaUserMessage(task: TaskMemory): AiMessage {
+  return { role: 'user', content: task.userRequest }
 }
 
-/**
- * Level 2: 只保留用户请求和最终回复
- */
-function getSimplifiedMessages(task: TaskMemory): AiMessage[] {
+/** 这一轮实际怎么收场：有交代就留交代，停了/败了/在等照实留，不编造成功收场。 */
+function actualClosing(task: TaskMemory): string {
   const finalReply = (task.messages && task.messages.length > 0
     ? extractFinalReplyFromMessages(task.messages)
     : '') || extractFinalReply(task.fullSteps)
 
-  let statusNote = ''
-  if (task.status === 'aborted') {
-    statusNote = '\n\n[任务已被用户中止]'
-  } else if (task.status === 'failed') {
-    statusNote = '\n\n[任务执行失败]'
-  }
+  const notes: string[] = []
+  if (task.status === 'aborted') notes.push('[任务已被用户中止]')
+  else if (task.status === 'failed') notes.push('[任务执行失败]')
+  else if (task.status === 'pending_confirmation') notes.push('[还在等待确认]')
 
-  const assistantContent = finalReply + statusNote || task.summary || '[no response]'
-  return [
-    { role: 'user', content: task.userRequest },
-    { role: 'assistant', content: assistantContent }
-  ]
+  if (finalReply) {
+    return notes.length ? `${finalReply}\n\n${notes.join('\n')}` : finalReply
+  }
+  if (notes.length) return notes.join('\n')
+  return '[本轮没有留下交代]'
 }
 
-/**
- * Level 3: 格式化 L2 摘要
- */
-function formatDigest(task: TaskMemory): string {
-  const { digest } = task
-  const timePrefix = `[${formatTaskTime(task.timestamp)}] `
-  const lines: string[] = [`${timePrefix}[${task.id}] ${task.userRequest}`]
-  
-  if (digest.commands.length > 0) {
-    lines.push(`• 命令: ${digest.commands.slice(0, 5).join(', ')}`)
-  }
-  if (digest.paths.length > 0) {
-    lines.push(`• 路径: ${digest.paths.slice(0, 5).join(', ')}`)
-  }
-  if (digest.services.length > 0) {
-    lines.push(`• 服务: ${digest.services.join(', ')}`)
-  }
-  if (digest.errors.length > 0) {
-    lines.push(`• 错误: ${digest.errors.slice(0, 2).join('; ')}`)
-  }
-  if (digest.keyFindings.length > 0) {
-    lines.push(`• 发现: ${digest.keyFindings.slice(0, 2).join('; ')}`)
-  } else if (task.messages && task.messages.length > 0) {
-    const reply = extractFinalReplyFromMessages(task.messages)
-    if (reply) {
-      const snippet = reply.length > 200 ? reply.substring(0, 200) + '…' : reply
-      lines.push(`• 回复: ${snippet}`)
+function truncateTextToTokens(text: string, maxTokens: number): string {
+  if (maxTokens <= 4) return `${text.slice(0, 8)}…`
+  if (estimateTokens(text) <= maxTokens) return text
+  const ratio = text.length / Math.max(1, estimateTokens(text))
+  const keepChars = Math.max(24, Math.floor(maxTokens * ratio * 0.9))
+  if (text.length <= keepChars) return text
+  const head = Math.floor(keepChars * 0.7)
+  const tail = Math.max(8, keepChars - head)
+  return `${text.slice(0, head)}\n…\n${text.slice(-tail)}`
+}
+
+/** 单条过长：先收工具正文，再收用户贴的大段，再收它写的长报告。 */
+function fitOriginalMessages(messages: AiMessage[], maxTokens: number): AiMessage[] {
+  const copy = omitHistoryImages(messages).map(m => ({ ...m }))
+  if (estimateMessagesTokens(copy) <= maxTokens) return copy
+
+  for (const msg of copy) {
+    if (msg.role === 'tool' && msg.content) {
+      msg.content = compressToolOutput(msg.content)
     }
   }
+  if (estimateMessagesTokens(copy) <= maxTokens) return copy
 
-  const statusIcon = task.status === 'success' ? '✓' 
-    : task.status === 'failed' ? '✗' 
-    : task.status === 'pending_confirmation' ? '⏳'
-    : '⊘'
-  lines.push(`• 状态: ${statusIcon} ${task.status}`)
-  
-  return lines.join('\n')
+  const user = copy.find(m => m.role === 'user')
+  if (user && estimateTokens(user.content || '') > 80) {
+    const other = estimateMessagesTokens(copy.filter(m => m !== user))
+    user.content = truncateTextToTokens(user.content || '', Math.max(40, maxTokens - other))
+  }
+  if (estimateMessagesTokens(copy) <= maxTokens) return copy
+
+  const asst = [...copy].reverse().find(m => m.role === 'assistant' && m.content && !m._systemInjected)
+  if (asst) {
+    const other = estimateMessagesTokens(copy.filter(m => m !== asst))
+    asst.content = truncateTextToTokens(asst.content || '', Math.max(20, maxTokens - other))
+  }
+  return copy
 }
 
 // ==================== Token 估算 ====================
@@ -593,17 +456,6 @@ function estimateMessagesTokens(messages: AiMessage[]): number {
     }
     return sum + tokens
   }, 0)
-}
-
-/**
- * 估算任务在指定压缩级别的 token 数
- */
-function estimateTaskTokens(task: TaskMemory, level: CompressionLevel): number {
-  const content = compressTask(task, level)
-  if (Array.isArray(content)) {
-    return estimateMessagesTokens(content)
-  }
-  return estimateTokens(content)
 }
 
 // ==================== 上下文引用检测 ====================
@@ -626,8 +478,11 @@ export function detectContextReference(userMessage: string): boolean {
 export interface TaskHistoryOptions {
   /** 最多取几条任务（默认不限，取决于 token 预算） */
   maxTasks?: number
-  /** 强制最低压缩级别（默认按 getMinCompressionLevel 规则） */
-  minCompressionLevel?: CompressionLevel
+  /**
+   * 唤醒扫场：只要一句话概要，不走同一场原文。
+   * 原文会把唤醒摘要区撑爆。
+   */
+  summaryOnly?: boolean
   /**
    * 本次请求的固定开销（system prompt + 工具 schema）实测值。
    * 传入后历史预算在「窗口减去它」的剩余空间里分配，避免超发。
@@ -637,13 +492,25 @@ export interface TaskHistoryOptions {
 
 // ==================== 核心构建函数 ====================
 
+function countLevel(stats: ContextBuildResult['stats'], level: CompressionLevel): void {
+  switch (level) {
+    case 0: stats.level0Count++; break
+    case 1: stats.level1Count++; break
+    case 2: stats.level2Count++; break
+    case 3: stats.level3Count++; break
+    case 4: stats.level4Count++; break
+  }
+}
+
 /**
- * 按预算构建最近任务上下文（渐进式降级）
+ * 按预算构建最近任务上下文。
+ * 同一场：从近到远装原文，装不下的更早整轮进可取回归档。
+ * 唤醒：summaryOnly，只要一句话概要。
  */
 export function buildRecentTasksContext(
   taskMemoryStore: TaskMemoryStore,
   budget: number,
-  userMessage?: string,
+  _userMessage?: string,
   options?: TaskHistoryOptions
 ): ContextBuildResult {
   const result: ContextBuildResult = {
@@ -661,99 +528,64 @@ export function buildRecentTasksContext(
       budget
     }
   }
-  
-  // 检测是否需要更详细的上下文
-  const needsDetailedContext = userMessage ? detectContextReference(userMessage) : false
-  const effectiveBudget = needsDetailedContext 
-    ? Math.min(budget * 1.3, budget + 5000)  // 最多增加 30% 或 5000 tokens
-    : budget
-  
-  let usedTokens = 0
-  const processedTasks: TaskWithLevel[] = []
-  const summaryLines: string[] = []
-  
-  // 获取按时间顺序的任务（最近的在前）
+
   const tasks = taskMemoryStore.getTasksInOrder()
   const taskLimit = options?.maxTasks ? Math.min(options.maxTasks, tasks.length) : tasks.length
   result.stats.totalTasks = taskLimit
-  
-  const forcedMinLevel = options?.minCompressionLevel
-  
-  for (let taskIndex = 0; taskIndex < taskLimit; taskIndex++) {
-    const task = tasks[taskIndex]
-    const ruleLevel = task.aiSuggestedLevel ?? getMinCompressionLevel(task, taskIndex)
-    const minLevel = forcedMinLevel !== undefined
-      ? Math.max(ruleLevel, forcedMinLevel) as CompressionLevel
-      : ruleLevel
-    let placed = false
-    
-    // 尝试各个压缩级别（从完整到精简）
-    for (let level = 0 as CompressionLevel; level <= 4; level++) {
-      // 跳过低于最低级别的档位。
-      // - 显式 minCompressionLevel（如 wakeup 强制 L4）：严格遵守，不得「软放行」L3
-      // - 默认渐进路径：ruleLevel 为 4 时仍允许先试 L3（预算内尽量多留一点结构化摘要）
-      if (level < minLevel) {
-        if (forcedMinLevel !== undefined || level < 3) continue
-      }
-      
-      const tokens = estimateTaskTokens(task, level)
-      
-      if (usedTokens + tokens <= effectiveBudget) {
-        processedTasks.push({
-          taskId: task.id,
-          level,
-          tokens,
-          content: compressTask(task, level),
-          userRequest: task.userRequest,
-          status: task.status
-        })
-        usedTokens += tokens
-        placed = true
-        
-        // 更新统计
-        switch (level) {
-          case 0: result.stats.level0Count++; break
-          case 1: result.stats.level1Count++; break
-          case 2: result.stats.level2Count++; break
-          case 3: result.stats.level3Count++; break
-          case 4: result.stats.level4Count++; break
-        }
-        break
-      }
-    }
-    
-    // 如果所有级别都放不下（即使是 L4），跳过这个任务
-    if (!placed) {
-      // 预算基本用尽，停止处理
-      if (usedTokens >= effectiveBudget * 0.95) break
-    }
+
+  if (taskLimit === 0) return result
+
+  if (options?.summaryOnly) {
+    const slice = tasks.slice(0, taskLimit)
+    result.taskSummarySection = slice.map(t => t.summary).join('\n\n')
+    result.stats.level4Count = slice.length
+    result.stats.usedTokens = estimateTokens(result.taskSummarySection)
+    result.availableTaskIds = slice.map(t => ({ id: t.id, summary: t.summary }))
+    return result
   }
-  
-  result.stats.usedTokens = usedTokens
-  
-  // 分类处理：Level 0-2 作为消息，Level 3-4 作为摘要
-  // processedTasks 是从新到旧的顺序，需要反转为自然时间顺序（从旧到新）
-  const reversedTasks = [...processedTasks].reverse()
-  
-  for (const task of reversedTasks) {
-    if (task.level <= 2) {
-      // 作为消息注入（从旧到新，符合对话顺序）
-      const messages = task.content as AiMessage[]
-      result.recentTaskMessages.push(...messages)
-    } else {
-      // 作为摘要（从旧到新，符合自然阅读顺序）
-      summaryLines.push(task.content as string)
+
+  const RECALL_ROSTER_CAP = 50
+  const rosterReserve = Math.min(RECALL_ROSTER_CAP, taskLimit) * 40
+  const placeBudget = Math.max(0, budget - rosterReserve)
+
+  type Placed = { task: TaskMemory; level: CompressionLevel; tokens: number; content: AiMessage[] }
+  const placed: Placed[] = []
+  let usedTokens = 0
+
+  for (let i = 0; i < taskLimit; i++) {
+    const task = tasks[i]
+    let content = originalTaskMessages(task)
+    let tokens = estimateMessagesTokens(content)
+    if (usedTokens + tokens > placeBudget) {
+      if (placed.length > 0) break
+      const remaining = placeBudget - usedTokens
+      if (remaining < 24) break
+      content = fitOriginalMessages(content, remaining)
+      tokens = estimateMessagesTokens(content)
+      if (usedTokens + tokens > placeBudget) break
     }
+    placed.push({ task, level: 0, tokens, content })
+    usedTokens += tokens
   }
-  
-  if (summaryLines.length > 0) {
-    result.taskSummarySection = summaryLines.join('\n\n')
+
+  const placedIds = new Set(placed.map(p => p.task.id))
+  const unplaced = tasks.slice(0, taskLimit).filter(t => !placedIds.has(t.id)).reverse()
+  const rosterTasks = [...unplaced, ...placed.map(p => p.task)].slice(0, RECALL_ROSTER_CAP)
+  result.availableTaskIds = rosterTasks.map(t => ({
+    id: t.id,
+    summary: t.summary || t.userRequest
+  }))
+  let rosterTokens = estimateTokens(result.availableTaskIds.map(s => s.summary).join('\n'))
+  while (result.availableTaskIds.length > 0 && usedTokens + rosterTokens > budget) {
+    result.availableTaskIds.pop()
+    rosterTokens = estimateTokens(result.availableTaskIds.map(s => s.summary).join('\n'))
   }
-  
-  // 填充所有可用任务的ID列表（从旧到新，自然时间顺序）
-  const summaries = taskMemoryStore.getSummaries(50)
-  result.availableTaskIds = summaries.map(s => ({ id: s.id, summary: s.summary })).reverse()
-  
+
+  result.stats.usedTokens = usedTokens + rosterTokens
+  for (const item of placed) countLevel(result.stats, item.level)
+  for (const item of [...placed].reverse()) {
+    result.recentTaskMessages.push(...item.content)
+  }
   return result
 }
 

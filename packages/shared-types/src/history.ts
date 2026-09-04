@@ -91,6 +91,17 @@ export interface AgentRecord {
    * 重开后仍不许它自己再装回来；用户再点上才开。
    */
   userDismissedSkills?: string[]
+  /**
+   * 最近一次上下文交接后的工作上下文。
+   * 有这份时重开从这里接着，不把已交过的原文再展开。字段缺失（没交过接）则按完整记录重拼。
+   */
+  workingContext?: Array<{
+    role: string
+    content: string
+    tool_calls?: unknown[]
+    tool_call_id?: string
+    hugeOutput?: import('./agent').HugeOutputStub
+  }>
 }
 
 /** 输入区胶囊用的技能快照（不含外部工具包） */

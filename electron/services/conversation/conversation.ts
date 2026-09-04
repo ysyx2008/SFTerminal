@@ -32,6 +32,17 @@ import type { AiMessage } from '../ai.service'
 import { TaskMemoryStore, type LookupToolMeta } from '../agent/task-memory'
 import { splitMessagesIntoTasks, splitStepsIntoTasks, stepRecordToStep, chunkStepsByUserTask, chunkStepsForCompanionExtract } from './messages'
 
+function lastTaskStatus(
+  record: AgentRecord,
+  index: number,
+  total: number
+): 'success' | 'failed' | 'aborted' {
+  if (index !== total - 1) return 'success'
+  if (record.status === 'aborted') return 'aborted'
+  if (record.status === 'failed') return 'failed'
+  return 'success'
+}
+
 export interface ConversationCreateOptions {
   /** 显式指定会话 id（恢复/漫游续写既有会话）；省略则生成 `session_<ts>` */
   id?: string
@@ -102,6 +113,9 @@ export class Conversation {
   private readonly _taskMemory: TaskMemoryStore
   /** 上一次 run 结束时的完整 messages 快照，用于跨任务 prompt cache 前缀复用（原 _previousRunMessages） */
   private _cachePrefix?: AiMessage[]
+  /** 这场做过上下文交接后，重开应接着用的工作上下文（与 UI transcript 的完整 messages 分开） */
+  private _workingContext?: AiMessage[]
+  private _hasHandoff = false
 
   /** 侧栏展示标题（LLM / 手动）；缺省则 UI 用 userTask */
   private _title?: string
@@ -172,7 +186,7 @@ export class Conversation {
   /**
    * 从持久化记录反序列化，并重建工作记忆（taskMemory）。
    * 忠实移植 Agent.restoreFromSessionRecord：优先用 messages 切分，缺 messages 的老记录降级用 steps。
-   * 注意：**不**恢复 `_cachePrefix`——cache 前缀仅由 commitRun 设置，恢复后的首个 run 走冷启动（与现状一致）。
+   * 有交接检查点时恢复 `_cachePrefix`，重开从检查点接着；没有则首个 run 带原文冷启动。
    */
   static fromRecord(record: AgentRecord, deps?: ConversationDeps): Conversation {
     const conv = new Conversation(
@@ -202,18 +216,21 @@ export class Conversation {
         record.messages as AiMessage[],
         () => `restored_${Date.now()}_${this._restoreTaskSeq++}`
       )
-      for (const task of tasks) {
-        this._taskMemory.saveTask(task.id, task.userTask, [], 'success', task.finalResult, task.messages)
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i]
+        this._taskMemory.saveTask(task.id, task.userTask, [], lastTaskStatus(record, i, tasks.length), task.finalResult, task.messages)
       }
     } else if (record.steps && record.steps.length > 0) {
       const baseTs = record.steps[0]?.timestamp || Date.now()
       const tasks = splitStepsIntoTasks(record.steps, i => `restored_${baseTs}_${i}`)
-      for (const task of tasks) {
-        this._taskMemory.saveTask(task.id, task.userTask, task.steps, 'success', task.finalResult)
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i]
+        this._taskMemory.saveTask(task.id, task.userTask, task.steps, lastTaskStatus(record, i, tasks.length), task.finalResult)
       }
     }
 
     this.setRestoredTranscript(record.messages as AiMessage[] | undefined, record.steps)
+    this.restoreWorkingContext(record.workingContext as AiMessage[] | undefined)
     const title = record.title?.trim()
     if (title) this._title = title
     if (record.titleLocked) this._titleLocked = true
@@ -273,7 +290,8 @@ export class Conversation {
       status,
       tokenUsage: this._tokenUsage,
       ...(opts?.loadedSkills ? { loadedSkills: [...opts.loadedSkills] } : {}),
-      ...(opts?.userDismissedSkills?.length ? { userDismissedSkills: [...opts.userDismissedSkills] } : {})
+      ...(opts?.userDismissedSkills?.length ? { userDismissedSkills: [...opts.userDismissedSkills] } : {}),
+      ...this.workingContextField()
     }
   }
 
@@ -324,7 +342,8 @@ export class Conversation {
       status: 'completed',
       tokenUsage: checkpointTokenUsage,
       ...(run.loadedSkills ? { loadedSkills: [...run.loadedSkills] } : {}),
-      ...(run.userDismissedSkills?.length ? { userDismissedSkills: [...run.userDismissedSkills] } : {})
+      ...(run.userDismissedSkills?.length ? { userDismissedSkills: [...run.userDismissedSkills] } : {}),
+      ...this.workingContextField()
     }
   }
 
@@ -779,6 +798,7 @@ export class Conversation {
     }
     if (finalMsg) snapshot.push(finalMsg)
     this._cachePrefix = snapshot
+    if (this._hasHandoff) this._workingContext = snapshot
 
     this.accumulate(input.steps, taskLog, input.tokenUsage)
   }
@@ -817,6 +837,7 @@ export class Conversation {
         snapshot = snapshot.map(m => (m.images?.length ? { ...m, images: undefined } : m))
       }
       this._cachePrefix = snapshot
+      if (this._hasHandoff) this._workingContext = snapshot
     }
 
     this.accumulate(input.steps, input.taskLog, input.tokenUsage)
@@ -872,7 +893,19 @@ export class Conversation {
   shouldReuseCachePrefix(maxPrefixTokens: number, opts: { wakeup?: boolean; estimateTokens: (msgs: AiMessage[]) => number }): boolean {
     if (!this._cachePrefix || this._cachePrefix.length === 0) return false
     if (opts.wakeup) return false
+    // 有交接就接着检查点，不因窗口变小去把已交原文再展开。
+    if (this._hasHandoff) return true
     return opts.estimateTokens(this._cachePrefix) < maxPrefixTokens
+  }
+
+  /**
+   * 续聊 / 重开时该不该接着当前工作前缀。
+   * 有交接必须接着；还在这场也接着（窗口满了交给本步交接）；唤醒和「新图首投无图前缀」除外。
+   */
+  shouldResumeWorkingPrefix(opts: { wakeup?: boolean; skipVisionCache?: boolean }): boolean {
+    if (!this._cachePrefix?.length || opts.wakeup) return false
+    if (this._hasHandoff) return true
+    return !opts.skipVisionCache
   }
 
   /**
@@ -894,6 +927,31 @@ export class Conversation {
   /** 直接设置 cache 前缀（fork 同形态时由调用方传入 newRecord.messages，命中 LLM 前缀缓存） */
   setCachePrefix(messages: AiMessage[] | undefined): void {
     this._cachePrefix = messages ? messages.map(m => JSON.parse(JSON.stringify(m))) : undefined
+  }
+
+  hasHandoff(): boolean {
+    return this._hasHandoff
+  }
+
+  /** 上下文交接后记下当前工作上下文，重开从这里接着。 */
+  setWorkingContext(messages: AiMessage[] | undefined): void {
+    this._hasHandoff = true
+    this._workingContext = messages ? messages.map(m => JSON.parse(JSON.stringify(m))) : undefined
+  }
+
+  /** 从落盘的交接检查点恢复工作上下文，并接上 cache 前缀。 */
+  restoreWorkingContext(messages: AiMessage[] | undefined): void {
+    if (!messages?.length) return
+    this._hasHandoff = true
+    this._workingContext = messages.map(m => JSON.parse(JSON.stringify(m)))
+    this.setCachePrefix(this._workingContext)
+  }
+
+  private workingContextField(): { workingContext?: AiMessage[] } {
+    if (!this._hasHandoff) return {}
+    const src = this._workingContext ?? this._cachePrefix
+    if (!src?.length) return {}
+    return { workingContext: src.map(m => JSON.parse(JSON.stringify(m))) }
   }
 
   // ==================== 会话操作 ====================
@@ -946,6 +1004,8 @@ export class Conversation {
     this._messages = []
     this._steps = []
     this._cachePrefix = undefined
+    this._workingContext = undefined
+    this._hasHandoff = false
     this._tokenUsage = undefined
     this._lastPromptTokens = undefined
     this._lastCacheHitRate = undefined

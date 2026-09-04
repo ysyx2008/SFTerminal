@@ -3,12 +3,11 @@
  *
  * Agent.buildContext 有两条产出 run.messages 的路径：
  *   - cache path：复用 Conversation 的 cache 前缀快照 + 追加新 user 消息
- *   - cold start：system prompt + TaskMemory 渐进压缩（L0–L4）重建 + 新 user 消息
+ *   - cold start：system prompt + TaskMemory 原文重装 + 新 user 消息
  *
- * 契约：同一份会话历史，无论下一轮走哪条路径，**视觉模型已接受的图片都必须
- * 呈现给模型**。2026-08-06 回归（续聊丢图）就是冷启动在 L1/L2 压缩时剥掉
- * 历史图、而 cache path 保留——两条路径保真度不等价且无人断言，bug 拖了
- * 两天才被发现。本文件把这条等价性固化为测试（agent/SPEC: 跨模型带图）。
+ * 2026-09-04：冷启动重装原文时不再把历史图片整场塞回去（文字和路径留下）。
+ * 还在这场接着聊（cache path）或从交接检查点接着时，模型已经接受过的前缀原样带着。
+ * 本文件锚定这两条路径对图的不同承诺，禁止后来人再把冷启动保图加回去。
  *
  * 在领域层（Conversation + context-builder）镜像两条路径的装配结果，纯单测，
  * 不启动 Agent、不碰磁盘。
@@ -74,39 +73,34 @@ function hasImages(messages: AiMessage[]): boolean {
 }
 
 describe('上下文装配路径等价性（cache path vs cold start）', () => {
-  it('上一轮刚发图（taskIndex 0）：两条路径都必须把图呈现给模型', () => {
+  it('上一轮刚发图：还在这场接着聊时图还在，冷启动重装不再塞回去', () => {
     const conv = Conversation.create({ agentKey: '__companion__', terminalType: 'assistant' })
     commitTurn(conv, 'r1', '看这张图', { images: [IMG], reply: '这是一只猫' })
 
     expect(hasImages(assembleViaCachePath(conv, '它可爱吗'))).toBe(true)
-    expect(hasImages(assembleViaColdStart(conv))).toBe(true)
+    expect(hasImages(assembleViaColdStart(conv))).toBe(false)
+    expect(assembleViaColdStart(conv).some(m => m.content.includes('看这张图') || m.content === '看这张图')).toBe(true)
   })
 
-  it('图在两轮前（taskIndex 1，L1 压缩区）：两条路径都必须把图呈现给模型', () => {
+  it('图在两轮前：cache 前缀仍带图，冷启动重装只留文字', () => {
     const conv = Conversation.create({ agentKey: '__companion__', terminalType: 'assistant' })
     commitTurn(conv, 'r1', '看这张图', { images: [IMG], reply: '这是一只猫' })
     commitTurn(conv, 'r2', '它几岁了', { reply: '看起来两岁' })
 
-    // 2026-08-06 回归的覆灭场景：修复前冷启动 L1 压缩剥掉 r1 的图
     const viaCache = assembleViaCachePath(conv, '再说说它的眼睛')
     const viaCold = assembleViaColdStart(conv)
     expect(hasImages(viaCache)).toBe(true)
-    expect(hasImages(viaCold)).toBe(true)
+    expect(hasImages(viaCold)).toBe(false)
 
-    // 用户边界等价：两条路径都呈现 2 个真实用户轮次，不并轮、不丢轮
     expect(viaCache.filter(m => m.role === 'user')).toHaveLength(3) // 2 轮历史 + 本轮新消息
     expect(viaCold.filter(m => m.role === 'user')).toHaveLength(2)
   })
 
-  it('剥图降级后的有意分叉：cache 前缀剔图自愈，taskMemory 保留原图供冷启动重试', () => {
+  it('剥图降级后：cache 前缀剔图自愈，冷启动重装也不再把图塞回去', () => {
     const conv = Conversation.create({ agentKey: '__companion__', terminalType: 'assistant' })
-    // 视觉模型拒收带图长前缀 → ai.service 剥图重试成功 → imagesStripped 上报
     commitTurn(conv, 'r1', '看这张图', { images: [IMG], reply: '画面没传过来', imagesStripped: true })
 
-    // cache path：前缀剔图（防毒前缀每轮循环「拒图→剥图→说看不到」）。
-    // 这是有意的路径不等价，禁止后来人"顺手对齐"把自愈破坏掉
     expect(hasImages(assembleViaCachePath(conv, '现在能看到吗'))).toBe(false)
-    // cold start：taskMemory 保留原图——干净短上下文给视觉模型一次重试机会
-    expect(hasImages(assembleViaColdStart(conv))).toBe(true)
+    expect(hasImages(assembleViaColdStart(conv))).toBe(false)
   })
 })

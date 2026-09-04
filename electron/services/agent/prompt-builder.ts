@@ -1024,7 +1024,7 @@ export class PromptBuilder {
     const parts = [
       '# 历史任务',
       '',
-      '对话历史中包含：最近 1 个任务的完整对话，之后 2 个任务的压缩对话（含工具摘要），再之后 3 个任务的精简对话（仅请求和回复）。更早任务仅在下方列出摘要，需要详情用 `recall(id)` 或 `recall(id, detail="full")`。',
+      '对话历史里带着原文：你说过的话、中间怎么做的、那一轮实际怎么收场的。窗口满了才会写成交接。需要取回更早整轮时用 `recall(id)` 或 `recall(id, detail="full")`。',
       '',
       '**可用任务**：',
       taskIdList,

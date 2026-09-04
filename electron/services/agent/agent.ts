@@ -350,7 +350,7 @@ export abstract class Agent {
    * 注入按工具名查 _meta 的回调，让 task-memory 能根据 lifecycle / argRole 决策行为，
    * 而不是硬编码具体工具名。回调内的 `this.getAvailableTools()` 在调用时才解析，
    * 此处构造时 subclass 还未完成初始化也没关系。
-   * @param maxMemories 最大存储任务数（默认 50；wakeup 上下文只取最近 30 条 L4，默认上限已够）
+   * @param maxMemories 最大存储任务数（默认 2000，只防失控）
    */
   protected createTaskMemory(maxMemories?: number): TaskMemoryStore {
     return new TaskMemoryStore((name) => getMetaByName(this.getAvailableTools(), name), maxMemories)
@@ -1383,12 +1383,16 @@ export abstract class Agent {
         record.messages as AiMessage[],
         () => `restored_${Date.now()}_${this._restoreTaskSeq++}`
       )
-      for (const task of tasks) {
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i]
+        const status = i === tasks.length - 1 && (record.status === 'aborted' || record.status === 'failed')
+          ? record.status
+          : 'success'
         this.taskMemory.saveTask(
           task.id,
           task.userTask,
           [],
-          'success',
+          status,
           task.finalResult,
           task.messages
         )
@@ -1397,12 +1401,16 @@ export abstract class Agent {
     } else if (record.steps && record.steps.length > 0) {
       const baseTs = record.steps[0]?.timestamp || Date.now()
       const tasks = splitStepsIntoTasksShared(record.steps, i => `restored_${baseTs}_${i}`)
-      for (const task of tasks) {
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i]
+        const status = i === tasks.length - 1 && (record.status === 'aborted' || record.status === 'failed')
+          ? record.status
+          : 'success'
         this.taskMemory.saveTask(
           task.id,
           task.userTask,
           task.steps,
-          'success',
+          status,
           task.finalResult
         )
       }
@@ -1413,6 +1421,7 @@ export abstract class Agent {
     // taskMemory 上面已由 Agent 用自己的 split/seq 写入（与 restoreRecentTaskMemory 共享单调
     // 序号防同毫秒 task id 碰撞），故此处只补 transcript。
     this._conversation?.setRestoredTranscript(record.messages as AiMessage[] | undefined, record.steps)
+    this._conversation?.restoreWorkingContext(record.workingContext as AiMessage[] | undefined)
 
     // 关切 / 唤醒自己预装技能，不按历史清单恢复。
     const kind = record.kind ?? inferConversationKind(record.agentKey)
@@ -1457,10 +1466,8 @@ export abstract class Agent {
     // companion 维持紧凑（联络是单线对话，6 条 record 已够）；task 不会走到这里。
     // watch 因 seedFromHistoryOnColdStart=false，本方法不会被调用——保留 'watch' 分支是防御性的。
     const broadScope = kind === 'watch' || kind === 'wakeup'
-    const MAX_RECENT_RECORDS = broadScope ? 20 : 6
-    // 仅限制装入工作记忆的「任务数」；真正进上下文的量由 buildTaskHistoryContext 的
-    // maxTasks + token 预算裁剪。20 条 record 按约 1–3 task/条，足以喂满 30 条上限。
-    const MAX_RESTORE_TASKS = broadScope ? 30 : 40
+    const MAX_RECENT_RECORDS = broadScope ? 20 : 30
+    const MAX_RESTORE_TASKS = broadScope ? 30 : 500
 
     // 排除两类记录：
     //  - watch/wakeup「内心独白」：自我循环的触发记录（[当前时间：...触发事件...]），
@@ -1621,6 +1628,9 @@ export abstract class Agent {
     const historyService = this.services.historyService
     if (!historyService || !this._conversation) return
 
+    if (this._conversation.hasHandoff()) {
+      this._conversation.setWorkingContext(run.messages)
+    }
     const record = this._conversation.toCheckpointRecord({
       steps: run.steps,
       taskMessageLog: run.taskMessageLog,
@@ -2149,18 +2159,11 @@ export abstract class Agent {
           })
         : false
 
-      // 复用上限 = 窗口减掉压缩自身要用的空间。到这条线之前一律复用，让前缀缓存
-      // 吃满——历史变长本身不构成重建理由，接近装满时自有压缩接手（压缩按重要性
-      // 挑内容，比冷启动按新旧一刀切降级留得准）。
-      //
-      // 越过这条线才重建：那时连写一份交接小结的空间都没有了，压缩这条路已经走不通
-      // （典型场景是中途换到窗口更小的模型），只能从任务记忆重新按新窗口预算搭。
-      const maxReusableTokens = contextLength - this._contextWindow.getCompactionReserveTokens()
-
-      if (skipVisionCache) {
+      // 有交接检查点：必须接着，不能因窗口变小 / 跨模型视觉路由去把已交原文再展开。
+      // 还在这场、没有交接：前缀在就接着用，窗口快满交给本步已有交接，不再退回原文重装。
+      if (!this._conversation?.shouldResumeWorkingPrefix({ skipVisionCache })) {
         log.info('[Cache] Skip reuse: cross-model vision routing with images, cold start for compatibility')
-      } else if (prevTokens < maxReusableTokens) {
-        // 复用前序消息，清除旧的缓存断点标记
+      } else {
         run.messages = this._previousRunMessages.map(m => {
           const copy = { ...m }
           delete copy._cacheBreakpoint
@@ -2170,28 +2173,24 @@ export abstract class Agent {
         this.refreshBrowserBridgeSectionInMessages(run.messages)
         this.refreshLoadedSkillsSectionsInMessages(run.messages)
 
-        // 在前序消息末尾设置 Anthropic cache breakpoint（第 3 个断点）
         const lastPrevMsg = run.messages[run.messages.length - 1]
         if (lastPrevMsg) {
           lastPrevMsg._cacheBreakpoint = true
         }
 
-        // 组装新 user 消息（知识检索结果注入到 user 消息前缀，而非 system prompt）
         const userMsg = await this.buildUserMessage(run, message, true)
         run.messages.push(userMsg)
         run.taskMessageLog.push({ ...userMsg })
 
-        log.info(`[Cache] Reusing ${this._previousRunMessages.length} messages (~${prevTokens} tokens, ${Math.round(prevTokens / contextLength * 100)}% of context)`)
+        log.info(`[Cache] Reusing ${this._previousRunMessages.length} messages (~${prevTokens} tokens, ${Math.round(prevTokens / contextLength * 100)}% of context)${this._conversation?.hasHandoff() ? ' [handoff]' : ''}`)
         return
       }
-
-      log.info(`[Cache] Reuse skipped: ~${prevTokens} tokens leave no room for compaction (limit ${maxReusableTokens} of ${contextLength} context)`)
     }
 
     // ── Cold start path: 从零构建上下文 ──
 
-    // messages 即将被重建（历史按 L0–L4 压缩过，比上一轮短得多），上一轮的
-    // prompt_tokens 不再对应新序列——留着当锚点会把已经压掉的历史算回来。
+    // messages 即将被重建（无检查点带原文）。有检查点的不会走到这里。
+    // 上一轮的 prompt_tokens 不再对应新序列——留着当锚点会对不上这次装配。
     this._conversation?.setLastPromptTokens(undefined)
 
     // 提前并行启动两个异步操作（均需 embedding + 向量搜索，相互独立）
@@ -2231,11 +2230,11 @@ export abstract class Agent {
     
     if (this.taskMemory.getTaskCount() > 0) {
       const contextLength = this._contextWindow.getContextLength()
-      // wakeup：广度优先 + 强制 L4（一句话概要），最多 30 条。见 SPEC。
+      // wakeup：广度优先 + 一句话概要，最多 30 条。见 SPEC。
       // 历史预算在「窗口减去固定开销（工具 schema + system prompt）」的剩余空间里分配
       const fixedPrefixTokens = this._contextWindow.getFixedPrefixTokens(this.systemPromptScope(run.context))
       const historyOptions: TaskHistoryOptions = run.context.wakeup
-        ? { maxTasks: 30, minCompressionLevel: 4, fixedPrefixTokens }
+        ? { maxTasks: 30, summaryOnly: true, fixedPrefixTokens }
         : { fixedPrefixTokens }
       const contextResult = buildTaskHistoryContext(this.taskMemory, contextLength, message, historyOptions)
       
@@ -2604,6 +2603,7 @@ export abstract class Agent {
           this._contextWindow.fixIncompleteToolCalls(run, `[上下文超限，工具调用已中断]`)
           const compressed = this._contextWindow.emergencyCompress(run)
           if (compressed) {
+            this._conversation?.setWorkingContext(run.messages)
             // 仅在真正重试时消耗配额（压缩失败时不消耗，避免下次循环跳过本可救的请求）
             contextOverflowRetryCount++
             log.warn(`Context limit exceeded, auto-compressed (kept recent ${compressed.keepRecent}, freed ${compressed.freedTokens} tokens), retrying`)
@@ -2660,6 +2660,7 @@ export abstract class Agent {
     if (this._contextWindow.shouldProactiveCompress(run)) {
       const compressed = await this._contextWindow.proactiveCompress(run)
       if (compressed) {
+        this._conversation?.setWorkingContext(run.messages)
         log.warn(`Proactive compress triggered (lastPromptTokens=${this._lastPromptTokens}, contextLength=${this._contextWindow.getContextLength()}, reserve=${this._contextWindow.getCompactionReserveTokens()}), kept recent ${compressed.keepRecent}, freed ${compressed.freedTokens} tokens`)
         run.messages.push({
           role: 'user',
@@ -4417,7 +4418,9 @@ export abstract class Agent {
       },
       // 上下文管理
       compressCurrentContext: (summary: string, keepRecent: number) => {
-        return this._contextWindow.compress(run, summary, keepRecent)
+        const result = this._contextWindow.compress(run, summary, keepRecent)
+        if (result) this._conversation?.setWorkingContext(run.messages)
+        return result
       },
       getCompressedArchives: () => {
         return (run.compressedArchives || []).map(a => ({

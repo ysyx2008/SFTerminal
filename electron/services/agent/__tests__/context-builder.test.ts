@@ -17,39 +17,31 @@ import type { AiMessage } from '../../ai.service'
 // ==================== calculateBudget ====================
 
 describe('calculateBudget', () => {
-  it('should calculate budget for 4K context', () => {
+  it('should give remaining window to history after reserve', () => {
     const budget = calculateBudget(4000)
-    expect(budget.total).toBe(3200) // 80% of 4000
-    expect(budget.systemPrompt).toBe(3000)
-    expect(budget.knowledge).toBe(480) // 15% of 3200
-    expect(budget.recentTasks).toBe(1280) // 40% of 3200
-    expect(budget.nearTasks).toBe(320) // 10% of 3200
-    expect(budget.historySummary).toBe(160) // 5% of 3200
-    expect(budget.currentConversation).toBe(320) // 10% of 3200
+    expect(budget.total).toBe(3200)
+    expect(budget.recentTasks).toBe(3200)
+    expect(budget.currentConversation).toBe(800)
+    expect(budget.knowledge).toBe(0)
+    expect(budget.nearTasks).toBe(0)
+    expect(budget.historySummary).toBe(0)
   })
 
-  it('should calculate budget for 128K context', () => {
+  it('should cap reserve on large windows so history is not withheld', () => {
+    const budget = calculateBudget(200000)
+    expect(budget.currentConversation).toBe(32000)
+    expect(budget.recentTasks).toBe(168000)
+  })
+
+  it('should give most of a 128K window to history', () => {
     const budget = calculateBudget(128000)
-    expect(budget.total).toBe(102400) // 80% of 128000
-    expect(budget.recentTasks).toBe(40960) // 40% of 102400
-  })
-
-  it('should have consistent proportions', () => {
-    const budget = calculateBudget(100000)
-    const total = budget.total
-    
-    // Check proportions (approximately, due to rounding)
-    expect(budget.knowledge / total).toBeCloseTo(0.15, 1)
-    expect(budget.recentTasks / total).toBeCloseTo(0.40, 1)
-    expect(budget.nearTasks / total).toBeCloseTo(0.10, 1)
-    expect(budget.historySummary / total).toBeCloseTo(0.05, 1)
-    expect(budget.currentConversation / total).toBeCloseTo(0.10, 1)
+    expect(budget.recentTasks).toBe(102400)
+    expect(budget.currentConversation).toBe(25600)
   })
 
   it('should handle small context lengths', () => {
     const budget = calculateBudget(1000)
     expect(budget.total).toBe(800)
-    // All values should be positive
     Object.values(budget).forEach(value => {
       expect(value).toBeGreaterThanOrEqual(0)
     })
@@ -167,7 +159,19 @@ describe('buildRecentTasksContext', () => {
     
     const result = buildRecentTasksContext(store, 1000) // Small budget
     
-    expect(result.stats.usedTokens).toBeLessThanOrEqual(1000 * 1.3) // Allow 30% overflow for context reference
+    expect(result.stats.usedTokens).toBeLessThanOrEqual(1000)
+  })
+
+  it('可取回清单有上限，优先留给没装进对话的更早轮次', () => {
+    for (let i = 0; i < 80; i++) {
+      store.saveTask(`task${i}`, `请打开文件 file_${i}.docx`, [], 'success', `Result ${i}`)
+    }
+
+    const result = buildRecentTasksContext(store, 400)
+
+    expect(result.availableTaskIds.length).toBeLessThanOrEqual(50)
+    expect(result.stats.usedTokens).toBeLessThanOrEqual(400)
+    expect(result.availableTaskIds.some(t => t.summary.includes('file_0') || t.id === 'task0')).toBe(true)
   })
 
   it('should increase budget when context reference detected', () => {
@@ -206,10 +210,7 @@ describe('buildRecentTasksContext', () => {
     expect(result.availableTaskIds.map(t => t.id)).toContain('task3')
   })
 
-  it('L1 压缩保留用户请求携带的图片（冷启动重建后近期历史图仍可见）', () => {
-    // 旧任务带图 → 落到 taskIndex 1（L1 压缩，按文本重建）；新任务占 taskIndex 0（L0 原文）
-    // 注意：messages 里的 content 是 buildUserMessage 增强后的组合文本（≠ userRequest 原文），
-    // 这里刻意用不同 content 覆盖真实匹配路径
+  it('冷启动重装原文时不把历史图片再塞回去，文字还在', () => {
     const oldSteps: AgentStep[] = [
       { id: 'o1', type: 'message', content: '这是一只猫', timestamp: Date.now() }
     ]
@@ -224,11 +225,12 @@ describe('buildRecentTasksContext', () => {
 
     const result = buildRecentTasksContext(store, 100000)
 
-    const oldUserMsg = result.recentTaskMessages.find(m => m.role === 'user' && m.content === '看图说话')
-    expect(oldUserMsg?.images).toEqual(['data:image/png;base64,AAA'])
+    const oldUserMsg = result.recentTaskMessages.find(m => m.role === 'user' && (m.content === '看图说话' || m.content.includes('看图说话')))
+    expect(oldUserMsg).toBeTruthy()
+    expect(oldUserMsg?.images).toBeUndefined()
   })
 
-  it('加载历史后步骤为空时，L1 仍从对话压出工具摘要和最终回复', () => {
+  it('预算够时较早轮次也带着原文过程，不收成提要', () => {
     const nineSuggestions = [
       '已整理 9 条修改意见。',
       '第一条：投标人资格应明确联合体责任划分。',
@@ -256,46 +258,20 @@ describe('buildRecentTasksContext', () => {
 
     const result = buildRecentTasksContext(store, 100000)
 
-    expect(result.stats.level1Count).toBeGreaterThanOrEqual(1)
-    const joined = result.recentTaskMessages.map(m => m.content).join('\n')
+    expect(result.stats.level0Count).toBe(2)
+    expect(result.stats.level1Count).toBe(0)
+    expect(result.taskSummarySection).toBe('')
+    const joined = result.recentTaskMessages.map(m => {
+      const args = m.tool_calls?.map(tc => tc.function.arguments).join('\n') ?? ''
+      return `${m.content}\n${args}`
+    }).join('\n')
+    expect(joined).toContain('写招标文件修改意见')
     expect(joined).toContain('/Users/me/Desktop/修改意见.docx')
+    expect(joined).toContain('已写入 9 条修改意见到桌面文档')
     expect(joined).toContain('投标人资格应明确联合体责任划分')
   })
 
-  it('加载历史后步骤为空时，L2 仍保留最终回复而不是一句话摘要', () => {
-    const longReply = '对照招标文件逐条核对后，第 3、7 条尚未落实，其余 7 条已写入新版。'
-
-    for (let i = 0; i < 3; i++) {
-      store.saveTask(`older-${i}`, `更早的任务 ${i}`, [], 'success', 'ok', [
-        { role: 'user', content: `更早的任务 ${i}` },
-        { role: 'assistant', content: `完成 ${i}` }
-      ])
-    }
-    store.saveTask('task-l2', '核对修改意见落实情况', [], 'success', '已核对', [
-      { role: 'user', content: '核对修改意见落实情况' },
-      { role: 'assistant', content: longReply }
-    ])
-    store.saveTask('mid-1', '再看一眼目录', [], 'success', '看过了', [
-      { role: 'user', content: '再看一眼目录' },
-      { role: 'assistant', content: '目录没问题' }
-    ])
-    store.saveTask('mid-2', '补充一句', [], 'success', '好', [
-      { role: 'user', content: '补充一句' },
-      { role: 'assistant', content: '好' }
-    ])
-    store.saveTask('newest', '继续', [], 'success', '继续', [
-      { role: 'user', content: '继续' },
-      { role: 'assistant', content: '继续' }
-    ])
-
-    const result = buildRecentTasksContext(store, 100000)
-
-    expect(result.stats.level2Count).toBeGreaterThanOrEqual(1)
-    const joined = result.recentTaskMessages.map(m => m.content).join('\n')
-    expect(joined).toContain('第 3、7 条尚未落实')
-  })
-
-  it('预算紧张时仍按对话逐级收，不直接掉成一句话摘要', () => {
+  it('预算不够时留下近的原文，更早整轮不装进对话', () => {
     const longReply = '结论：九条意见中有三条未落实。' + '核对细节。'.repeat(40)
     store.saveTask('task-old', '写招标文件修改意见', [], 'success', '已写好', [
       { role: 'user', content: '写招标文件修改意见' },
@@ -316,13 +292,13 @@ describe('buildRecentTasksContext', () => {
       { role: 'assistant', content: '好' }
     ])
 
-    const result = buildRecentTasksContext(store, 800)
-    const allText = [
-      ...result.recentTaskMessages.map(m => m.content),
-      result.taskSummarySection
-    ].join('\n')
+    const result = buildRecentTasksContext(store, 200)
+    const allText = result.recentTaskMessages.map(m => m.content).join('\n')
 
-    expect(allText).toContain('九条意见中有三条未落实')
+    expect(allText).toContain('继续')
+    expect(allText).not.toContain('x'.repeat(200))
+    expect(result.availableTaskIds.map(t => t.id)).toContain('task-old')
+    expect(result.taskSummarySection).toBe('')
   })
 })
 
@@ -365,8 +341,7 @@ describe('buildTaskHistoryContext', () => {
     expect(result.stats.totalTasks).toBe(0)
   })
 
-  it('should load up to 30 tasks at L4 under wakeup options', () => {
-    // wakeup：maxTasks:30 + 强制 L4（不得软放行 L3，避免长 userRequest 伪摘要）
+  it('should load up to 30 one-line summaries under wakeup summaryOnly', () => {
     const watchStore = new TaskMemoryStore(undefined, 50)
     for (let i = 0; i < 40; i++) {
       watchStore.saveTask(`task_${i}`, `用户任务 ${i} 的描述`, [], 'success', `完成结果 ${i}`)
@@ -374,7 +349,7 @@ describe('buildTaskHistoryContext', () => {
 
     const result = buildTaskHistoryContext(watchStore, 128000, '心跳检查', {
       maxTasks: 30,
-      minCompressionLevel: 4
+      summaryOnly: true
     })
 
     expect(result.stats.totalTasks).toBe(30)
@@ -383,17 +358,18 @@ describe('buildTaskHistoryContext', () => {
     expect(result.stats.level2Count).toBe(0)
     expect(result.stats.level3Count).toBe(0)
     expect(result.stats.level4Count).toBe(30)
+    expect(result.recentTaskMessages).toEqual([])
     expect(result.taskSummarySection.length).toBeGreaterThan(0)
   })
 
-  it('should still prefer L3 over L4 on default path when ruleLevel is 4', () => {
-    // 无 minCompressionLevel 时：ruleLevel=4 的旧成功任务仍可软放行 L3（预算内）
+  it('should keep distant turns as original messages, not one-line titles', () => {
     for (let i = 0; i < 10; i++) {
-      store.saveTask(`old_${i}`, `旧任务 ${i}`, [], 'success', `结果 ${i}`)
+      store.saveTask(`old_${i}`, `请打开报告 ${i} 号文档.docx`, [], 'success', `已写好报告 ${i}`)
     }
     const result = buildTaskHistoryContext(store, 128000, '继续')
-    // 最近 6 个任务走 L0-L2 保护；更早的成功任务 ruleLevel=4，默认路径应能落到 L3
-    expect(result.stats.level3Count).toBeGreaterThan(0)
+    const userTexts = result.recentTaskMessages.filter(m => m.role === 'user').map(m => m.content)
+    expect(userTexts.some(t => t.includes('请打开报告 0 号文档.docx'))).toBe(true)
+    expect(result.taskSummarySection).toBe('')
   })
 })
 
@@ -451,8 +427,7 @@ describe('Context builder integration', () => {
     }
   })
 
-  it('should generate summary section for highly compressed tasks', () => {
-    // Create many tasks to force compression
+  it('should keep recent original turns when older ones no longer fit', () => {
     for (let i = 0; i < 30; i++) {
       const steps: AgentStep[] = [
         { id: `${i}-1`, type: 'tool_call', toolName: 'execute_command',
@@ -461,29 +436,51 @@ describe('Context builder integration', () => {
           toolResult: `result_${i}`.repeat(100), content: '', timestamp: Date.now() },
         { id: `${i}-3`, type: 'message', content: `msg_${i}`.repeat(50), timestamp: Date.now() }
       ]
-      store.saveTask(`task${i}`, `Task ${i}`, steps, 'success', `Result ${i}`)
+      store.saveTask(`task${i}`, `请打开文件 file_${i}.docx`, steps, 'success', `Result ${i}`)
     }
 
-    const result = buildRecentTasksContext(store, 5000) // Small budget forces compression
+    const result = buildRecentTasksContext(store, 5000)
 
-    // Some tasks should be compressed to Level 3-4 (summary)
-    if (result.stats.level3Count + result.stats.level4Count > 0) {
-      expect(result.taskSummarySection.length).toBeGreaterThan(0)
-    }
+    expect(result.taskSummarySection).toBe('')
+    expect(result.recentTaskMessages.length).toBeGreaterThan(0)
+    expect(result.stats.level0Count).toBeGreaterThan(0)
+    expect(result.stats.level4Count).toBe(0)
+    const userTexts = result.recentTaskMessages.filter(m => m.role === 'user').map(m => m.content)
+    expect(userTexts.some(t => t.includes('请打开文件'))).toBe(true)
+    expect(result.availableTaskIds).toHaveLength(30)
   })
 
-  it('should include time prefix in L3/L4 summary section', () => {
-    // L3 digest 和 L4 summary 都应带时间前缀，
-    // 让 AI 在压缩历史中能看到任务发生的时间
-    // 格式对齐 AI 消息包体（new Date(ts).toLocaleString()，跟随系统 locale）
-    store.saveTask('task1', '检查 nginx 状态', [], 'success', '服务正常')
-    // 用小预算强制压到 L3/L4
-    const result = buildRecentTasksContext(store, 200)
+  it('should keep actual closing for failed, aborted, and waiting turns', () => {
+    store.saveTask('ok', '写周报', [
+      { id: '1', type: 'message', content: '周报已写到 weekly.docx', timestamp: Date.now() }
+    ], 'success', '周报已写到 weekly.docx')
+    store.saveTask('fail', '部署生产', [
+      { id: '2', type: 'message', content: '发布失败：缺权限', timestamp: Date.now() }
+    ], 'failed', '发布失败：缺权限')
+    store.saveTask('stop', '重启机器', [
+      { id: '3', type: 'message', content: '正要重启', timestamp: Date.now() }
+    ], 'aborted')
+    store.saveTask('wait', '删库', [], 'pending_confirmation')
 
-    if (result.stats.level3Count + result.stats.level4Count > 0) {
-      // 前缀以 [ 开头 ] 结尾，含时分秒（locale 无关的结构性断言）
-      expect(result.taskSummarySection).toMatch(/\[.*\d{1,2}:\d{2}:\d{2}.*\]/)
-    }
+    const result = buildRecentTasksContext(store, 100000)
+    const text = result.recentTaskMessages.map(m => m.content).join('\n')
+    expect(text).toContain('写周报')
+    expect(text).toContain('周报已写到 weekly.docx')
+    expect(text).toContain('部署生产')
+    expect(text).toContain('[任务执行失败]')
+    expect(text).toContain('重启机器')
+    expect(text).toContain('[任务已被用户中止]')
+    expect(text).toContain('删库')
+    expect(text).toContain('[还在等待确认]')
+  })
+
+  it('should not invent a successful closing when the turn has no reply', () => {
+    store.saveTask('empty', '打开你前面写的那个 Word', [], 'success')
+    const result = buildRecentTasksContext(store, 100000)
+    const asst = result.recentTaskMessages.find(m => m.role === 'assistant')
+    expect(result.recentTaskMessages.some(m => m.role === 'user' && m.content === '打开你前面写的那个 Word')).toBe(true)
+    expect(asst?.content).toBe('[本轮没有留下交代]')
+    expect(asst?.content).not.toContain('✓')
   })
 })
 

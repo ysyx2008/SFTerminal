@@ -86,6 +86,35 @@ describe('Conversation 聚合根（领域模型）', () => {
     expect(Conversation.fromRecord(record).tokenUsage).toBeUndefined()
   })
 
+  it('交接检查点：toRecord 带上 workingContext，fromRecord 接上 cache 前缀', () => {
+    const conv = Conversation.create(
+      { agentKey: 'tab-h', terminalType: 'assistant' },
+      { id: 'sess_h', createdAt: 1000 }
+    )
+    conv.commitRun({
+      runId: 'run1',
+      userRequest: '写周报',
+      steps: [userStep('写周报'), finalStep('已写好')],
+      taskMessageLog: [{ role: 'user', content: '写周报' }],
+      runMessages: [{ role: 'user', content: '写周报' }],
+      taskStatus: 'success',
+      result: '已写好',
+    })
+    const handoff: AiMessage[] = [
+      { role: 'user', content: '[交接] 周报写在 weekly.docx' },
+      { role: 'user', content: '接着改格式' },
+    ]
+    conv.setWorkingContext(handoff)
+
+    const record = conv.toRecord({ terminalId: 'pty-1' })!
+    expect(record.workingContext).toEqual(handoff)
+
+    const restored = Conversation.fromRecord(record)
+    expect(restored.hasHandoff()).toBe(true)
+    expect(restored.getCachePrefix()).toEqual(handoff)
+    expect(restored.toRecord({ terminalId: 'pty-1' })!.workingContext).toEqual(handoff)
+  })
+
   it('toRecord：空会话（无 user_task）返回 null', () => {
     const conv = Conversation.create({ agentKey: 'tab-1', terminalType: 'local' })
     expect(conv.toRecord()).toBeNull()
@@ -228,6 +257,25 @@ describe('Conversation 聚合根（领域模型）', () => {
     expect(conv.shouldReuseCachePrefix(10000, { wakeup: true, estimateTokens: estimate })).toBe(false)
     // 上限降到 200（如换到更小窗口的模型）→ 连压缩的空间都不剩，回冷启动重建
     expect(conv.shouldReuseCachePrefix(200, { estimateTokens: estimate })).toBe(false)
+
+    conv.setWorkingContext(conv.getCachePrefix())
+    // 有交接后，窗口再小也接着检查点，不展开已交原文
+    expect(conv.shouldReuseCachePrefix(200, { estimateTokens: estimate })).toBe(true)
+    expect(conv.shouldReuseCachePrefix(1, { estimateTokens: estimate })).toBe(true)
+    expect(conv.shouldResumeWorkingPrefix({ skipVisionCache: true })).toBe(true)
+    expect(conv.shouldResumeWorkingPrefix({ wakeup: true })).toBe(false)
+  })
+
+  it('shouldResumeWorkingPrefix：没交接时新图首投才跳过，热路径接着前缀', () => {
+    const conv = Conversation.create({ agentKey: 'tab-resume', terminalType: 'assistant' })
+    expect(conv.shouldResumeWorkingPrefix({})).toBe(false)
+    conv.commitRun({
+      runId: 'r1', userRequest: 'q', steps: [userStep('q'), finalStep('a')],
+      taskMessageLog: [{ role: 'user', content: 'q' }], runMessages: [{ role: 'user', content: 'q' }],
+      taskStatus: 'success', result: 'a'
+    })
+    expect(conv.shouldResumeWorkingPrefix({})).toBe(true)
+    expect(conv.shouldResumeWorkingPrefix({ skipVisionCache: true })).toBe(false)
   })
 
   it('reset：清空 transcript / 工作记忆 / cache / token', () => {
