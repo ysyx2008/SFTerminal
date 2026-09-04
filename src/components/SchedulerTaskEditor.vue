@@ -292,7 +292,7 @@ watch(() => props.task, () => {
 </script>
 
 <template>
-  <div class="editor-overlay" @click.self="handleCancel">
+  <div class="editor-overlay">
     <div class="task-editor">
       <!-- 头部 -->
       <div class="editor-header">

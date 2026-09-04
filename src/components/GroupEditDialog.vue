@@ -90,7 +90,7 @@ const deleteGroup = () => {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')" @keydown="handleKeydown">
+  <div class="modal-overlay" @keydown="handleKeydown">
     <div class="modal session-modal">
       <div class="modal-header">
         <h3>{{ group ? t('session.editGroup') : (formData.name ? t('session.configGroup') : t('session.newGroup')) }}</h3>

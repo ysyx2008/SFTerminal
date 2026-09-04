@@ -137,7 +137,7 @@ const saveSession = async () => {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')" @keydown="handleKeydown">
+  <div class="modal-overlay" @keydown="handleKeydown">
     <div class="modal session-modal">
       <div class="modal-header">
         <h3>{{ session ? t('session.editHost') : t('session.newHost') }}</h3>

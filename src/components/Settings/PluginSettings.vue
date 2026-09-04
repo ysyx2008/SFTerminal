@@ -201,7 +201,7 @@ onMounted(loadPlugins)
 
     <!-- 安装对话框 -->
     <Teleport to="body">
-      <div v-if="showInstallDialog" class="dialog-overlay settings-scope" @click.self="showInstallDialog = false">
+      <div v-if="showInstallDialog" class="dialog-overlay settings-scope">
         <div class="dialog">
           <div class="dialog-header">
             <h4>{{ t('pluginSettings.installTitle') }}</h4>

@@ -392,7 +392,7 @@ const formatRelativeTime = (timestamp?: number): string => {
     </div>
 
     <!-- 添加/编辑表单弹窗 -->
-    <div v-if="showForm" class="form-overlay" @click.self="showForm = false">
+    <div v-if="showForm" class="form-overlay">
       <div class="form-modal">
         <div class="form-header">
           <h4>{{ editingAccount ? t('emailSettings.editAccount') : t('emailSettings.addAccount') }}</h4>

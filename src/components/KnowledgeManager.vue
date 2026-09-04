@@ -385,7 +385,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay">
     <div class="knowledge-manager">
       <div class="manager-header">
         <h2>💡 {{ t('knowledgeManager.title') }}</h2>

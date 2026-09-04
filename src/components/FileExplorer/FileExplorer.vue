@@ -464,7 +464,7 @@ const handleClearAllTransfers = () => {
       />
 
       <!-- 新建文件夹弹窗 -->
-      <div v-if="showNewFolderDialog" class="dialog-overlay" @click.self="showNewFolderDialog = false">
+      <div v-if="showNewFolderDialog" class="dialog-overlay">
         <div class="dialog">
           <div class="dialog-header">
             <h3>{{ t('fileExplorer.newFolderTitle') }}</h3>
@@ -489,7 +489,7 @@ const handleClearAllTransfers = () => {
       </div>
 
       <!-- 重命名弹窗 -->
-      <div v-if="showRenameDialog" class="dialog-overlay" @click.self="showRenameDialog = false">
+      <div v-if="showRenameDialog" class="dialog-overlay">
         <div class="dialog">
           <div class="dialog-header">
             <h3>{{ t('fileExplorer.renameTitle') }}</h3>

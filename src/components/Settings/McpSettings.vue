@@ -840,7 +840,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 添加/编辑表单弹窗 -->
-    <div v-if="showForm" class="details-modal" @click.self="showForm = false">
+    <div v-if="showForm" class="details-modal">
       <div class="details-content server-form-modal">
         <div class="form-header">
           <h4>{{ editingServer ? t('mcpSettings.editServer') : t('mcpSettings.addServer') }}</h4>
@@ -973,7 +973,7 @@ onUnmounted(() => {
     </div>
 
     <!-- whenToUse 确认（不可跳过留空） -->
-    <div v-if="showWhenToUseConfirm" class="details-modal" @click.self="cancelWhenToUse">
+    <div v-if="showWhenToUseConfirm" class="details-modal">
       <div class="details-content when-to-use-modal">
         <div class="details-header">
           <h4>{{ t('mcpSettings.whenToUseConfirmTitle') }}</h4>
@@ -1046,7 +1046,7 @@ onUnmounted(() => {
     </div>
 
     <!-- JSON 一键导入弹窗 -->
-    <div v-if="showImport" key="mcp-import-modal" class="details-modal" @click.self="showImport = false">
+    <div v-if="showImport" key="mcp-import-modal" class="details-modal">
       <div class="details-content import-modal">
         <div class="details-header">
           <h4>{{ t('mcpSettings.importJsonDialogTitle') }}</h4>

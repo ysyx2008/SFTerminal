@@ -166,7 +166,7 @@ const getFileType = (file: SftpFileInfo | null): string => {
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="show && file" class="dialog-overlay" @click.self="handleClose">
+      <div v-if="show && file" class="dialog-overlay">
         <Transition name="scale">
           <div v-if="show" class="properties-dialog">
             <!-- 标题栏 -->

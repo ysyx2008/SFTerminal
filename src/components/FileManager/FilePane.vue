@@ -825,7 +825,7 @@ defineExpose({
 
     <!-- 新建文件夹弹窗 -->
     <Teleport to="body">
-      <div v-if="showNewFolderDialog" class="dialog-overlay" @click.self="showNewFolderDialog = false">
+      <div v-if="showNewFolderDialog" class="dialog-overlay">
         <div class="dialog">
           <div class="dialog-header">
             <h3>{{ t('fileManager.newFolderTitle') }}</h3>
@@ -852,7 +852,7 @@ defineExpose({
 
     <!-- 重命名弹窗 -->
     <Teleport to="body">
-      <div v-if="showRenameDialog" class="dialog-overlay" @click.self="showRenameDialog = false">
+      <div v-if="showRenameDialog" class="dialog-overlay">
         <div class="dialog">
           <div class="dialog-header">
             <h3>{{ t('fileManager.renameTitle') }}</h3>
@@ -899,7 +899,7 @@ defineExpose({
 
     <!-- 添加书签弹窗 -->
     <Teleport to="body">
-      <div v-if="showAddBookmarkDialog" class="dialog-overlay" @click.self="showAddBookmarkDialog = false">
+      <div v-if="showAddBookmarkDialog" class="dialog-overlay">
         <div class="dialog">
           <div class="dialog-header">
             <h3>{{ t('fileManager.addBookmarkTitle') }}</h3>

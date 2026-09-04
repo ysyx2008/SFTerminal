@@ -55,7 +55,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="credential-overlay" @click.self="emit('cancel')">
+  <div class="credential-overlay">
     <div class="credential-dialog">
       <h3>{{ t('session.credentialDialog.title') }}</h3>
       <p class="dialog-hint">{{ session.name }} ({{ session.host }}:{{ session.port }})</p>
