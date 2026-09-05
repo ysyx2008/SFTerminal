@@ -1367,8 +1367,13 @@ defineExpose({ minimizePanel })
 }
 
 .canvas-focus-spacer {
-  flex: 0 0 var(--assistant-focus-overlay, 160px);
-  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--assistant-focus-overlay, 160px);
+  background: transparent;
+  pointer-events: auto;
 }
 
 .canvas-header {
@@ -1806,6 +1811,7 @@ defineExpose({ minimizePanel })
 }
 
 .canvas-body {
+  position: relative;
   flex: 1;
   overflow: hidden;
   min-height: 0;
