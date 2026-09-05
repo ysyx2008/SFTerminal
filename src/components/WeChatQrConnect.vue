@@ -11,14 +11,14 @@ import QRCode from 'qrcode'
 import type { WeChatLoginStatus } from '@shared/types'
 
 const props = withDefaults(defineProps<{
-  /** 挂载后若未连接且无 token，自动拉码（还须 active=true） */
+  /** 挂载后若未连接，自动拉码（还须 active=true；有旧登录则先等重连） */
   autoStart?: boolean
   /**
    * 是否处于可见/焦点态。联络 tab 用 v-show 保活时，切走应为 false：
    * 不拉码、不过期换码；再次激活才继续。设置页保持默认 true。
    */
   active?: boolean
-  /** 已有 token 且空闲时不展示（联络空态用，避免挤占已配置用户） */
+  /** 已连上、或旧登录正在重连时不展示（联络空态用，避免挤占已连上的用户） */
   hideWhenHasToken?: boolean
   /** compact：联络空态；settings：设置页 */
   variant?: 'compact' | 'settings'
@@ -39,6 +39,8 @@ const { t } = useI18n()
 const connected = ref(false)
 const hasToken = ref(false)
 const loading = ref(false)
+/** 有旧登录时正在等自动重连，先占位，避免空着两秒 */
+const waitingReconnect = ref(false)
 const phase = ref<'idle' | 'qr' | 'scanned' | 'refreshing' | 'error'>('idle')
 const qrcodeUrl = ref('')
 const qrDataUrl = ref('')
@@ -47,6 +49,16 @@ const errorMsg = ref('')
 let unsubStatus: (() => void) | null = null
 let unsubConn: (() => void) | null = null
 let disposed = false
+/** 有旧登录时先给自动重连留一点时间，避免刚启动就出码把重连掐掉 */
+const AUTO_CONNECT_GRACE_MS = 2000
+let graceTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearGraceTimer() {
+  if (!graceTimer) return
+  clearTimeout(graceTimer)
+  graceTimer = null
+  waitingReconnect.value = false
+}
 
 const showPanel = computed(() => {
   if (connected.value) return false
@@ -54,7 +66,8 @@ const showPanel = computed(() => {
     props.hideWhenHasToken &&
     hasToken.value &&
     phase.value === 'idle' &&
-    !loading.value
+    !loading.value &&
+    !waitingReconnect.value
   ) {
     return false
   }
@@ -154,6 +167,7 @@ async function cancelLogin() {
 
 /** 切走可见态：停刷码并清空二维码图（保留 hasToken 等状态） */
 async function pauseForInactive() {
+  clearGraceTimer()
   if (!isLoginInFlight() && phase.value !== 'error') return
   await cancelLogin()
   loading.value = false
@@ -165,15 +179,31 @@ async function pauseForInactive() {
 
 function maybeAutoStart() {
   if (
-    props.active &&
-    props.autoStart &&
-    !connected.value &&
-    !hasToken.value &&
-    phase.value === 'idle' &&
-    !loading.value
+    !props.active
+    || !props.autoStart
+    || connected.value
+    || phase.value !== 'idle'
+    || loading.value
   ) {
-    void startLogin()
+    return
   }
+
+  // 没有旧登录：立刻出码
+  if (!hasToken.value) {
+    void startLogin()
+    return
+  }
+
+  // 有旧登录：先等自动重连。已经在等就不要再开一个计时。
+  if (graceTimer) return
+  waitingReconnect.value = true
+  graceTimer = setTimeout(() => {
+    graceTimer = null
+    waitingReconnect.value = false
+    if (disposed || !props.active || connected.value) return
+    if (phase.value !== 'idle' || loading.value || isLoginInFlight()) return
+    void startLogin()
+  }, AUTO_CONNECT_GRACE_MS)
 }
 
 function handleStatus(status: WeChatLoginStatus) {
@@ -209,6 +239,7 @@ onMounted(async () => {
       hasToken.value = true
       phase.value = 'idle'
       qrDataUrl.value = ''
+      clearGraceTimer()
       emit('connected')
     }
   })
@@ -220,6 +251,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   disposed = true
+  clearGraceTimer()
   unsubStatus?.()
   unsubConn?.()
   // 未连上时取消后台刷码
@@ -263,7 +295,7 @@ defineExpose({
       </div>
     </div>
 
-    <div v-else-if="loading" class="wechat-qr-placeholder">
+    <div v-else-if="loading || waitingReconnect" class="wechat-qr-placeholder">
       {{ t('ai.wechatQr.loading') }}
     </div>
 
@@ -273,7 +305,7 @@ defineExpose({
 
     <div class="wechat-qr-actions">
       <button
-        v-if="phase === 'idle' || phase === 'error'"
+        v-if="(phase === 'idle' || phase === 'error') && !waitingReconnect && !loading"
         type="button"
         class="btn btn-sm btn-primary"
         :disabled="loading"
