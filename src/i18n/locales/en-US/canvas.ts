@@ -25,6 +25,7 @@ export default {
     captureFeedbackDraft: 'Here is a screenshot of "{title}" in its current state. Please revise based on my comments: ',
     markdownSource: 'Markdown',
     selectionActionHint: 'Ask {name} to edit this: type a request, or right-click',
+    selectionActionHintNoMenu: 'Ask {name} to edit this: type a request',
     quoteActionGroup: 'Ask {name} to edit this',
     quoteActions: {
       rewrite: 'Rewrite',

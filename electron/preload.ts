@@ -2980,7 +2980,10 @@ const electronAPI = {
         success: boolean
         data?: { filePath: string; dataUrl: string; width: number; height: number }
         error?: string
-      }>
+      }>,
+
+    guestPreloadUrl: () =>
+      ipcRenderer.invoke('artifact-preview:guest-preload-url') as Promise<string>
   },
 
   // 菜单命令监听

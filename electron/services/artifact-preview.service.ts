@@ -196,6 +196,14 @@ export function initArtifactPreviewService(): void {
   })
   ipcMain.on('artifact-preview:clear', (_e, payload) => clearPreview(payload))
   ipcMain.handle('artifact-preview:capture', (_e, payload) => capturePreview(payload))
+  ipcMain.handle('artifact-preview:guest-preload-url', () => {
+    const candidates = [
+      path.join(__dirname, 'artifact-preview-guest-preload.js'),
+      path.join(__dirname, '..', 'artifact-preview-guest-preload.js')
+    ]
+    const file = candidates.find(p => fs.existsSync(p)) ?? candidates[0]
+    return pathToFileURL(file).href
+  })
 
   // webview guest 的 window.open / target=_blank：一律转系统浏览器（webview 已无 new-window 事件，
   // 只能在此统一设 handler）。仅放行 http/https，其余协议（含 file:）拒绝。

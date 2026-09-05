@@ -1779,6 +1779,7 @@ interface Window {
         data?: { filePath: string; dataUrl: string; width: number; height: number }
         error?: string
       }>
+      guestPreloadUrl: () => Promise<string>
     }
     // 文件管理器窗口操作
     fileManager: {

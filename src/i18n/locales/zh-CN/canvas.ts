@@ -25,6 +25,7 @@ export default {
     captureFeedbackDraft: '这是「{title}」当前的渲染效果截图，请根据我的意见修改：',
     markdownSource: 'Markdown',
     selectionActionHint: '让{name}改这段：提要求，或右键',
+    selectionActionHintNoMenu: '让{name}改这段：提要求即可',
     quoteActionGroup: '让{name}处理这段',
     quoteActions: {
       rewrite: '改写',

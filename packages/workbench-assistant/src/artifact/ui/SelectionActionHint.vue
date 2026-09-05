@@ -17,6 +17,8 @@ const props = defineProps<{
   anchor: ContextMenuBox | null
   /** 预览容器：提示不画到它外面 */
   clipEl?: HTMLElement | null
+  /** 默认提右键；HTML 预览没有右键菜单时换一句 */
+  messageKey?: string
 }>()
 
 const { t } = useI18n()
@@ -82,7 +84,7 @@ onUnmounted(() => bindStaleWatchers(false))
       aria-hidden="true"
     >
       <Sparkles :size="12" aria-hidden="true" />
-      <span>{{ t('canvas.selectionActionHint', { name: assistantName }) }}</span>
+      <span>{{ t(props.messageKey || 'canvas.selectionActionHint', { name: assistantName }) }}</span>
     </div>
   </Teleport>
 </template>

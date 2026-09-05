@@ -10,14 +10,16 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RotateCw, ExternalLink, Camera, Minus, Plus } from 'lucide-vue-next'
-import type { DidFailLoadEvent, WebviewTag, WillNavigateEvent } from 'electron'
+import type { DidFailLoadEvent, IpcMessageEvent, WebviewTag, WillNavigateEvent } from 'electron'
 import { buildArtifactPreviewUrl } from '@shared/types'
 import { useAssistantArtifactStore } from '../store'
 import { useToast } from '@sailfish/workbench-sdk/toast'
 import { normalizeHtmlPreviewContent } from '../domain/html-preview'
 import { useWebviewZoom } from '../composables/useWebviewZoom'
+import { useHtmlPreviewSelection } from '../composables/useHtmlPreviewSelection'
 import { BUTTON_HOVER_TIP_DELAY_MS, useHoverTip } from '../ui/useHoverTip'
 import HoverTipOverlay from '../ui/HoverTipOverlay.vue'
+import SelectionActionHint from '../ui/SelectionActionHint.vue'
 
 const props = defineProps<{
   tabId: string
@@ -136,6 +138,7 @@ const previewHtml = computed(() => {
 
 const previewUrl = computed(() => buildArtifactPreviewUrl(props.tabId, props.artifactId))
 
+const rootRef = ref<HTMLElement | null>(null)
 const webviewRef = ref<WebviewTag | null>(null)
 const loadFailed = ref(false)
 const {
@@ -144,9 +147,35 @@ const {
   zoomIn,
   zoomOut,
   resetZoom,
-  onDomReady,
+  onDomReady: onZoomDomReady,
   onZoomChanged
 } = useWebviewZoom(webviewRef)
+const artifactIdRef = computed(() => props.artifactId)
+const {
+  hintAnchor,
+  selectionPreload,
+  selectionBridgeReady,
+  onGuestDomReady,
+  onGuestIpcMessage,
+  onGuestNavigating
+} = useHtmlPreviewSelection({
+  tabId: props.tabId,
+  artifactId: artifactIdRef,
+  filePath,
+  title: computed(() => artifact.value?.title ?? ''),
+  isPptPreview,
+  rootRef,
+  webviewRef
+})
+
+function onDomReady() {
+  onZoomDomReady()
+  void onGuestDomReady()
+}
+
+function onIpcMessage(e: IpcMessageEvent) {
+  onGuestIpcMessage(e)
+}
 
 /**
  * 「已加载哪个地址」的真相源是元素自身的 src，不另存标记：
@@ -182,6 +211,7 @@ function stopGuest() {
 
 watch(previewHtml, (html) => {
   loadFailed.value = false
+  onGuestNavigating()
   if (!html) {
     // 内容清空 → v-if 摘除元素，DOM 更新前先停 guest
     stopGuest()
@@ -261,7 +291,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="html-renderer">
+  <div ref="rootRef" class="html-renderer">
     <div class="html-toolbar" :class="{ 'html-toolbar--ppt': isPptPreview }">
       <button
         type="button"
@@ -327,22 +357,29 @@ onBeforeUnmount(() => {
     </div>
     <div class="html-body" :class="{ 'html-body--ppt': isPptPreview }">
       <webview
-        v-if="previewHtml"
+        v-if="previewHtml && selectionBridgeReady"
         ref="webviewRef"
         class="html-frame"
         :title="t('canvas.htmlPreview')"
+        v-bind="selectionPreload ? { preload: selectionPreload } : {}"
         allowpopups
         @will-navigate="onWillNavigate"
         @did-fail-load="onWebviewFailLoad"
         @dom-ready="onDomReady"
         @did-finish-load="onDomReady"
         @zoom-changed="onZoomChanged"
+        @ipc-message="onIpcMessage"
       />
-      <div v-else-if="loadingFromDisk" class="html-empty">{{ t('canvas.htmlPreviewLoading') }}</div>
+      <div v-else-if="loadingFromDisk || previewHtml" class="html-empty">{{ t('canvas.htmlPreviewLoading') }}</div>
       <div v-else class="html-empty">{{ t('canvas.htmlPreviewEmpty') }}</div>
       <div v-if="loadFailed" class="html-empty html-empty--overlay">{{ t('canvas.htmlPreviewFailed') }}</div>
     </div>
     <HoverTipOverlay :tip="hoverTip" />
+    <SelectionActionHint
+      :anchor="hintAnchor"
+      :clip-el="rootRef"
+      message-key="canvas.selectionActionHintNoMenu"
+    />
   </div>
 </template>
 

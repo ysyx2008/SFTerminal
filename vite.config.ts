@@ -337,6 +337,18 @@ export default defineConfig({
           }
         }
       },
+      {
+        entry: 'electron/artifact-preview-guest-preload.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            emptyOutDir: false
+          },
+          esbuild: {
+            charset: 'utf8'
+          }
+        }
+      },
       // 打包态无头 CLI（ELECTRON_RUN_AS_NODE=1 加载 dist-electron/cli.js）
       {
         entry: 'electron/cli/cli.ts',
